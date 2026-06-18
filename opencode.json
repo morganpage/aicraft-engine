@@ -1,0 +1,117 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".opencode/instructions/tech-stack.md",
+    ".opencode/instructions/project-structure.md"
+  ],
+  "agent": {
+    "team": {
+      "description": "Primary orchestrator for the aicraft-engine library. Coordinates a research-first R&D loop: @researcher surveys prior art, @api-designer proposes 2-3 API approaches with trade-offs, @architect critiques against conventions, @coder prototypes and implements, @benchmarker renders sample outputs for visual comparison. Less linear than a feature-driven TDD loop because the work is abstraction-shaped, not feature-shaped.",
+      "mode": "primary",
+      "model": "zai-coding-plan/glm-5.2",
+      "temperature": 0.4,
+      "steps": 60,
+      "color": "#FE5701",
+      "prompt": "{file:./prompts/team.md}",
+      "permission": {
+        "*": {
+          "*": "allow"
+        }
+      }
+    },
+    "researcher": {
+      "description": "Prior-art researcher for procedural rendering, generative art, deterministic simulation, and algorithmic cosmetics. Investigates papers, repositories, JS13k winners, demoscene, Sokpop catalog, p5.js patterns. Writes structured notes to docs/research/. READ-only on src/ — never implements.",
+      "mode": "subagent",
+      "model": "google/gemini-3.5-flash",
+      "temperature": 0.5,
+      "steps": 40,
+      "color": "#3B82F6",
+      "prompt": "{file:./prompts/researcher.md}",
+      "permission": {
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "deny",
+        "todowrite": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "skill": "allow"
+      }
+    },
+    "api-designer": {
+      "description": "Public API designer for the library. Proposes 2-3 alternative TypeScript interface approaches per technique with explicit trade-offs. Maintains docs/api-surface.md (the export map by pillar). Writes design proposals to docs/design/. Reviews implementations against the agreed API.",
+      "mode": "subagent",
+      "model": "xiaomi-token-plan-ams/mimo-v2.5",
+      "temperature": 0.7,
+      "steps": 40,
+      "color": "#9B59B6",
+      "prompt": "{file:./prompts/api-designer.md}",
+      "permission": {
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "edit": "allow",
+        "write": "allow",
+        "bash": "deny",
+        "todowrite": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "skill": "allow"
+      }
+    },
+    "architect": {
+      "description": "Adversarial READ-ONLY critic of API and architecture changes. Reviews proposals and implementations against docs/architecture.md and docs/conventions.md. Catches determinism violations, layering leaks, adapter indiscipline, magic numbers/colors, missing JSDoc, convention drift. Never proposes changes — only critiques.",
+      "mode": "subagent",
+      "model": "openrouter/deepseek/deepseek-v4-pro",
+      "temperature": 0.5,
+      "steps": 30,
+      "color": "#5D6D7E",
+      "prompt": "{file:./prompts/architect.md}",
+      "permission": {
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "bash": "deny",
+        "todowrite": "deny",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "skill": "allow"
+      }
+    },
+    "coder": {
+      "description": "TDD implementer for the library. Writes failing tests first for deterministic helpers (color math, RNG, particles, entitlements). Implements the smallest correct change. May prototype rendering approaches in src/_prototype/ during exploration.",
+      "mode": "subagent",
+      "model": "zai-coding-plan/glm-5.2",
+      "temperature": 0.2,
+      "steps": 60,
+      "color": "#2ECC71",
+      "prompt": "{file:./prompts/coder.md}",
+      "permission": {
+        "*": {
+          "*": "allow"
+        }
+      }
+    },
+    "benchmarker": {
+      "description": "Visual QA via headless canvas rendering. Renders sample outputs (skin variant sheets, procedural character galleries, fake-3D scene renders) to PNG. Compares approaches side-by-side. Reports visual issues: clipping, contrast failures, broken outlines, off-grid pixels. Vision-capable.",
+      "mode": "subagent",
+      "model": "google/gemini-3.5-flash",
+      "temperature": 0.3,
+      "steps": 40,
+      "color": "#E74C3C",
+      "prompt": "{file:./prompts/benchmarker.md}",
+      "permission": {
+        "*": {
+          "*": "allow"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+/**
+ * aicraft-engine — top-level barrel.
+ *
+ * See `README.md` for the library overview and `docs/architecture.md` for
+ * the layer model. Import from individual modules for tree-shaking, or from
+ * this barrel for convenience.
+ */
+export * from './primitives';
+export * from './rng';
+export * from './particles';
+export * from './animation';
