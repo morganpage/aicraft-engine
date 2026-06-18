@@ -73,7 +73,7 @@ Shared foundation types for skeletal rigging, IK, and locomotion.
 | `AffineTransform` | type | 2×3 column-major matrix `[a, b, c, d, tx, ty]` — maps directly to `ctx.transform()` | `src/animation/types.ts` |
 | `BonePose` | type | Local TRS for one bone (translation, rotation in radians, scale; all optional, default identity) | `src/animation/types.ts` |
 | `BoneNode` | type | Bone in hierarchy: id, parentIndex, restPose, optional attachmentSlot | `src/animation/types.ts` |
-| `SkeletonTemplate` | type | Reusable skeleton definition: bones array, rest transforms, bone lengths, slot map | `src/animation/types.ts` |
+| `SkeletonTemplate` | type | Reusable skeleton definition: bones array, `restWorldTransforms`, bone lengths, slot map | `src/animation/types.ts` |
 | `Rig` | type | Per-instance state: template ref, mutable localPoses, mutable worldTransforms/Positions/Rotations | `src/animation/types.ts` |
 | `EffectorTarget` | type | IK/locomotion attachment: slot name + world-space target Vec2 | `src/animation/types.ts` |
 | `BoneDrawMap` | type | Array of `{boneIndex, draw}` entries for skin rendering | `src/animation/types.ts` |
@@ -110,29 +110,32 @@ Skin rendering: per-bone draw callback dispatch.
 - _research note: `docs/research/procedural-locomotion.md`_
 - _proposed in: `docs/design/skeletal-rigging-proposal.md`_
 
-### `src/animation/ik/` (planned)
+### `src/animation/ik/`
 
-Inverse kinematics solvers. Proposal: `docs/design/inverse-kinematics-proposal.md`.
+Inverse kinematics solvers. Decision: `docs/design/inverse-kinematics-decision.md`.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `IkBone` | type | Solver-local angle-limit params (`minAngle?`/`maxAngle?`); bone lengths read from `SkeletonTemplate.boneLengths`, not duplicated here | `src/animation/ik/types.ts` |
 | `IkEffector` | type | Slot name + world-space target position (skin-agnostic) | `src/animation/ik/types.ts` |
-| `IkResult` | type | Solved positions + local rotations + solved flag | `src/animation/ik/types.ts` |
-| `LimbSolveOptions` | type | Options for `solveLimb` (bendDir) | `src/animation/ik/types.ts` |
-| `IterativeSolveOptions` | type | Options for `solveCCD`/`solveFABRIK` (iterations, angleLimits) | `src/animation/ik/types.ts` |
-| `calculateBendDir(root, target, pole)` | function | 2D cross product → bend direction (-1 or +1) | `src/animation/ik/types.ts` |
-| `solveLimb(root, target, boneA, boneB, opts?)` | function | Analytical 2-bone IK solver (O(1), closed-form) | `src/animation/ik/limb.ts` |
-| `solveCCD(positions, bones, target, opts?)` | function | Cyclic Coordinate Descent for N-joint chains | `src/animation/ik/ccd.ts` |
-| `solveFABRIK(positions, bones, target, opts?)` | function | FABRIK position solver + rotation reconstruction | `src/animation/ik/fabrik.ts` |
+| `IkResult` | type | Solved positions + local rotations + solved flag (returned by `solveCCD`/`solveFABRIK`) | `src/animation/ik/types.ts` |
+| `LimbResult` | type | Result of `solveLimb`: `{jointPos, endPos, solved}` — dedicated type for the 2-bone analytical solver | `src/animation/ik/limb.ts` |
+| `LimbSolveOptions` | type | Options for `solveLimb` (`bendDir?`) | `src/animation/ik/types.ts` |
+| `IterativeSolveOptions` | type | Options for `solveCCD`/`solveFABRIK` (`iterations?`, `angleLimits?`) | `src/animation/ik/types.ts` |
+| `calculateBendDir(root, target, pole)` | function | 2D cross product → bend direction (`-1` or `+1`) | `src/animation/ik/limb.ts` |
+| `solveLimb(root, target, lengthA, lengthB, opts?)` | function | Analytical 2-bone IK solver (O(1), closed-form); returns `LimbResult` with `{jointPos, endPos, solved}` | `src/animation/ik/limb.ts` |
+| `solveCCD(positions, boneLengths, target, opts?)` | function | Cyclic Coordinate Descent for N-joint chains; returns `IkResult` | `src/animation/ik/ccd.ts` |
+| `solveFABRIK(positions, boneLengths, target, opts?)` | function | FABRIK position solver + rotation reconstruction; returns `IkResult` | `src/animation/ik/fabrik.ts` |
+| `reconstructRotations(positions)` | function | Reconstruct local rotations from solved positions via `atan2`; signature `(positions: readonly Vec2[]) → number[]` (no `boneLengths` param) | `src/animation/ik/fabrik.ts` |
 | `IK_CCD_DEFAULT_ITERATIONS` | const | `8` — default fixed iteration count for CCD | `src/animation/ik/constants.ts` |
 | `IK_FABRIK_DEFAULT_ITERATIONS` | const | `4` — default fixed iteration count for FABRIK | `src/animation/ik/constants.ts` |
-| `IK_POSITION_TOLERANCE_SQ` | const | `0.0001` — sub-pixel solved-flag threshold | `src/animation/ik/constants.ts` |
-| `IK_LIMB_DEAD_ZONE` | const | `0.001` — jitter prevention at full extension | `src/animation/ik/constants.ts` |
+| `IK_POSITION_TOLERANCE_SQ` | const | `0.0001` — sub-pixel solved-flag diagnostic threshold | `src/animation/ik/constants.ts` |
+| `IK_LIMB_DEAD_ZONE` | const | `0.001` — jitter prevention at full extension in `solveLimb` | `src/animation/ik/constants.ts` |
+| `IK_COLLINEAR_THRESHOLD_SQ` | const | `1e-12` — squared length below which a bone is treated as collinear-degenerate by `reconstructRotations` | `src/animation/ik/constants.ts` |
 
 - _research note: docs/research/inverse-kinematics.md_
 
-### `src/animation/foot-lock.ts` (planned)
+### `src/animation/foot-lock.ts`
 
 Effector locking for foot-pin / hand-hold. Bridges IK solvers with locomotion.
 
@@ -142,7 +145,7 @@ Effector locking for foot-pin / hand-hold. Bridges IK solvers with locomotion.
 | `advanceFootLock(state, isGrounded, footPos, dt, blendSpeed?)` | function | Pure state progression: ramp blend weight toward lock | `src/animation/foot-lock.ts` |
 | `getFootLockTarget(state, animatedFootPos)` | function | Lerp between animated and locked position | `src/animation/foot-lock.ts` |
 
-### `src/animation/locomotion.ts` (planned)
+### `src/animation/locomotion.ts`
 
 Trigonometric locomotion: phase-accumulator walk/run cycles with smooth speed transitions.
 
@@ -160,24 +163,25 @@ Trigonometric locomotion: phase-accumulator walk/run cycles with smooth speed tr
 - _research note: `docs/research/procedural-locomotion.md` §Pattern 1_
 - _proposed in: `docs/design/procedural-motion-proposal.md`_
 
-### `src/animation/squash-stretch.ts` (planned)
+### `src/animation/squash-stretch.ts`
 
 Volume-preserving scale transforms for breathing, jumping, landing, and turning.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `Scale2D` | type | `{scaleX: number; scaleY: number}` | `src/animation/squash-stretch.ts` |
-| `BreathConfig` | type | Breathing params: frequency, amplitude | `src/animation/squash-stretch.ts` |
-| `DEFAULT_BREATH` | const | Default BreathConfig for idle animation | `src/animation/squash-stretch.ts` |
-| `volumeScale(deltaY)` | function | Pure: volume-preserving scale from vertical delta (scaleX × scaleY = 1) | `src/animation/squash-stretch.ts` |
-| `breathe(tick, config)` | function | Pure: sinusoidal breathing oscillation returning Scale2D | `src/animation/squash-stretch.ts` |
-| `projectTurnedPart(localX, localY, facingAngle)` | function | Pure: Sokpop-style orthographic turning projection | `src/animation/squash-stretch.ts` |
-| `scaledBreath(config, scale)` | function | Pure: multiply breathing amplitude by scale factor | `src/animation/squash-stretch.ts` |
+| `Scale2D` | type | `{scaleX: number; scaleY: number}` — volume-preserving scale pair | `src/animation/squash-stretch.ts` |
+| `BreathConfig` | type | Breathing params: `frequency`, `amplitude` | `src/animation/squash-stretch.ts` |
+| `DEFAULT_BREATH` | const | Default `BreathConfig` for idle animation | `src/animation/squash-stretch.ts` |
+| `TurnedProjection` | type | Orthographic turning result: `{x, y, sx, sy}` — projected position plus horizontal/vertical scale | `src/animation/squash-stretch.ts` |
+| `volumeScale(deltaY)` | function | Pure: volume-preserving scale from vertical delta (`scaleX × scaleY = 1`) | `src/animation/squash-stretch.ts` |
+| `breathe(tick, config)` | function | Pure: sinusoidal breathing oscillation returning `Scale2D` | `src/animation/squash-stretch.ts` |
+| `projectTurnedPart(localX, localY, facingAngle)` | function | Pure: Sokpop-style orthographic turning projection; returns `TurnedProjection` | `src/animation/squash-stretch.ts` |
+| `scaledBreath(config, scale)` | function | Pure: multiply breathing amplitude by scale factor (reduced-motion helper) | `src/animation/squash-stretch.ts` |
 
 - _research note: `docs/research/procedural-locomotion.md` §Pattern 2_
 - _proposed in: `docs/design/procedural-motion-proposal.md`_
 
-### `src/animation/spring.ts` (planned)
+### `src/animation/spring.ts`
 
 Verlet-PBD spring chains for secondary dynamics (hair, tails, cloaks).
 
@@ -278,13 +282,13 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`. As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, and `./animation` (shipped). As pillars ship, they are added here.
 
 ```ts
 export * from './primitives';
 export * from './rng';
 export * from './particles';
-// Phase 1b: export * from './animation';  // includes ./animation/ik and ./animation/foot-lock
+export * from './animation';
 // Phase 2: export * from './palette';
 // Phase 2: export * from './cosmetics';
 // Phase 3: export * from './iap';

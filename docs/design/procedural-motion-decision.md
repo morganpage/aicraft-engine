@@ -12,7 +12,7 @@ Adopt **split pure functions** mirroring `particles/` advance/cull/step — the 
 - **Springs** (`spring.ts`): **Verlet-PBD** `advanceSpringChain(nodes, anchorX, anchorY, dt, config) → VerletNode[]`, pure-clone (input never mutated), exactly the `particles/advance.ts` discipline. **Caller owns the fixed timestep** and calls with `dt=1` — matches the particles convention; no second dt-handling pattern in the library, and no hidden internal sub-stepping.
 - **Reduced motion:** consumer reads `prefersReducedMotion()` and scales amplitudes via `scaledGait(config, scale)` / `scaledBreath(config, scale)` helpers. Shake is consumer-gated (`reduceMotion ? 0 : sineShake(...)`).
 
-**Verified visually (springs):** stable over 30+ ticks, organic tail/hair-like sway with natural lag, no explosion or NaN. The finite-iteration PBD softness (~7% stretch under load at 2 constraint iterations, ~1% at 8) reads as desirably elastic for secondary elements — NOT a bug.
+**Verified visually (springs):** stable over 30+ ticks, organic tail/hair-like sway with natural lag, no explosion or NaN. The finite-iteration PBD softness (~7% stretch under load at 2 constraint iterations, ~1% at 8) reads as desirably elastic for secondary elements — NOT a bug. **Regime precision:** the "~7% at 2 iterations" figure is measured on a short chain from rest in a single step; longer chains under sustained gravity accumulate more stretch per segment — this is the expected, desirable PBD soft-constraint property that gives organic tails and hair their elastic feel.
 
 Locomotion and squash/stretch were **not** prototyped — they are low-risk pure trigonometry and go straight to TDD.
 
