@@ -9,3 +9,5 @@ export * from './primitives';
 export * from './rng';
 export * from './particles';
 export * from './animation';
+export * from './palette';
+export * from './cosmetics';
