@@ -284,9 +284,14 @@ export interface HeroInputs {
   /** Continuous jump hold (held = full jump; released early = short hop). */
   readonly jumpHeld?: boolean;
   /**
-   * Horizontal displacement this tick in canvas px. `0` = idle (phase frozen,
-   * feet planted); nonzero = walk with phase synced to translation;
-   * `undefined` = legacy time-driven walk-in-place (back-compat for benchmarks).
+   * Horizontal displacement this tick in WORLD-space canvas px (positive =
+   * right). `0` = idle (phase frozen, feet planted); nonzero = walk with phase
+   * synced to translation; `undefined` = legacy time-driven walk-in-place
+   * (back-compat for benchmarks). The world-space `walkDx` also advances the
+   * hero's `x` offset directly; for PHASE advancement, `stepHero` converts it
+   * to local space (`walkDx * facing`) before calling
+   * `advanceLocomotionByDisplacement` so the gait always advances forward
+   * regardless of facing (the renderer's mirror handles the visual direction).
    */
   readonly walkDx?: number;
   /**
@@ -541,9 +546,14 @@ function stiffenAntenna(
  *   time-driven `advanceLocomotion` (walk-in-place). Used by benchmark renders
  *   so `hero-final-*.png` stays byte-identical to the pre-walk-across output.
  * - `inputs.walkDx !== undefined` AND nonzero → displacement-driven
- *   `advanceLocomotionByDisplacement` (walk-across). The phase advances by
- *   `walkDx / (strideLength · π)` so feet plant without sliding, and the
- *   hero's `x` offset wraps at the canvas edges for endless traversal.
+ *   `advanceLocomotionByDisplacement` (walk-across). The phase advances by the
+ *   LOCAL-space displacement `(walkDx * facing) / (strideLength · π)` — the
+ *   `facing` factor converts world-space `walkDx` to local-space so the phase
+ *   always advances forward (see `advanceLocomotionByDisplacement`'s
+ *   facing-mirror warning); the renderer's `ctx.scale(facing, 1)` mirror
+ *   handles the visual direction. The hero's world-space `x` offset still
+ *   translates by signed `walkDx` and wraps at the canvas edges for endless
+ *   traversal.
  * - `inputs.walkDx === 0` → displacement-driven but phase FROZEN (feet planted,
  *   idle pose). The hero stands still.
  *
@@ -616,9 +626,19 @@ export function stepHero(
   let x = state.x;
   if (inputs !== undefined && inputs.walkDx !== undefined) {
     const dx = inputs.walkDx;
+    // Advance phase by LOCAL-space displacement (dx * facing), not the signed
+    // world-space `dx`. The renderer mirrors geometry with `ctx.scale(facing, 1)`
+    // in `drawSlimeKnight`; passing signed `dx` here would reverse the gait
+    // phase for leftward walking AND the mirror would reverse the geometry — a
+    // double reversal that makes walk-left look like a broken reset. Local-
+    // space `dx * facing` is always positive when actually walking (rightward
+    // walk: dx>0 × facing+1 = +; leftward walk: dx<0 × facing-1 = +), so the
+    // phase always advances forward and the mirror alone handles the visual
+    // direction. World-space position below still uses signed `dx`. See
+    // docs/design/walk-cycle-correction-decision.md.
     locomotion = advanceLocomotionByDisplacement(
       state.locomotion,
-      dx,
+      dx * facing,
       config.gaitConfig,
     );
     if (dx !== 0) {
@@ -869,35 +889,28 @@ export function drawSlimeKnight(
   ctx.scale(state.facing, 1);
   ctx.translate(-charCx, 0);
 
-  // 1. Legs in DEPTH ORDER (Change B). The forward leg — the one whose foot
-  //    is at greater +X in un-mirrored code space — is drawn LAST so its shin
-  //    crosses ON TOP of the back leg's shin: the proper side-view walk-cycle
-  //    crossing. The swap is decided purely by foot X (NOT by facing) and
-  //    happens at the crossing tick where `leftFoot.x === rightFoot.x` and the
-  //    two legs overlap perfectly → invisible swap.
+  // 1. Legs in FIXED DEPTH ORDER. The left leg is the "near" leg (always drawn
+  //    LAST / on top); the right leg is the "far" leg (always drawn FIRST /
+  //    behind). There is NO swap during the walk cycle — the near leg always
+  //    occludes the far leg when they cross, exactly as in a real side-view walk
+  //    where one leg is permanently closer to the camera.
+  //
+  //    Previous versions tried to swap based on foot X (which foot is more
+  //    forward) or foot Y (which foot is lifted). Both produced a visible "leg
+  //    pop" at the swap point because the legs were not perfectly overlapping
+  //    at the moment of the swap. A fixed near/far ordering eliminates the pop
+  //    entirely — the legs simply cross with a consistent depth relationship.
   //
   //    Facing-agnostic: `ctx.scale(facing, 1)` mirrors X coordinates but does
-  //    NOT change the order in which `drawLimb` is called, so whichever leg is
-  //    drawn on top stays on top after the mirror. For `facing === -1` the
-  //    +X-forward leg in code space becomes the -X-forward (screen-left) leg
-  //    in screen space — still drawn on top, still correct. The `bendDir = -1`
-  //    on both legs puts both knees on the +X side (un-mirrored = pointing
-  //    right = forward for facing-right); the mirror flips them to -X
-  //    (pointing left = forward for facing-left) automatically.
-  const leftForward = leftFoot.x >= rightFoot.x;
+  //    NOT change the order in which `drawLimb` is called, so the near leg
+  //    stays on top after the mirror. The `bendDir = -1` on both legs is
+  //    unchanged.
   const leftHip = { x: hipLeftX, y: hipY };
   const rightHip = { x: hipRightX, y: hipY };
-  if (leftForward) {
-    drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
-      config.boneLengths.shin, -1, palette);
-    drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
-      config.boneLengths.shin, -1, palette);
-  } else {
-    drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
-      config.boneLengths.shin, -1, palette);
-    drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
-      config.boneLengths.shin, -1, palette);
-  }
+  drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
+    config.boneLengths.shin, -1, palette);
+  drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
+    config.boneLengths.shin, -1, palette);
 
   // 2. Body — rounded squircle (flat fill + chunky outline pass) + composed
   //    scale (breath × jumpScale; both volume-preserving → product is too).

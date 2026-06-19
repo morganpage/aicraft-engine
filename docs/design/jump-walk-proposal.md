@@ -12,6 +12,10 @@ This proposal delivers a complete, deterministic, zero-dep jump + walk translati
 
 ---
 
+> **Amendment (walk-cycle correction):** The foot-lift formula in `evaluateLocomotion` was corrected from `max(0, sin(phase))` to `max(0, -sin(phase))` — see `docs/design/walk-cycle-correction-decision.md`. The original `max(0, sin)` lifted the foot during the stance half (front→back), producing a moonwalk. The signed-dx contract in `advanceLocomotionByDisplacement` is unchanged, but consumers using geometry mirrors must pass local-space displacement (`dx * facing`). See the decision doc for full analysis.
+
+---
+
 ## Approach A: Composable Separate Functions
 
 **Source pattern:** Research §Top 3 Patterns — all three patterns as independent pure functions. Follows the existing library philosophy (`advanceLocomotion`, `evaluateLocomotion`, `advanceFootLock` are separate, composable pieces).

@@ -113,12 +113,19 @@ export function advanceLocomotion(
 /**
  * Derive hip / foot offsets from the current phase.
  *
- * Feet swing forward/back as `cos(phase)` and lift only on the forward half of
- * the cycle (`max(0, sin(phase))`), so a foot is on the ground for half the
- * cycle. The right foot is π out of phase with the left. The hip bobs DOWNWARD
- * twice per cycle (`-|sin(phase)|`) — once per foot plant — and sways laterally
- * in counter-phase with the feet. All math is pure sin/cos; identical across
- * IEEE 754 platforms.
+ * Feet swing forward/back as `cos(phase)`: forward (+stride) at phase 0, back
+ * (-stride) at phase π. A foot lifts via `max(0, -sin(phase))` — during the
+ * SECOND half of the cycle (phase ∈ [π, 2π]) when cos is RISING (the foot is
+ * traveling back→front). This is the **swing phase**: the foot is airborne
+ * while swinging forward, matching the canonical walk-cycle convention (lift
+ * during forward swing). During the FIRST half (phase ∈ [0, π]) the foot is
+ * grounded — the **stance phase** — and slides from front→back as the body
+ * moves over the planted foot (`cos` is falling). The right foot is π out of
+ * phase with the left, so the two feet trade stance/swing every half cycle.
+ *
+ * The hip bobs DOWNWARD twice per cycle (`-|sin(phase)|`) — once per foot
+ * plant — and sways laterally in counter-phase with the feet. All math is pure
+ * sin/cos; identical across IEEE 754 platforms.
  *
  * Pure reader: returns a new `LocomotionPose`; never mutates `state`.
  *
@@ -134,13 +141,13 @@ export function evaluateLocomotion(
 
   const leftFootOffset: Vec2 = {
     x: Math.cos(phi) * config.strideLength,
-    y: Math.max(0, Math.sin(phi)) * config.strideHeight,
+    y: Math.max(0, -Math.sin(phi)) * config.strideHeight,
   };
 
   const phiRight = phi + Math.PI;
   const rightFootOffset: Vec2 = {
     x: Math.cos(phiRight) * config.strideLength,
-    y: Math.max(0, Math.sin(phiRight)) * config.strideHeight,
+    y: Math.max(0, -Math.sin(phiRight)) * config.strideHeight,
   };
 
   const hipOffset: Vec2 = {
@@ -229,6 +236,15 @@ export const DEFAULT_TUCK: Readonly<TuckConfig> = {
  * in the same tick — this double-advances the phase. The choice is per
  * character, not per frame: time-driven for walk-in-place characters,
  * displacement-driven for translating characters.
+ *
+ * ⚠ **Facing-mirror interaction:** `dx` is world-space displacement (positive =
+ * right). When a consumer also mirrors character geometry for facing (e.g.
+ * `ctx.scale(facing, 1)`), passing signed world-space `dx` here reverses the
+ * gait phase for leftward walking, and the mirror reverses the geometry — a
+ * double reversal that produces a visually incorrect walk. Consumers using
+ * geometry mirrors should pass LOCAL-space displacement (`dx * facing`) so the
+ * phase always advances forward in local space, letting the mirror handle the
+ * visual direction.
  *
  * @param state - current locomotion state
  * @param dx - actual horizontal displacement this tick (positive = right, in px)

@@ -141,6 +141,40 @@ describe('evaluateLocomotion', () => {
     expect(pose.rightFootOffset.y).toBeCloseTo(0, 10);
   });
 
+  it('left foot is grounded during stance phase [0, π] (cos falling = front→back)', () => {
+    // The stance phase: foot is planted while cos(phase) goes from +stride (front)
+    // to -stride (back). Y lift must be 0 throughout this half.
+    for (let i = 0; i <= 12; i++) {
+      const phase = (i / 12) * Math.PI; // [0, π]
+      const pose = evaluateLocomotion({ phase }, DEFAULT_GAIT);
+      expect(pose.leftFootOffset.y).toBeCloseTo(0, 10);
+    }
+  });
+
+  it('left foot lifts during swing phase (π, 2π) (cos rising = back→front)', () => {
+    // The swing phase: foot is airborne while cos(phase) goes from -stride (back)
+    // to +stride (front). Y lift must be > 0 for interior points.
+    for (let i = 1; i < 12; i++) {
+      const phase = Math.PI + (i / 12) * Math.PI; // (π, 2π)
+      const pose = evaluateLocomotion({ phase }, DEFAULT_GAIT);
+      expect(pose.leftFootOffset.y).toBeGreaterThan(0);
+    }
+  });
+
+  it('right foot complements left: lifts during (0, π), grounded during (π, 2π)', () => {
+    // Right foot is π out of phase — when left is in stance, right is in swing.
+    for (let i = 1; i < 12; i++) {
+      const phase = (i / 12) * Math.PI; // (0, π) — right should be lifted
+      const pose = evaluateLocomotion({ phase }, DEFAULT_GAIT);
+      expect(pose.rightFootOffset.y).toBeGreaterThan(0);
+    }
+    for (let i = 1; i < 12; i++) {
+      const phase = Math.PI + (i / 12) * Math.PI; // (π, 2π) — right should be grounded
+      const pose = evaluateLocomotion({ phase }, DEFAULT_GAIT);
+      expect(pose.rightFootOffset.y).toBeCloseTo(0, 10);
+    }
+  });
+
   it('does not mutate the input state', () => {
     const state: LocomotionState = { phase: 1.5 };
     const snap = { ...state };
