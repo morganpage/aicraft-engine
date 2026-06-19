@@ -1,15 +1,18 @@
 /**
  * Section 1 — Hero.
  *
- * Wires the 🎲 button, the ⏫ Jump button, and the speed slider to the store,
- * derives a fresh `HeroConfig` whenever the seed changes, and runs a fixed-
- * timestep rAF loop that advances the hero's locomotion + antenna and redraws
- * each frame. Arrow keys drive directional walking (← walks left, → walks
- * right, release = idle; the hero faces the direction it walks and keeps that
- * facing while idle). Jump (Space / ⏫) works in all three walk states
- * (idle / walking left / walking right) and keeps horizontal momentum.
- * Motion-gated: if the user prefers reduced motion, a single static frame is
- * rendered and the loop is never started.
+ * Wires the 🎲 button, the ⏫ Jump button, the 👁 Eyes toggle, and the speed
+ * slider to the store, derives a fresh `HeroConfig` whenever the seed changes,
+ * and runs a fixed-timestep rAF loop that advances the hero's locomotion +
+ * antenna and redraws each frame. Arrow keys drive directional walking (←
+ * walks left, → walks right, release = idle; the hero faces the direction it
+ * walks and keeps that facing while idle). Jump (Space / ⏫) works in all
+ * three walk states (idle / walking left / walking right) and keeps horizontal
+ * momentum. The eye toggles between cyclops (1) and two-eyed (2) via the 👁
+ * button or the `E` key, and the pupil tracks the travel direction (walk dir
+ * horizontally, jump phase vertically). Motion-gated: if the user prefers
+ * reduced motion, a single static frame is rendered and the loop is never
+ * started.
  */
 
 import {
@@ -49,6 +52,7 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
   const seedDisplay = container.querySelector<HTMLElement>('.hero-seed')!;
   const rerollBtn = container.querySelector<HTMLButtonElement>('.hero-reroll')!;
   const jumpBtn = container.querySelector<HTMLButtonElement>('.hero-jump')!;
+  const eyesBtn = container.querySelector<HTMLButtonElement>('.hero-eyes')!;
   const speedSlider = container.querySelector<HTMLInputElement>('.hero-speed')!;
   const speedValue = container.querySelector<HTMLElement>('.hero-speed-value')!;
 
@@ -73,10 +77,36 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
   let leftHeld = false;
   let rightHeld = false;
 
+  // Eye count — showcase toggle (👁 button / `E` key). `1` = cyclops (the
+  // seed-canonical default), `2` = two-eyed. Persisted into `frame.eyeCount`
+  // via `HeroInputs.eyeCount` each tick (mirrors the `facing` carry-forward
+  // pattern). NOT seed-derived; defaults to `1` so the benchmark path and the
+  // initial paint render the original cyclops.
+  let eyeCount: 1 | 2 = 1;
+
+  /** Apply a new eye count: update local state + the button's label/aria. */
+  const applyEyeCount = (next: 1 | 2): void => {
+    eyeCount = next;
+    const label = eyesBtn.querySelector('span');
+    if (label) label.textContent = next === 1 ? '1 eye' : '2 eyes';
+    eyesBtn.setAttribute('aria-pressed', next === 2 ? 'true' : 'false');
+  };
+  applyEyeCount(1);
+
   /** Render one frame at the current `frame` / `tick`. Does not advance state. */
   const render = (): void => {
+    // Gaze vector for pupil tracking (user feedback #1: "eye should look in
+    // direction it's going"). Horizontal: the active walk direction, or the
+    // persisted facing when idle (so the hero keeps looking the way it faces).
+    // Vertical: jump phase — rising looks up (negative Y, since +Y is down),
+    // falling looks down, else level. Each component is in [-1, 1]; `drawEye`
+    // offsets the pupil by `look · pupilReach` (mirror-sign corrected).
+    const lookX = walkDir !== 0 ? walkDir : facing;
+    const lookY =
+      frame.jump.phase === 'rising' ? -1 :
+      frame.jump.phase === 'falling' ? 1 : 0;
     drawBackground(ctx, config.palette, frame.x);
-    drawSlimeKnight(ctx, frame, tick);
+    drawSlimeKnight(ctx, frame, tick, { x: lookX, y: lookY });
   };
 
   /** Re-derive the hero from a new seed and reset the animation clock. */
@@ -133,6 +163,16 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
   jumpBtn.addEventListener('pointerleave', releaseJump);
   jumpBtn.addEventListener('pointercancel', releaseJump);
 
+  // 👁 Eyes button → toggle 1↔2. The label + aria-pressed update via
+  // `applyEyeCount`; `eyeCount` flows into `frame.eyeCount` via `HeroInputs`
+  // in the loop below. Blur afterwards so the `E` key path (window listener)
+  // stays the canonical keyboard route and the button's own keyup activation
+  // doesn't double-fire (same pattern as the Jump button).
+  eyesBtn.addEventListener('click', () => {
+    applyEyeCount(eyeCount === 1 ? 2 : 1);
+    eyesBtn.blur();
+  });
+
   // Keyboard: ← → walk (release = idle), Space jumps. Arrow keys drive the
   // walk directly (the standard platformer convention) and preventDefault
   // stops the page from scrolling. Auto-repeat keydowns are ignored for the
@@ -157,6 +197,13 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
         walkDir = 1;
         facing = 1;
       }
+      return;
+    }
+    // `E` toggles the eye count (1↔2). No preventDefault — `E` has no browser
+    // default we need to suppress. Ignore auto-repeat so a held `E` toggles
+    // once, same as the click.
+    if (e.code === 'KeyE') {
+      if (!e.repeat) applyEyeCount(eyeCount === 1 ? 2 : 1);
       return;
     }
     if (e.code !== 'Space') return;
@@ -208,7 +255,7 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
     // independent of walkDx, so jumping while walking keeps horizontal
     // momentum and works in all three walk states.
     const walkDx = walkDir * config.speed * WALK_SPEED_PX_PER_SEC * DT;
-    frame = stepHero(frame, DT, { jumpPressed, jumpHeld, walkDx, facing });
+    frame = stepHero(frame, DT, { jumpPressed, jumpHeld, walkDx, facing, eyeCount });
     jumpPressed = false;
     tick += 1;
     render();

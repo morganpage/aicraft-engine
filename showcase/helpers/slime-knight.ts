@@ -7,7 +7,10 @@
  * Composition stack:
  *   - Body:    rounded-rectangle squircle (flat fill + chunky outline pass).
  *   - Eye:     canvas circle in `palette.feature` + outline pupil + white
- *              highlight (matches the in-game-shapes aesthetic).
+ *              highlight (matches the in-game-shapes aesthetic). The pupil
+ *              offsets toward a per-frame gaze vector (`look`) so the eye
+ *              tracks the travel direction, and the face renders as 1 eye
+ *              (cyclops, the default) or 2 eyes (showcase toggle).
  *   - Legs:    two 2-bone IK limbs via `solveLimb`, driven by foot targets
  *              from `evaluateLocomotion`.
  *   - Antenna: a Verlet spring chain via `advanceSpringChain`, anchored at
@@ -95,10 +98,13 @@ const CHUNKY_OUTLINE_WIDTH = 3;
 const LEG_REACH_RATIO = 0.9;
 
 /**
- * Extra wrap margin beyond `bodyWidth/2` when the hero walks off one canvas
- * edge and reappears at the other. Covers the forward foot's reach:
- * roughly `0.22 · bodyWidth` (hip offset) + `strideLength` (~4) + `shoe/2` (~9).
- * Keeps feet from poking out at the wrap boundary.
+ * Off-screen buffer added to `bodyWidth/2` when the hero walks off one canvas
+ * edge and reappears at the other. With co-located hips (Change B) and the
+ * forward-foot shoe offset (Change C), the forward foot's reach from the body
+ * center is `strideLength + shoeForward + shoeW/2 ≈ 10 + 7 + 9 = 26` px —
+ * well inside the body's half-width (35-45), so the foot never pokes past the
+ * body silhouette. The margin is a comfortable buffer so the hero fully exits
+ * the frame before reappearing on the opposite side.
  */
 const HERO_WALK_WRAP_MARGIN_FOOT = 16;
 
@@ -123,7 +129,12 @@ export const HERO_RANGES = {
   antennaSegments: { base: 3, jitter: 3 }, // [3, 6]
   antennaSegmentLength: { base: 9, jitter: 5 }, // [9, 14]
   gaitFrequencyMul: { min: 0.8, max: 1.2 }, // × DEFAULT_GAIT.baseFrequency
-  gaitStrideLenMul: { min: 0.7, max: 1.3 }, // × DEFAULT_GAIT.strideLength
+  // Widened from {0.7, 1.3} → {1.5, 2.5} so the co-located hips (Change B)
+  // produce a clearly visible forward/back foot splay (~6-10px post-jitter,
+  // vs ~3-5px before). The wider splay is what makes the legs visibly cross
+  // during the walk cycle. RNG draw type unchanged (still nextFloat → lerp);
+  // only the lerp endpoints moved.
+  gaitStrideLenMul: { min: 1.5, max: 2.5 }, // × DEFAULT_GAIT.strideLength
   gaitStrideHtMul: { min: 0.6, max: 1.4 }, // × DEFAULT_GAIT.strideHeight
   gaitHipBobMul: { min: 0.5, max: 1.5 }, // × DEFAULT_GAIT.hipBobHeight
   gaitHipSwayMul: { min: 0.5, max: 1.5 }, // × DEFAULT_GAIT.hipSwayWidth
@@ -132,6 +143,40 @@ export const HERO_RANGES = {
   breathFreqMul: { min: 0.8, max: 1.2 }, // × DEFAULT_BREATH.frequency
   breathAmpMul: { min: 0.7, max: 1.3 }, // × DEFAULT_BREATH.amplitude
 } as const;
+
+// ---------------------------------------------------------------------------
+// Antenna physics tuning — showcase-local stiffness correction
+// ---------------------------------------------------------------------------
+
+/**
+ * Antenna angular stiffness (showcase-local). After each `advanceSpringChain`
+ * step in `stepHero`, the showcase-local `stiffenAntenna` correction pulls
+ * every node toward straight-up from the node below it by this fraction of the
+ * deviation. The library's Verlet solver only enforces segment LENGTHS (PBD
+ * distance constraints — no preferred direction), so without this correction
+ * the chain whips freely under body motion: the "floppy scarf" read (issue #4).
+ *
+ * `0.7` = mostly rigid: the body of the antenna stays upright while the tip
+ * (furthest from the anchor, most cumulative freedom) lags and sways gently.
+ * Tunable; if the benchmarker reads it as too rigid (no life) or still too
+ * floppy, adjust here.
+ */
+const ANTENNA_STIFFNESS = 0.7;
+
+/**
+ * Antenna gravity scale (showcase-local). The library's `advanceSpringChain`
+ * applies `gravityY` during Verlet integration. Set to `0` because the
+ * `stiffenAntenna` correction now fully owns the vertical rest pose — the old
+ * negative (upward) gravity fought the stiffness correction during jump
+ * landings (gravity pushed the chain up while stiffness pulled it back to
+ * vertical, producing an up-float read). With zero gravity, the only sway is
+ * velocity transfer through the chain from anchor motion = gentle tip lag.
+ *
+ * The RNG draw for `springGravityMul` (seed-contract draw #13) is preserved in
+ * `deriveHeroConfig` and multiplied through, so this scale can be raised later
+ * (e.g. `0.1` for a tiny upward bias) without touching the 16-draw seed order.
+ */
+const ANTENNA_GRAVITY_SCALE = 0;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,6 +247,17 @@ export interface HeroFrameState {
    * backward-compat with the benchmark path that never passes `facing`.
    */
   facing: 1 | -1;
+  /**
+   * Eye count for the face: `1` = cyclops (the seed-canonical default, drawn
+   * as a single sclera centered on the body), `2` = two-eyed (two smaller
+   * sclerae at ±eyeSpacing). Showcase-only state — NOT seed-derived (the RNG
+   * consumption order in `deriveHeroConfig` is untouched); defaults to `1` so
+   * the benchmark path (`stepHero(frame, dt)` with no inputs) and any caller
+   * that never passes `eyeCount` get the original cyclops and byte-identical
+   * `hero-final-*.png` output. Persisted across ticks the same way `facing`
+   * is: omit `eyeCount` in `HeroInputs` to carry the previous value forward.
+   */
+  eyeCount: 1 | 2;
 }
 
 /**
@@ -237,6 +293,14 @@ export interface HeroInputs {
    * `+1` (face right) forever.
    */
   readonly facing?: 1 | -1;
+  /**
+   * Desired eye count this tick. `1` = cyclops (default), `2` = two-eyed. When
+   * provided, the returned state's `eyeCount` is set to it; when omitted, the
+   * previous `eyeCount` is carried forward (so toggling once persists until
+   * toggled again). The benchmark path omits it and stays at the initial `1`
+   * (cyclops) forever → `hero-final-*.png` stays byte-identical.
+   */
+  readonly eyeCount?: 1 | 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,9 +391,16 @@ export function deriveHeroConfig(seed: number): HeroConfig {
     // the multiplier draw and is self-documenting: the minus signals "this
     // is an upward antenna, not a hanging tail." The absolute magnitude
     // still scales with DEFAULT_SPRING.gravityY × the springGravityMul draw.
+    //
+    // ANTENNA_GRAVITY_SCALE (currently 0) zeroes this for the solver: the
+    // showcase-local `stiffenAntenna` correction owns the vertical rest pose,
+    // and the upward gravity fought it during landings. The RNG draw #13
+    // (springGravityMul) is still consumed here so the seed contract's 16-draw
+    // order is unchanged; raising ANTENNA_GRAVITY_SCALE re-activates it.
     gravityY:
       -Math.abs(DEFAULT_SPRING.gravityY) *
-      lerp(R.springGravityMul.min, R.springGravityMul.max, nextFloat(rng, 0, 1)),
+      lerp(R.springGravityMul.min, R.springGravityMul.max, nextFloat(rng, 0, 1)) *
+      ANTENNA_GRAVITY_SCALE,
     drag: lerp(R.springDrag.min, R.springDrag.max, nextFloat(rng, 0, 1)),
   };
 
@@ -394,7 +465,58 @@ export function createHeroFrameState(config: HeroConfig): HeroFrameState {
     jump: createJumpState(DEFAULT_JUMP),
     x: 0,
     facing: 1,
+    eyeCount: 1,
   };
+}
+
+/**
+ * Stiffen the antenna chain: pull every node toward straight-up from the node
+ * below it. The library's `advanceSpringChain` only enforces segment lengths
+ * (PBD distance constraints) — it has NO angular stiffness, so under body
+ * motion the chain whips freely and flops into the "scarf" read (issue #4).
+ * This showcase-local positional correction adds the missing preferred
+ * direction (vertical), so the antenna stays upright with only gentle tip sway.
+ *
+ * Operates in place on the array returned by `advanceSpringChain` (which is
+ * already a fresh deep copy — the input `state.antenna` is never mutated), so
+ * `stepHero`'s pure-progression-ops contract is preserved at its boundary.
+ *
+ * Both current AND prev positions move by the SAME delta so the implicit Verlet
+ * velocity `(curr - prev)` is preserved — otherwise the positional jump would
+ * read as a velocity spike and re-excite the whip on the next tick.
+ *
+ * Node 0 (the anchor, re-pinned by the solver each tick) is left untouched.
+ * The tip (last node) has the most freedom: each node only stiffens relative to
+ * the one directly below, so deflection accumulates toward the tip → the tip
+ * sways the most while the base stays rigidly vertical.
+ *
+ * @param nodes - fresh chain from `advanceSpringChain` (mutated + returned)
+ * @param segmentLength - rest distance between adjacent nodes
+ * @param stiffness - correction strength in [0,1]; higher = more rigid
+ * @returns the same array (mutated in place) for chaining
+ */
+function stiffenAntenna(
+  nodes: VerletNode[],
+  segmentLength: number,
+  stiffness: number,
+): VerletNode[] {
+  for (let i = 1; i < nodes.length; i++) {
+    const below = nodes[i - 1];
+    // Straight-up rest pose for this node, relative to the node below it.
+    const restX = below.x;
+    const restY = below.y - segmentLength;
+    const n = nodes[i];
+    const dx = (restX - n.x) * stiffness;
+    const dy = (restY - n.y) * stiffness;
+    // Move both current and prev by the same delta to preserve implicit Verlet
+    // velocity (otherwise the position jump reads as a velocity spike and the
+    // chain whips).
+    n.x += dx;
+    n.y += dy;
+    n.prevX += dx;
+    n.prevY += dy;
+  }
+  return nodes;
 }
 
 /**
@@ -430,6 +552,13 @@ export function createHeroFrameState(config: HeroConfig): HeroFrameState {
  * forward. The renderer mirrors the character horizontally when `facing === -1`.
  * The benchmark path (no inputs) stays at the initial `+1` forever.
  *
+ * **Eye count:** `inputs.eyeCount` (`1` cyclops / `2` two-eyed), when provided,
+ * sets the returned state's `eyeCount`; when omitted, the previous `eyeCount`
+ * is carried forward. The renderer draws one or two sclerae accordingly. The
+ * benchmark path (no inputs) stays at the initial `1` (cyclops) forever →
+ * `hero-final-*.png` stays byte-identical. `eyeCount` is showcase state, NOT
+ * seed-derived — the 16-draw RNG order in `deriveHeroConfig` is untouched.
+ *
  * Pure: returns a new `HeroFrameState`; the input is not mutated.
  *
  * @param state - current frame state
@@ -451,6 +580,13 @@ export function stepHero(
   // always passes a concrete `facing` so the character persists its last
   // direction while idle rather than snapping back to a default.
   const facing: 1 | -1 = inputs?.facing ?? state.facing;
+
+  // Eye count: same carry-forward pattern as `facing`. Defaults to the
+  // previous frame's value when omitted, so the benchmark path
+  // (`stepHero(frame, dt)` with no inputs) stays at the initial `1`
+  // (cyclops) forever → `hero-final-*.png` stays byte-identical. The
+  // showcase toggles it via `HeroInputs.eyeCount` and it persists.
+  const eyeCount: 1 | 2 = inputs?.eyeCount ?? state.eyeCount;
 
   // Grounded check from the current jump state (flat ground at y = 0). Always
   // computed internally — callers never pass isGrounded.
@@ -501,16 +637,22 @@ export function stepHero(
   // pinned to the body top throughout the jump arc + traversal.
   const jumpPose = evaluateJump(jump);
   const jumpLift = jumpPose.yOffset + DEFAULT_TUCK.hipRaise * jumpPose.airborneBlend;
-  const anchor = bodyTop(config, pose.hipOffset, jumpLift, x);
-  const antenna = advanceSpringChain(
+  // Antenna anchor tracks the SCALED body top (jump scale + landing drop) so
+  // the root stays connected to the body during the landing squat. See bodyTop.
+  const anchor = bodyTop(config, pose.hipOffset, jumpLift, x, jumpPose.scale.scaleY);
+  let antenna = advanceSpringChain(
     state.antenna,
     anchor.x,
     anchor.y,
     dt,
     config.springConfig,
   );
+  // Showcase-local angular stiffness so the antenna stays upright with gentle
+  // tip sway instead of flopping (issue #4). The library solver only enforces
+  // segment lengths; this correction adds the preferred (vertical) direction.
+  antenna = stiffenAntenna(antenna, config.antennaSegmentLength, ANTENNA_STIFFNESS);
 
-  return { config, locomotion, antenna, jump, x, facing };
+  return { config, locomotion, antenna, jump, x, facing, eyeCount };
 }
 
 /**
@@ -544,16 +686,31 @@ function bodyTopAtRest(config: HeroConfig): { x: number; y: number } {
  *  antenna root sits this tick). `jumpLift` is the vertical body displacement
  *  from the jump (yOffset + airborne hip raise); defaults to 0 (rest/walk).
  *  `xOffset` shifts the anchor horizontally for the walk-across traversal;
- *  defaults to 0 (rest / legacy walk-in-place path). */
+ *  defaults to 0 (rest / legacy walk-in-place path).
+ *
+ *  `jumpScaleY` (defaults to 1) mirrors `drawSlimeKnight`'s landing-squat
+ *  correction so the antenna anchor rides the SCALED body top during landing:
+ *  center-origin body scaling with `jumpScaleY < 1` pulls the visual body top
+ *  UP, which previously left the anchor floating ~26px above the squashed body.
+ *  Dropping the body center by the squashed height (`landingDrop`) and scaling
+ *  the half-height by `jumpScaleY` puts the anchor exactly at the drawn body
+ *  top — modulo the ±~1.5px breath residual, since breath is a function of
+ *  `tick` (computed at draw time) and the anchor here can only track the JUMP
+ *  scale. The `landingDrop` + `effectiveBodyCy` expressions intentionally
+ *  duplicate `drawSlimeKnight`'s; keep them in sync if either changes. */
 function bodyTop(
   config: HeroConfig,
   hipOffset: Readonly<{ x: number; y: number }>,
   jumpLift = 0,
   xOffset = 0,
+  jumpScaleY = 1,
 ): { x: number; y: number } {
+  const landingDrop = jumpScaleY < 1 ? (1 - jumpScaleY) * config.bodyHeight : 0;
+  const effectiveBodyCy =
+    heroCenterY(config) + hipOffset.y + jumpLift + landingDrop;
   return {
     x: HERO_CENTER_X + xOffset + hipOffset.x,
-    y: heroCenterY(config) + hipOffset.y + jumpLift - config.bodyHeight / 2,
+    y: effectiveBodyCy - (config.bodyHeight / 2) * jumpScaleY,
   };
 }
 
@@ -571,9 +728,25 @@ function bodyTop(
  *     the airborne hip raise. Feet lift by `yOffset` only (not the hip raise),
  *     so the legs compress into the tuck pose while airborne.
  *   - **Scale composition:** `breath × jumpPose.scale` (both volume-preserving,
- *     so the product is too). Applied to body + eye.
+ *     so the product is too). Computed UP FRONT so the hip Y can track the
+ *     scaled body bottom (Change A); applied to body + eye.
  *   - **Airborne tuck blend:** walk-cycle foot offsets blend toward
  *     `DEFAULT_TUCK.tuckOffset` by `jumpPose.airborneBlend` before IK.
+ *
+ * Side-view walk model (hero leg overhaul):
+ *   - **Hip-tracking (Change A):** `hipY = bodyCy + (bodyHeight/2) ·
+ *     composedScaleY`. The hip attaches to the SCALED body bottom, so breath
+ *     + jump scale visibly compress / extend the knees (idle breath → subtle
+ *     knee oscillation; launch stretch → knees bend; landing squash → knees
+ *     extend).
+ *   - **Co-located hips + crossing walk (Change B):** both hips sit at
+ *     `bodyCx` (side-view stance). The forward leg is drawn ON TOP of the back
+ *     leg so the shins cross properly; the draw order is decided by foot X
+ *     (facing-agnostic — the outer `ctx.scale(facing, 1)` mirror preserves
+ *     call order, so the on-top leg stays on-top after mirroring).
+ *   - **Forward foot (Change C):** the shoe is offset +X from the ankle so
+ *     the toe points forward (in un-mirrored code space); the facing mirror
+ *     flips it for `facing === -1`.
  *
  * Facing (`state.facing`): the character is drawn un-mirrored = facing RIGHT
  * (knees point right, the platformer convention) and mirrored horizontally
@@ -583,13 +756,21 @@ function bodyTop(
  *
  * @param ctx - target canvas 2D context (caller owns transform/state)
  * @param state - per-frame state (locomotion phase + antenna chain + jump +
- *   facing)
+ *   facing + eyeCount)
  * @param tick - current tick (drives the pure breath oscillator)
+ * @param look - optional gaze direction this frame, each component in
+ *   `[-1, 1]`. The pupil offsets toward this vector: `look.x` shifts it
+ *   forward/back (sign-corrected for the facing mirror — see `drawEye`),
+ *   `look.y` shifts it up (`<0`) or down (`>0`). When omitted (the benchmark
+ *   path), defaults to `{x: 0, y: 0}` so the cyclops pupil stays centered and
+ *   `hero-final-*.png` stays byte-identical. The showcase computes this each
+ *   tick from the walk direction + jump phase.
  */
 export function drawSlimeKnight(
   ctx: CanvasRenderingContext2D,
   state: HeroFrameState,
   tick: number,
+  look: { x: number; y: number } = { x: 0, y: 0 },
 ): void {
   const { config } = state;
   const palette = config.palette;
@@ -609,6 +790,26 @@ export function drawSlimeKnight(
     DEFAULT_TUCK,
   );
 
+  // Composed scale (Change A keystone): breath × jumpPose scale, computed UP
+  // FRONT so the hip Y can track the SCALED body bottom rather than the
+  // unscaled body center + bodyHeight/2. Both `breathe` and `evaluateJump` are
+  // pure readers; hoisting them above the hip math changes nothing about the
+  // scale values themselves (the body still uses `ctx.scale(sx, sy)` below) —
+  // it only makes the hip origin follow the visual body bottom as the body
+  // breathes / squashes / stretches. Geometric effect:
+  //   - idle breath (scaleY ≈ 1 ± 0.05): subtle hip Y oscillation → subtle
+  //     knee bend oscillation (the user-visible "knees breathing" effect);
+  //   - launch stretch (scaleY = 1.15): body bottom moves DOWN → hip drops →
+  //     hip-to-foot distance shrinks → knees bend more (legs tuck under);
+  //   - landing squash (scaleY dips to 0.7): center-origin scaling alone would
+  //     move the body bottom UP and extend the legs straight ("pancake on
+  //     stilts"); the landing-drop correction below translates the body center
+  //     DOWN so the hip drops and the knees bend — the proper squat read.
+  // This is center-origin scaling, so the bottom tracks `bodyCy + h/2 · scaleY`.
+  const breath = breathe(tick, config.breathConfig);
+  const composedScaleX = breath.scaleX * jumpPose.scale.scaleX;
+  const composedScaleY = breath.scaleY * jumpPose.scale.scaleY;
+
   // Body lift: jump yOffset (negative = up) + airborne hip raise (tuck).
   // Body center shifts by `state.x` for the walk-across traversal (wraps at
   // the canvas edges in `stepHero`); everything below derives from `bodyCx`.
@@ -616,14 +817,34 @@ export function drawSlimeKnight(
   const bodyCx = HERO_CENTER_X + state.x + pose.hipOffset.x;
   const bodyCy = heroCenterY(config) + pose.hipOffset.y + jumpLift;
 
-  // Feet: x swings forward/back, y is a LIFT height (subtract from ground line).
-  // Add jumpPose.yOffset so the feet lift WITH the body while airborne (the hip
-  // rises by jumpLift which includes hipRaise, the feet only by yOffset → tuck).
-  const gY = HERO_GROUND_Y;
-  const hipY = bodyCy + config.bodyHeight / 2;
-  const hipLeftX = bodyCx - config.bodyWidth * 0.22;
-  const hipRightX = bodyCx + config.bodyWidth * 0.22;
+  // Landing squat correction. Center-origin body scaling pulls the hip UP on
+  // jump-induced squash (composedScaleY < 1), which extends the legs straight
+  // toward the planted feet — a "pancake on stilts" read instead of a squat.
+  // Drop the body center by the squashed height so the hip moves DOWN (knees
+  // bend via solveLimb) and the head comes down (deep squat read). Gated on
+  // the JUMP scale only (not breath): landingDrop = 0 whenever jumpScaleY >= 1,
+  // so idle breath keeps its center-origin behavior exactly and the GREENLIT
+  // idle knee oscillation is unchanged.
+  const jumpScaleY = jumpPose.scale.scaleY;
+  const landingDrop = jumpScaleY < 1 ? (1 - jumpScaleY) * config.bodyHeight : 0;
+  const effectiveBodyCy = bodyCy + landingDrop;
 
+  // Hips — co-located at the body center X (Change B). With both hips on the
+  // same vertical axis (side-view stance), the foot offsets swing the feet
+  // forward/back past each other so the legs visibly cross during the walk
+  // cycle. Zero X parallax keeps the silhouette cleanest; a ±1-2px depth
+  // parallax would also work but adds visual noise without aiding the read.
+  // The hip Y tracks the SCALED body bottom (Change A) — NOT the unscaled
+  // `bodyCy + bodyHeight/2` — so breath + jump scale move the hip origin.
+  const hipY = effectiveBodyCy + (config.bodyHeight / 2) * composedScaleY;
+  const hipLeftX = bodyCx;
+  const hipRightX = bodyCx;
+
+  // Feet: x swings forward/back from the co-located hip; y is a LIFT height
+  // (subtract from ground line). Add jumpPose.yOffset so the feet lift WITH
+  // the body while airborne (the hip rises by jumpLift which includes
+  // hipRaise, the feet only by yOffset → tuck).
+  const gY = HERO_GROUND_Y;
   const leftFoot = {
     x: hipLeftX + leftFootOffset.x,
     y: gY - leftFootOffset.y + jumpPose.yOffset,
@@ -636,10 +857,7 @@ export function drawSlimeKnight(
   // Mirror the character around its walk-offset axis when facing left. The
   // background + shadow are painted separately by the section BEFORE this
   // function is called and must NOT mirror, so this transform wraps ONLY the
-  // character geometry below. Mirroring around `charCx = HERO_CENTER_X +
-  // state.x` flips the hip sway, leg stance, knee direction, and antenna sway
-  // consistently; the symmetric body + centered cyclops eye + symmetric
-  // antenna stay visually put. `facing === +1` is a no-op (scale 1);
+  // character geometry below. `facing === +1` is a no-op (scale 1);
   // `facing === -1` mirrors horizontally around the body center.
   const charCx = HERO_CENTER_X + state.x;
   ctx.save();
@@ -647,27 +865,44 @@ export function drawSlimeKnight(
   ctx.scale(state.facing, 1);
   ctx.translate(-charCx, 0);
 
-  // 1. Legs (drawn first so the body overlaps the hip joints).
-  //    bendDir = -1 puts the knee on the +X side of the hip→foot line: for a
-  //    vertical leg the perpendicular is `v = (-uy·bendDir, ux·bendDir) =
-  //    (+1, 0)`, so the knee points RIGHT — the platformer convention (un-
-  //    mirrored = facing right). When the caller mirrors with facing = -1 the
-  //    whole leg (knee included) flips visually to point LEFT, correct for
-  //    leftward motion. The foot-swing offsets from evaluateLocomotion are
-  //    unchanged: they set which foot leads at a given phase, NOT the facing.
-  drawLimb(ctx, { x: hipLeftX, y: hipY }, leftFoot, config.boneLengths.thigh,
-    config.boneLengths.shin, -1, palette);
-  drawLimb(ctx, { x: hipRightX, y: hipY }, rightFoot, config.boneLengths.thigh,
-    config.boneLengths.shin, -1, palette);
+  // 1. Legs in DEPTH ORDER (Change B). The forward leg — the one whose foot
+  //    is at greater +X in un-mirrored code space — is drawn LAST so its shin
+  //    crosses ON TOP of the back leg's shin: the proper side-view walk-cycle
+  //    crossing. The swap is decided purely by foot X (NOT by facing) and
+  //    happens at the crossing tick where `leftFoot.x === rightFoot.x` and the
+  //    two legs overlap perfectly → invisible swap.
+  //
+  //    Facing-agnostic: `ctx.scale(facing, 1)` mirrors X coordinates but does
+  //    NOT change the order in which `drawLimb` is called, so whichever leg is
+  //    drawn on top stays on top after the mirror. For `facing === -1` the
+  //    +X-forward leg in code space becomes the -X-forward (screen-left) leg
+  //    in screen space — still drawn on top, still correct. The `bendDir = -1`
+  //    on both legs puts both knees on the +X side (un-mirrored = pointing
+  //    right = forward for facing-right); the mirror flips them to -X
+  //    (pointing left = forward for facing-left) automatically.
+  const leftForward = leftFoot.x >= rightFoot.x;
+  const leftHip = { x: hipLeftX, y: hipY };
+  const rightHip = { x: hipRightX, y: hipY };
+  if (leftForward) {
+    drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
+      config.boneLengths.shin, -1, palette);
+    drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
+      config.boneLengths.shin, -1, palette);
+  } else {
+    drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
+      config.boneLengths.shin, -1, palette);
+    drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
+      config.boneLengths.shin, -1, palette);
+  }
 
   // 2. Body — rounded squircle (flat fill + chunky outline pass) + composed
   //    scale (breath × jumpScale; both volume-preserving → product is too).
-  const breath = breathe(tick, config.breathConfig);
-  const sx = breath.scaleX * jumpPose.scale.scaleX;
-  const sy = breath.scaleY * jumpPose.scale.scaleY;
+  //    `composedScaleX/Y` were hoisted above the hip math (Change A) — same
+  //    values as before, just reused so the hip origin and the drawn body
+  //    agree on the same scale.
   ctx.save();
-  ctx.translate(bodyCx, bodyCy);
-  ctx.scale(sx, sy);
+  ctx.translate(bodyCx, effectiveBodyCy);
+  ctx.scale(composedScaleX, composedScaleY);
   drawBody(ctx, config, palette);
   ctx.restore();
 
@@ -676,11 +911,13 @@ export function drawSlimeKnight(
   drawAntenna(ctx, state.antenna, palette);
 
   // 4. Eye — drawn AFTER the body so it sits on top. Recompute the composed
-  //    body transform so the eye tracks the breathing + squashed body.
+  //    body transform so the eye tracks the breathing + squashed body. The
+  //    `look` vector (gaze direction) offsets the pupil toward the travel
+  //    direction; `eyeCount` selects cyclops (1) vs two-eyed (2).
   ctx.save();
-  ctx.translate(bodyCx, bodyCy);
-  ctx.scale(sx, sy);
-  drawEye(ctx, config, palette);
+  ctx.translate(bodyCx, effectiveBodyCy);
+  ctx.scale(composedScaleX, composedScaleY);
+  drawEye(ctx, config, palette, state.eyeCount, look);
   ctx.restore();
 
   // Close the facing-mirror transform (matches the save above).
@@ -722,40 +959,125 @@ function drawBody(
 }
 
 /**
- * Cyclops eye: feature-colored sclera + outline pupil + white highlight.
- * Sits slightly above the body center (matching the in-game-shapes look).
+ * Eye rendering: cyclops (1 sclera) or two-eyed (2 smaller sclerae). The pupil
+ * offsets toward the `look` gaze vector so the eye tracks the travel direction.
  *
- * Centered on the current transform origin (the body center).
+ * **Pupil offset (mirror-sign corrected).** This function runs INSIDE the
+ * body-local transform, which itself runs INSIDE `drawSlimeKnight`'s facing
+ * mirror (`ctx.scale(state.facing, 1)`). To make the pupil look FORWARD (the
+ * walk direction) on screen, the local-space pupil offset must come out as
+ * "forward" AFTER the mirror. Trace it for a left-walking hero
+ * (`look.x = -1`, `facing = -1`): if we naively offset by `look.x · reach` in
+ * local X we get local `-X`, which the `facing = -1` mirror maps to screen
+ * `+X` (RIGHT) — backwards. The fix: offset by `Math.abs(look.x) · reach` in
+ * local `+X` always. Then:
+ *   - walking right (`look.x = +1`, `facing = +1`): local `+X` → screen `+X` (right). ✓
+ *   - walking left  (`look.x = -1`, `facing = -1`): local `+X` → screen `-X` (left).  ✓
+ *   - idle facing right (`look.x = +1`, `facing = +1`): screen right. ✓
+ *   - idle facing left  (`look.x = -1`, `facing = -1`): screen left.  ✓
+ * `look.x ∈ [-1, 1]` so `abs` scales continuously (a future mouse-look could
+ * feed fractional values); today the showcase only passes `0`, `+1`, or `-1`.
+ *
+ * The Y axis is NOT mirrored (only X is), so `look.y` maps straight through:
+ * negative = up (rising), positive = down (falling).
+ *
+ * When `look = {0, 0}` (the benchmark path) every offset is `0` → the cyclops
+ * pupil + highlight land exactly where the pre-look version drew them →
+ * `hero-final-*.png` stays byte-identical.
+ *
+ * **Two-eyed mode (`eyeCount === 2`).** Two sclerae at `±eyeSpacing`
+ * (`≈ bodyWidth · 0.18`), each radius `eyeRadius · 0.7` so both fit on the
+ * face with a small gap between them and well inside the body silhouette.
+ * Both pupils track the SAME `look` vector (the eyes verge together toward
+ * the gaze target). Highlights are placed on the upper-LEFT of each pupil in
+ * local space — the same convention as the cyclops — so the highlight language
+ * stays consistent across modes (after the facing mirror both highlights flip
+ * to upper-right together when facing left; they remain a symmetric pair).
+ *
+ * @param ctx - target canvas 2D context (caller owns the body-local transform)
+ * @param config - hero config (supplies eyeRadius, bodyWidth, bodyHeight)
+ * @param palette - color palette (feature sclera, outline pupil, white highlight)
+ * @param eyeCount - `1` = cyclops, `2` = two-eyed
+ * @param look - gaze vector this frame, each component in `[-1, 1]`
  */
 function drawEye(
   ctx: CanvasRenderingContext2D,
   config: HeroConfig,
   palette: Palette,
+  eyeCount: 1 | 2,
+  look: { x: number; y: number },
 ): void {
-  const eyeCx = 0;
   const eyeCy = -config.bodyHeight * 0.12;
-  const r = config.eyeRadius;
 
+  if (eyeCount === 1) {
+    // Cyclops — single full-size sclera centered on the body midline.
+    drawSingleEye(ctx, 0, eyeCy, config.eyeRadius, look, palette);
+    return;
+  }
+
+  // Two-eyed — two smaller sclerae symmetric about the body midline. Spacing
+  // and shrink factor chosen so both eyes fit comfortably inside the body
+  // silhouette with a small gap between them (see JSDoc for the range math).
+  const eyeSpacing = config.bodyWidth * 0.18;
+  const scleraR = config.eyeRadius * 0.7;
+  drawSingleEye(ctx, -eyeSpacing, eyeCy, scleraR, look, palette);
+  drawSingleEye(ctx, +eyeSpacing, eyeCy, scleraR, look, palette);
+}
+
+/**
+ * Draw one sclera + pupil + highlight at a given local center. Shared by the
+ * cyclops and two-eyed paths so the sclera/pupil/highlight code is written
+ * once. The pupil offsets toward `look` (mirror-sign corrected — see
+ * `drawEye`'s JSDoc) and the white highlight tracks the pupil's offset
+ * position (upper-left of the pupil in local space).
+ *
+ * @param ctx - target canvas 2D context (caller owns the transform)
+ * @param cx - sclera center X in body-local space
+ * @param cy - sclera center Y in body-local space
+ * @param scleraR - sclera radius in canvas px (pupil + highlight derive from it)
+ * @param look - gaze vector this frame, each component in `[-1, 1]`
+ * @param palette - color palette
+ */
+function drawSingleEye(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  scleraR: number,
+  look: { x: number; y: number },
+  palette: Palette,
+): void {
   // Sclera — feature color, chunky outline.
   ctx.beginPath();
-  ctx.arc(eyeCx, eyeCy, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy, scleraR, 0, Math.PI * 2);
   ctx.fillStyle = palette.feature;
   ctx.fill();
   ctx.strokeStyle = palette.outline;
   ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
   ctx.stroke();
 
-  // Pupil — outline color, sized to read as a single confident gaze.
-  const pupilR = r * 0.42;
+  // Pupil — outline color, offset toward the gaze vector. `pupilReach` is the
+  // max safe travel: sclera radius minus pupil radius ≈ scleraR · (1 - 0.42) =
+  // scleraR · 0.58; 0.4 leaves a comfortable margin so the pupil never kisses
+  // the sclera edge.
+  const pupilR = scleraR * 0.42;
+  const pupilReach = scleraR * 0.4;
+  const pupilCx = cx + Math.abs(look.x) * pupilReach;
+  const pupilCy = cy + look.y * pupilReach;
   ctx.beginPath();
-  ctx.arc(eyeCx, eyeCy, pupilR, 0, Math.PI * 2);
+  ctx.arc(pupilCx, pupilCy, pupilR, 0, Math.PI * 2);
   ctx.fillStyle = palette.outline;
   ctx.fill();
 
-  // Highlight — tiny white dot, upper-left of the pupil. The spark of life.
+  // Highlight — tiny white dot, upper-left of the pupil's offset position.
+  // Tracks the pupil so the "spark of life" stays glued to the gaze.
   ctx.beginPath();
-  ctx.arc(eyeCx - pupilR * 0.45, eyeCy - pupilR * 0.45, Math.max(1, pupilR * 0.35),
-    0, Math.PI * 2);
+  ctx.arc(
+    pupilCx - pupilR * 0.45,
+    pupilCy - pupilR * 0.45,
+    Math.max(1, pupilR * 0.35),
+    0,
+    Math.PI * 2,
+  );
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 }
@@ -795,14 +1117,28 @@ function drawLimb(
   ctx.lineWidth = 14;
   strokePolyline(ctx, [hip, knee, ankle]);
 
-  // Foot — a rounded-rect shoe at the ankle, accent fill + outline. Sized to
-  // read proportionally against the thicker leg (18×10 vs the old 14×8).
+  // Foot — rounded-rect shoe placed FORWARD of the ankle (Change C). The
+  // shoe's center is offset +X from the ankle by `shoeForward ≈ 0.4 · shoeW`,
+  // so the ankle sits just behind the shoe's midpoint (heel-side) and the toe
+  // extends forward. In un-mirrored code space +X is "forward" for facing-right
+  // (the platformer default); the outer `ctx.scale(facing, 1)` mirror in
+  // `drawSlimeKnight` flips +X to -X for `facing === -1`, so the toe
+  // automatically points in the facing direction — no per-facing branch
+  // needed here, and the same call works for both facings.
+  //
+  // The 0.4 ratio is a magic number local to this renderer (consistent with
+  // the existing `shoeW = 18` / `shoeH = 10` locals). It places the ankle
+  // near the heel so the shoe reads as a forward-pointing foot rather than
+  // the previous stub-behind-ankle silhouette.
   const shoeW = 18;
   const shoeH = 10;
+  const shoeForward = shoeW * 0.4;
+  const shoeCx = ankle.x + shoeForward;
+  const shoeCy = ankle.y;
   ctx.fillStyle = palette.accent;
   ctx.strokeStyle = palette.outline;
   ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
-  roundRectPath(ctx, ankle.x - shoeW * 0.65, ankle.y - shoeH / 2, shoeW, shoeH, 3);
+  roundRectPath(ctx, shoeCx - shoeW / 2, shoeCy - shoeH / 2, shoeW, shoeH, 3);
   ctx.fill();
   ctx.stroke();
 }
