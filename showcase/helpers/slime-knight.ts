@@ -66,8 +66,13 @@ const HERO_CENTER_X = HERO_CANVAS_SIZE / 2;
  * seed so the shadow and ground line (drawn by the section) never drift from
  * where the feet actually land. Exported so `sections/hero.ts` draws the
  * ground line + shadow at exactly this Y.
+ *
+ * Ratio 0.88 (raised from 0.82 per user feedback "feet a little lower"): the
+ * feet plant ~20px lower on the 320px canvas, and since `heroCenterY(config)`
+ * is derived from `HERO_GROUND_Y`, the body / head / antenna move down
+ * together so the whole character sits lower in the frame.
  */
-export const HERO_GROUND_Y = HERO_CANVAS_SIZE * 0.82;
+export const HERO_GROUND_Y = HERO_CANVAS_SIZE * 0.88;
 
 /**
  * Body center Y for a given config, derived FROM the ground line so the
@@ -204,9 +209,15 @@ const ANTENNA_TIP_STIFFNESS = 0.22;
  * directions — NO facing-aware logic inside the physics.
  *
  * The rest vector per segment is { x: seg * lean, y: -sqrt(seg² - (seg*lean)²) },
- * i.e. a unit segment rotated forward by atan(lean). 0.22 ≈ 12.4° forward.
+ * i.e. a unit segment rotated forward by atan(lean). 0.32 ≈ 17.7° forward
+ * (raised from 0.22 / ~12.4° per user feedback "point a little further
+ * forward"). Feeds `applyAntennaRestPose`'s per-segment rest vector AND
+ * `createHeroFrameState`'s initial chain layout (both read this constant, so
+ * one change updates both). The bend constraint (`applyAntennaBendConstraints`)
+ * is unaffected — it uses `2 * segmentLength` (straight-rod rest length)
+ * independently of the lean.
  */
-const ANTENNA_FORWARD_LEAN_X = 0.22;
+const ANTENNA_FORWARD_LEAN_X = 0.32;
 
 /**
  * Antenna tip weight (showcase-local). A positional downward nudge applied
@@ -267,18 +278,21 @@ const ANTENNA_GRAVITY_SCALE = 0;
  *
  * Raised from the prototype's 0.6 after the benchmarker found 0.6 too weak
  * (the bend correction was overwhelmed by velocity transfer during jump
- * landings). 0.9 gives visible smooth-rod resistance without freezing the
- * chain rigid. Tunable.
+ * landings). 0.9 gave visible smooth-rod resistance without freezing the
+ * chain rigid; bumped again to 0.95 per user feedback ("still be a bit
+ * stiffer") alongside the matching tip raise. Tunable.
  */
-const ANTENNA_BEND_STIFFNESS_BASE = 0.9;
+const ANTENNA_BEND_STIFFNESS_BASE = 0.95;
 
 /**
  * Antenna bend stiffness — tip joint (furthest from the anchor, where the
  * ball sits). Lower than the base so the tip has more freedom to bend under
  * the ball's weight — the rod bends most near the load, not at the root.
- * Tapered linearly from the base value across the i-to-i+2 pairs.
+ * Tapered linearly from the base value across the i-to-i+2 pairs. Raised
+ * from 0.65 → 0.75 per user feedback ("still be a bit stiffer"); the base>
+ * tip ordering is preserved.
  */
-const ANTENNA_BEND_STIFFNESS_TIP = 0.65;
+const ANTENNA_BEND_STIFFNESS_TIP = 0.75;
 
 // ---------------------------------------------------------------------------
 // Types
