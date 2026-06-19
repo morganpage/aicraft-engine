@@ -244,6 +244,43 @@ const ANTENNA_TIP_WEIGHT = 0.12;
 const ANTENNA_GRAVITY_SCALE = 0;
 
 // ---------------------------------------------------------------------------
+// Antenna bend resistance — showcase-local Provot next-nearest-neighbor springs
+// ---------------------------------------------------------------------------
+//
+// Target read: "ball on the end of a springy, bendy metal ROD," not a rope or
+// chain. The library solver only enforces ADJACENT-node distances (free-hinge
+// joints), so under violent anchor motion (jump landings) the chain can buckle
+// and kink — the "rope/chain" read the user flagged. The Provot bend constraint
+// adds distance constraints between NEXT-NEAREST neighbors (i, i+2) with rest
+// length 2·segmentLength (the straight-rod distance). This resists bending so
+// the chain reads as a bendy solid rod. COEXISTS with `applyAntennaRestPose`:
+// the bend springs own inter-segment smoothness (anti-buckling); the absolute
+// forward-lean spring owns world-space orientation. Both run every tick (see
+// `applyAntennaBendConstraints`).
+
+/**
+ * Antenna bend stiffness — base joint (closest to the body anchor). The
+ * showcase-local Provot bend constraint (applyAntennaBendConstraints) pulls
+ * each i-to-i+2 node pair toward its straight-rod rest distance; the base
+ * joint gets this stiffness, the tip joint gets ANTENNA_BEND_STIFFNESS_TIP,
+ * linearly tapered between. Higher = more rod-like resistance to buckling.
+ *
+ * Raised from the prototype's 0.6 after the benchmarker found 0.6 too weak
+ * (the bend correction was overwhelmed by velocity transfer during jump
+ * landings). 0.9 gives visible smooth-rod resistance without freezing the
+ * chain rigid. Tunable.
+ */
+const ANTENNA_BEND_STIFFNESS_BASE = 0.9;
+
+/**
+ * Antenna bend stiffness — tip joint (furthest from the anchor, where the
+ * ball sits). Lower than the base so the tip has more freedom to bend under
+ * the ball's weight — the rod bends most near the load, not at the root.
+ * Tapered linearly from the base value across the i-to-i+2 pairs.
+ */
+const ANTENNA_BEND_STIFFNESS_TIP = 0.65;
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -552,6 +589,79 @@ export function createHeroFrameState(config: HeroConfig): HeroFrameState {
 }
 
 /**
+ * Apply Provot next-nearest-neighbor bend springs to the antenna chain.
+ *
+ * For each node pair (i, i+2), a distance constraint with rest length
+ * 2*segmentLength (the straight-rod distance) resists bending. This prevents
+ * the chain from buckling or kinking under violent anchor motion (jump
+ * landings) — the "rope/chain" read the user flagged. COEXISTS with
+ * applyAntennaRestPose: the bend springs own inter-segment smoothness
+ * (anti-buckling); the absolute forward-lean spring owns world-space
+ * orientation. Pipeline in stepHero:
+ *
+ *   advanceSpringChain → applyAntennaBendConstraints → applyAntennaRestPose → applyAntennaTipWeight
+ *
+ * Root handling: when i === 0, node 0 (the pinned root) is immovable and
+ * node 2 takes the full correction — mirrors the distance constraint's i===1
+ * special case in spring.ts. For i > 0, the correction splits 50/50.
+ *
+ * Tapered stiffness: pair i=0 (base) → ANTENNA_BEND_STIFFNESS_BASE, last pair
+ * (tip) → ANTENNA_BEND_STIFFNESS_TIP, linear between.
+ *
+ * Operates in place on the fresh chain from advanceSpringChain (already a deep
+ * copy — state.antenna is never mutated). Moves curr AND prev by the same
+ * delta to preserve implicit Verlet velocity (same discipline as
+ * applyAntennaRestPose / applyAntennaTipWeight).
+ *
+ * @param nodes - fresh chain from advanceSpringChain (mutated + returned)
+ * @param segmentLength - rest distance between adjacent nodes
+ * @returns the same array (mutated in place) for chaining
+ */
+export function applyAntennaBendConstraints(
+  nodes: VerletNode[],
+  segmentLength: number,
+): VerletNode[] {
+  const restLen = 2 * segmentLength;
+  const pairs = nodes.length - 2; // i ranges 0..n-3
+  for (let i = 0; i < pairs; i++) {
+    const a = nodes[i];
+    const b = nodes[i + 2];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d === 0) continue;
+    const diff = restLen - d;
+    const ox = (dx / d) * diff;
+    const oy = (dy / d) * diff;
+    // Tapered stiffness: pair i=0 (base) → BASE, pair i=pairs-1 (tip) → TIP.
+    const t = pairs > 1 ? i / (pairs - 1) : 0;
+    const stiff =
+      ANTENNA_BEND_STIFFNESS_BASE +
+      (ANTENNA_BEND_STIFFNESS_TIP - ANTENNA_BEND_STIFFNESS_BASE) * t;
+    const corrx = ox * stiff;
+    const corry = oy * stiff;
+    if (i === 0) {
+      // Root (node 0) immovable; node 2 takes full correction.
+      b.x += corrx;
+      b.y += corry;
+      b.prevX += corrx;
+      b.prevY += corry;
+    } else {
+      // Split 50/50 — move curr AND prev together (velocity preservation).
+      a.x -= corrx * 0.5;
+      a.y -= corry * 0.5;
+      a.prevX -= corrx * 0.5;
+      a.prevY -= corry * 0.5;
+      b.x += corrx * 0.5;
+      b.y += corry * 0.5;
+      b.prevX += corrx * 0.5;
+      b.prevY += corry * 0.5;
+    }
+  }
+  return nodes;
+}
+
+/**
  * Apply the antenna's directional spring: pull every node toward a forward-
  * tilted rest pose (per-segment vector rotated ANTENNA_FORWARD_LEAN_X forward
  * from vertical), with tapered stiffness (base-stiffer-than-tip). Replaces the
@@ -575,7 +685,7 @@ export function createHeroFrameState(config: HeroConfig): HeroFrameState {
  * @param segmentLength - rest distance between adjacent nodes
  * @returns the same array (mutated in place) for chaining
  */
-function applyAntennaRestPose(
+export function applyAntennaRestPose(
   nodes: VerletNode[],
   segmentLength: number,
 ): VerletNode[] {
@@ -621,7 +731,7 @@ function applyAntennaRestPose(
  * @param nodes - fresh chain (mutated + returned)
  * @returns the same array (mutated in place) for chaining
  */
-function applyAntennaTipWeight(nodes: VerletNode[]): VerletNode[] {
+export function applyAntennaTipWeight(nodes: VerletNode[]): VerletNode[] {
   const last = nodes.length - 1;
   if (last < 1) return nodes;
   for (let i = 1; i < nodes.length; i++) {
@@ -778,14 +888,18 @@ export function stepHero(
     dt,
     config.springConfig,
   );
-  // Showcase-local antenna dynamics composed on top of the library solver.
-  // The solver only enforces segment lengths (no preferred direction); these
-  // two passes own (1) the forward-tilted springy rest pose and (2) the ball's
-  // weight bending the rod. Both preserve Verlet velocity (curr+prev move
-  // together) so they don't re-excite the whip. Order matters: rest pose first
-  // sets the orientation, then tip-weight sags the ball — reverse order would
-  // have the stiffness un-do the sag.
+  // Showcase-local bend resistance (Provot next-nearest-neighbor springs):
+  // enforces inter-segment smoothness so the chain reads as a bendy solid rod,
+  // not a rope/chain that buckles under jump landings. COEXISTS with
+  // applyAntennaRestPose below (bend = smoothness, rest-pose = forward lean).
+  antenna = applyAntennaBendConstraints(antenna, config.antennaSegmentLength);
+  // Showcase-local angular stiffness so the antenna stays upright with gentle
+  // tip sway instead of flopping (issue #4). The library solver only enforces
+  // segment lengths; this correction adds the preferred (vertical) direction.
   antenna = applyAntennaRestPose(antenna, config.antennaSegmentLength);
+  // Showcase-local tip weight so the ball's mass bends the rod (sag
+  // concentrates at the tip). Applied last so the stiffness corrections set
+  // the orientation first; reverse order would have stiffness un-do the sag.
   antenna = applyAntennaTipWeight(antenna);
 
   return { config, locomotion, antenna, jump, x, facing, eyeCount };
@@ -1288,9 +1402,13 @@ function drawLimb(
 }
 
 /**
- * Antenna: stroke a chunky outline + accent core through the Verlet chain,
- * then cap the tip with a small accent ball. The root node is the body-top
- * anchor (drawn as part of the line, not separately).
+ * Antenna: stroke a chunky outline + accent core through the Verlet chain as a
+ * C1-smooth midpoint Bezier curve (`strokeBezier` via `quadraticCurveTo`), then
+ * cap the tip with a small accent ball. The root node is the body-top anchor
+ * (drawn as part of the line, not separately). The Bezier curve gives C1 visual
+ * continuity so the antenna reads as a smooth rod even where the underlying
+ * nodes have slight angular changes — complementing the bend-constraint physics
+ * (a slightly-kinked chain still renders as a smooth curve).
  */
 function drawAntenna(
   ctx: CanvasRenderingContext2D,
@@ -1304,12 +1422,12 @@ function drawAntenna(
   ctx.lineJoin = 'round';
   ctx.strokeStyle = palette.outline;
   ctx.lineWidth = 5;
-  strokeVerlet(ctx, nodes);
+  strokeBezier(ctx, nodes);
 
   // Core (narrower, on top).
   ctx.strokeStyle = palette.accent;
   ctx.lineWidth = 2;
-  strokeVerlet(ctx, nodes);
+  strokeBezier(ctx, nodes);
 
   // Tip ball.
   const tip = nodes[nodes.length - 1];
@@ -1340,13 +1458,38 @@ function strokePolyline(
 }
 
 /** Stroke a polyline through Verlet node positions with the current ctx style. */
-function strokeVerlet(
+export function strokeVerlet(
   ctx: CanvasRenderingContext2D,
   nodes: readonly VerletNode[],
 ): void {
   ctx.beginPath();
   ctx.moveTo(nodes[0].x, nodes[0].y);
   for (let i = 1; i < nodes.length; i++) ctx.lineTo(nodes[i].x, nodes[i].y);
+  ctx.stroke();
+}
+
+/**
+ * Stroke a smooth C1 curve through Verlet nodes using midpoint Bezier
+ * (`quadraticCurveTo`). The control point is the physics node; the on-curve
+ * point is the midpoint between adjacent nodes. First and last nodes are
+ * on-curve endpoints. Native Canvas2D — zero allocations, deterministic.
+ *
+ * Complementary to the bend-constraint physics: even a slightly-kinked
+ * underlying chain renders as a smooth curve, compounding the rod read.
+ */
+function strokeBezier(
+  ctx: CanvasRenderingContext2D,
+  nodes: readonly VerletNode[],
+): void {
+  if (nodes.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(nodes[0].x, nodes[0].y);
+  for (let i = 1; i < nodes.length - 1; i++) {
+    const xc = (nodes[i].x + nodes[i + 1].x) / 2;
+    const yc = (nodes[i].y + nodes[i + 1].y) / 2;
+    ctx.quadraticCurveTo(nodes[i].x, nodes[i].y, xc, yc);
+  }
+  ctx.lineTo(nodes[nodes.length - 1].x, nodes[nodes.length - 1].y);
   ctx.stroke();
 }
 

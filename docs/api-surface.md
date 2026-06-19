@@ -211,6 +211,7 @@ Verlet-PBD spring chains for secondary dynamics (hair, tails, cloaks).
 - _determinism contract: caller MUST use fixed `dt` (see proposal §Fixed-Timestep)_
 - _research note: `docs/research/procedural-locomotion.md` §Pattern 3_
 - _proposed in: `docs/design/procedural-motion-proposal.md`_
+- _elastic rod bending resistance investigated (Provot bend springs vs angular PBD): showcase-local for v1, L2 library export deferred until a second consumer arrives. See `docs/design/elastic-rod-antenna-decision.md`._
 
 ### `src/animation/jump.ts`
 
