@@ -129,13 +129,17 @@ export const HERO_RANGES = {
   antennaSegments: { base: 3, jitter: 3 }, // [3, 6]
   antennaSegmentLength: { base: 9, jitter: 5 }, // [9, 14]
   gaitFrequencyMul: { min: 0.8, max: 1.2 }, // × DEFAULT_GAIT.baseFrequency
-  // Widened from {0.7, 1.3} → {1.5, 2.5} so the co-located hips (Change B)
-  // produce a clearly visible forward/back foot splay (~6-10px post-jitter,
-  // vs ~3-5px before). The wider splay is what makes the legs visibly cross
-  // during the walk cycle. RNG draw type unchanged (still nextFloat → lerp);
-  // only the lerp endpoints moved.
-  gaitStrideLenMul: { min: 1.5, max: 2.5 }, // × DEFAULT_GAIT.strideLength
-  gaitStrideHtMul: { min: 0.6, max: 1.4 }, // × DEFAULT_GAIT.strideHeight
+  // Bigger steps: {1.5, 2.5} → {3.0, 4.5} so feet swing further forward/back
+  // (post-jitter stride DEFAULT_GAIT.strideLength(4) × [3.0, 4.5] = 12-18px,
+  // vs 6-10px before — a clearly bigger step, still well within the ~70-90px
+  // body width). The wider splay is what makes the legs visibly cross during
+  // the walk cycle. RNG draw type unchanged (still nextFloat → lerp); only
+  // the lerp endpoints moved.
+  gaitStrideLenMul: { min: 3.0, max: 4.5 }, // × DEFAULT_GAIT.strideLength
+  // Proportional lift bump: {0.6, 1.4} → {1.5, 2.5} so bigger strides read as
+  // real steps (post-jitter lift DEFAULT_GAIT.strideHeight(3) × [1.5, 2.5] =
+  // 4.5-7.5px), not flat shuffling feet.
+  gaitStrideHtMul: { min: 1.5, max: 2.5 }, // × DEFAULT_GAIT.strideHeight
   gaitHipBobMul: { min: 0.5, max: 1.5 }, // × DEFAULT_GAIT.hipBobHeight
   gaitHipSwayMul: { min: 0.5, max: 1.5 }, // × DEFAULT_GAIT.hipSwayWidth
   springGravityMul: { min: 0.8, max: 1.2 }, // × DEFAULT_SPRING.gravityY
@@ -907,8 +911,23 @@ export function drawSlimeKnight(
   ctx.restore();
 
   // 3. Antenna — Verlet chain already advanced in stepHero (anchor tracks the
-  //    jump lift). Stroke through nodes.
-  drawAntenna(ctx, state.antenna, palette);
+  //    jump lift). Re-pin node 0 to the COMPOSED-SCALE body top at draw time so
+  //    the base tracks breath + jump + landing exactly like the hips track the
+  //    body bottom. The solver in stepHero runs with its jump-scale anchor only
+  //    (breath is a function of `tick` and unavailable there) → the visual base
+  //    was ~±1.5px off the body top during breath, reading as "not attached."
+  //    This is a DRAW-LOCAL copy (`state.antenna` is never mutated — the draw
+  //    stays a pure read of state). The solver still owns the physics; only the
+  //    visual base position is corrected. Mirrors the hip Y formula (hip uses
+  //    +bodyHeight/2 from center, the antenna base uses -bodyHeight/2).
+  const antennaBaseX = bodyCx;
+  const antennaBaseY = effectiveBodyCy - (config.bodyHeight / 2) * composedScaleY;
+  const antennaForDraw = state.antenna.map((n, i) =>
+    i === 0
+      ? { x: antennaBaseX, y: antennaBaseY, prevX: antennaBaseX, prevY: antennaBaseY }
+      : n
+  );
+  drawAntenna(ctx, antennaForDraw, palette);
 
   // 4. Eye — drawn AFTER the body so it sits on top. Recompute the composed
   //    body transform so the eye tracks the breathing + squashed body. The
