@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   advanceLocomotion,
+  advanceLocomotionByDisplacement,
   evaluateLocomotion,
+  blendAirborneTuck,
   scaledGait,
   DEFAULT_GAIT,
+  DEFAULT_TUCK,
   type LocomotionState,
   type GaitConfig,
+  type TuckConfig,
 } from '../animation/locomotion';
 
 const TWO_PI = Math.PI * 2;
@@ -175,5 +179,108 @@ describe('determinism', () => {
     const a = advanceLocomotion({ phase: 0.7 }, 2, 1, DEFAULT_GAIT);
     const b = advanceLocomotion({ phase: 0.7 }, 2, 1, DEFAULT_GAIT);
     expect(a).toEqual(b);
+  });
+});
+
+describe('advanceLocomotionByDisplacement', () => {
+  it('dx = 0 → phase unchanged (feet planted)', () => {
+    const state: LocomotionState = { phase: 1.5 };
+    const next = advanceLocomotionByDisplacement(state, 0, DEFAULT_GAIT);
+    expect(next.phase).toBeCloseTo(1.5, 10);
+  });
+
+  it('dx = strideLength · π → phase advances by exactly 1.0 radian', () => {
+    // dPhase = dx / (strideLength · π). At dx = strideLength·π → dPhase = 1.
+    // (Per the approved proposal formula and its test plan line 783.)
+    const state: LocomotionState = { phase: 0.2 };
+    const dx = DEFAULT_GAIT.strideLength * Math.PI;
+    const next = advanceLocomotionByDisplacement(state, dx, DEFAULT_GAIT);
+    expect(next.phase).toBeCloseTo(0.2 + 1.0, 10);
+  });
+
+  it('negative dx walks backward (phase decreases, wraps into [0, 2π))', () => {
+    const state: LocomotionState = { phase: 0.5 };
+    const dx = -DEFAULT_GAIT.strideLength * Math.PI;
+    const next = advanceLocomotionByDisplacement(state, dx, DEFAULT_GAIT);
+    // 0.5 - 1.0 = -0.5 → wrapped into [0, 2π) → 2π - 0.5.
+    expect(next.phase).toBeCloseTo(Math.PI * 2 - 0.5, 10);
+    expect(next.phase).toBeGreaterThanOrEqual(0);
+    expect(next.phase).toBeLessThan(Math.PI * 2);
+  });
+
+  it('accumulated single-tick calls equal one batched call', () => {
+    const dx = DEFAULT_GAIT.strideLength * 0.3;
+    let batched = advanceLocomotionByDisplacement({ phase: 0 }, dx * 4, DEFAULT_GAIT);
+    let stepwise: LocomotionState = { phase: 0 };
+    for (let i = 0; i < 4; i++) {
+      stepwise = advanceLocomotionByDisplacement(stepwise, dx, DEFAULT_GAIT);
+    }
+    expect(stepwise.phase).toBeCloseTo(batched.phase, 10);
+    // sanity: both moved at all
+    expect(batched.phase).not.toBeCloseTo(0, 6);
+    void batched;
+  });
+
+  it('returns a new object (input never mutated)', () => {
+    const state: LocomotionState = { phase: 2.0 };
+    const snap = { ...state };
+    const next = advanceLocomotionByDisplacement(state, 3, DEFAULT_GAIT);
+    expect(state).toEqual(snap);
+    expect(next).not.toBe(state);
+  });
+
+  it('stays bounded over many advances (no float drift)', () => {
+    let state: LocomotionState = { phase: 0 };
+    for (let i = 0; i < 10000; i++) {
+      state = advanceLocomotionByDisplacement(state, 5, DEFAULT_GAIT);
+    }
+    expect(state.phase).toBeGreaterThanOrEqual(0);
+    expect(state.phase).toBeLessThan(Math.PI * 2);
+    expect(Number.isFinite(state.phase)).toBe(true);
+  });
+});
+
+describe('blendAirborneTuck', () => {
+  it('airborneBlend = 0 → returns the walk-cycle foot offset unchanged', () => {
+    const foot = { x: 3, y: 1 };
+    const out = blendAirborneTuck(foot, 0, DEFAULT_TUCK);
+    expect(out.x).toBeCloseTo(3, 10);
+    expect(out.y).toBeCloseTo(1, 10);
+  });
+
+  it('airborneBlend = 1 → returns the tuck offset', () => {
+    const foot = { x: 3, y: 1 };
+    const out = blendAirborneTuck(foot, 1, DEFAULT_TUCK);
+    expect(out.x).toBeCloseTo(DEFAULT_TUCK.tuckOffset.x, 10);
+    expect(out.y).toBeCloseTo(DEFAULT_TUCK.tuckOffset.y, 10);
+  });
+
+  it('airborneBlend = 0.5 → returns the midpoint', () => {
+    const foot = { x: 4, y: 0 };
+    const out = blendAirborneTuck(foot, 0.5, DEFAULT_TUCK);
+    expect(out.x).toBeCloseTo((4 + DEFAULT_TUCK.tuckOffset.x) / 2, 10);
+    expect(out.y).toBeCloseTo((0 + DEFAULT_TUCK.tuckOffset.y) / 2, 10);
+  });
+
+  it('is pure (same inputs → same output, fresh object)', () => {
+    const foot = { x: 1, y: 2 };
+    const a = blendAirborneTuck(foot, 0.3, DEFAULT_TUCK);
+    const b = blendAirborneTuck(foot, 0.3, DEFAULT_TUCK);
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
+  });
+
+  it('does not mutate the input foot offset', () => {
+    const foot = { x: 5, y: 7 };
+    const snap = { ...foot };
+    blendAirborneTuck(foot, 0.8, DEFAULT_TUCK);
+    expect(foot).toEqual(snap);
+  });
+
+  it('respects a custom TuckConfig', () => {
+    const cfg: TuckConfig = { tuckOffset: { x: -1, y: -4 }, hipRaise: -2 };
+    const out = blendAirborneTuck({ x: 0, y: 0 }, 1, cfg);
+    expect(out.x).toBeCloseTo(-1, 10);
+    expect(out.y).toBeCloseTo(-4, 10);
   });
 });

@@ -4,13 +4,19 @@ This directory contains visual benchmark renders for the production animation su
 
 ## How to Reproduce
 
-To regenerate these PNGs, run the following command from the workspace root:
+To regenerate the standard animation PNGs, run the following command from the workspace root:
 
 ```bash
 npx vite-node benchmarks/_scripts/animation-render.ts
 ```
 
-This script executes the deterministic sample-scene generators from `benchmarks/_scripts/animation-render.ts` using the production modules in `src/animation/` and renders them to 256x256 PNGs using `node-canvas` on a neutral Slate-100 (`#f1f5f9`) background.
+To regenerate the locomotion and jump benchmark PNG, run:
+
+```bash
+npx tsx benchmarks/_scripts/locomotion-walk-jump-render.ts
+```
+
+These scripts execute the deterministic sample-scene generators using the production modules in `src/animation/` and render them using `node-canvas` on a neutral Slate-100 (`#f1f5f9`) background.
 
 ---
 
@@ -65,6 +71,16 @@ This script executes the deterministic sample-scene generators from `benchmarks/
   - **Volume Preservation:** On the left, a reference square (gold) is shown alongside its vertically stretched/horizontally squashed (orange) and vertically squashed/horizontally stretched (purple) states. The product of `scaleX * scaleY` is held at exactly `1.0`, preserving the visual area.
   - **Orthographic Turning:** On the right, a circular body (orange) with an attached child element/eye (dark purple) is shown at three facing angles: front-facing (`0°`), three-quarter (`45°`), and near-profile (`75°`).
   - **Horizontal Squash & Projection:** As the body turns, it squashes horizontally by `|cos(angle)|`, and the child element slides across the body via `localX * cos(angle)` while squashing itself, creating a convincing faked-3D depth effect on a flat 2D canvas.
+
+### 7. Locomotion & Jump (`locomotion-walk-jump.png`)
+- **Source:** `advanceLocomotionByDisplacement` + `blendAirborneTuck` + `advanceJump` + `evaluateJump` from `src/animation`
+- **Description:** A 2-panel composite showing displacement-driven locomotion (Panel A) and an apex-parameterized jump trajectory (Panel B).
+- **Key Features Demonstrated:**
+  - **Displacement-Driven Walk (Panel A):** Shows the character at 8 positions across a horizontal strip. The walk cycle phase is driven entirely by horizontal displacement (`dx`), ensuring that feet plant perfectly without any sliding.
+  - **Apex-Parameterized Jump (Panel B):** Shows the character at 8 key frames along a full jump arc: Grounded → Anticipation Crouch → Launch Stretch → Ballistic Rise (with airborne tuck) → Apex → Ballistic Fall → Landing Squash → Recovery.
+  - **Airborne Tuck Blend:** Demonstrates how the legs smoothly tuck up toward the body while airborne, blending from the walk cycle to the tuck pose using `blendAirborneTuck`.
+  - **Landing Squash & Stretch:** Demonstrates volume-preserving squash and stretch during the jump lifecycle, with a deep squash on impact that recovers via a 1D spring-damper.
+  - **Dynamic Shadow Scaling:** Demonstrates a realistic shadow that scales down and fades out as the character jumps higher, and scales back up and darkens on landing.
 
 ---
 

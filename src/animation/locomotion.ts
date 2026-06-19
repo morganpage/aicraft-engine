@@ -177,3 +177,116 @@ export function scaledGait(config: GaitConfig, scale: number): GaitConfig {
     hipSwayWidth: config.hipSwayWidth * scale,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Extensions: displacement-driven walk phase + airborne tuck blend.
+// Additive — the exports above are unchanged.
+// ---------------------------------------------------------------------------
+
+/**
+ * Airborne tuck pose configuration. When the character leaves the ground, the
+ * walk-cycle foot offset blends toward `tuckOffset` (feet drawn up toward the
+ * body); `hipRaise` shifts the hip upward and is applied by the consumer to the
+ * hip offset (not by `blendAirborneTuck`, which blends a single foot offset).
+ *
+ * Note: a single `tuckOffset` (rather than separate left/right poses) keeps
+ * `blendAirborneTuck`'s signature `(footOffset, airborneBlend, config)`
+ * unambiguous — both feet tuck toward the same relative pose. Consumers wanting
+ * per-foot asymmetry can pass different `TuckConfig` objects per foot.
+ */
+export interface TuckConfig {
+  /** Foot tuck offset when airborne (relative to rest). Default `{x: 0, y: -2}`. */
+  readonly tuckOffset: Readonly<Vec2>;
+  /** Hip raise in px (negative = upward). Applied by the consumer to the hip. Default `-3`. */
+  readonly hipRaise: number;
+}
+
+/**
+ * Default airborne tuck pose. Tunable; consumers spread this into their own.
+ */
+export const DEFAULT_TUCK: Readonly<TuckConfig> = {
+  tuckOffset: { x: 0, y: -2 },
+  hipRaise: -3,
+};
+
+/**
+ * Advance phase by actual horizontal displacement (anti-foot-slide).
+ *
+ * Phase advances by `dx / (strideLength · π)`, coupling the walk cycle directly
+ * to physical movement. When the character stops (`dx = 0`), the phase freezes
+ * — feet stay planted. This solves the "foot sliding" problem where time-driven
+ * phase (`advanceLocomotion`) drifts from physical speed.
+ *
+ * Same return type as `advanceLocomotion` (`LocomotionState`), so consumers can
+ * switch between time-driven and displacement-driven per character without
+ * changing their state variable type.
+ *
+ * **Determinism contract:** same `(state, dx, config)` → byte-identical result,
+ * forever. Pure: returns a new `LocomotionState`; the input is never mutated.
+ * Never throws.
+ *
+ * ⚠ Do NOT call both `advanceLocomotion` and `advanceLocomotionByDisplacement`
+ * in the same tick — this double-advances the phase. The choice is per
+ * character, not per frame: time-driven for walk-in-place characters,
+ * displacement-driven for translating characters.
+ *
+ * @param state - current locomotion state
+ * @param dx - actual horizontal displacement this tick (positive = right, in px)
+ * @param config - gait parameters (`strideLength` is the key input)
+ * @returns the next `LocomotionState` with phase wrapped to `[0, 2π)`
+ *
+ * @example
+ * ```ts
+ * // Frozen while airborne; displacement-driven while grounded.
+ * if (!jumpPose.airborne) {
+ *   loco = advanceLocomotionByDisplacement(loco, dx, DEFAULT_GAIT);
+ * }
+ * ```
+ */
+export function advanceLocomotionByDisplacement(
+  state: LocomotionState,
+  dx: number,
+  config: GaitConfig,
+): LocomotionState {
+  const dPhase = dx / (config.strideLength * Math.PI);
+  const phase = (state.phase + dPhase) % TWO_PI;
+  return { phase: phase < 0 ? phase + TWO_PI : phase };
+}
+
+/**
+ * Blend a walk-cycle foot offset toward an airborne tuck pose.
+ *
+ * When airborne, the character's legs tuck up (feet drawn toward the body)
+ * rather than continuing the walk cycle's swing. This linearly interpolates
+ * between the walk-cycle offset and the tuck offset using `airborneBlend`.
+ *
+ * - `airborneBlend = 0` → pure walk-cycle offset (grounded).
+ * - `airborneBlend = 1` → pure tuck offset (fully airborne).
+ * - `airborneBlend = 0.5` → midpoint.
+ *
+ * **Determinism contract:** pure function of `(footOffset, airborneBlend, config)`.
+ * Same inputs → same output, forever. No side effects. Returns a fresh `Vec2`;
+ * the input is never mutated.
+ *
+ * @param footOffset - walk-cycle foot offset from `evaluateLocomotion`
+ * @param airborneBlend - blend weight `[0, 1]` from `evaluateJump().airborneBlend`
+ * @param config - tuck pose configuration
+ * @returns the blended `Vec2` offset
+ *
+ * @example
+ * ```ts
+ * const pose = evaluateLocomotion(loco, DEFAULT_GAIT);
+ * const leftFoot = blendAirborneTuck(pose.leftFootOffset, jumpPose.airborneBlend, DEFAULT_TUCK);
+ * ```
+ */
+export function blendAirborneTuck(
+  footOffset: Readonly<Vec2>,
+  airborneBlend: number,
+  config: TuckConfig,
+): Vec2 {
+  const t = airborneBlend;
+  return {
+    x: footOffset.x + (config.tuckOffset.x - footOffset.x) * t,
+    y: footOffset.y + (config.tuckOffset.y - footOffset.y) * t,
+  };
+}
