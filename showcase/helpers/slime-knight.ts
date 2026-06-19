@@ -67,12 +67,12 @@ const HERO_CENTER_X = HERO_CANVAS_SIZE / 2;
  * where the feet actually land. Exported so `sections/hero.ts` draws the
  * ground line + shadow at exactly this Y.
  *
- * Ratio 0.88 (raised from 0.82 per user feedback "feet a little lower"): the
- * feet plant ~20px lower on the 320px canvas, and since `heroCenterY(config)`
- * is derived from `HERO_GROUND_Y`, the body / head / antenna move down
- * together so the whole character sits lower in the frame.
+ * Ratio 0.82: the feet plant ~262px down the 320px canvas, leaving ~58px of
+ * headroom above the body for the antenna ball + bounce arc. Since
+ * `heroCenterY(config)` is derived from `HERO_GROUND_Y`, the body / head /
+ * antenna all anchor to this line.
  */
-export const HERO_GROUND_Y = HERO_CANVAS_SIZE * 0.88;
+export const HERO_GROUND_Y = HERO_CANVAS_SIZE * 0.82;
 
 /**
  * Body center Y for a given config, derived FROM the ground line so the
@@ -105,11 +105,13 @@ const LEG_REACH_RATIO = 0.9;
 /**
  * Off-screen buffer added to `bodyWidth/2` when the hero walks off one canvas
  * edge and reappears at the other. With co-located hips (Change B) and the
- * forward-foot shoe offset (Change C), the forward foot's reach from the body
- * center is `strideLength + shoeForward + shoeW/2 ≈ 10 + 7 + 9 = 26` px —
- * well inside the body's half-width (35-45), so the foot never pokes past the
- * body silhouette. The margin is a comfortable buffer so the hero fully exits
- * the frame before reappearing on the opposite side.
+ * forward-foot shoe offset (Change C), the forward foot's WORST-CASE reach
+ * from the body center is `strideLength + shoeForward + shoeW/2 = 18 + 10.4 +
+ * 13 = 41.4px` (max post-jitter strideLength 4 × 4.5 = 18; shoeForward 0.4 ×
+ * 26 = 10.4; half of the 26-wide shoe = 13). The wrap fires at `bodyWidth/2
+ * + 16 = 51-61px` (bodyWidth 70-90), so even the longest-striding seed
+ * clears the foot by 9.6-19.6px — the foot never pokes past the wrap edge
+ * and the hero fully exits the frame before reappearing on the opposite side.
  */
 const HERO_WALK_WRAP_MARGIN_FOOT = 16;
 
@@ -203,19 +205,25 @@ const ANTENNA_TIP_STIFFNESS = 0.22;
 
 /**
  * Antenna forward lean (showcase-local). The per-segment rest vector tilts
- * forward by this fraction of the segment length (in +X, code space). The
- * existing ctx.scale(facing, 1) mirror in drawSlimeKnight flips it for
- * facing === -1, so the antenna leans forward in screen space for both
- * directions — NO facing-aware logic inside the physics.
+ * forward by this fraction of the segment length, in the FACING direction in
+ * screen space. `applyAntennaRestPose` multiplies the rest vector X by
+ * `facing`, and the antenna is drawn OUTSIDE the facing mirror in
+ * `drawSlimeKnight`, so the physics owns a screen-space lean directly — no
+ * draw-time mirror to rely on. This makes the walk inertia symmetric: in both
+ * walk directions the tip lags backward relative to facing (opposing the lean)
+ * by the same magnitude.
  *
- * The rest vector per segment is { x: seg * lean, y: -sqrt(seg² - (seg*lean)²) },
- * i.e. a unit segment rotated forward by atan(lean). 0.32 ≈ 17.7° forward
- * (raised from 0.22 / ~12.4° per user feedback "point a little further
- * forward"). Feeds `applyAntennaRestPose`'s per-segment rest vector AND
+ * The rest vector per segment is
+ *   { x: seg * lean * facing, y: -sqrt(seg² - (seg*lean)²) },
+ * i.e. a unit segment rotated forward by atan(lean) from vertical, mirrored
+ * by facing in screen space. 0.32 ≈ 17.7° forward (raised from 0.22 / ~12.4°
+ * per user feedback "point a little further forward"). Feeds
+ * `applyAntennaRestPose`'s per-segment rest vector AND
  * `createHeroFrameState`'s initial chain layout (both read this constant, so
- * one change updates both). The bend constraint (`applyAntennaBendConstraints`)
- * is unaffected — it uses `2 * segmentLength` (straight-rod rest length)
- * independently of the lean.
+ * one change updates both; the init lays out facing=+1 and the rest-pose
+ * correction smoothly swings the chain when facing changes). The bend
+ * constraint (`applyAntennaBendConstraints`) is unaffected — it uses
+ * `2 * segmentLength` (straight-rod rest length) independently of the lean.
  */
 const ANTENNA_FORWARD_LEAN_X = 0.32;
 
@@ -683,6 +691,20 @@ export function applyAntennaBendConstraints(
  * preferred-direction term, so this showcase-local positional correction owns
  * the rest pose exactly as before, just with a forward tilt + a taper.
  *
+ * **Facing-aware (screen-space physics).** The rest vector's X component flips
+ * sign with `facing` so the antenna leans forward in the SCREEN-space facing
+ * direction regardless of which way the character walks. The antenna is drawn
+ * OUTSIDE the facing mirror in `drawSlimeKnight`, so the physics must compute
+ * screen-space positions directly. This is what makes the walk inertia
+ * SYMMETRIC: in both walk directions the body translates, the tip lags
+ * BACKWARD relative to facing (opposing the forward lean) by the same
+ * magnitude. Previously the rest lean was fixed at +X in code space and the
+ * draw mirror flipped it for display — but the Verlet inertia stayed in code
+ * space, so walking-right inertia opposed the lean (weak) while walking-left
+ * inertia reinforced it (strong). Computing the lean in screen space removes
+ * the asymmetry at the source. `ry` is facing-independent (`rx²` is the same
+ * for both facings).
+ *
  * Operates in place on the fresh chain from `advanceSpringChain` (already a
  * deep copy — `state.antenna` is never mutated), preserving `stepHero`'s pure-
  * progression-ops boundary. Moves curr AND prev by the same delta to preserve
@@ -697,15 +719,20 @@ export function applyAntennaBendConstraints(
  *
  * @param nodes - fresh chain from `advanceSpringChain` (mutated + returned)
  * @param segmentLength - rest distance between adjacent nodes
+ * @param facing - character facing this tick (+1 right / -1 left); flips the
+ *   rest vector's X so the lean follows the facing direction in screen space
  * @returns the same array (mutated in place) for chaining
  */
 export function applyAntennaRestPose(
   nodes: VerletNode[],
   segmentLength: number,
+  facing: 1 | -1,
 ): VerletNode[] {
-  // Forward-tilted per-segment rest vector. Unit length = segmentLength,
-  // rotated forward by atan(ANTENNA_FORWARD_LEAN_X) from straight-up.
-  const rx = segmentLength * ANTENNA_FORWARD_LEAN_X;
+  // Forward-tilted per-segment rest vector, FACING-AWARE in screen space.
+  // rx flips sign with facing so the antenna leans forward (in the facing
+  // direction) regardless of which way the character walks. ry is the same
+  // for both facings (rx² is facing-independent).
+  const rx = segmentLength * ANTENNA_FORWARD_LEAN_X * facing;
   const ry = -Math.sqrt(segmentLength * segmentLength - rx * rx);
   const last = nodes.length - 1;
   for (let i = 1; i < nodes.length; i++) {
@@ -894,7 +921,7 @@ export function stepHero(
   const jumpLift = jumpPose.yOffset + DEFAULT_TUCK.hipRaise * jumpPose.airborneBlend;
   // Antenna anchor tracks the SCALED body top (jump scale + landing drop) so
   // the root stays connected to the body during the landing squat. See bodyTop.
-  const anchor = bodyTop(config, pose.hipOffset, jumpLift, x, jumpPose.scale.scaleY);
+  const anchor = bodyTop(config, pose.hipOffset, jumpLift, x, jumpPose.scale.scaleY, facing);
   let antenna = advanceSpringChain(
     state.antenna,
     anchor.x,
@@ -910,7 +937,7 @@ export function stepHero(
   // Showcase-local angular stiffness so the antenna stays upright with gentle
   // tip sway instead of flopping (issue #4). The library solver only enforces
   // segment lengths; this correction adds the preferred (vertical) direction.
-  antenna = applyAntennaRestPose(antenna, config.antennaSegmentLength);
+  antenna = applyAntennaRestPose(antenna, config.antennaSegmentLength, facing);
   // Showcase-local tip weight so the ball's mass bends the rod (sag
   // concentrates at the tip). Applied last so the stiffness corrections set
   // the orientation first; reverse order would have stiffness un-do the sag.
@@ -961,19 +988,31 @@ function bodyTopAtRest(config: HeroConfig): { x: number; y: number } {
  *  top — modulo the ±~1.5px breath residual, since breath is a function of
  *  `tick` (computed at draw time) and the anchor here can only track the JUMP
  *  scale. The `landingDrop` + `effectiveBodyCy` expressions intentionally
- *  duplicate `drawSlimeKnight`'s; keep them in sync if either changes. */
+ *  duplicate `drawSlimeKnight`'s; keep them in sync if either changes.
+ *
+ *  `facing` (defaults to +1) flips the returned X into SCREEN space: the
+ *  antenna is drawn OUTSIDE the facing mirror in `drawSlimeKnight`, so its
+ *  anchor must already be in screen coordinates. The hip sway (`hipOffset.x`)
+ *  is mirrored by `facing`; the walk-offset (`xOffset`) is NOT mirrored (it is
+ *  already a world-space translation applied identically in both facings). Y is
+ *  never mirrored (the facing mirror is X-only). */
 function bodyTop(
   config: HeroConfig,
   hipOffset: Readonly<{ x: number; y: number }>,
   jumpLift = 0,
   xOffset = 0,
   jumpScaleY = 1,
+  facing: 1 | -1 = 1,
 ): { x: number; y: number } {
   const landingDrop = jumpScaleY < 1 ? (1 - jumpScaleY) * config.bodyHeight : 0;
   const effectiveBodyCy =
     heroCenterY(config) + hipOffset.y + jumpLift + landingDrop;
   return {
-    x: HERO_CENTER_X + xOffset + hipOffset.x,
+    // Screen-space X: hip sway mirrored by facing (the antenna is drawn
+    // OUTSIDE the facing mirror, so the anchor must already be in screen
+    // space). bodyCx in code space is HERO_CENTER_X + xOffset + hipOffset.x;
+    // in screen space the hip sway flips: HERO_CENTER_X + xOffset + hipOffset.x * facing.
+    x: HERO_CENTER_X + xOffset + hipOffset.x * facing,
     y: effectiveBodyCy - (config.bodyHeight / 2) * jumpScaleY,
   };
 }
@@ -1163,26 +1202,7 @@ export function drawSlimeKnight(
   drawBody(ctx, config, palette);
   ctx.restore();
 
-  // 3. Antenna — Verlet chain already advanced in stepHero (anchor tracks the
-  //    jump lift). Re-pin node 0 to the COMPOSED-SCALE body top at draw time so
-  //    the base tracks breath + jump + landing exactly like the hips track the
-  //    body bottom. The solver in stepHero runs with its jump-scale anchor only
-  //    (breath is a function of `tick` and unavailable there) → the visual base
-  //    was ~±1.5px off the body top during breath, reading as "not attached."
-  //    This is a DRAW-LOCAL copy (`state.antenna` is never mutated — the draw
-  //    stays a pure read of state). The solver still owns the physics; only the
-  //    visual base position is corrected. Mirrors the hip Y formula (hip uses
-  //    +bodyHeight/2 from center, the antenna base uses -bodyHeight/2).
-  const antennaBaseX = bodyCx;
-  const antennaBaseY = effectiveBodyCy - (config.bodyHeight / 2) * composedScaleY;
-  const antennaForDraw = state.antenna.map((n, i) =>
-    i === 0
-      ? { x: antennaBaseX, y: antennaBaseY, prevX: antennaBaseX, prevY: antennaBaseY }
-      : n
-  );
-  drawAntenna(ctx, antennaForDraw, palette);
-
-  // 4. Eye — drawn AFTER the body so it sits on top. Recompute the composed
+  // 3. Eye — drawn AFTER the body so it sits on top. Recompute the composed
   //    body transform so the eye tracks the breathing + squashed body. The
   //    `look` vector (gaze direction) offsets the pupil toward the travel
   //    direction; `eyeCount` selects cyclops (1) vs two-eyed (2).
@@ -1192,8 +1212,41 @@ export function drawSlimeKnight(
   drawEye(ctx, config, palette, state.eyeCount, look);
   ctx.restore();
 
-  // Close the facing-mirror transform (matches the save above).
+  // Close the facing-mirror transform (matches the save above). The antenna
+  // is drawn OUTSIDE this mirror so its physics owns a screen-space lean
+  // (facing-aware in `applyAntennaRestPose`) and its draw is on TOP of both
+  // the body and the eye.
   ctx.restore();
+
+  // 4. Antenna — Verlet chain already advanced in stepHero (anchor tracks the
+  //    jump lift, screen-space + facing-aware). Re-pin node 0 to the COMPOSED-
+  //    SCALE body top at draw time so the base tracks breath + jump + landing
+  //    exactly like the hips track the body bottom. The solver in stepHero
+  //    runs with its jump-scale anchor only (breath is a function of `tick`
+  //    and unavailable there) → the visual base was ~±1.5px off the body top
+  //    during breath, reading as "not attached." This is a DRAW-LOCAL copy
+  //    (`state.antenna` is never mutated — the draw stays a pure read of
+  //    state). The solver still owns the physics; only the visual base
+  //    position is corrected. Mirrors the hip Y formula (hip uses
+  //    +bodyHeight/2 from center, the antenna base uses -bodyHeight/2).
+  //
+  //    Screen-space base: the body is drawn INSIDE the mirror at code-space
+  //    `(bodyCx, effectiveBodyCy)` which maps to screen-space
+  //    `(charCx + (bodyCx - charCx) * facing, effectiveBodyCy)`. bodyCx =
+  //    `charCx + pose.hipOffset.x`, so `(bodyCx - charCx) = pose.hipOffset.x`
+  //    and the screen-space body center X is `charCx + pose.hipOffset.x *
+  //    facing`. The Y is unchanged (the facing mirror is X-only). This must
+  //    match `bodyTop`'s screen-space X in stepHero — both expressions use
+  //    `HERO_CENTER_X + xOffset + pose.hipOffset.x * facing` (here `charCx` =
+  //    `HERO_CENTER_X + state.x` and `xOffset` === `state.x`).
+  const antennaBaseX = charCx + pose.hipOffset.x * state.facing;
+  const antennaBaseY = effectiveBodyCy - (config.bodyHeight / 2) * composedScaleY;
+  const antennaForDraw = state.antenna.map((n, i) =>
+    i === 0
+      ? { x: antennaBaseX, y: antennaBaseY, prevX: antennaBaseX, prevY: antennaBaseY }
+      : n
+  );
+  drawAntenna(ctx, antennaForDraw, palette);
 }
 
 // ---------------------------------------------------------------------------
@@ -1399,11 +1452,23 @@ function drawLimb(
   // needed here, and the same call works for both facings.
   //
   // The 0.4 ratio is a magic number local to this renderer (consistent with
-  // the existing `shoeW = 18` / `shoeH = 10` locals). It places the ankle
-  // near the heel so the shoe reads as a forward-pointing foot rather than
-  // the previous stub-behind-ankle silhouette.
-  const shoeW = 18;
-  const shoeH = 10;
+  // the `shoeW` / `shoeH` locals below). It places the ankle near the heel so
+  // the shoe reads as a forward-pointing foot rather than the previous
+  // stub-behind-ankle silhouette.
+  //
+  // WIDTH MUST EXCEED THE LEG OUTLINE (lineWidth = 18 above). When shoeW was
+  // 18 the shoe was the SAME width as the leg silhouette and disappeared into
+  // it — the foot read as the leg stump continuing along the ground ("walking
+  // on the leg stump"), not as a shoe. shoeW = 26 makes the shoe 8px wider
+  // than the leg (4px of overhang on each side) so it reads as a distinct
+  // foot extending past the leg outline. shoeH = 14 gives the sole more
+  // vertical presence below the ankle (7px below vs the old 5px) so the foot
+  // reads as planted on the ground rather than floating at the ankle. The
+  // sole extends ~7px below `ankle.y` (which sits at the ground line) — this
+  // is intentional and reads as the shoe planted on the ground. The 0.4
+  // forward ratio and Y centering (ankle.y) are unchanged.
+  const shoeW = 26; // 8px wider than the 18px leg outline — reads as a foot
+  const shoeH = 14; // taller — more sole presence below the ankle
   const shoeForward = shoeW * 0.4;
   const shoeCx = ankle.x + shoeForward;
   const shoeCy = ankle.y;
