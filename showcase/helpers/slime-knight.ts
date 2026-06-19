@@ -103,6 +103,18 @@ const CHUNKY_OUTLINE_WIDTH = 3;
 const LEG_REACH_RATIO = 0.9;
 
 /**
+ * Time in seconds for the hero's feet to settle to a neutral standing pose
+ * when the hero stops walking (walkDx === 0). The locomotion phase freezes on
+ * stop; without this blend, the feet would freeze mid-stride (one foot in the
+ * air). The blend ramps the locomotion foot + hip offsets toward neutral
+ * (0,0) over this duration so both feet lower to the ground smoothly.
+ *
+ * 0.2s = 12 frames at 60fps — fast enough to feel responsive, slow enough to
+ * look like a natural settle rather than a snap. Tunable.
+ */
+const IDLE_SETTLE_TIME = 0.2;
+
+/**
  * Off-screen buffer added to `bodyWidth/2` when the hero walks off one canvas
  * edge and reappears at the other. With co-located hips (Change B) and the
  * forward-foot shoe offset (Change C), the forward foot's WORST-CASE reach
@@ -382,6 +394,16 @@ export interface HeroFrameState {
    * is: omit `eyeCount` in `HeroInputs` to carry the previous value forward.
    */
   eyeCount: 1 | 2;
+  /**
+   * Idle settle blend factor in [0, 1]. Ramps toward 1 when the hero is idle
+   * (walkDx === 0), toward 0 when walking. At 1, the locomotion foot + hip
+   * offsets are fully blended toward neutral (both feet planted, hips
+   * centered) so the hero settles into a natural standing pose instead of
+   * freezing mid-stride. At 0, the full locomotion offsets are used (normal
+   * walk cycle). Scaled by (1 - airborneBlend) so the airborne tuck takes
+   * priority when jumping (jump from idle → feet go to tuck, not neutral).
+   */
+  idleSettle: number;
 }
 
 /**
@@ -607,6 +629,7 @@ export function createHeroFrameState(config: HeroConfig): HeroFrameState {
     x: 0,
     facing: 1,
     eyeCount: 1,
+    idleSettle: 0,
   };
 }
 
@@ -812,8 +835,10 @@ export function applyAntennaTipWeight(nodes: VerletNode[]): VerletNode[] {
  *   handles the visual direction. The hero's world-space `x` offset still
  *   translates by signed `walkDx` and wraps at the canvas edges for endless
  *   traversal.
- * - `inputs.walkDx === 0` → displacement-driven but phase FROZEN (feet planted,
- *   idle pose). The hero stands still.
+ * - `inputs.walkDx === 0` → displacement-driven but phase FROZEN. The hero
+ *   stands still, and `idleSettle` ramps toward 1 so the feet + hips blend
+ *   toward neutral (both feet planted) over `IDLE_SETTLE_TIME` (~0.2s) instead
+ *   of freezing mid-stride. See `HeroFrameState.idleSettle`.
  *
  * Jump inputs (`jumpPressed` / `jumpHeld`) work in ALL three modes — jumping
  * while walking continues the horizontal translation (jump and walk are
@@ -913,6 +938,14 @@ export function stepHero(
 
   const pose = evaluateLocomotion(locomotion, config.gaitConfig);
 
+  // Idle settle: ramp toward 1 when the hero is idle (walkDx === 0), toward 0
+  // when walking. The benchmark path (inputs === undefined) never triggers idle
+  // → idleSettle stays at 0 → byte-identical goldens preserved.
+  const isIdle = inputs !== undefined && inputs.walkDx === 0;
+  const idleSettle = isIdle
+    ? Math.min(1, state.idleSettle + dt / IDLE_SETTLE_TIME)
+    : Math.max(0, state.idleSettle - dt / IDLE_SETTLE_TIME);
+
   // Antenna anchor tracks the lifted body: jump yOffset (negative = up) plus
   // the airborne hip raise (legs tuck → hip rides up), AND the horizontal `x`
   // offset so the chain follows the body during a walk-across. Keeps the chain
@@ -943,7 +976,7 @@ export function stepHero(
   // the orientation first; reverse order would have stiffness un-do the sag.
   antenna = applyAntennaTipWeight(antenna);
 
-  return { config, locomotion, antenna, jump, x, facing, eyeCount };
+  return { config, locomotion, antenna, jump, x, facing, eyeCount, idleSettle };
 }
 
 /**
@@ -1080,15 +1113,37 @@ export function drawSlimeKnight(
   const pose = evaluateLocomotion(state.locomotion, config.gaitConfig);
   const jumpPose = evaluateJump(state.jump);
 
+  // Idle settle blend — ramps the locomotion offsets toward neutral (0,0) when
+  // the hero is idle so the feet lower to the ground instead of freezing
+  // mid-stride. Scaled by (1 - airborneBlend) so the airborne tuck takes
+  // priority when jumping (jump from idle → feet go to tuck, not neutral).
+  const groundIdle = state.idleSettle * (1 - jumpPose.airborneBlend);
+  const hipOffset = {
+    x: pose.hipOffset.x * (1 - groundIdle),
+    y: pose.hipOffset.y * (1 - groundIdle),
+  };
+
   // Airborne tuck: blend walk-cycle foot offsets toward the tuck pose before IK.
   // airborneBlend=0 → pure walk offset; =1 → full tuck. No-op when grounded.
+  // The idle blend is applied FIRST (toward neutral (0,0)), then the airborne
+  // tuck composes on top — so a jump from idle sends the feet to the tuck pose
+  // (groundIdle is zeroed by the (1 - airborneBlend) factor above), not to the
+  // idle-neutral pose.
+  const leftGroundOffset = {
+    x: pose.leftFootOffset.x * (1 - groundIdle),
+    y: pose.leftFootOffset.y * (1 - groundIdle),
+  };
+  const rightGroundOffset = {
+    x: pose.rightFootOffset.x * (1 - groundIdle),
+    y: pose.rightFootOffset.y * (1 - groundIdle),
+  };
   const leftFootOffset = blendAirborneTuck(
-    pose.leftFootOffset,
+    leftGroundOffset,
     jumpPose.airborneBlend,
     DEFAULT_TUCK,
   );
   const rightFootOffset = blendAirborneTuck(
-    pose.rightFootOffset,
+    rightGroundOffset,
     jumpPose.airborneBlend,
     DEFAULT_TUCK,
   );
@@ -1117,8 +1172,8 @@ export function drawSlimeKnight(
   // Body center shifts by `state.x` for the walk-across traversal (wraps at
   // the canvas edges in `stepHero`); everything below derives from `bodyCx`.
   const jumpLift = jumpPose.yOffset + DEFAULT_TUCK.hipRaise * jumpPose.airborneBlend;
-  const bodyCx = HERO_CENTER_X + state.x + pose.hipOffset.x;
-  const bodyCy = heroCenterY(config) + pose.hipOffset.y + jumpLift;
+  const bodyCx = HERO_CENTER_X + state.x + hipOffset.x;
+  const bodyCy = heroCenterY(config) + hipOffset.y + jumpLift;
 
   // Landing squat correction. Center-origin body scaling pulls the hip UP on
   // jump-induced squash (composedScaleY < 1), which extends the legs straight
@@ -1233,13 +1288,17 @@ export function drawSlimeKnight(
   //    Screen-space base: the body is drawn INSIDE the mirror at code-space
   //    `(bodyCx, effectiveBodyCy)` which maps to screen-space
   //    `(charCx + (bodyCx - charCx) * facing, effectiveBodyCy)`. bodyCx =
-  //    `charCx + pose.hipOffset.x`, so `(bodyCx - charCx) = pose.hipOffset.x`
-  //    and the screen-space body center X is `charCx + pose.hipOffset.x *
-  //    facing`. The Y is unchanged (the facing mirror is X-only). This must
-  //    match `bodyTop`'s screen-space X in stepHero — both expressions use
-  //    `HERO_CENTER_X + xOffset + pose.hipOffset.x * facing` (here `charCx` =
-  //    `HERO_CENTER_X + state.x` and `xOffset` === `state.x`).
-  const antennaBaseX = charCx + pose.hipOffset.x * state.facing;
+  //    `charCx + hipOffset.x` (the IDLE-BLENDED hip sway — see the groundIdle
+  //    blend above), so `(bodyCx - charCx) = hipOffset.x` and the screen-space
+  //    body center X is `charCx + hipOffset.x * facing`. The Y is unchanged
+  //    (the facing mirror is X-only). This tracks the DRAWN body position
+  //    (idle-settled), NOT stepHero's `bodyTop` physics anchor — which uses the
+  //    UNBLENDED `pose.hipOffset` so the antenna physics tracks the actual body
+  //    hip sway (the idle blend is a visual settle for the body + feet only;
+  //    the antenna owns its own dynamics). This is the same draw-local visual-
+  //    correction pattern as the breath residual above: the physics runs on the
+  //    unblended anchor, the visual base is re-pinned to the drawn position.
+  const antennaBaseX = charCx + hipOffset.x * state.facing;
   const antennaBaseY = effectiveBodyCy - (config.bodyHeight / 2) * composedScaleY;
   const antennaForDraw = state.antenna.map((n, i) =>
     i === 0
