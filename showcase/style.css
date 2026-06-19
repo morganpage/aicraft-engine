@@ -1,0 +1,258 @@
+/*
+ * Showcase global styles — Sokpop-inspired flat aesthetic.
+ *
+ * The `--outline` variable is RE-INJECTED from the library at boot
+ * (see main.ts: setProperty('--outline', DEFAULT_OUTLINE_COLOR)) so the
+ * CSS and the library constant cannot drift. The fallback below is the
+ * current library value, but the JS injection is authoritative.
+ */
+
+:root {
+  /* Outline — mirrors DEFAULT_OUTLINE_COLOR from src/primitives/outline-rect.ts.
+   * Overwritten at boot by main.ts. */
+  --outline: #1d1128;
+
+  /* Page palette — fixed marketing colors, distinct from generated character palettes. */
+  --palette-base: #fe5701; /* warm orange — primary accent */
+  --palette-accent: #caa42a; /* muted gold — secondary */
+  --palette-feature: #7c3aed; /* purple — interactive / code */
+  --palette-bg: #121214; /* near-black backdrop */
+  --palette-surface: #1c1c22; /* card / panel surface */
+  --palette-text: #e8e8ee; /* primary text */
+  --palette-text-dim: #a0a0aa; /* secondary text */
+
+  --outline-width: 2px;
+  --radius: 6px;
+  --radius-lg: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--palette-bg);
+  color: var(--palette-text);
+  font-family:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ---------- Header ---------- */
+
+.site-header {
+  padding: 32px 24px 8px;
+  text-align: center;
+}
+
+.site-title {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--palette-base);
+  /* Chunky outline via text-shadow stack (no -webkit-text-stroke to keep edge crisp). */
+  text-shadow:
+    2px 0 0 var(--outline),
+    -2px 0 0 var(--outline),
+    0 2px 0 var(--outline),
+    0 -2px 0 var(--outline);
+}
+
+.site-tagline {
+  margin: 12px 0 0;
+  color: var(--palette-text-dim);
+  font-size: 15px;
+}
+
+/* ---------- Layout ---------- */
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.section {
+  margin: 24px 0;
+}
+
+/* ---------- Hero ---------- */
+
+.hero-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .hero-section {
+    grid-template-columns: 1fr 360px;
+    padding: 32px;
+  }
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.hero-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.hero-blurb {
+  margin: 0 0 20px;
+  color: var(--palette-text-dim);
+  max-width: 50ch;
+}
+
+.kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--palette-bg);
+  border: 1px solid var(--outline);
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--palette-text);
+}
+
+.hero-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.hero-reroll,
+.hero-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--palette-base);
+  color: #fff;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.hero-reroll:hover,
+.hero-jump:hover {
+  background: #ff7320;
+}
+
+.hero-reroll:active,
+.hero-jump:active {
+  transform: translateY(1px);
+}
+
+.hero-reroll:focus-visible,
+.hero-jump:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.hero-jump-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.hero-jump-hint-detail {
+  color: var(--palette-text-dim);
+  opacity: 0.75;
+}
+
+.hero-speed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--palette-text-dim);
+}
+
+.hero-speed-value {
+  color: var(--palette-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+}
+
+.hero-speed {
+  width: 140px;
+  accent-color: var(--palette-base);
+}
+
+.hero-seed-line {
+  margin: 8px 0 16px;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 14px;
+  color: var(--palette-text-dim);
+}
+
+.hero-seed {
+  color: var(--palette-accent);
+  font-weight: 700;
+}
+
+.hero-snippet {
+  margin: 0;
+  padding: 12px 14px;
+  background: #0e0e12;
+  color: #e2e8f0;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------- Hero stage / canvas ---------- */
+
+.hero-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.hero-canvas {
+  width: 320px;
+  height: 320px;
+  max-width: 100%;
+  background: var(--palette-bg);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  /* Keep pixel art crisp on hi-dpi. outlineRect floors coords to the pixel grid. */
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+  padding: 32px 24px 48px;
+  text-align: center;
+  color: var(--palette-text-dim);
+  font-size: 13px;
+}

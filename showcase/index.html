@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>aicraft-engine — Zero-Dependency Procedural Rendering for Games</title>
+    <meta
+      name="description"
+      content="Ultra-minimalist Canvas2D rendering library. Zero runtime dependencies. Seeded determinism. Algorithmic cosmetics. Built for AI Craft games."
+    />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="aicraft-engine" />
+    <meta
+      property="og:description"
+      content="Zero-dependency procedural rendering + algorithmic cosmetics for games."
+    />
+    <meta property="og:type" content="website" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="aicraft-engine" />
+    <meta
+      name="twitter:description"
+      content="Zero-dependency procedural rendering + algorithmic cosmetics for games."
+    />
+
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1 class="site-title">aicraft-engine</h1>
+      <p class="site-tagline">
+        Zero-dependency procedural rendering. Seeded determinism. Algorithmic cosmetics.
+      </p>
+    </header>
+
+    <main>
+      <!--
+        Section 1 — Hero.
+        Prototype scope: just this section. The other 8 sections are skipped for now.
+      -->
+      <section id="hero" class="section hero-section">
+        <div class="hero-copy">
+          <h2 class="hero-title">One seed. One character. Forever.</h2>
+          <p class="hero-blurb">
+            Every slime-knight below is generated from a single 32-bit seed.
+            Same seed → same proportions, palette, gait, antenna sway. Forever.
+            Click <span class="kbd">🎲</span> to roll a new hero.
+          </p>
+
+          <div class="hero-controls">
+            <button class="hero-reroll" type="button" aria-label="Roll a new hero seed">
+              🎲 <span>Reroll seed</span>
+            </button>
+
+            <button class="hero-jump" type="button" aria-label="Make the hero jump">
+              ⏫ <span>Jump</span>
+            </button>
+
+            <label class="hero-speed-label" for="hero-speed">
+              Speed: <span class="hero-speed-value">1.0×</span>
+              <input
+                id="hero-speed"
+                class="hero-speed"
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value="1"
+              />
+            </label>
+          </div>
+
+          <p class="hero-jump-hint">
+            <span class="kbd">←</span> <span class="kbd">→</span> arrows to walk ·
+            <span class="kbd">Space</span> to jump
+            <span class="hero-jump-hint-detail">
+              (tap = short hop · hold = full jump)
+            </span>
+          </p>
+
+          <p class="hero-seed-line">
+            Seed: <span class="hero-seed">#98724</span>
+          </p>
+
+          <pre class="hero-snippet"><code>// Per-tick game loop (fixed dt)
+const walkDx = walkDir * speed * WALK_SPEED * dt;  // walkDir: -1, 0, +1
+frame = stepHero(frame, 1 / 60, { jumpPressed, jumpHeld, walkDx, facing });
+// stepHero composes: advanceJump + advanceLocomotionByDisplacement + advanceSpringChain
+// drawSlimeKnight composes: breath × jumpScale, airborneTuck, mirrors by facing</code></pre>
+        </div>
+
+        <div class="hero-stage">
+          <canvas
+            class="hero-canvas"
+            width="320"
+            height="320"
+            aria-label="Animated slime-knight character"
+          ></canvas>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Prototype hero section. The full 9-section showcase is a work in progress.
+      </p>
+    </footer>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

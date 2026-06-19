@@ -9,7 +9,10 @@
     "build": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "showcase:dev": "vite --config showcase/vite.config.ts",
+    "showcase:build": "vite build --config showcase/vite.config.ts",
+    "showcase:typecheck": "tsc --noEmit --project showcase/tsconfig.json"
   },
   "devDependencies": {
     "canvas": "^3.2.3",
