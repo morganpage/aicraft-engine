@@ -149,36 +149,97 @@ export const HERO_RANGES = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Antenna physics tuning — showcase-local stiffness correction
+// Antenna physics tuning — showcase-local springy-rod model
 // ---------------------------------------------------------------------------
+//
+// Target read: "ball on the end of a springy, bendy metal rod." The antenna
+//   1. leans slightly FORWARD (in the facing direction);
+//   2. is springy/bendy, NOT a rigid mast;
+//   3. has a weighted ball at the tip that SAGS under its own weight and
+//      BOUNCES during walk/jump (velocity-driven, not just static sag);
+//   4. does NOT flop like a scarf (issue #4 — the original problem the old
+//      singleton `ANTENNA_STIFFNESS = 0.7` rigidity was added to fix).
+//
+// The new model replaces that singleton with FOUR named constants composed
+// across two showcase-local passes run AFTER the library `advanceSpringChain`
+// step in `stepHero`:
+//   - `applyAntennaRestPose`  — directional spring toward a forward-tilted
+//     rest vector, with BASE→TIP tapered stiffness (below).
+//   - `applyAntennaTipWeight` — positional downward nudge proportional to
+//     node position along the chain (the ball's weight bending the rod).
+//
+// The base>tip stiffness ordering + the tip-weight gradient compound toward
+// the tip → sag concentrates at the tip → "rod bending under a point load,"
+// not tentacle/whip. This is the middle ground between the old rigid mast
+// (too stiff, no life) and the original un-stiffened scarf-flop (issue #4):
+// springy but not floppy. All four values are starting points — the
+// benchmarker may tune. They are named constants so tuning is a one-line
+// change per value.
 
 /**
- * Antenna angular stiffness (showcase-local). After each `advanceSpringChain`
- * step in `stepHero`, the showcase-local `stiffenAntenna` correction pulls
- * every node toward straight-up from the node below it by this fraction of the
- * deviation. The library's Verlet solver only enforces segment LENGTHS (PBD
- * distance constraints — no preferred direction), so without this correction
- * the chain whips freely under body motion: the "floppy scarf" read (issue #4).
+ * Antenna directional spring — base stiffness. The showcase-local
+ * `applyAntennaRestPose` correction pulls every node toward a forward-tilted
+ * rest vector (see ANTENNA_FORWARD_LEAN_X) by a tapered fraction of the
+ * deviation: the BASE node (index 1, just above the anchor) is pulled by
+ * ANTENNA_BASE_STIFFNESS, the TIP node (last) by ANTENNA_TIP_STIFFNESS, and
+ * nodes between by linear interpolation. Base-stiffer-than-tip concentrates
+ * freedom at the tip so the rod bends like a beam under a point load, not
+ * like a tentacle or whip.
  *
- * `0.7` = mostly rigid: the body of the antenna stays upright while the tip
- * (furthest from the anchor, most cumulative freedom) lags and sways gently.
- * Tunable; if the benchmarker reads it as too rigid (no life) or still too
- * floppy, adjust here.
+ * Lower than the old singleton ANTENNA_STIFFNESS=0.7 because the target read
+ * is "springy rod," not "rigid mast." If the benchmarker reads it as too
+ * floppy (scarf regression, issue #4), RAISE BOTH constants together; if too
+ * rigid, LOWER BOTH. Keep the base>tip ordering.
  */
-const ANTENNA_STIFFNESS = 0.7;
+const ANTENNA_BASE_STIFFNESS = 0.35;
+
+/** Paired with ANTENNA_BASE_STIFFNESS — the TIP-end stiffness. See its JSDoc. */
+const ANTENNA_TIP_STIFFNESS = 0.22;
+
+/**
+ * Antenna forward lean (showcase-local). The per-segment rest vector tilts
+ * forward by this fraction of the segment length (in +X, code space). The
+ * existing ctx.scale(facing, 1) mirror in drawSlimeKnight flips it for
+ * facing === -1, so the antenna leans forward in screen space for both
+ * directions — NO facing-aware logic inside the physics.
+ *
+ * The rest vector per segment is { x: seg * lean, y: -sqrt(seg² - (seg*lean)²) },
+ * i.e. a unit segment rotated forward by atan(lean). 0.22 ≈ 12.4° forward.
+ */
+const ANTENNA_FORWARD_LEAN_X = 0.22;
+
+/**
+ * Antenna tip weight (showcase-local). A positional downward nudge applied
+ * AFTER the rest-pose correction, proportional to node position along the
+ * chain (i/(n-1)): the base gets ~0, the tip gets the full weight. This
+ * models the ball's mass bending the rod. Move curr AND prev by the same
+ * delta to preserve implicit Verlet velocity (same discipline as the rest-
+ * pose correction).
+ *
+ * NOTE (architect): at these magnitudes the STATIC-equilibrium tip sag is
+ * sub-pixel (~weight/tipStiff ≈ 0.5px). The "bouncing ball" read comes from
+ * VELOCITY-DRIVEN dynamics during walk/jump — anchor motion transfers
+ * velocity through the chain, the tip lags, and this weight nudge amplifies
+ * the lag into visible bounce. If the dynamic read is too subtle, RAISE THIS
+ * CONSTANT FIRST (visible sag = target feel) before lowering the stiffness
+ * constants (lowering stiffness risks the scarf-flop regression, issue #4).
+ */
+const ANTENNA_TIP_WEIGHT = 0.12;
 
 /**
  * Antenna gravity scale (showcase-local). The library's `advanceSpringChain`
- * applies `gravityY` during Verlet integration. Set to `0` because the
- * `stiffenAntenna` correction now fully owns the vertical rest pose — the old
- * negative (upward) gravity fought the stiffness correction during jump
- * landings (gravity pushed the chain up while stiffness pulled it back to
- * vertical, producing an up-float read). With zero gravity, the only sway is
- * velocity transfer through the chain from anchor motion = gentle tip lag.
+ * applies `gravityY` during Verlet integration. Set to `0`: solver gravity is
+ * now redundant with the showcase-local `applyAntennaTipWeight` nudge, which
+ * owns the downward ball-weight sag explicitly (and in a tapered, tip-focused
+ * way a uniform solver gravity could not). Keeping solver gravity on would
+ * double-apply the sag AND fight the rest-pose correction during jump
+ * landings (the old up-float read). With zero solver gravity, the only
+ * vertical sag is the showcase-local tip weight; the only sway is velocity
+ * transfer through the chain from anchor motion = gentle tip lag + bounce.
  *
  * The RNG draw for `springGravityMul` (seed-contract draw #13) is preserved in
  * `deriveHeroConfig` and multiplied through, so this scale can be raised later
- * (e.g. `0.1` for a tiny upward bias) without touching the 16-draw seed order.
+ * without touching the 16-draw seed order.
  */
 const ANTENNA_GRAVITY_SCALE = 0;
 
@@ -401,9 +462,11 @@ export function deriveHeroConfig(seed: number): HeroConfig {
     // is an upward antenna, not a hanging tail." The absolute magnitude
     // still scales with DEFAULT_SPRING.gravityY × the springGravityMul draw.
     //
-    // ANTENNA_GRAVITY_SCALE (currently 0) zeroes this for the solver: the
-    // showcase-local `stiffenAntenna` correction owns the vertical rest pose,
-    // and the upward gravity fought it during landings. The RNG draw #13
+    // ANTENNA_GRAVITY_SCALE (currently 0) zeroes solver gravity: the
+    // showcase-local `applyAntennaTipWeight` nudge now owns the ball's
+    // downward sag explicitly (in a tapered, tip-focused way a uniform
+    // solver gravity could not), and solver gravity would double-apply it
+    // AND fight `applyAntennaRestPose` during landings. The RNG draw #13
     // (springGravityMul) is still consumed here so the seed contract's 16-draw
     // order is unchanged; raising ANTENNA_GRAVITY_SCALE re-activates it.
     gravityY:
@@ -445,17 +508,19 @@ export function deriveHeroConfig(seed: number): HeroConfig {
 
 /**
  * Create the initial per-frame state for a hero at rest. The locomotion
- * phase starts at 0; the antenna chain extends straight UP from the body
- * top with zero implicit velocity.
+ * phase starts at 0; the antenna chain extends along the FORWARD-TILTED rest
+ * vector used by `applyAntennaRestPose` (lean ANTENNA_FORWARD_LEAN_X forward
+ * from vertical) with zero implicit velocity, so the first frame is at rest
+ * — no initial-frame whip.
  *
  * The antenna is an UPWARD element (not a hanging tail), so we build the
  * nodes manually here — `createSpringChain` from the library is correctly
  * designed for DOWNWARD-hanging chains (tails, hair) and would lay the
  * antenna nodes out over the hero's face. Mirroring its node shape but
- * inverting the Y direction gives the upward rest pose; the
- * `advanceSpringChain` solver is direction-agnostic (it pins node[0] to
- * the anchor each tick and only enforces segment lengths), so the upward
- * init composes with it cleanly.
+ * inverting the Y direction (and tilting +X by the forward lean) gives the
+ * rest pose; the `advanceSpringChain` solver is direction-agnostic (it pins
+ * node[0] to the anchor each tick and only enforces segment lengths), so the
+ * tilted init composes with it cleanly.
  *
  * @param config - seed-derived static config
  * @returns the initial frame state
@@ -463,9 +528,17 @@ export function deriveHeroConfig(seed: number): HeroConfig {
 export function createHeroFrameState(config: HeroConfig): HeroFrameState {
   const anchor = bodyTopAtRest(config);
   const antenna: VerletNode[] = [];
+  // Forward-tilted rest vector — MUST match applyAntennaRestPose's per-segment
+  // vector so the first frame is at rest (no initial-frame whip). See that
+  // function for the geometry.
+  const rx = config.antennaSegmentLength * ANTENNA_FORWARD_LEAN_X;
+  const ry = -Math.sqrt(
+    config.antennaSegmentLength * config.antennaSegmentLength - rx * rx,
+  );
   for (let i = 0; i < config.antennaSegments; i++) {
-    const y = anchor.y - i * config.antennaSegmentLength;
-    antenna.push({ x: anchor.x, y, prevX: anchor.x, prevY: y });
+    const x = anchor.x + i * rx;
+    const y = anchor.y + i * ry;
+    antenna.push({ x, y, prevX: x, prevY: y });
   }
   return {
     config,
@@ -479,50 +552,84 @@ export function createHeroFrameState(config: HeroConfig): HeroFrameState {
 }
 
 /**
- * Stiffen the antenna chain: pull every node toward straight-up from the node
- * below it. The library's `advanceSpringChain` only enforces segment lengths
- * (PBD distance constraints) — it has NO angular stiffness, so under body
- * motion the chain whips freely and flops into the "scarf" read (issue #4).
- * This showcase-local positional correction adds the missing preferred
- * direction (vertical), so the antenna stays upright with only gentle tip sway.
+ * Apply the antenna's directional spring: pull every node toward a forward-
+ * tilted rest pose (per-segment vector rotated ANTENNA_FORWARD_LEAN_X forward
+ * from vertical), with tapered stiffness (base-stiffer-than-tip). Replaces the
+ * old `stiffenAntenna` straight-up correction — the library solver has no
+ * preferred-direction term, so this showcase-local positional correction owns
+ * the rest pose exactly as before, just with a forward tilt + a taper.
  *
- * Operates in place on the array returned by `advanceSpringChain` (which is
- * already a fresh deep copy — the input `state.antenna` is never mutated), so
- * `stepHero`'s pure-progression-ops contract is preserved at its boundary.
+ * Operates in place on the fresh chain from `advanceSpringChain` (already a
+ * deep copy — `state.antenna` is never mutated), preserving `stepHero`'s pure-
+ * progression-ops boundary. Moves curr AND prev by the same delta to preserve
+ * implicit Verlet velocity (otherwise the positional jump reads as a velocity
+ * spike and re-excites the whip).
  *
- * Both current AND prev positions move by the SAME delta so the implicit Verlet
- * velocity `(curr - prev)` is preserved — otherwise the positional jump would
- * read as a velocity spike and re-excite the whip on the next tick.
- *
- * Node 0 (the anchor, re-pinned by the solver each tick) is left untouched.
- * The tip (last node) has the most freedom: each node only stiffens relative to
- * the one directly below, so deflection accumulates toward the tip → the tip
- * sways the most while the base stays rigidly vertical.
+ * Node 0 (anchor, re-pinned by the solver) untouched. Taper: node 1 uses
+ * ANTENNA_BASE_STIFFNESS, the last node uses ANTENNA_TIP_STIFFNESS, between
+ * linear on `i/(n-1)`. Both gradients compound toward the tip (stiffness ↓,
+ * tip-weight ↑ in the separate pass below) → sag concentrates at the tip →
+ * "rod bending under ball weight," not tentacle/whip.
  *
  * @param nodes - fresh chain from `advanceSpringChain` (mutated + returned)
  * @param segmentLength - rest distance between adjacent nodes
- * @param stiffness - correction strength in [0,1]; higher = more rigid
  * @returns the same array (mutated in place) for chaining
  */
-function stiffenAntenna(
+function applyAntennaRestPose(
   nodes: VerletNode[],
   segmentLength: number,
-  stiffness: number,
 ): VerletNode[] {
+  // Forward-tilted per-segment rest vector. Unit length = segmentLength,
+  // rotated forward by atan(ANTENNA_FORWARD_LEAN_X) from straight-up.
+  const rx = segmentLength * ANTENNA_FORWARD_LEAN_X;
+  const ry = -Math.sqrt(segmentLength * segmentLength - rx * rx);
+  const last = nodes.length - 1;
   for (let i = 1; i < nodes.length; i++) {
     const below = nodes[i - 1];
-    // Straight-up rest pose for this node, relative to the node below it.
-    const restX = below.x;
-    const restY = below.y - segmentLength;
+    const restX = below.x + rx;
+    const restY = below.y + ry;
     const n = nodes[i];
-    const dx = (restX - n.x) * stiffness;
-    const dy = (restY - n.y) * stiffness;
+    // Tapered stiffness: base (i=1) → ANTENNA_BASE_STIFFNESS, tip (i=last) →
+    // ANTENNA_TIP_STIFFNESS, linear between.
+    const t = last > 1 ? (i - 1) / (last - 1) : 0;
+    const stiff =
+      ANTENNA_BASE_STIFFNESS +
+      (ANTENNA_TIP_STIFFNESS - ANTENNA_BASE_STIFFNESS) * t;
+    const dx = (restX - n.x) * stiff;
+    const dy = (restY - n.y) * stiff;
     // Move both current and prev by the same delta to preserve implicit Verlet
     // velocity (otherwise the position jump reads as a velocity spike and the
     // chain whips).
     n.x += dx;
     n.y += dy;
     n.prevX += dx;
+    n.prevY += dy;
+  }
+  return nodes;
+}
+
+/**
+ * Apply the antenna tip weight: a positional downward nudge proportional to
+ * node position along the chain (base ~0, tip full ANTENNA_TIP_WEIGHT). Models
+ * the ball's mass bending the rod. Applied AFTER `applyAntennaRestPose` so the
+ * stiffness correction sets the rest orientation first and this sags the tip
+ * down from there (reverse order would have stiffness un-do the sag).
+ *
+ * Same velocity-preservation discipline: curr AND prev move by the same delta.
+ * Operates in place on the fresh chain from `advanceSpringChain`.
+ *
+ * @param nodes - fresh chain (mutated + returned)
+ * @returns the same array (mutated in place) for chaining
+ */
+function applyAntennaTipWeight(nodes: VerletNode[]): VerletNode[] {
+  const last = nodes.length - 1;
+  if (last < 1) return nodes;
+  for (let i = 1; i < nodes.length; i++) {
+    const frac = i / last; // base (i=1) → small, tip (i=last) → 1.0
+    const dy = ANTENNA_TIP_WEIGHT * frac;
+    const n = nodes[i];
+    // curr AND prev move together — preserve implicit Verlet velocity.
+    n.y += dy;
     n.prevY += dy;
   }
   return nodes;
@@ -671,10 +778,15 @@ export function stepHero(
     dt,
     config.springConfig,
   );
-  // Showcase-local angular stiffness so the antenna stays upright with gentle
-  // tip sway instead of flopping (issue #4). The library solver only enforces
-  // segment lengths; this correction adds the preferred (vertical) direction.
-  antenna = stiffenAntenna(antenna, config.antennaSegmentLength, ANTENNA_STIFFNESS);
+  // Showcase-local antenna dynamics composed on top of the library solver.
+  // The solver only enforces segment lengths (no preferred direction); these
+  // two passes own (1) the forward-tilted springy rest pose and (2) the ball's
+  // weight bending the rod. Both preserve Verlet velocity (curr+prev move
+  // together) so they don't re-excite the whip. Order matters: rest pose first
+  // sets the orientation, then tip-weight sags the ball — reverse order would
+  // have the stiffness un-do the sag.
+  antenna = applyAntennaRestPose(antenna, config.antennaSegmentLength);
+  antenna = applyAntennaTipWeight(antenna);
 
   return { config, locomotion, antenna, jump, x, facing, eyeCount };
 }
