@@ -20,4 +20,17 @@ export interface Particle {
   size: number;
   /** Optional color override. When omitted, the renderer picks a default. */
   color?: string;
+  /**
+   * Per-particle gravity multiplier applied to the world gravity in `advance`.
+   * Missing/undefined → `DEFAULT_GRAVITY_SCALE` (1.0, no override). Negative
+   * values invert gravity (smoke rising); `0` cancels it entirely. Enables
+   * heterogeneous physics — a single particle array can mix fire (positive
+   * scale, falls back) and smoke (negative scale, rises).
+   */
+  gravityScale?: number;
+  /**
+   * Per-particle drag multiplier applied to the world drag in `advance`.
+   * Missing/undefined → `DEFAULT_DRAG_SCALE` (1.0, no override).
+   */
+  dragScale?: number;
 }
