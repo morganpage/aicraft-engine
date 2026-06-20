@@ -19,9 +19,9 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 
 | Pillar | Modules | Status |
 |---|---|---|
-| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, animation helpers | Phase 1 |
+| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`) | Phase 1 |
 | **1. RNG** | Seeded mulberry32, distribution helpers | Phase 1 |
-| **1. Particles** | Deterministic spawn / advance / cull | Phase 1 |
+| **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | Phase 1 |
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | Phase 1b |
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |
 | **2. Cosmetics** | Versioned manifest, seeded variant generation, multi-slot ownership | **Shipped** |

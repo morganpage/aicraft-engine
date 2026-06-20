@@ -37,6 +37,28 @@ Color math, pixel helpers, motion probe. (The animation helpers — `bob`, `puls
 
 - _research note: See `docs/research/procedural-locomotion.md` for planned trigonometric locomotion, squash/stretch, and Verlet-based spring chains._
 
+#### `src/primitives/wave-line.ts`
+
+Surface ripple / wave-on-polyline. Three pure evaluators for liquid-surface rendering: sum-of-sines displacement, 1D Gerstner displacement, and a high-level polyline generator with outward normals. Deterministic — same `(x, t, config)` → same output, forever.
+
+> Decision: `docs/design/surface-ripple-decision.md`.
+> Benchmark: `benchmarks/surface-ripple/sine-vs-gerstner.png`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `WaveOctave` | type | Single-octave params: `amplitude`, `wavelength`, `speed`, `phase?` | `src/primitives/wave-line.ts` |
+| `GerstnerOctave` | type | Single Gerstner octave: adds `steepness` (0–1) for trochoidal pinch | `src/primitives/wave-line.ts` |
+| `WaveDisplacementConfig` | type | Config for `waveDisplacement`: `octaves`, `baseY` | `src/primitives/wave-line.ts` |
+| `GerstnerDisplacementConfig` | type | Config for `gerstnerDisplacement`: `octaves`, `baseY` | `src/primitives/wave-line.ts` |
+| `WaveMode` | type | `'sine' \| 'gerstner'` — algorithm selector (open for v2 `'spring-mass'`) | `src/primitives/wave-line.ts` |
+| `WaveLineConfig` | type | High-level generator config: `mode?`, `octaves?`, `steepness?`, `snapToPixel?` | `src/primitives/wave-line.ts` |
+| `WavePoint` | type | `{x, y, normalX, normalY}` — flat displaced point with outward normal | `src/primitives/wave-line.ts` |
+| `waveDisplacement(x, t, config)` | function | Pure sum-of-sines: returns absolute Y at `(x, t)` anchored to `baseY` | `src/primitives/wave-line.ts` |
+| `gerstnerDisplacement(x0, t, config)` | function | Pure 1D Gerstner: returns `{x, y, dx, dy}` with per-octave steepness | `src/primitives/wave-line.ts` |
+| `generateWaveLine(startX, startY, endX, endY, sampleSpacing, t, config?)` | function | High-level polyline generator → `WavePoint[]` with outward normals from curve tangent | `src/primitives/wave-line.ts` |
+| `DEFAULT_WAVE_LINE` | const | 2-octave sine config: `snapToPixel: true`, benchmark-confirmed amplitudes | `src/primitives/wave-line.ts` |
+| `DEFAULT_GERSTNER` | const | 2-octave Gerstner config: `steepness: 0.7`, `snapToPixel: false` | `src/primitives/wave-line.ts` |
+
 ### `src/rng/`
 
 Seeded pseudo-random number generation. Required anywhere determinism matters and variation is needed.
@@ -51,17 +73,39 @@ Seeded pseudo-random number generation. Required anywhere determinism matters an
 
 ### `src/particles/`
 
-Deterministic particle system. Pure spawn/advance/cull.
+Deterministic particle system. Pure spawn/advance/cull, extended with heterogeneous physics (per-particle gravity/drag scales), region/cone sampling, continuous emitters, and renderer-adjacent lifetime helpers.
+
+> Decision: `docs/design/particle-emitters-decision.md`.
+> Benchmark: `benchmarks/particle-emitters/lava-pool.png`.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `Particle` | type | `{x, y, vx, vy, life, maxLife, size, color?}` | `src/particles/types.ts` |
+| `Particle` | type | `{x, y, vx, vy, life, maxLife, size, color?, gravityScale?, dragScale?}` — optional `gravityScale`/`dragScale` default to 1.0 via `??` in `advance` | `src/particles/types.ts` |
 | `spawn(x, y, opts)` | function | Evenly-distributed particles around a circle; deterministic by default | `src/particles/spawn.ts` |
 | `SpawnOptions` | type | Options for `spawn` (count, speed, jitter, life, size, color, angleOffset, rng) | `src/particles/spawn.ts` |
-| `advance(particles, dt, opts?)` | function | Pure: returns new array, applies gravity + drag, decrements life | `src/particles/advance.ts` |
+| `advance(particles, dt, opts?)` | function | Pure: returns new array, applies gravity×`gravityScale` + drag×`dragScale`, decrements life. Byte-identical for particles without scale fields | `src/particles/advance.ts` |
 | `AdvanceOptions` | type | Options for `advance` (gravity, drag) | `src/particles/advance.ts` |
 | `cull(particles)` | function | Pure: returns new array filtering dead particles | `src/particles/cull.ts` |
 | `step(particles, dt, opts?)` | function | Convenience: `cull(advance(...))` | `src/particles/step.ts` |
+| `DEFAULT_GRAVITY_SCALE` | const | `1.0` — neutral per-particle gravity multiplier | `src/particles/constants.ts` |
+| `DEFAULT_DRAG_SCALE` | const | `1.0` — neutral per-particle drag multiplier | `src/particles/constants.ts` |
+| `DEFAULT_RATE_SCALE` | const | `1.0` — neutral per-call emission-rate multiplier | `src/particles/constants.ts` |
+| `DEFAULT_INNER_RADIUS` | const | `0` — default inner radius for circle region (filled disk) | `src/particles/constants.ts` |
+| `SpawnRegion` | type | Discriminated union: `'point' \| 'line' \| 'rect' \| 'circle'` with shape-specific fields | `src/particles/regions.ts` |
+| `sampleRegion(region, rng)` | function | Deterministic coordinate sample from a `SpawnRegion`; fixed RNG draws per shape (0/1/2/2) | `src/particles/regions.ts` |
+| `ConeConfig` | type | Directional cone: `baseAngle`, `spread`, `speedMin`, `speedMax` | `src/particles/cone.ts` |
+| `sampleConeVelocity(config, rng)` | function | Deterministic velocity sample inside an angular cone; exactly 2 RNG draws | `src/particles/cone.ts` |
+| `EmissionState` | type | Rate accumulator: `{accumulator}` in [0, 1) | `src/particles/emitter.ts` |
+| `EmissionRateConfig` | type | Rate config: `rate`, `rateScale?` | `src/particles/emitter.ts` |
+| `advanceEmission(state, dt, config)` | function | Pure rate-accumulator progression; returns `{next, spawnCount}` (input never mutated) | `src/particles/emitter.ts` |
+| `EmitterConfig` | type | Declarative emitter: `rate`, `region`, `cone`, `gravityScale?`, `dragScale?`, `life`, `size`, `color?`, `rng` | `src/particles/emitter.ts` |
+| `Emitter` | type | Bundled state: `config` (readonly ref), `accumulator`, `particles[]` | `src/particles/emitter.ts` |
+| `StepEmittersOptions` | type | Per-call world options: `gravity?`, `drag?`, `rateScale?` | `src/particles/emitter.ts` |
+| `createEmitter(config)` | function | Factory: zero accumulator, empty particles array | `src/particles/emitter.ts` |
+| `stepEmitters(emitters, dt, opts?)` | function | Advance all emitters: integrate rates, spawn via region+cone, advance with heterogeneous physics, cull dead. Pure: returns new `Emitter[]` | `src/particles/emitter.ts` |
+| `particleAge(p)` | function | Normalized age `[0, 1]` from `life`/`maxLife`; 0 at spawn, 1 at death | `src/particles/lifetime.ts` |
+| `particleSizeCurve(p, startSize, endSize)` | function | Linear size interpolation over lifetime; pure reader | `src/particles/lifetime.ts` |
+| `particleAlphaCurve(p, startAlpha, endAlpha)` | function | Linear alpha interpolation over lifetime; clamped to `[0, 1]` | `src/particles/lifetime.ts` |
 
 ### `src/animation/types.ts`
 

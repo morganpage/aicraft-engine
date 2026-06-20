@@ -12,3 +12,17 @@ export {
 } from './color';
 export { clamp, floor, lerp, approach } from './pixel';
 export { prefersReducedMotion, resetMotionCacheForTests } from './motion';
+export {
+  waveDisplacement,
+  gerstnerDisplacement,
+  generateWaveLine,
+  DEFAULT_WAVE_LINE,
+  DEFAULT_GERSTNER,
+  type WaveOctave,
+  type GerstnerOctave,
+  type WaveDisplacementConfig,
+  type GerstnerDisplacementConfig,
+  type WaveMode,
+  type WaveLineConfig,
+  type WavePoint,
+} from './wave-line';
