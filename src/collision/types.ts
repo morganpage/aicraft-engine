@@ -69,3 +69,35 @@ export interface ResolveYResult {
   /** `true` if the body hit a ceiling (head bumped against a solid's underside). */
   hitCeiling: boolean;
 }
+
+/**
+ * Tile solidity classification for the tile-grid query.
+ *
+ * - `'empty'` — no collision (air / decorative).
+ * - `'solid'` — fully solid surface (blocks from all directions).
+ * - `'passthrough'` — one-way platform (blocks downward movement only).
+ *
+ * @see TileSolidityQuery
+ */
+export type TileType = 'empty' | 'solid' | 'passthrough';
+
+/**
+ * Classifies a tile at grid coordinates. The consumer wraps their tile data
+ * structure (2D array, flat array, string map, procedural function) behind
+ * this uniform interface. Out-of-bounds tiles should return `'empty'` (or
+ * `'solid'` for level boundaries — the consumer's choice).
+ *
+ * Pure: the query is a reader of the underlying tile data; it must not mutate
+ * game state. Tile collision helpers call it many times per tick, so it should
+ * be cheap (a direct array/lookup, not a traversal).
+ *
+ * @example
+ * ```ts
+ * const grid: number[][] = [[1, 1, 1], [1, 0, 0], [1, 0, 0]];
+ * const query: TileSolidityQuery = (tileX, tileY) => {
+ *   if (tileY < 0 || tileY >= grid.length || tileX < 0 || tileX >= grid[0].length) return 'empty';
+ *   return grid[tileY][tileX] === 1 ? 'solid' : 'empty';
+ * };
+ * ```
+ */
+export type TileSolidityQuery = (tileX: number, tileY: number) => TileType;

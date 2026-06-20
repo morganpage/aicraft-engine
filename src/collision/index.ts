@@ -1,15 +1,24 @@
 /**
- * Collision module — AABB overlap test and per-axis move-and-resolve.
+ * Collision module — AABB overlap test, per-axis move-and-resolve, and
+ * tile-grid collision.
  *
  * The foundational platformer collision layer. All exports are pure functions
  * over plain data: no host access, no `Math.random`, no global state. Safe to
  * call from deterministic simulation code.
  *
+ * The tile-grid helpers (`resolveTileX` / `resolveTileY`) are a thin layer on
+ * top of the AABB resolver: they translate between world and tile space, query
+ * the grid for overlapping tiles, and delegate resolution to
+ * {@link resolveAxisX} / {@link resolveAxisY}. No resolution logic is
+ * duplicated.
+ *
  * @module
  */
 
-export type { Rect, Solid, ResolveXResult, ResolveYResult } from './types';
+export type { Rect, Solid, ResolveXResult, ResolveYResult, TileType, TileSolidityQuery } from './types';
 
 export { aabbOverlap } from './aabb';
 
 export { resolveAxisX, resolveAxisY } from './resolve';
+
+export { worldToTile, tileToWorld, tileRect, resolveTileX, resolveTileY } from './tiles';
