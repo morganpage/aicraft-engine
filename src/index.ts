@@ -11,3 +11,4 @@ export * from './particles';
 export * from './animation';
 export * from './palette';
 export * from './cosmetics';
+export * from './iap';

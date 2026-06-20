@@ -450,16 +450,76 @@ Pure progression ops. Mirrors Spitekeep's `platform/progress.ts`: immutable in �
 
 ---
 
-## Pillar 3: IAP Bridge (planned, Phase 3)
+## Pillar 3: IAP Bridge (shipped)
 
-### `src/iap/` (planned)
+> Decision: `docs/design/iap-bridge-decision.md`.
 
-Adapter interface for in-app purchases. Mirrors Spitekeep's `SaveStorage` pattern.
+### `src/iap/types.ts`
 
-- `IAPBridge` — adapter interface: `getCatalog()`, `getEntitlements()`, `purchase(sku)`, `restore()`, `onTransaction(cb)`
-- `SKU`, `Entitlement`, `Receipt` — type set parallel to `SaveData`
-- `grantEntitlement(save, sku)` — pure op extending `SaveData`
-- Adapters: `createMemoryIAPAdapter()` (tests), `createLocalStorageIAPAdapter()` (dev), Jest/Poki deferred
+All IAP type definitions. Zero cross-pillar imports. `EntitlementSave` is a pure overlay containing NO cosmetic fields — the consumer composes it with `CosmeticSave` at the tick boundary via the `GrantDescriptor[]` returned from `flushIAPEvents`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `ProductType` | type | `'non_consumable'` — v1 only; consumables/subscriptions deferred to v2 | `src/iap/types.ts` |
+| `IAPPrice` | type | `{ formatted, micros, currency }` — localized display string + raw micro-units + ISO 4217 code | `src/iap/types.ts` |
+| `IAPProduct` | type | `{ id, type, name, description, price }` — store catalog product record | `src/iap/types.ts` |
+| `TransactionState` | type | `'pending' \| 'approved' \| 'finished' \| 'failed'` — platform transaction lifecycle | `src/iap/types.ts` |
+| `IAPTransaction` | type | `{ id, sku, state, receipt?, error? }` — platform transaction record (adapter produces, consumer feeds to `pushTransaction`) | `src/iap/types.ts` |
+| `IAPEvent` | type | `{ type, sku, txId }` — normalised event for the deterministic sim core (`'purchase' \| 'restore' \| 'revoke'`) | `src/iap/types.ts` |
+| `EntitlementSave` | type | `{ entitlements: string[], receipts: Record<string, string> }` — pure IAP overlay. **No cosmetic fields.** Fields intentionally NOT `readonly` (clone-then-mutate discipline) | `src/iap/types.ts` |
+| `GrantDescriptor` | type | `{ target: 'skin', targetId }` — consumer-side grant descriptor; open union for future `'bundle'`/`'currency'` | `src/iap/types.ts` |
+| `SkuResolver` | type | `(sku: string) => readonly GrantDescriptor[]` — consumer-provided SKU→grant mapping; library never embeds SKU metadata | `src/iap/types.ts` |
+| `IAPBridge` | interface | Host-touching adapter: `initialize()`, `isInitialized()`, `getCatalog()`, `getEntitlements()`, `purchase(sku)`, `restore()`, `onTransaction(cb)` | `src/iap/types.ts` |
+
+### `src/iap/constants.ts`
+
+Canonical defaults and tunables. No magic strings or numbers outside this file.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_IAP_STORAGE_KEY` | const | `'aicraft-iap-entitlements'` — localStorage key for mock IAP store | `src/iap/constants.ts` |
+| `PRODUCT_TYPE_NON_CONSUMABLE` | const | `'non_consumable'` — canonical product type constant | `src/iap/constants.ts` |
+| `TX_STATE_APPROVED` | const | `'approved'` — purchase succeeded | `src/iap/constants.ts` |
+| `TX_STATE_FAILED` | const | `'failed'` — purchase declined or errored | `src/iap/constants.ts` |
+| `TX_STATE_PENDING` | const | `'pending'` — platform still resolving | `src/iap/constants.ts` |
+| `TX_STATE_FINISHED` | const | `'finished'` — purchase fully consumed | `src/iap/constants.ts` |
+| `DEFAULT_IAP_PRICE` | const | `{ formatted: '$0.99', micros: 990000, currency: 'USD' }` — fallback price record | `src/iap/constants.ts` |
+| `DEFAULT_IAP_PRODUCT` | const | `{ id: 'com.aicraft.default', type: 'non_consumable', ... }` — default product for smoke tests | `src/iap/constants.ts` |
+| `DEFAULT_IAP_CATALOG` | const | `[ DEFAULT_IAP_PRODUCT ]` — single-item default catalog | `src/iap/constants.ts` |
+| `DEFAULT_ENTITLEMENT_SAVE` | const | `{ entitlements: [], receipts: {} }` — empty entitlement state | `src/iap/constants.ts` |
+
+### `src/iap/entitlements.ts`
+
+Pure progression ops + queue primitives. Mirrors `src/cosmetics/ownership.ts`: immutable in → JSON-clone out → never mutate → never throw. Call on purchase/restore/revoke events only (not per-frame). `flushIAPEvents` returns `GrantDescriptor[]` for the consumer to compose with `grantSkin` at their own boundary — no cross-pillar import.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `grantEntitlement(save, sku, receipt?)` | function | Pure op: add SKU to sorted deduped `entitlements`, store receipt. Invalid/empty SKU = silent no-op | `src/iap/entitlements.ts` |
+| `revokeEntitlement(save, sku)` | function | Pure op: remove SKU from `entitlements` and drop receipt. Does NOT auto-unequip skins | `src/iap/entitlements.ts` |
+| `flushIAPEvents(save, events, resolver)` | function | Pure op: batch-process events into save; returns `{ save, grants }`. Consumer iterates `grants` and calls `grantSkin` themselves | `src/iap/entitlements.ts` |
+| `drainQueue(events)` | function | Pure op: shallow-copy + empty array; returns `{ drained, next }` | `src/iap/entitlements.ts` |
+| `pushTransaction(events, tx)` | function | Pure op: append `'purchase'` event for `'approved'` tx; no-op for `'pending'`/`'finished'`/`'failed'` | `src/iap/entitlements.ts` |
+
+### `src/iap/adapters/memory.ts`
+
+In-memory IAP adapter. No host API access. Transaction ids are monotonic per-instance for deterministic tests (no `Math.random` / `Date.now()`).
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `MemoryIAPAdapterConfig` | type | `{ catalog? }` — optional catalog override | `src/iap/adapters/memory.ts` |
+| `createMemoryIAPAdapter(config?)` | function | Factory: in-process mock store. `purchase()` resolves approved for known SKUs, failed for unknown; never rejects | `src/iap/adapters/memory.ts` |
+
+### `src/iap/adapters/local-storage.ts`
+
+localStorage-backed adapter for local dev. Lazily resolves `window.localStorage` inside methods (never at module load), falls back to in-memory in Node/SSR/test. Cached probe after first resolution. Never throws, never rejects.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `LocalStorageIAPAdapterConfig` | type | `{ storageKey?, catalog? }` — optional storage key + catalog override | `src/iap/adapters/local-storage.ts` |
+| `createLocalStorageIAPAdapter(config?)` | function | Factory: persists to `localStorage` (or in-memory fallback). Same contract as memory adapter | `src/iap/adapters/local-storage.ts` |
+
+- _decision: `docs/design/iap-bridge-decision.md`_
+- _research note: `docs/research/iap-bridge.md`_
 
 ---
 
@@ -490,7 +550,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, and `./cosmetics` (all shipped). As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, and `./iap` (all shipped). As pillars ship, they are added here.
 
 ```ts
 export * from './primitives';
@@ -499,7 +559,7 @@ export * from './particles';
 export * from './animation';
 export * from './palette';
 export * from './cosmetics';
-// Phase 3: export * from './iap';
+export * from './iap';
 // Phase 4: export * from './fake3d';
 ```
 

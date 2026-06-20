@@ -25,7 +25,7 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | Phase 1b |
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |
 | **2. Cosmetics** | Versioned manifest, seeded variant generation, multi-slot ownership | **Shipped** |
-| **3. IAP** | Bridge adapter interface, entitlement store, dev adapters | Phase 3 |
+| **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (Poki/Jest/StoreKit/Play Billing deferred to Phase 5) | **Shipped** |
 | **4. Fake-3D** | Billboarding, isometric tiles, orthographic cube, heightmap | Phase 4 |
 | **5. Platform adapters** | Jest SDK, Poki SDK | Phase 5 (on-demand) |
 
