@@ -13,6 +13,14 @@ export {
 export { clamp, floor, lerp, approach } from './pixel';
 export { prefersReducedMotion, resetMotionCacheForTests } from './motion';
 export {
+  createHitStop,
+  triggerHitStop,
+  stepHitStop,
+  isHitStopActive,
+  DEFAULT_HIT_STOP_DURATION,
+  type HitStopState,
+} from './hit-stop';
+export {
   waveDisplacement,
   gerstnerDisplacement,
   generateWaveLine,
