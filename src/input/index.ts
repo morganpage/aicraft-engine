@@ -1,0 +1,34 @@
+/**
+ * Input module — deterministic edge accumulator + defensive device adapters.
+ *
+ * Two layers:
+ *   - **Pure core** (`edges.ts`, `merge.ts`) — DOM-free, deterministic, fully
+ *     unit-testable under Node. Ports Spitekeep's `src/input/edges.ts`.
+ *   - **Defensive adapters** (`keyboard.ts`, `touch-button.ts`) — host-touching;
+ *     lazy `window` / DOM resolution, swallow errors, never throw, no-op
+ *     fallback in Node / SSR (see `src/primitives/motion.ts`).
+ *
+ * @module
+ */
+
+export type {
+  EdgeAccumulator,
+  PolledEdge,
+  KeyboardAdapter,
+  KeyboardConfig,
+  TouchButtonAdapter,
+} from './types';
+
+export {
+  createEdgeAccumulator,
+  pressEdge,
+  releaseEdge,
+  resetEdge,
+  pollEdge,
+} from './edges';
+
+export { orEdges } from './merge';
+
+export { createKeyboardAdapter } from './keyboard';
+
+export { createTouchButton } from './touch-button';

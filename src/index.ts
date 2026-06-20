@@ -14,3 +14,4 @@ export * from './cosmetics';
 export * from './iap';
 export * from './collision';
 export * from './camera';
+export * from './input';
