@@ -105,6 +105,70 @@ frame = stepHero(frame, 1 / 60, { jumpPressed, jumpHeld, walkDx, facing });
           ></canvas>
         </div>
       </section>
+
+      <!--
+        Section 2 — Lava pool.
+        The headline composite of particle emitters + surface ripple.
+      -->
+      <section id="lava-pool" class="section lava-section">
+        <div class="lava-copy">
+          <h2 class="lava-title">Lava pool. Zero art assets.</h2>
+          <p class="lava-blurb">
+            The surface is a sum-of-Gerstner-wave polyline (sharp-crested,
+            flat-troughed — viscous). Fire and smoke are deterministic
+            particle emitters with heterogeneous physics: fire
+            (<span class="kbd">gravityScale 0.6</span>) arcs up and falls
+            back as embers; smoke (<span class="kbd">gravityScale −0.4</span>)
+            rises against gravity and billows. Click the pool for a splash.
+          </p>
+
+          <div class="lava-controls">
+            <button class="lava-surface" type="button" aria-label="Toggle Gerstner vs sine wave mode" aria-pressed="true">
+              🌊 <span>Gerstner</span>
+            </button>
+
+            <button class="lava-splash" type="button" aria-label="Splash the lava surface">
+              💧 <span>Splash</span>
+            </button>
+
+            <label class="lava-intensity-label" for="lava-intensity">
+              Intensity: <span class="lava-intensity-value">1.00×</span>
+              <input
+                id="lava-intensity"
+                class="lava-intensity"
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value="1"
+              />
+            </label>
+          </div>
+
+          <p class="lava-hint">
+            <span class="kbd">click</span> the pool to splash ·
+            <span class="kbd">🌊</span> swaps wave modes ·
+            <span class="kbd">🔥</span> scales emission
+            <span class="lava-hint-detail">
+              (Gerstner = viscous · Sine = retro-digital)
+            </span>
+          </p>
+
+          <pre class="lava-snippet"><code>// Continuous emitters over a rippling surface
+const surface = generateWaveLine(0, y, W, y, 4, t, DEFAULT_GERSTNER);
+const [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity: 0.5 });
+// fire: gravityScale 0.6 (falls back) · smoke: gravityScale -0.4 (rises)</code></pre>
+        </div>
+
+        <div class="lava-stage">
+          <canvas
+            class="lava-canvas"
+            width="480"
+            height="280"
+            aria-label="Animated lava pool with fire and smoke particles"
+          ></canvas>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">

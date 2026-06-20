@@ -10,6 +10,7 @@
 import { DEFAULT_OUTLINE_COLOR } from '../src/primitives';
 import { createStore } from './store';
 import { initHero } from './sections/hero';
+import { initLavaPool } from './sections/lava-pool';
 
 /**
  * Global showcase state. The hero fields are populated; the rest of the
@@ -90,4 +91,9 @@ if (heroSection) {
   initHero(heroSection, store);
 } else {
   // Defensive: should never happen — index.html always has <section id="hero">.
+}
+
+const lavaPoolSection = document.getElementById('lava-pool');
+if (lavaPoolSection) {
+  initLavaPool(lavaPoolSection, store);
 }

@@ -256,3 +256,150 @@ main {
   color: var(--palette-text-dim);
   font-size: 13px;
 }
+
+/* =========================================================================
+   Lava pool section — mirrors the .hero-* layout/colors/spacing.
+   Copy on one side, canvas stage on the other; 2-column grid at >=820px.
+   ========================================================================= */
+
+.lava-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .lava-section {
+    grid-template-columns: 1fr 360px;
+    padding: 32px;
+  }
+}
+
+.lava-copy {
+  min-width: 0;
+}
+
+.lava-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.lava-blurb {
+  margin: 0 0 20px;
+  color: var(--palette-text-dim);
+  max-width: 50ch;
+}
+
+.lava-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+/* Buttons share the hero's primary-button look so the two sections read
+ * as siblings, not separate UIs. */
+.lava-surface,
+.lava-splash {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--palette-base);
+  color: #fff;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.lava-surface:hover,
+.lava-splash:hover {
+  background: #ff7320;
+}
+
+.lava-surface:active,
+.lava-splash:active {
+  transform: translateY(1px);
+}
+
+.lava-surface:focus-visible,
+.lava-splash:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.lava-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.lava-hint-detail {
+  color: var(--palette-text-dim);
+  opacity: 0.75;
+}
+
+.lava-intensity-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--palette-text-dim);
+}
+
+.lava-intensity-value {
+  color: var(--palette-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+}
+
+.lava-intensity {
+  width: 140px;
+  accent-color: var(--palette-base);
+}
+
+.lava-snippet {
+  margin: 0;
+  padding: 12px 14px;
+  background: #0e0e12;
+  color: #e2e8f0;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------- Lava stage / canvas ---------- */
+
+.lava-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.lava-canvas {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  aspect-ratio: 480 / 280;
+  background: #1a0d0a;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  touch-action: none;
+  cursor: pointer;
+}
