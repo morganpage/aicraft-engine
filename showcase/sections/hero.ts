@@ -106,7 +106,7 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
       frame.jump.phase === 'rising' ? -1 :
       frame.jump.phase === 'falling' ? 1 : 0;
     drawBackground(ctx, config.palette, frame.x);
-    drawSlimeKnight(ctx, frame, tick, { x: lookX, y: lookY });
+    drawSlimeKnight(ctx, frame, tick, { x: lookX, y: lookY }, { blink: true });
   };
 
   /** Re-derive the hero from a new seed and reset the animation clock. */
