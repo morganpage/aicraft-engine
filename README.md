@@ -19,10 +19,13 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 
 | Pillar | Modules | Status |
 |---|---|---|
-| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`) | Phase 1 |
+| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel) | Phase 1 |
 | **1. RNG** | Seeded mulberry32, distribution helpers | Phase 1 |
 | **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | Phase 1 |
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | Phase 1b |
+| **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms) | **Shipped** |
+| **1. Camera** | Follow camera (lerp, clamp, snap-to-target) | **Shipped** |
+| **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, OR-merge | **Shipped** |
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |
 | **2. Cosmetics** | Versioned manifest, seeded variant generation, multi-slot ownership | **Shipped** |
 | **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (Poki/Jest/StoreKit/Play Billing deferred to Phase 5) | **Shipped** |

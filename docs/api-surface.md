@@ -59,6 +59,19 @@ Surface ripple / wave-on-polyline. Three pure evaluators for liquid-surface rend
 | `DEFAULT_WAVE_LINE` | const | 2-octave sine config: `snapToPixel: true`, benchmark-confirmed amplitudes | `src/primitives/wave-line.ts` |
 | `DEFAULT_GERSTNER` | const | 2-octave Gerstner config: `steepness: 0.7`, `snapToPixel: false` | `src/primitives/wave-line.ts` |
 
+#### `src/primitives/hit-stop.ts`
+
+Hit-stop (freeze-frame) game-feel helper. Pure and deterministic: no `Math.random`, no `Date.now()`, no global state. The simulation clock freezes for a configurable number of ticks while visual effects (particles, screen shake, flash) keep advancing.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `HitStopState` | type | `{ remaining: number }` — remaining freeze ticks; 0 = inactive | `src/primitives/hit-stop.ts` |
+| `DEFAULT_HIT_STOP_DURATION` | const | `6` — default freeze in ticks (~100ms at 60fps) | `src/primitives/hit-stop.ts` |
+| `createHitStop()` | function | Factory: fresh inactive state (`remaining: 0`) | `src/primitives/hit-stop.ts` |
+| `triggerHitStop(state, duration?)` | function | Pure: start or extend a freeze; `remaining = max(current, duration)`. Duration defaults to `DEFAULT_HIT_STOP_DURATION` | `src/primitives/hit-stop.ts` |
+| `stepHitStop(state, dt)` | function | Pure: decrement `remaining` by `dt`, clamped at 0 | `src/primitives/hit-stop.ts` |
+| `isHitStopActive(state)` | function | Pure reader: `true` if `remaining > 0` | `src/primitives/hit-stop.ts` |
+
 ### `src/rng/`
 
 Seeded pseudo-random number generation. Required anywhere determinism matters and variation is needed.
@@ -303,6 +316,118 @@ Named constants shared across the animation pillar (no magic numbers). IK-solver
 |---|---|---|---|
 | `SINGULAR_MATRIX_DET_THRESHOLD` | const | `1e-8` — determinant below this marks a 2×3 matrix singular in `worldToLocal` | `src/animation/constants.ts` |
 | `FOOT_LOCK_DEFAULT_BLEND_SPEED` | const | `10` — default blend-weight change per second for `advanceFootLock` | `src/animation/constants.ts` |
+
+### `src/collision/`
+
+AABB overlap test, per-axis move-and-resolve against static solids, and tile-grid collision. The foundational platformer collision layer. All exports are pure functions over plain data: no host access, no `Math.random`, no global state.
+
+#### `src/collision/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Rect` | type | `{x, y, width, height}` — axis-aligned bounding box (world-space, top-left origin) | `src/collision/types.ts` |
+| `Solid` | type | Extends `Rect` with optional `passthrough?: boolean` — one-way platform flag (default `false` = fully solid) | `src/collision/types.ts` |
+| `ResolveXResult` | type | `{x, vx, hitWall}` — resolved horizontal position + adjusted velocity + wall-hit flag | `src/collision/types.ts` |
+| `ResolveYResult` | type | `{y, vy, landed, hitCeiling}` — resolved vertical position + adjusted velocity + ground/ceiling flags | `src/collision/types.ts` |
+| `TileType` | type | `'empty' \| 'solid' \| 'passthrough'` — tile solidity classification | `src/collision/types.ts` |
+| `TileSolidityQuery` | type | `(tileX, tileY) => TileType` — consumer-provided tile-grid classifier | `src/collision/types.ts` |
+
+#### `src/collision/aabb.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `aabbOverlap(a, b)` | function | Strict AABB overlap test — edges that merely touch are NOT overlapping (prevents re-collision jitter) | `src/collision/aabb.ts` |
+
+#### `src/collision/resolve.ts`
+
+Per-axis move-and-resolve against static solids. Passthrough solids are skipped on X (one-way platforms only block downward Y). Pure: inputs never mutated.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `resolveAxisX(body, vx, solids)` | function | Move body by `vx`, resolve against fully-solid surfaces. Snaps flush + zeros `vx` on wall hit. Zero velocity short-circuits | `src/collision/resolve.ts` |
+| `resolveAxisY(body, vy, solids, prevBottom)` | function | Move body by `vy`, resolve against solids. Passthrough platforms only block when `prevBottom <= solid.y`. Returns `landed`/`hitCeiling` flags | `src/collision/resolve.ts` |
+
+#### `src/collision/tiles.ts`
+
+Tile-grid collision layer. Queries the tile grid for overlapping tiles, converts to `Solid` rects, delegates to `resolveAxisX`/`resolveAxisY`. No resolution logic duplicated. Tunneling limitation: `|v| > tileSize` can skip thin tiles.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `worldToTile(worldX, worldY, tileSize)` | function | World-space coords → `{tileX, tileY}` grid indices (floor-based, handles negatives) | `src/collision/tiles.ts` |
+| `tileToWorld(tileX, tileY, tileSize)` | function | Grid indices → `{x, y}` world-space top-left corner | `src/collision/tiles.ts` |
+| `tileRect(tileX, tileY, tileSize)` | function | Grid indices → world-space `Rect` covering that tile | `src/collision/tiles.ts` |
+| `resolveTileX(body, vx, query, tileSize)` | function | Horizontal tile-grid resolve: queries overlapping tiles, delegates to `resolveAxisX` | `src/collision/tiles.ts` |
+| `resolveTileY(body, vy, query, tileSize, prevBottom)` | function | Vertical tile-grid resolve: queries overlapping tiles, delegates to `resolveAxisY` with passthrough support | `src/collision/tiles.ts` |
+
+### `src/camera/`
+
+Follow-camera: pure world-space position that lerps toward a target, clamped to level bounds. The renderer reads `Camera.x/y` and rounds to integer pixels only when applying the world transform.
+
+#### `src/camera/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Camera` | type | `{x, y}` — viewport top-left in world-space (floats between updates for smooth lerp) | `src/camera/types.ts` |
+| `CameraTarget` | type | `{x, y, width, height}` — axis-aligned rect the camera follows (typically the player) | `src/camera/types.ts` |
+| `CameraBounds` | type | `{width, height}` — level / world dimensions for clamping | `src/camera/types.ts` |
+| `CameraConfig` | type | `{lerp?, snapThreshold?}` — tuning; all fields optional, fall back to `DEFAULT_CAMERA` | `src/camera/types.ts` |
+
+#### `src/camera/constants.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_CAMERA` | const | `{lerp: 0.1, snapThreshold: 0.5}` — smooth follow with sub-pixel convergence | `src/camera/constants.ts` |
+
+#### `src/camera/follow.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createCamera()` | function | Factory: fresh camera at world origin `{x: 0, y: 0}` | `src/camera/follow.ts` |
+| `updateCamera(camera, target, bounds, viewport, config?)` | function | Pure: advance camera one frame toward target. Centres on target, clamps to bounds (centres level when smaller than viewport), lerps with snap-to-target convergence. Returns new `Camera` | `src/camera/follow.ts` |
+
+### `src/input/`
+
+Deterministic edge accumulator + defensive device adapters. Two layers: pure core (`edges.ts`, `merge.ts`) for DOM-free unit testing, and defensive adapters (`keyboard.ts`, `touch-button.ts`) with lazy host resolution, error swallowing, and never-throw public APIs.
+
+#### `src/input/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `EdgeAccumulator` | type | Mutable event buffer: `{held, pressedSincePoll, releasedSincePoll}`. **Intentionally mutable** — device events latch here between ticks; drained deterministically via `pollEdge` | `src/input/types.ts` |
+| `PolledEdge` | type | `{held, pressed, released}` — per-tick snapshot (single-tick edges cleared after poll) | `src/input/types.ts` |
+| `KeyboardAdapter` | type | `{poll(), dispose()}` — maps `KeyboardEvent.code` to actions, manages one `EdgeAccumulator` per action | `src/input/types.ts` |
+| `KeyboardConfig` | type | `{codeToAction: Record<string, string>}` — maps key codes to action names | `src/input/types.ts` |
+| `TouchButtonAdapter` | type | `{poll(), dispose()}` — tracks pointer events on a single DOM element | `src/input/types.ts` |
+
+#### `src/input/edges.ts`
+
+Pure edge accumulator core. DOM-free, deterministic, fully unit-testable under Node. Edges are latched as booleans on event arrival (not derived from held-state diff), so a full press+release between polls surfaces as `pressed=true AND released=true`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createEdgeAccumulator()` | function | Factory: fresh idle accumulator (`held: false`, no pending edges) | `src/input/edges.ts` |
+| `pressEdge(acc)` | function | Record a press: sets `held` true, latches `pressedSincePoll`. Mutates in place | `src/input/edges.ts` |
+| `releaseEdge(acc)` | function | Record a release: clears `held`, latches `releasedSincePoll`. Mutates in place | `src/input/edges.ts` |
+| `resetEdge(acc)` | function | Reset to fully idle (blur/dispose). Mutates in place | `src/input/edges.ts` |
+| `pollEdge(acc)` | function | Drain accumulated edges for this tick: returns `PolledEdge` snapshot, clears edge latches. Mutates in place | `src/input/edges.ts` |
+
+#### `src/input/merge.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `orEdges(a, b)` | function | Pure OR-merge of two `PolledEdge` snapshots (e.g. keyboard + touch for same action). Returns fresh object | `src/input/merge.ts` |
+
+#### `src/input/keyboard.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createKeyboardAdapter(config)` | function | Defensive keyboard adapter. Lazily resolves `window`, swallows errors. Returns no-op adapter in Node/SSR. Ignores `e.repeat`; resets all accumulators on blur | `src/input/keyboard.ts` |
+
+#### `src/input/touch-button.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createTouchButton(element)` | function | Defensive touch-button adapter. Tracks `pointerdown`/`pointerup`/`pointercancel`/`pointerleave` on a DOM element. Returns no-op when element is null. Sets `touchAction: 'none'` | `src/input/touch-button.ts` |
 
 ---
 
@@ -550,7 +675,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, and `./iap` (all shipped). As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, and `./input` (all shipped). As pillars ship, they are added here.
 
 ```ts
 export * from './primitives';
@@ -560,6 +685,9 @@ export * from './animation';
 export * from './palette';
 export * from './cosmetics';
 export * from './iap';
+export * from './collision';
+export * from './camera';
+export * from './input';
 // Phase 4: export * from './fake3d';
 ```
 
