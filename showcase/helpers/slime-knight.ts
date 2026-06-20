@@ -1101,15 +1101,23 @@ function bodyTop(
  *   path), defaults to `{x: 0, y: 0}` so the cyclops pupil stays centered and
  *   `hero-final-*.png` stays byte-identical. The showcase computes this each
  *   tick from the walk direction + jump phase.
+ * @param options - optional renderer flags. `options.blink` enables the
+ *   deterministic blink cycle (showcase-only; default off so benchmark renders
+ *   stay byte-identical).
  */
 export function drawSlimeKnight(
   ctx: CanvasRenderingContext2D,
   state: HeroFrameState,
   tick: number,
   look: { x: number; y: number } = { x: 0, y: 0 },
+  options: { blink?: boolean } = {},
 ): void {
   const { config } = state;
   const palette = config.palette;
+  // Blink openness this frame. Derived purely from `tick` (no new frame state,
+  // no RNG) so it stays deterministic + reproducible. Disabled by default
+  // (omitted `options.blink`) → every benchmark render stays byte-identical.
+  const blinkOpen = options.blink === true ? evaluateBlink(tick) : 1;
   const pose = evaluateLocomotion(state.locomotion, config.gaitConfig);
   const jumpPose = evaluateJump(state.jump);
 
@@ -1264,7 +1272,7 @@ export function drawSlimeKnight(
   ctx.save();
   ctx.translate(bodyCx, effectiveBodyCy);
   ctx.scale(composedScaleX, composedScaleY);
-  drawEye(ctx, config, palette, state.eyeCount, look);
+  drawEye(ctx, config, palette, state.eyeCount, look, blinkOpen);
   ctx.restore();
 
   // Close the facing-mirror transform (matches the save above). The antenna
@@ -1273,17 +1281,33 @@ export function drawSlimeKnight(
   // the body and the eye.
   ctx.restore();
 
-  // 4. Antenna — Verlet chain already advanced in stepHero (anchor tracks the
-  //    jump lift, screen-space + facing-aware). Re-pin node 0 to the COMPOSED-
-  //    SCALE body top at draw time so the base tracks breath + jump + landing
-  //    exactly like the hips track the body bottom. The solver in stepHero
-  //    runs with its jump-scale anchor only (breath is a function of `tick`
-  //    and unavailable there) → the visual base was ~±1.5px off the body top
-  //    during breath, reading as "not attached." This is a DRAW-LOCAL copy
-  //    (`state.antenna` is never mutated — the draw stays a pure read of
-  //    state). The solver still owns the physics; only the visual base
-  //    position is corrected. Mirrors the hip Y formula (hip uses
-  //    +bodyHeight/2 from center, the antenna base uses -bodyHeight/2).
+  // 4. Antenna — Verlet chain already advanced in stepHero. The physics
+  //    anchor (`state.antenna[0]` from `bodyTop` in stepHero) tracks the
+  //    UNBLENDED body top: jump scaleY + the UNBLENDED `pose.hipOffset` sway.
+  //    Breath (a `tick` function, unavailable in stepHero) and the idle-settle
+  //    hip-blend are visual-only corrections, so the physics anchor lags the
+  //    drawn head top by a small residual each frame.
+  //
+  //    The visual base (`antennaBaseX/Y`) tracks the DRAWN body top:
+  //    composed scale (breath × jumpScale), IDLE-BLENDED hip sway, landing
+  //    drop, and the facing mirror. The delta between the visual base and
+  //    the physics anchor (breath residual + idle-settle residual + facing-
+  //    mirror adjustment) is applied as a FULL-CHAIN TRANSLATION to the
+  //    draw-local antenna copy so the ENTIRE rod + ball ride with the head-
+  //    top movement — not just the base point. A node-0-only re-pin left
+  //    the rod + ball stationary while the base tracked the head, reading
+  //    as "detached"; translating every node by the same delta preserves
+  //    the physics chain's bend/bounce curve (rigid shift, no stretching)
+  //    and the base ends up exactly at `(antennaBaseX, antennaBaseY)`.
+  //
+  //    This is a DRAW-LOCAL copy — `state.antenna` is never mutated (the
+  //    `.map` produces a new array of new objects; the draw stays a pure
+  //    read of state). Translating each node's `prevX/prevY` by the same
+  //    delta preserves the implicit Verlet velocity in the copy, keeping
+  //    it internally consistent (not that `drawAntenna` reads it — it
+  //    only consumes positions). The solver in stepHero still owns the
+  //    physics on the unblended anchor; this is purely a draw-time visual
+  //    correction — the same pattern as the breath residual above.
   //
   //    Screen-space base: the body is drawn INSIDE the mirror at code-space
   //    `(bodyCx, effectiveBodyCy)` which maps to screen-space
@@ -1291,20 +1315,18 @@ export function drawSlimeKnight(
   //    `charCx + hipOffset.x` (the IDLE-BLENDED hip sway — see the groundIdle
   //    blend above), so `(bodyCx - charCx) = hipOffset.x` and the screen-space
   //    body center X is `charCx + hipOffset.x * facing`. The Y is unchanged
-  //    (the facing mirror is X-only). This tracks the DRAWN body position
-  //    (idle-settled), NOT stepHero's `bodyTop` physics anchor — which uses the
-  //    UNBLENDED `pose.hipOffset` so the antenna physics tracks the actual body
-  //    hip sway (the idle blend is a visual settle for the body + feet only;
-  //    the antenna owns its own dynamics). This is the same draw-local visual-
-  //    correction pattern as the breath residual above: the physics runs on the
-  //    unblended anchor, the visual base is re-pinned to the drawn position.
+  //    (the facing mirror is X-only). Mirrors the hip Y formula (hip uses
+  //    +bodyHeight/2 from center, the antenna base uses -bodyHeight/2).
   const antennaBaseX = charCx + hipOffset.x * state.facing;
   const antennaBaseY = effectiveBodyCy - (config.bodyHeight / 2) * composedScaleY;
-  const antennaForDraw = state.antenna.map((n, i) =>
-    i === 0
-      ? { x: antennaBaseX, y: antennaBaseY, prevX: antennaBaseX, prevY: antennaBaseY }
-      : n
-  );
+  const adx = antennaBaseX - state.antenna[0].x;
+  const ady = antennaBaseY - state.antenna[0].y;
+  const antennaForDraw = state.antenna.map((n) => ({
+    x: n.x + adx,
+    y: n.y + ady,
+    prevX: n.prevX + adx,
+    prevY: n.prevY + ady,
+  }));
   drawAntenna(ctx, antennaForDraw, palette);
 }
 
@@ -1342,9 +1364,79 @@ function drawBody(
   ctx.stroke();
 }
 
+// ---------------------------------------------------------------------------
+// Blink — deterministic, showcase-only
+// ---------------------------------------------------------------------------
+
+/** Snap-close phase length in ticks (@60fps). */
+const BLINK_CLOSE_TICKS = 6;
+/** Held-shut phase length in ticks (@60fps). */
+const BLINK_CLOSED_TICKS = 3;
+/** Slower reopen phase length in ticks (@60fps). */
+const BLINK_OPEN_TICKS = 12;
+/** Total blink length in ticks (close + closed + open ≈ 350ms). */
+const BLINK_DURATION = BLINK_CLOSE_TICKS + BLINK_CLOSED_TICKS + BLINK_OPEN_TICKS;
+/** Minimum gap between blinks in ticks (~2.5s @60fps). */
+const BLINK_GAP_MIN = 150;
+/** Maximum gap between blinks in ticks (~5s @60fps). */
+const BLINK_GAP_MAX = 300;
+
+/**
+ * Deterministic [0,1) pseudo-random from an integer — a one-shot hash with no
+ * state, fully reproducible. Used to vary the gap between blinks so the cadence
+ * reads as natural rather than metronomic (a fixed interval looks robotic).
+ */
+function hash01(n: number): number {
+  let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h / 4294967296;
+}
+
+/** Gap (in ticks) before the `cycle`-th blink starts. Deterministic per cycle. */
+function blinkGapForCycle(cycle: number): number {
+  return BLINK_GAP_MIN + hash01(cycle + 1) * (BLINK_GAP_MAX - BLINK_GAP_MIN);
+}
+
+/**
+ * Eyelid openness for a given tick: `1` = fully open, `0` = fully closed, with
+ * linear ramps during the close (snap) and open (slower) phases. Both eyes
+ * always share this single value (computed once in `drawSlimeKnight`), so they
+ * blink in perfect sync. The blink fires after a varied gap, so tick `0` is
+ * always fully open. Pure function of `tick` — deterministic, reproducible, no
+ * frame state, no RNG state.
+ *
+ * @param tick - the current render tick (advanced once per frame in the
+ *   showcase loop)
+ * @returns openness in `[0, 1]`
+ */
+function evaluateBlink(tick: number): number {
+  let cursor = 0;
+  let cycle = 0;
+  // Walk the timeline blink-by-blink. A hero blinks a handful of times per
+  // minute, so even after an hour this is well under 1000 iterations.
+  for (;;) {
+    const blinkStart = cursor + blinkGapForCycle(cycle);
+    if (tick < blinkStart) return 1; // open gap before this blink
+    if (tick < blinkStart + BLINK_DURATION) {
+      const local = tick - blinkStart;
+      if (local < BLINK_CLOSE_TICKS) return 1 - local / BLINK_CLOSE_TICKS;
+      if (local < BLINK_CLOSE_TICKS + BLINK_CLOSED_TICKS) return 0;
+      return (local - BLINK_CLOSE_TICKS - BLINK_CLOSED_TICKS) / BLINK_OPEN_TICKS;
+    }
+    cursor = blinkStart + BLINK_DURATION;
+    cycle += 1;
+  }
+}
+
 /**
  * Eye rendering: cyclops (1 sclera) or two-eyed (2 smaller sclerae). The pupil
  * offsets toward the `look` gaze vector so the eye tracks the travel direction.
+ *
+ * **Blink.** `blinkOpen` (0 = closed, 1 = open) squashes each sclera vertically
+ * toward a slit and replaces it with a horizontal lid stroke when fully closed.
+ * Both eyes share the same `blinkOpen` value (computed once upstream), so they
+ * blink in perfect sync.
  *
  * **Pupil offset (mirror-sign corrected).** This function runs INSIDE the
  * body-local transform, which itself runs INSIDE `drawSlimeKnight`'s facing
@@ -1373,16 +1465,16 @@ function drawBody(
  * (`≈ bodyWidth · 0.18`), each radius `eyeRadius · 0.7` so both fit on the
  * face with a small gap between them and well inside the body silhouette.
  * Both pupils track the SAME `look` vector (the eyes verge together toward
- * the gaze target). Highlights are placed on the upper-LEFT of each pupil in
- * local space — the same convention as the cyclops — so the highlight language
- * stays consistent across modes (after the facing mirror both highlights flip
- * to upper-right together when facing left; they remain a symmetric pair).
+ * the gaze target). Highlights sit at the top of each pupil in local space —
+ * the same convention as the cyclops — so the highlight language stays
+ * consistent across modes.
  *
  * @param ctx - target canvas 2D context (caller owns the body-local transform)
  * @param config - hero config (supplies eyeRadius, bodyWidth, bodyHeight)
  * @param palette - color palette (feature sclera, outline pupil, white highlight)
  * @param eyeCount - `1` = cyclops, `2` = two-eyed
  * @param look - gaze vector this frame, each component in `[-1, 1]`
+ * @param blinkOpen - eyelid openness this frame in `[0, 1]` (1 = open)
  */
 function drawEye(
   ctx: CanvasRenderingContext2D,
@@ -1390,12 +1482,13 @@ function drawEye(
   palette: Palette,
   eyeCount: 1 | 2,
   look: { x: number; y: number },
+  blinkOpen: number,
 ): void {
   const eyeCy = -config.bodyHeight * 0.12;
 
   if (eyeCount === 1) {
     // Cyclops — single full-size sclera centered on the body midline.
-    drawSingleEye(ctx, 0, eyeCy, config.eyeRadius, look, palette);
+    drawSingleEye(ctx, 0, eyeCy, config.eyeRadius, look, palette, blinkOpen);
     return;
   }
 
@@ -1404,16 +1497,17 @@ function drawEye(
   // silhouette with a small gap between them (see JSDoc for the range math).
   const eyeSpacing = config.bodyWidth * 0.18;
   const scleraR = config.eyeRadius * 0.7;
-  drawSingleEye(ctx, -eyeSpacing, eyeCy, scleraR, look, palette);
-  drawSingleEye(ctx, +eyeSpacing, eyeCy, scleraR, look, palette);
+  drawSingleEye(ctx, -eyeSpacing, eyeCy, scleraR, look, palette, blinkOpen);
+  drawSingleEye(ctx, +eyeSpacing, eyeCy, scleraR, look, palette, blinkOpen);
 }
 
 /**
  * Draw one sclera + pupil + highlight at a given local center. Shared by the
  * cyclops and two-eyed paths so the sclera/pupil/highlight code is written
  * once. The pupil offsets toward `look` (mirror-sign corrected — see
- * `drawEye`'s JSDoc) and the white highlight tracks the pupil's offset
- * position (upper-left of the pupil in local space).
+ * `drawEye`'s JSDoc) and the white highlight sits at the top of the pupil's
+ * offset position. `blinkOpen` squashes the sclera vertically; at full close
+ * only a horizontal lid stroke is drawn.
  *
  * @param ctx - target canvas 2D context (caller owns the transform)
  * @param cx - sclera center X in body-local space
@@ -1421,6 +1515,7 @@ function drawEye(
  * @param scleraR - sclera radius in canvas px (pupil + highlight derive from it)
  * @param look - gaze vector this frame, each component in `[-1, 1]`
  * @param palette - color palette
+ * @param blinkOpen - eyelid openness this frame in `[0, 1]` (1 = open)
  */
 function drawSingleEye(
   ctx: CanvasRenderingContext2D,
@@ -1429,15 +1524,38 @@ function drawSingleEye(
   scleraR: number,
   look: { x: number; y: number },
   palette: Palette,
+  blinkOpen: number,
 ): void {
-  // Sclera — feature color, chunky outline.
+  // Fully (or near-) closed — draw just a short horizontal "lid" stroke in the
+  // outline color so the eye reads as shut rather than absent. Wrapped in a
+  // save/restore so the round line-cap doesn't leak into later draws.
+  if (blinkOpen <= 0.05) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx - scleraR * 0.8, cy);
+    ctx.lineTo(cx + scleraR * 0.8, cy);
+    ctx.strokeStyle = palette.outline;
+    ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Sclera — feature color, chunky outline. Drawn as an ellipse whose vertical
+  // radius scales with `blinkOpen` (1 = round open eye, <1 = squashed toward a
+  // slit by the closing lid).
   ctx.beginPath();
-  ctx.arc(cx, cy, scleraR, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, scleraR, scleraR * blinkOpen, 0, 0, Math.PI * 2);
   ctx.fillStyle = palette.feature;
   ctx.fill();
   ctx.strokeStyle = palette.outline;
   ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
   ctx.stroke();
+
+  // Pupil + highlight are hidden once the lid covers them; below the threshold
+  // drawing them would poke through the thin slit.
+  if (blinkOpen < 0.35) return;
 
   // Pupil — outline color, offset toward the gaze vector. `pupilReach` is the
   // max safe travel: sclera radius minus pupil radius ≈ scleraR · (1 - 0.42) =
@@ -1452,11 +1570,11 @@ function drawSingleEye(
   ctx.fillStyle = palette.outline;
   ctx.fill();
 
-  // Highlight — tiny white dot, upper-left of the pupil's offset position.
+  // Highlight — tiny white dot at the top of the pupil's offset position.
   // Tracks the pupil so the "spark of life" stays glued to the gaze.
   ctx.beginPath();
   ctx.arc(
-    pupilCx - pupilR * 0.45,
+    pupilCx,
     pupilCy - pupilR * 0.45,
     Math.max(1, pupilR * 0.35),
     0,
