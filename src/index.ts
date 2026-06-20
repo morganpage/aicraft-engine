@@ -17,3 +17,5 @@ export * from './camera';
 export * from './input';
 export * from './game-loop';
 export * from './audio';
+export * from './save';
+export * from './blend';

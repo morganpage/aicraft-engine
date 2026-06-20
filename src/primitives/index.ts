@@ -34,3 +34,13 @@ export {
   type WaveLineConfig,
   type WavePoint,
 } from './wave-line';
+export {
+  drawGlow,
+  DEFAULT_GLOW_INTENSITY,
+} from './glow';
+export {
+  parallaxOffset,
+  PARALLAX_FAR,
+  PARALLAX_MID,
+  PARALLAX_NEAR,
+} from './parallax';
