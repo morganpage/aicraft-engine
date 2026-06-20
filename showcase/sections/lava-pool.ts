@@ -111,18 +111,26 @@ const FIRE_SIZE = 3;
  *  distinct from the surface crust. */
 const COLOR_FIRE = '#FFAA00';
 /** Cone: straight up (−π/2 in canvas coords where +y is down), spread π/3
- *  (60° — narrow column of sparks). Speed 1.5–3 px/tick. */
+ *  (60° — narrow column of sparks). Speed 3–5 px/tick — 2× the prior
+ *  1.5–3 so sparks have enough initial velocity to clearly arc up-then-
+ *  down rather than barely clearing the surface. With world gravity 0.5
+ *  and the reduced gravityScale below, the arc apex sits ~30–40 px above
+ *  the surface — unmistakable up-then-down trajectory. */
 const FIRE_CONE = {
   baseAngle: -Math.PI / 2,
   spread: Math.PI / 3,
-  speedMin: 1.5,
-  speedMax: 3.0,
+  speedMin: 3.0,
+  speedMax: 5.0,
 };
-/** gravityScale 0.6: rises initially (cone up) but world gravity wins —
- *  particles arc up and fall back as cooling embers. */
-const FIRE_GRAVITY_SCALE = 0.6;
-/** dragScale 0.98: ~2% energy lost per tick — fire decays quickly. */
-const FIRE_DRAG_SCALE = 0.98;
+/** gravityScale 0.4 (was 0.6): effective gravity 0.5 × 0.4 = 0.2/tick² —
+ *  weaker pull-back than before so particles climb higher before falling
+ *  as cooling embers. Combined with the 2× cone speed this lifts the arc
+ *  apex from ~10 px (too subtle) to ~30–40 px (visibly arcing). */
+const FIRE_GRAVITY_SCALE = 0.4;
+/** dragScale 0.99 (was 0.98): ~1% energy lost per tick (was 2%) — slightly
+ *  more energy retention for a smoother arc trajectory before the sparks
+ *  fade. */
+const FIRE_DRAG_SCALE = 0.99;
 
 // --- Smoke emitter config ---------------------------------------------------
 
@@ -277,6 +285,49 @@ export function initLavaPool(
   };
   applyIntensity(Number(intensitySlider.value));
 
+  // Wave tuning state — live slider values. Defaults address the user's
+  // feedback that the library defaults (DEFAULT_GERSTNER / DEFAULT_WAVE_LINE)
+  // moved the surface too fast and read as too narrow at canvas scale:
+  //   - wavelengthScale 2  → 2× wider than the library defaults.
+  //   - speedScale 0.4     → 2.5× slower.
+  // These scale ONLY the showcase's runtime config; the library defaults
+  // are untouched (see src/primitives/wave-line.ts). Applied per-octave in
+  // deriveWaveConfig() so the user can scrub live without rebuilding the
+  // emitters or the section.
+  const wavelengthSlider = container.querySelector<HTMLInputElement>('.lava-wavelength')!;
+  const wavelengthValue = container.querySelector<HTMLElement>('.lava-wavelength-value')!;
+  const speedSlider = container.querySelector<HTMLInputElement>('.lava-speed')!;
+  const speedValue = container.querySelector<HTMLElement>('.lava-speed-value')!;
+
+  let wavelengthScale = Number(wavelengthSlider.value);
+  let speedScale = Number(speedSlider.value);
+  const applyWavelength = (value: number): void => {
+    wavelengthScale = value;
+    wavelengthValue.textContent = `${value.toFixed(1)}×`;
+  };
+  const applySpeed = (value: number): void => {
+    speedScale = value;
+    speedValue.textContent = `${value.toFixed(2)}×`;
+  };
+  applyWavelength(Number(wavelengthSlider.value));
+  applySpeed(Number(speedSlider.value));
+
+  /** Derive the runtime wave config from the active base (DEFAULT_GERSTNER
+   *  or DEFAULT_WAVE_LINE) × the live slider scales. Called each render so
+   *  slider changes are immediately visible (no emitter/section rebuild
+   *  needed — only the surface polyline is regenerated per frame). */
+  const deriveWaveConfig = (): WaveLineConfig => {
+    const base = waveConfig;
+    return {
+      ...base,
+      octaves: base.octaves!.map((o) => ({
+        ...o,
+        wavelength: o.wavelength * wavelengthScale,
+        speed: o.speed * speedScale,
+      })),
+    };
+  };
+
   /** Swap wave mode + update the 🌊 button's label/aria to match. */
   const applySurfaceMode = (useGerstner: boolean): void => {
     waveConfig = useGerstner ? DEFAULT_GERSTNER : DEFAULT_WAVE_LINE;
@@ -289,7 +340,9 @@ export function initLavaPool(
   /** Render one frame at the current `tick`. Does not advance state. */
   const render = (): void => {
     // Surface polyline. `t = tick` advances phase each frame so the
-    // Gerstner pinch travels rightward at octave.speed px/tick.
+    // Gerstner pinch travels rightward at octave.speed px/tick. The
+    // runtime config is derived from the active base × the live slider
+    // scales (wavelength + speed) so user tuning is immediately visible.
     const surface = generateWaveLine(
       0,
       SURFACE_Y,
@@ -297,7 +350,7 @@ export function initLavaPool(
       SURFACE_Y,
       SAMPLE_SPACING,
       tick,
-      waveConfig,
+      deriveWaveConfig(),
     );
 
     // Draw order is intentional: smoke first (behind, billowing up), fire
@@ -350,6 +403,19 @@ export function initLavaPool(
   // 🔥 Intensity slider — updates local state; the loop reads it next tick.
   intensitySlider.addEventListener('input', () => {
     applyIntensity(Number(intensitySlider.value));
+  });
+
+  // Wave-width & wave-speed sliders — update local scale state and
+  // immediately re-render so the change is visible even with the rAF loop
+  // paused (or in reduced-motion mode). The loop picks up the new scales
+  // on its next tick automatically via deriveWaveConfig().
+  wavelengthSlider.addEventListener('input', () => {
+    applyWavelength(Number(wavelengthSlider.value));
+    render();
+  });
+  speedSlider.addEventListener('input', () => {
+    applySpeed(Number(speedSlider.value));
+    render();
   });
 
   // 💧 Splash button — one-shot burst at the canvas center. The seed is

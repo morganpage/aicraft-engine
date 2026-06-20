@@ -371,6 +371,30 @@ main {
   accent-color: var(--palette-base);
 }
 
+/* Wave-width + wave-speed sliders — parallel to .lava-intensity above
+ * (the lava-controls flex container lays them out as flex items). */
+.lava-wavelength-label,
+.lava-speed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--palette-text-dim);
+}
+
+.lava-wavelength-value,
+.lava-speed-value {
+  color: var(--palette-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+}
+
+.lava-wavelength,
+.lava-speed {
+  width: 140px;
+  accent-color: var(--palette-base);
+}
+
 .lava-snippet {
   margin: 0;
   padding: 12px 14px;

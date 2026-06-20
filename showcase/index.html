@@ -143,6 +143,23 @@ frame = stepHero(frame, 1 / 60, { jumpPressed, jumpHeld, walkDx, facing });
                 value="1"
               />
             </label>
+
+            <!--
+              Wave tuning — live scales applied at render time over the
+              library defaults (DEFAULT_GERSTNER / DEFAULT_WAVE_LINE).
+              Defaults address user feedback: library waves were too fast
+              and too narrow at canvas scale. Width 2× wider, speed 0.4×
+              (2.5× slower).
+            -->
+            <label class="lava-wavelength-label" for="lava-wavelength">
+              Wave width: <span class="lava-wavelength-value">2.0×</span>
+              <input id="lava-wavelength" class="lava-wavelength" type="range" min="0.5" max="4" step="0.1" value="2" />
+            </label>
+
+            <label class="lava-speed-label" for="lava-speed">
+              Wave speed: <span class="lava-speed-value">0.40×</span>
+              <input id="lava-speed" class="lava-speed" type="range" min="0" max="2" step="0.05" value="0.4" />
+            </label>
           </div>
 
           <p class="lava-hint">
