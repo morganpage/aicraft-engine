@@ -1,18 +1,20 @@
 /**
  * Section 1 — Hero.
  *
- * Wires the 🎲 button, the ⏫ Jump button, the 👁 Eyes toggle, and the speed
- * slider to the store, derives a fresh `HeroConfig` whenever the seed changes,
- * and runs a fixed-timestep rAF loop that advances the hero's locomotion +
- * antenna and redraws each frame. Arrow keys drive directional walking (←
- * walks left, → walks right, release = idle; the hero faces the direction it
- * walks and keeps that facing while idle). Jump (Space / ⏫) works in all
- * three walk states (idle / walking left / walking right) and keeps horizontal
- * momentum. The eye toggles between cyclops (1) and two-eyed (2) via the 👁
- * button or the `E` key, and the pupil tracks the travel direction (walk dir
- * horizontally, jump phase vertically). Motion-gated: if the user prefers
- * reduced motion, a single static frame is rendered and the loop is never
- * started.
+ * Wires the 🎲 button, the ⏫ Jump button, the 👁 Eyes toggle, the speed slider,
+ * and the mood slider to the store / local state, derives a fresh `HeroConfig`
+ * whenever the seed changes, and runs a fixed-timestep rAF loop that advances
+ * the hero's locomotion + antenna and redraws each frame. Arrow keys drive
+ * directional walking (← walks left, → walks right, release = idle; the hero
+ * faces the direction it walks and keeps that facing while idle). Jump (Space /
+ * ⏫) works in all three walk states (idle / walking left / walking right) and
+ * keeps horizontal momentum. The eye toggles between cyclops (1) and two-eyed
+ * (2) via the 👁 button or the `E` key, and the pupil tracks the travel
+ * direction (walk dir horizontally, jump phase vertically). The mood slider
+ * drives the parametric mouth continuously (😊 happy ↔ 😰 nervous, default 0.3
+ * = a gentle resting smile) via `drawSlimeKnight`'s render-time `options.emotion`
+ * — nudgable with `[` / `]`. Motion-gated: if the user prefers reduced motion,
+ * a single static frame is rendered and the loop is never started.
  */
 
 import {
@@ -55,6 +57,8 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
   const eyesBtn = container.querySelector<HTMLButtonElement>('.hero-eyes')!;
   const speedSlider = container.querySelector<HTMLInputElement>('.hero-speed')!;
   const speedValue = container.querySelector<HTMLElement>('.hero-speed-value')!;
+  const moodSlider = container.querySelector<HTMLInputElement>('.hero-mood')!;
+  const moodValue = container.querySelector<HTMLElement>('.hero-mood-value')!;
 
   let config = deriveHeroConfig(store.get().heroSeed);
   let frame = createHeroFrameState(config);
@@ -93,6 +97,30 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
   };
   applyEyeCount(1);
 
+  // Mood — showcase-only continuous emotion control (😊 happy ↔ 😰 nervous).
+  // Local to this section; NOT in GlobalState (the slider's presence IS the
+  // control — no store round-trip needed). Flows into `drawSlimeKnight`'s
+  // `options.emotion` at draw time. Default 0.3 = a gentle resting smile so the
+  // character reads as friendly on first paint and the mouth is visible by
+  // default (no separate show/hide toggle).
+  let emotion = 0.3;
+
+  /** Clamp + round an emotion value to a valid 1-decimal step in [-1, 1]
+   *  (rounds to dodge float drift like 0.3 - 0.1 = 0.19999…). */
+  const clampEmotion = (e: number): number =>
+    Math.max(-1, Math.min(1, Math.round(e * 10) / 10));
+
+  /** Apply a new emotion: clamp, update local state, sync the slider + label.
+   *  Shared by the slider's `input` event and the `[` / `]` keyboard nudge. */
+  const applyEmotion = (next: number): void => {
+    emotion = clampEmotion(next);
+    moodSlider.value = String(emotion);
+    // Sign-prefixed single decimal ("+0.3" / "0.0" / "-0.5") so the bipolar
+    // direction reads at a glance, mirroring how the speed slider shows "1.0×".
+    moodValue.textContent = emotion > 0 ? `+${emotion.toFixed(1)}` : emotion.toFixed(1);
+  };
+  applyEmotion(emotion);
+
   /** Render one frame at the current `frame` / `tick`. Does not advance state. */
   const render = (): void => {
     // Gaze vector for pupil tracking (user feedback #1: "eye should look in
@@ -106,7 +134,7 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
       frame.jump.phase === 'rising' ? -1 :
       frame.jump.phase === 'falling' ? 1 : 0;
     drawBackground(ctx, config.palette, frame.x);
-    drawSlimeKnight(ctx, frame, tick, { x: lookX, y: lookY }, { blink: true });
+    drawSlimeKnight(ctx, frame, tick, { x: lookX, y: lookY }, { blink: true, emotion });
   };
 
   /** Re-derive the hero from a new seed and reset the animation clock. */
@@ -143,6 +171,11 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
     const speed = Number(speedSlider.value);
     applySpeed(speed);
     store.set({ heroSpeed: speed });
+  });
+
+  // Mood slider → local emotion (no store round-trip; the slider IS the control).
+  moodSlider.addEventListener('input', () => {
+    applyEmotion(Number(moodSlider.value));
   });
 
   // ⏫ Jump button → press edge for one tick, hold while pressed (mouse/touch).
@@ -204,6 +237,20 @@ export function initHero(container: HTMLElement, store: Store<GlobalState>): voi
     // once, same as the click.
     if (e.code === 'KeyE') {
       if (!e.repeat) applyEyeCount(eyeCount === 1 ? 2 : 1);
+      return;
+    }
+    // `[` / `]` nudge the mood slider (↔ emotion). Auto-repeat ALLOWED so
+    // holding sweeps through the range — nudging is naturally repeat-friendly,
+    // unlike the `E` toggle above (which gates on !e.repeat). No preventDefault:
+    // brackets have no browser default we need to suppress (same as `E`). Step
+    // 0.1 matches the slider's `step`; `applyEmotion` clamps + rounds + syncs
+    // the slider DOM so keyboard + mouse stay in lockstep.
+    if (e.code === 'BracketLeft') {
+      applyEmotion(emotion - 0.1);
+      return;
+    }
+    if (e.code === 'BracketRight') {
+      applyEmotion(emotion + 0.1);
       return;
     }
     if (e.code !== 'Space') return;

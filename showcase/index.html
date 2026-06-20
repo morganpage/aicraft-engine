@@ -74,12 +74,33 @@
                 value="1"
               />
             </label>
+
+            <!--
+              Mood slider → options.emotion on drawSlimeKnight. Bipolar (-1
+              nervous … +1 happy). Default 0.3 = a gentle resting smile so the
+              character reads as friendly on first paint; the mouth is visible
+              by default (no separate show/hide toggle — the slider IS the
+              control). Local to the hero section; not in GlobalState.
+            -->
+            <label class="hero-mood-label" for="hero-mood">
+              Mood: 😊↔😰 <span class="hero-mood-value">+0.3</span>
+              <input
+                id="hero-mood"
+                class="hero-mood"
+                type="range"
+                min="-1"
+                max="1"
+                step="0.1"
+                value="0.3"
+              />
+            </label>
           </div>
 
           <p class="hero-jump-hint">
             <span class="kbd">←</span> <span class="kbd">→</span> arrows to walk ·
             <span class="kbd">Space</span> to jump ·
-            <span class="kbd">E</span> to toggle eyes
+            <span class="kbd">E</span> to toggle eyes ·
+            <span class="kbd">[</span> <span class="kbd">]</span> to nudge mood
             <span class="hero-jump-hint-detail">
               (tap = short hop · hold = full jump)
             </span>

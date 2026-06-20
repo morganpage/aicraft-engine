@@ -1103,14 +1103,17 @@ function bodyTop(
  *   tick from the walk direction + jump phase.
  * @param options - optional renderer flags. `options.blink` enables the
  *   deterministic blink cycle (showcase-only; default off so benchmark renders
- *   stay byte-identical).
+ *   stay byte-identical). `options.emotion` enables the parametric mouth;
+ *   omitted → no mouth drawn (benchmark byte-identical, exactly like `blink`),
+ *   `0` → a drawn neutral flat line, positive → a smile Bézier, negative →
+ *   the flat line morphs into a small nervous "o" circle.
  */
 export function drawSlimeKnight(
   ctx: CanvasRenderingContext2D,
   state: HeroFrameState,
   tick: number,
   look: { x: number; y: number } = { x: 0, y: 0 },
-  options: { blink?: boolean } = {},
+  options: { blink?: boolean; emotion?: MouthEmotion } = {},
 ): void {
   const { config } = state;
   const palette = config.palette;
@@ -1275,6 +1278,28 @@ export function drawSlimeKnight(
   drawEye(ctx, config, palette, state.eyeCount, look, blinkOpen);
   ctx.restore();
 
+  // 3b. Mouth — drawn AFTER the eye, INSIDE the same body-local transform
+  //     (fresh save/restore so it tracks breath + jump squash + facing mirror
+  //     exactly like the eye). Gated on `options.emotion !== undefined` (NOT
+  //     `!== 0`): omitted → no mouth drawn (benchmark byte-identical, exactly
+  //     like `blink`); `emotion: 0` → a drawn neutral flat line. Positive
+  //     emotion routes to the smile Bézier; negative routes to the line→circle
+  //     morph (the nervous "o"). Both meet at the same flat line at emotion 0.
+  if (options.emotion !== undefined) {
+    ctx.save();
+    ctx.translate(bodyCx, effectiveBodyCy);
+    ctx.scale(composedScaleX, composedScaleY);
+    drawMouth(
+      ctx,
+      0,
+      config.bodyHeight * MOUTH_Y_OFFSET_RATIO,
+      config.bodyWidth * MOUTH_WIDTH_RATIO,
+      options.emotion,
+      palette,
+    );
+    ctx.restore();
+  }
+
   // Close the facing-mirror transform (matches the save above). The antenna
   // is drawn OUTSIDE this mirror so its physics owns a screen-space lean
   // (facing-aware in `applyAntennaRestPose`) and its draw is on TOP of both
@@ -1427,6 +1452,223 @@ function evaluateBlink(tick: number): number {
     cursor = blinkStart + BLINK_DURATION;
     cycle += 1;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mouth — deterministic, showcase-only
+// ---------------------------------------------------------------------------
+
+/**
+ * Parametric mouth emotion value. Drives the mouth shape from a small nervous
+ * "o" (`-1`, a filled circle) through a flat neutral line (`0`) to a wide
+ * happy smile (`+1`). Intermediate values produce smooth blends:
+ *   - positive → cubic-Bézier smile (corners up); curvature scales with emotion;
+ *   - zero → flat horizontal line;
+ *   - negative → the flat line morphs into a small solid circle (the classic
+ *     nervous "o" mouth). The morph parameter `t = -emotion` interpolates the
+ *     ellipse's semi-width and semi-height continuously from the flat line
+ *     (at `t = 0`) to the full circle (at `t = 1`). See `drawCircleMouth`.
+ *
+ * Showcase-only knob: passed via `drawSlimeKnight`'s `options.emotion`. Omit
+ * it entirely to draw no mouth (every existing benchmark stays byte-identical,
+ * exactly like `options.blink`); pass `0` to draw a neutral flat line.
+ *
+ * @determinism Pure function of `emotion`. No `Math.random`, no `Date.now`, no
+ *   frame state, no tick dependency. The negative range reads the nervousness
+ *   from the small "o" shape itself rather than from motion, so it is fully
+ *   static and identical across runs at every tick.
+ */
+export type MouthEmotion = number; // [-1, 1] — nervous "o" … neutral … happy
+
+/**
+ * Vertical offset of the mouth center from the body-local center, as a
+ * fraction of `bodyHeight`. Positive → below center (canvas +Y). `0.30`
+ * places the mouth comfortably inside the body silhouette with clear
+ * separation from the cyclops eye (which sits at `-bodyHeight * 0.12`).
+ * Combined with the tightened `MOUTH_CIRCLE_RADIUS_RATIO` (0.20), the
+ * nervous "o" circle clears the eye outline at full negative emotion — the
+ * benchmarker measured a clean ~1.95px gap between them at these values.
+ * Previously raised 0.15 → 0.25 to clear an eye/mouth collision where the
+ * nervous frown curved up into the eye, then 0.25 → 0.30 to resolve a
+ * residual circle/eye collision.
+ */
+const MOUTH_Y_OFFSET_RATIO = 0.30;
+const MOUTH_WIDTH_RATIO = 0.35;
+
+/**
+ * Fraction of the mouth width used as the vertical displacement of the cubic
+ * Bézier control points at full curvature (emotion = ±1). Both control points
+ * share this Y offset; positive curvature pulls them down (+Y) → smile (∪),
+ * negative pulls them up (-Y) → frown (∩). `0.25` at `width ≈ 28px` (bodyWidth
+ * ~80 × MOUTH_WIDTH_RATIO 0.35) yields an ~7px control offset → ~5px midpoint
+ * lift, the soft Sokpop mouth arc.
+ */
+const MOUTH_CURVATURE_CONTROL_RATIO = 0.25;
+
+/**
+ * Radius of the nervous "o" circle at full negative emotion (`emotion = -1`),
+ * as a fraction of the mouth width. The morph in `drawCircleMouth` interpolates
+ * an ellipse from the flat neutral line (semi-width = `width/2`, semi-height =
+ * `0`) to a circle of radius `width · MOUTH_CIRCLE_RADIUS_RATIO` (semi-width =
+ * semi-height = circleR). `0.20` at `width ≈ 28px` (bodyWidth ~80 ×
+ * MOUTH_WIDTH_RATIO 0.35) yields an ~5.6px-radius circle — a small, tight "o"
+ * that reads as clenched/nervous, not a surprised gasp. Lowering it also
+ * reduces the circle/eye collision; alongside the `0.30` mouth offset the
+ * benchmarker measured a clean ~1.95px gap. Tunable: lower = tighter mouth
+ * (more clenched), higher = wider "o" (more surprised). Lowered from `0.3` to
+ * tighten the nervous read and clear the eye.
+ */
+const MOUTH_CIRCLE_RADIUS_RATIO = 0.20;
+
+/**
+ * Draw the parametric mouth below the eye. Called inside the body-local
+ * transform (after body + eye are drawn, still inside the composed scale +
+ * facing mirror). Splits the emotion range at zero:
+ *   - `emotion > 0` → `drawSmoothMouth` (cubic-Bézier smile, curvature = emotion).
+ *   - `emotion <= 0` → `drawCircleMouth` (flat-line → filled-circle morph,
+ *     morph parameter `t = clamp(-emotion, 0, 1)`).
+ *
+ * **Continuity at `emotion = 0`.** Both branches render the SAME flat
+ * horizontal line at the boundary: the smile Bézier at curvature 0 is a flat
+ * segment from `(cx ± width/2, cy)`; the circle morph at `t = 0` is a
+ * degenerate ellipse (`ry = 0`) whose fill is empty and whose stroke is the
+ * same flat segment `(cx ± width/2, cy)`. Same width, same stroke color, same
+ * line width, same round caps → the boundary is invisible from either side.
+ *
+ * @param ctx - canvas context (body-local transform already applied)
+ * @param cx - mouth center X in body-local space (0 = body midline)
+ * @param cy - mouth center Y in body-local space (below the eye)
+ * @param width - mouth width in body-local px (~35% of bodyWidth)
+ * @param emotion - [-1, 1] emotion scalar (negative = nervous "o", positive = smile)
+ * @param palette - color palette (outline slot used for stroke + fill)
+ * @determinism Pure function of (cx, cy, width, emotion, palette). No RNG, no
+ *   tick dependency, no frame state. Both the smile and the circle morph are
+ *   fully static for given params — identical across runs at every tick.
+ */
+function drawMouth(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  width: number,
+  emotion: MouthEmotion,
+  palette: Palette,
+): void {
+  if (emotion > 0) {
+    drawSmoothMouth(ctx, cx, cy, width, emotion, palette);
+  } else {
+    const t = Math.min(1, Math.max(0, -emotion));
+    drawCircleMouth(ctx, cx, cy, width, t, palette);
+  }
+}
+
+/**
+ * Draw a smooth mouth via a single interpolated cubic Bézier (research
+ * Pattern 1). The control points sit at `(cx ∓ width/4, cy + curvature·amp)`
+ * where `amp = width · MOUTH_CURVATURE_CONTROL_RATIO`; positive curvature
+ * pulls them down (+Y) → smile (∪), zero → flat line. Stroke-only (line-only
+ * mouth, v1) using `palette.outline` at `CHUNKY_OUTLINE_WIDTH` with round caps
+ * — matches the eye's chunky-outline aesthetic.
+ *
+ * Only called from `drawMouth` with `curvature > 0` (the smile range). The
+ * function itself remains a general single-Bézier renderer that would also
+ * produce a frown for `curvature < 0` and a flat line at `curvature = 0`, but
+ * the negative emotion range is now owned by `drawCircleMouth`.
+ *
+ * @param ctx - canvas context (body-local transform already applied)
+ * @param cx - mouth center X (0 = body midline)
+ * @param cy - mouth center Y (below the eye)
+ * @param width - mouth width in body-local px
+ * @param curvature - [-1, 1] frown to smile; controls vertical displacement
+ *   of the Bézier control points (only `> 0` reached from `drawMouth`)
+ * @param palette - color palette (outline slot used for stroke)
+ * @returns void — draws directly onto ctx
+ * @determinism Pure function of (cx, cy, width, curvature, palette). No RNG,
+ *   no tick dependency, no frame state. Deterministic for given params.
+ */
+function drawSmoothMouth(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  width: number,
+  curvature: number,
+  palette: Palette,
+): void {
+  const halfW = width / 2;
+  const cpY = cy + curvature * width * MOUTH_CURVATURE_CONTROL_RATIO;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - halfW, cy);
+  ctx.bezierCurveTo(
+    cx - halfW / 2,
+    cpY,
+    cx + halfW / 2,
+    cpY,
+    cx + halfW,
+    cy,
+  );
+  ctx.strokeStyle = palette.outline;
+  ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Draw the negative-emotion mouth as a flat-line → filled-circle morph (the
+ * classic nervous "o"). The morph parameter `t ∈ [0, 1]` interpolates an
+ * ellipse continuously:
+ *   - `circleR = width · MOUTH_CIRCLE_RADIUS_RATIO`            (the full "o" radius)
+ *   - `rx = lerp(width / 2, circleR, t)`                       (semi-width contracts)
+ *   - `ry = lerp(0, circleR, t)`                               (semi-height grows)
+ *   - draw `ellipse(cx, cy, rx, ry, 0, 0, 2π)`, then BOTH fill AND stroke in
+ *     `palette.outline` at `CHUNKY_OUTLINE_WIDTH` with round caps.
+ *
+ * **Why fill + stroke both in outline color.** At `t = 0`, `ry = 0` → the
+ * ellipse is degenerate: the fill has zero area (renders nothing) and only the
+ * round-capped stroke shows — a flat horizontal line that exactly matches the
+ * neutral smile-Bézier-at-0 line (same `width`, same stroke). As `t` grows,
+ * the dark fill appears inside the stroked outline so the shape becomes a
+ * solid dark oval; at `t = 1` it is a solid dark circle of radius `circleR`.
+ * The fill and stroke share the outline color so the shape reads as a single
+ * solid dark "o" with a chunky rim continuous with the neutral line's stroke.
+ *
+ * **Tick-independence.** The nervousness reads from the small "o" shape
+ * itself, not from motion, so this path has no `tick` dependency. A static
+ * frame at any tick renders the same "o" — fully deterministic.
+ *
+ * @param ctx - canvas context (body-local transform already applied)
+ * @param cx - mouth center X (0 = body midline)
+ * @param cy - mouth center Y (below the eye)
+ * @param width - mouth width in body-local px
+ * @param t - morph parameter in `[0, 1]` (0 = flat line, 1 = full circle)
+ * @param palette - color palette (outline slot used for fill + stroke)
+ * @returns void — draws directly onto ctx
+ * @determinism Pure function of (cx, cy, width, t, palette). No RNG, no tick
+ *   dependency, no frame state.
+ */
+function drawCircleMouth(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  width: number,
+  t: number,
+  palette: Palette,
+): void {
+  const circleR = width * MOUTH_CIRCLE_RADIUS_RATIO;
+  const rx = lerp(width / 2, circleR, t);
+  const ry = lerp(0, circleR, t);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = palette.outline;
+  ctx.fill();
+  ctx.strokeStyle = palette.outline;
+  ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
 }
 
 /**

@@ -505,6 +505,44 @@ export * from './cosmetics';
 
 ---
 
+## Showcase-local: `showcase/helpers/slime-knight.ts` (shipped)
+
+> Decision: `docs/design/mouth-emotion-decision.md`.
+> **NOT a library export.** The library provides primitives; the showcase assembles them.
+
+### Parametric Mouth (shipped)
+
+Additive extension to `drawSlimeKnight`'s `options` bag. Default omitted = no mouth drawn → benchmark byte-identical preserved. The mouth is a pure function of `emotion` — no `tick`, no temporal motion.
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `MouthEmotion` | type alias | `number` — `[-1, 1]` where -1 = nervous "o" (small filled circle), 0 = neutral flat line, +1 = happy smile | SHIPPED |
+| `drawMouth(ctx, cx, cy, width, emotion, palette)` | function (showcase-local) | Parametric mouth: `emotion > 0` → cubic-Bézier smile via `drawSmoothMouth` (curvature = emotion). `emotion <= 0` → flat-line → filled-circle morph via `drawCircleMouth` (morph param `t = clamp(-emotion, 0, 1)`). Pure function of `(cx, cy, width, emotion, palette)` — no tick, no RNG | SHIPPED |
+| `options.emotion` | field on `drawSlimeKnight` options | `MouthEmotion` — drives the mouth shape. Default omitted (no mouth drawn, benchmark byte-identical); `0` draws a neutral flat line | SHIPPED |
+
+**Internal functions** (not exported, called by `drawMouth`):
+
+| Function | Summary |
+|---|---|
+| `drawSmoothMouth(ctx, cx, cy, width, curvature, palette)` | Cubic-Bézier smile for `emotion > 0`. Stroke-only using `palette.outline` at `CHUNKY_OUTLINE_WIDTH` |
+| `drawCircleMouth(ctx, cx, cy, width, t, palette)` | Flat-line → filled-circle morph for `emotion <= 0`. Ellipse filled AND stroked in `palette.outline` at `CHUNKY_OUTLINE_WIDTH`. At `t = 0` renders the same flat line as the smile branch at curvature 0 |
+
+**Shipped constants** (all in `showcase/helpers/slime-knight.ts`):
+
+| Constant | Value | Description |
+|---|---|---|
+| `MOUTH_Y_OFFSET_RATIO` | `0.30` | Vertical offset from body center as fraction of `bodyHeight` |
+| `MOUTH_WIDTH_RATIO` | `0.35` | Mouth width as fraction of `bodyWidth` |
+| `MOUTH_CURVATURE_CONTROL_RATIO` | `0.25` | Bézier control-point vertical displacement fraction of mouth width |
+| `MOUTH_CIRCLE_RADIUS_RATIO` | `0.20` | Radius of the nervous "o" circle at `emotion = -1`, as fraction of mouth width |
+
+- _research note: `docs/research/mouth-emotion.md`_
+- _proposal: `docs/design/mouth-emotion-proposal.md`_
+- _decision: `docs/design/mouth-emotion-decision.md`_
+- _benchmark: `benchmarks/mouth-emotion.png`_
+
+---
+
 ## Change protocol
 
 When adding, changing, or removing an export:

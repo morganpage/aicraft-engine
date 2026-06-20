@@ -182,7 +182,8 @@ main {
   opacity: 0.75;
 }
 
-.hero-speed-label {
+.hero-speed-label,
+.hero-mood-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -190,13 +191,15 @@ main {
   color: var(--palette-text-dim);
 }
 
-.hero-speed-value {
+.hero-speed-value,
+.hero-mood-value {
   color: var(--palette-text);
   font-variant-numeric: tabular-nums;
   min-width: 3ch;
 }
 
-.hero-speed {
+.hero-speed,
+.hero-mood {
   width: 140px;
   accent-color: var(--palette-base);
 }
