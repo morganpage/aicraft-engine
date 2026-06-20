@@ -12,8 +12,10 @@
  *     gravityScale 0.6 — embers), SMOKE rises against gravity (negative
  *     gravityScale -0.4 — buoyant). Both share world gravity; they differ
  *     only in their per-particle gravityScale/dragScale.
- *   - `spawn` (the original one-shot primitive) drives the click splash
- *     burst, demonstrated alongside the continuous emitters.
+ *   - `sampleConeVelocity` (the composable Approach-A primitive the
+ *     emitters use internally) drives the click splash burst standalone —
+ *     a one-shot DIRECTIONAL cone throw upward, demonstrated alongside
+ *     the continuous emitters.
  *
  * Determinism / units: rate / life / gravity / drag are in TICK units
  * (one rAF frame = exactly DT = 1 tick of simulation). This matches the
@@ -40,8 +42,9 @@ import {
   stepEmitters,
   particleAlphaCurve,
   particleSizeCurve,
-  spawn,
+  sampleConeVelocity,
   step,
+  type ConeConfig,
   type Emitter,
   type Particle,
 } from '../../src/particles';
@@ -172,17 +175,35 @@ const SMOKE_ALPHA_END = 0;
 
 // --- Splash burst config ----------------------------------------------------
 
-const SPLASH_COUNT = 12;
-const SPLASH_SPEED = 4;
-/** Speed jitter ±30% — requires (and gets) a seeded rng per spawn. */
-const SPLASH_SPEED_JITTER = 0.3;
-const SPLASH_LIFE = 25;
-const SPLASH_SIZE = 2;
-/** Bright yellow — distinct from fire orange so splash reads as "fresh
- *  lava thrown up" rather than ambient fire. */
+/** Splash count — doubled from 12 so the burst reads as a chunky splash,
+ *  not scattered sparks. 24 particles at 5–6px each has visible mass. */
+const SPLASH_COUNT = 24;
+/** Splash lifetime in ticks. Longer than the old 25 so the full up-then-down
+ *  arc (≈24 ticks at speed 6, gravity 0.5) is visible before fade. */
+const SPLASH_LIFE = 35;
+/** Base particle size (the renderer interpolates via SPLASH_SIZE_START/END). */
+const SPLASH_SIZE = 5;
+/** Bright yellow — reads as fresh molten lava thrown upward, distinct from
+ *  the ambient fire orange (#FFAA00). */
 const COLOR_SPLASH = '#FFCC33';
-const SPLASH_SIZE_START = 3;
-const SPLASH_SIZE_END = 1;
+
+/** Directional cone — all particles thrown UPWARD in a 120° arc. This is
+ *  what makes the splash read as a splash (not the old full-circle radial
+ *  burst where half went into the lava). `baseAngle: -π/2` = straight up
+ *  (canvas convention: +y is down). `spread: 2π/3` = 120° wide arc. Speed
+ *  range 4–8 px/tick gives arc heights of ~16–64px (v²/2g) — the faster
+ *  particles clearly clear the surface and arc back down. */
+const SPLASH_CONE: ConeConfig = {
+  baseAngle: -Math.PI / 2,
+  spread: (Math.PI * 2) / 3,
+  speedMin: 4,
+  speedMax: 8,
+};
+
+/** Splash render-size curve: starts chunky (6px), shrinks to 2px as it
+ *  falls back. Was 3→1 (tiny sparks); now 6→2 (bold droplets). */
+const SPLASH_SIZE_START = 6;
+const SPLASH_SIZE_END = 2;
 const SPLASH_ALPHA_START = 1;
 const SPLASH_ALPHA_END = 0;
 
@@ -263,8 +284,10 @@ export function initLavaPool(
 
   // Splash particles — one-shot bursts from clicks/💧 button. Maintained
   // as a flat Particle[] and stepped each tick via `step()` (advance +
-  // cull). This is the original primitive demonstrated alongside the
-  // continuous emitters.
+  // cull). Each burst is built by sampling SPLASH_CONE via
+  // `sampleConeVelocity` (the same primitive the emitters use internally)
+  // so every particle is thrown UPWARD in an arc — not the old full-circle
+  // radial where half went into the lava.
   let splashParticles: Particle[] = [];
 
   // Wave mode state. Starts in Gerstner mode (the ratified lava look —
@@ -422,17 +445,30 @@ export function initLavaPool(
   // host-side entropy (Math.random, like the hero's 🎲 seed roll): user
   // input is allowed to use Math.random; only the SIMULATION must be
   // seeded. Once spawned, the particles advance deterministically.
+  //
+  // Demonstrates the composable primitives (Approach A substrate):
+  // `sampleConeVelocity` is the same primitive the emitters use internally
+  // (see FIRE_CONE / SMOKE_CONE wired through createEmitter), here used
+  // standalone for a one-shot DIRECTIONAL burst. Unlike the old `spawn`
+  // (full 360° radial — half went downward into the lava), the cone throws
+  // every particle UPWARD in a 120° arc so the burst reads as a splash.
   const spawnBurstAt = (x: number, y: number): void => {
     const seed = (Math.random() * 0xffffffff) >>> 0;
-    const burst = spawn(x, y, {
-      count: SPLASH_COUNT,
-      speed: SPLASH_SPEED,
-      speedJitter: SPLASH_SPEED_JITTER,
-      life: SPLASH_LIFE,
-      size: SPLASH_SIZE,
-      color: COLOR_SPLASH,
-      rng: mulberry32(seed),
-    });
+    const rng = mulberry32(seed);
+    const burst: Particle[] = [];
+    for (let i = 0; i < SPLASH_COUNT; i++) {
+      const vel = sampleConeVelocity(SPLASH_CONE, rng);
+      burst.push({
+        x,
+        y,
+        vx: vel.vx,
+        vy: vel.vy,
+        life: SPLASH_LIFE,
+        maxLife: SPLASH_LIFE,
+        size: SPLASH_SIZE,
+        color: COLOR_SPLASH,
+      });
+    }
     splashParticles = [...splashParticles, ...burst];
   };
 
