@@ -2,7 +2,7 @@
  * Section 3 — Playable platformer playground.
  *
  * The "proof that the stack works" composite. A fully playable mini-platformer
- * on a 480×320 canvas that wires six library modules together:
+ * on a 480×320 canvas that wires eleven library modules together:
  *   - `createGameLoop` drives a fixed-step (1/60 s) loop with the library's
  *     own defensive rAF adapter — the first showcase section to use the
  *     game-loop module rather than a hand-rolled rAF loop.
@@ -20,10 +20,21 @@
  *     stretch on jump, decaying back to neutral each tick via a single
  *     `squashOffset` (volume-preserving throughout recovery).
  *   - `spawn` + `step` from `particles` emit deterministic landing-dust bursts
- *     and running-footstep puffs (alpha-faded filled circles).
+ *     and per-step dust puffs synced to the walk-cycle foot-plant transitions
+ *     (alpha-faded filled circles) — not a fixed timer.
  *   - `sineShake` + `shakeEnvelope` from `animation/oscillators` drive a
  *     decaying screen shake on hard landings (visual-only — never feeds back
  *     into camera state, so sim determinism is preserved).
+ *   - `advanceLocomotionByDisplacement` + `evaluateLocomotion` from
+ *     `animation/locomotion` integrate a displacement-driven walk-cycle phase
+ *     (stop moving → dx=0 → phase freezes → feet planted) and derive hip/foot
+ *     offsets via pure sin/cos — the trigonometric alternative to full IK.
+ *   - `drawSimpleFeet` from `animation/simple-feet` renders two body-colored
+ *     foot rects positioned by the locomotion pose (drawn behind the body so
+ *     only the soles peek out at the bottom).
+ *   - `createAudioAdapter` from `audio` synthesizes footstep / jump / landing
+ *     SFX on the fly (oscillator tones + filtered noise) — defensive, lazily
+ *     unlocked on first user gesture, no-op in Node.
  *
  * Plus three rendering primitives from `primitives/`:
  *   - `outlineRect` draws platforms + the character (flat fill + 1px outline).
@@ -74,6 +85,14 @@ import {
   type Particle,
 } from '../../src/particles';
 import { mulberry32 } from '../../src/rng';
+import {
+  advanceLocomotionByDisplacement,
+  evaluateLocomotion,
+  DEFAULT_GAIT,
+  type LocomotionState,
+} from '../../src/animation/locomotion';
+import { drawSimpleFeet, DEFAULT_SIMPLE_FEET } from '../../src/animation/simple-feet';
+import { createAudioAdapter, type AudioAdapter } from '../../src/audio';
 import { shouldAnimate } from '../helpers/motion-gate';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
@@ -195,10 +214,16 @@ const CAMERA_LOOKAHEAD = 40;
 const COLOR_DUST_LANDING = '#5a4030';
 /** Footstep-dust fill — slightly darker than landing dust for visual hierarchy. */
 const COLOR_DUST_FOOTSTEP = '#4a3525';
-/** Interval (active ticks) between footstep-dust puffs while running. */
-const FOOTSTEP_INTERVAL = 8;
 /** Minimum horizontal speed (px/tick) for footstep dust to spawn. */
 const FOOTSTEP_MIN_SPEED = 1;
+
+// --- Audio recipe constants ---
+/** Footstep sound: short low-freq noise burst — a soft "tap". */
+const FOOTSTEP_SOUND_DUR = 40;      // ms
+/** Footstep sound: lowpass cutoff (Hz) — muffles the burst into a thud. */
+const FOOTSTEP_SOUND_FREQ = 200;    // Hz
+/** Footstep sound: peak gain — quiet (it fires every step). */
+const FOOTSTEP_SOUND_PEAK = 0.12;
 /** Screen-shake duration (render ticks) on a hard landing. */
 const SHAKE_DURATION = 10;
 /** Screen-shake x-axis frequency — decorrelated from y for an organic wobble. */
@@ -310,13 +335,27 @@ export function initPlayground(
   // decay — independent-axis lerps (the pre-fix approach) violate the invariant.
   let squashOffset = 0;
 
-  // Dust particles (landing bursts + running footstep puffs). Stepped each
+  // Dust particles (landing bursts + per-step footstep puffs). Stepped each
   // active tick with mild gravity + drag; rendered as alpha-fading circles.
   let dustParticles: Particle[] = [];
 
-  // Active-tick counter — cadences footstep-dust spawns (~every 8 ticks).
-  // Increments only on active sim ticks (not during a hit-stop freeze).
-  let tick = 0;
+  // Locomotion phase accumulator — drives the simple-feet positions. Phase
+  // advances by actual horizontal displacement (not time), giving emergent
+  // foot-lock: stop moving → dx=0 → phase freezes → feet planted. Pure
+  // progression op (returns a new LocomotionState each tick).
+  let loco: LocomotionState = { phase: 0 };
+
+  // Previous foot-lift heights — used to detect foot-plant transitions. A foot
+  // "plants" when its lift transitions from >0 (swinging airborne) to 0
+  // (grounded). Each plant spawns a dust puff + a footstep tap, synced to the
+  // ACTUAL walk cycle instead of a fixed timer.
+  let prevLeftFootY = 0;
+  let prevRightFootY = 0;
+
+  // Audio adapter — defensive (lazy AudioContext, never-throw, no-op in Node).
+  // Unlocked on first user gesture (see unlock listener below the keyboard
+  // adapter); playback is a silent no-op until then (browser autoplay policy).
+  const audio: AudioAdapter = createAudioAdapter();
 
   // Screen-shake state. `shakeTick` advances in the render pass (visual-only);
   // the offset never feeds back into camera state, so sim determinism holds.
@@ -336,6 +375,21 @@ export function initPlayground(
       KeyR: 'reset',
     },
   });
+
+  // --- Audio unlock --------------------------------------------------------
+  //
+  // Browser autoplay policy requires a user gesture before AudioContext can
+  // make sound. One-shot listener on the first keydown OR pointerdown anywhere
+  // on the page arms playback; self-removes after firing. Idempotent with
+  // `audio.unlock()` (which itself is idempotent), so spurious triggers are
+  // harmless.
+  const unlockAudio = (): void => {
+    audio.unlock();
+    window.removeEventListener('keydown', unlockAudio);
+    window.removeEventListener('pointerdown', unlockAudio);
+  };
+  window.addEventListener('keydown', unlockAudio);
+  window.addEventListener('pointerdown', unlockAudio);
 
   // --- Render --------------------------------------------------------------
 
@@ -423,6 +477,35 @@ export function initPlayground(
       0.15,
     );
 
+    // Simple feet — two body-colored rects positioned by the locomotion phase.
+    // Drawn BEFORE the body so the body covers their upper portion (only the
+    // soles peek out at the bottom). Uses drawSimpleFeet from
+    // animation/simple-feet.ts — the trigonometric alternative to full IK (no
+    // joints, no solver, just cos/sin of the phase accumulator). Foot-lock is
+    // emergent: stop moving → phase freezes → feet stay planted. The pose is
+    // re-evaluated here from the current `loco` state (pure read) so the feet
+    // track the exact phase even though the step function advanced it once per
+    // fixed tick and render runs at host refresh rate.
+    const locoPose = evaluateLocomotion(loco, DEFAULT_GAIT);
+    ctx.save();
+    // Translate to body bottom-center (where the feet meet the ground). Uses
+    // the UNSQUASHED bottom so feet stay glued to the floor during a landing
+    // squash (the body compresses above them — reads as weight into the floor).
+    ctx.translate(player.x + player.width / 2, player.y + player.height);
+    // Mirror for facing — the locomotion offsets are computed in local space
+    // (the step function passed localDx = vx * facing), so the mirror here
+    // correctly un-mirrors them back to world-space swing direction.
+    ctx.scale(player.facing, 1);
+    // baseY = -3 so the feet overlap the body's lower edge by ~3px — the body
+    // draws on top (next call), covering the overlap so only the bottom ~2px
+    // of each foot reads as a visible sole peeking out below the body.
+    drawSimpleFeet(ctx, locoPose, {
+      ...DEFAULT_SIMPLE_FEET,
+      baseY: -3,
+      color: COLOR_PLAYER,
+    });
+    ctx.restore();
+
     outlineRect(ctx, dx, dy, dw, dh, COLOR_PLAYER);
 
     ctx.restore();
@@ -469,6 +552,23 @@ export function initPlayground(
     ctx.globalAlpha = 1;
   };
 
+  /**
+   * Spawn a tiny per-step dust puff at a given world-space x (the planted
+   * foot's position). Used by the locomotion-phase foot-plant detector below —
+   * each visible step lands → one puff. Reassigns `dustParticles` to a new
+   * array (pure-progression-ops discipline; the input array is never mutated).
+   */
+  const spawnFootstepDust = (x: number): void => {
+    const dust = spawn(x, player.y + player.height - 1, {
+      count: 2,
+      speed: 0.5,
+      life: 8,
+      size: 1.5,
+      color: COLOR_DUST_FOOTSTEP,
+    });
+    dustParticles = [...dustParticles, ...dust];
+  };
+
   // --- Fixed-step game loop (createGameLoop) --------------------------------
   //
   // This is the first showcase section to use the library's own createGameLoop
@@ -486,9 +586,9 @@ export function initPlayground(
       // 2. Advance hit-stop timer regardless of the freeze so the freeze
       //    actually ends. When active, skip the rest of the step (the temporal-
       //    juice contract: sim freezes). FX also freeze with the sim here — the
-      //    dust step + footstep spawn below are skipped, and `tick` does not
-      //    advance, so the freeze reads as a clean hold on the squashed pose.
-      //    Only the screen-shake offset (advanced in render, visual-only)
+      //    dust step + footstep-plant detection + locomotion phase advance below
+      //    are all skipped, so the freeze reads as a clean hold on the squashed
+      //    pose. Only the screen-shake offset (advanced in render, visual-only)
       //    continues through the freeze, which sells the impact.
       hitStop = stepHitStop(hitStop, 1);
       if (isHitStopActive(hitStop)) return;
@@ -518,6 +618,9 @@ export function initPlayground(
         // Positive offset → scaleY > 1 (taller) + scaleX < 1 (thinner); resolves
         // via SQUASH_DECAY over ~15 ticks.
         squashOffset = LAUNCH_STRETCH;
+        // Jump sound — quick upward sine sweep (200→400 Hz) reading as a "boing".
+        // Defensive: no-op pre-unlock / in Node / when muted.
+        audio.playTone('sine', 200, 400, 80, 0.2);
       }
 
       // Reset — instant teleport back to spawn. Edge-triggered (pressed, not
@@ -533,6 +636,11 @@ export function initPlayground(
         dustParticles = [];
         shakeMagnitude = 0;
         shakeTick = 0;
+        // Reset locomotion + foot-plant detectors so feet re-plant cleanly at
+        // spawn (no stale mid-stride pose, no spurious foot-plant firing).
+        loco = { phase: 0 };
+        prevLeftFootY = 0;
+        prevRightFootY = 0;
       }
 
       // 4. Gravity — accumulate downward, clamped to terminal velocity.
@@ -603,6 +711,16 @@ export function initPlayground(
             impact * SHAKE_MAGNITUDE_PER_IMPACT,
           );
         }
+
+        // Landing sound — proportional to impact. Hard landings (above the
+        // hit-stop threshold) get a heavier low-mid thud; soft landings get a
+        // lighter tap (same family as a footstep but slightly louder). Below
+        // impact=2 nothing plays (sub-stepping off a curb reads as silence).
+        if (impact > HIT_STOP_THRESHOLD) {
+          audio.playNoise(80, 'lowpass', 300, 0.3);
+        } else if (impact > 2) {
+          audio.playNoise(50, 'lowpass', 250, 0.18);
+        }
       }
       player.onGround = yRes.landed;
 
@@ -614,34 +732,47 @@ export function initPlayground(
         drag: DUST_DRAG,
       });
 
-      // 8. Running footstep dust — a tiny puff behind the character every
-      //    FOOTSTEP_INTERVAL active ticks while moving on the ground. Spawned
-      //    behind the facing direction so it reads as kicked-up wake.
-      if (
-        player.onGround &&
-        Math.abs(player.vx) > FOOTSTEP_MIN_SPEED &&
-        tick % FOOTSTEP_INTERVAL === 0
-      ) {
-        const dust = spawn(
-          player.x + player.width / 2 - player.facing * 6,
-          player.y + player.height - 1,
-          {
-            count: 1,
-            speed: 0.5,
-            life: 8,
-            size: 1.5,
-            color: COLOR_DUST_FOOTSTEP,
-          },
-        );
-        dustParticles = [...dustParticles, ...dust];
+      // 8. Advance locomotion phase by actual horizontal displacement. Only
+      //    when grounded — airborne characters don't walk (and leaving the
+      //    phase static while airborne is what freezes the feet in a readable
+      //    "tucked" pose rather than cycling mid-air). Pass LOCAL-space dx
+      //    (vx * facing) because the body is drawn under ctx.scale(facing, 1);
+      //    world-space dx would double-mirror the gait (see the function's
+      //    facing-mirror caveat in animation/locomotion.ts). evaluateLocomotion
+      //    then derives hip/foot offsets as pure sin/cos of the phase.
+      if (player.onGround) {
+        const localDx = player.vx * player.facing;
+        loco = advanceLocomotionByDisplacement(loco, localDx, DEFAULT_GAIT);
       }
+      const locoPose = evaluateLocomotion(loco, DEFAULT_GAIT);
 
-      // 9. Decay squash back to neutral — exponential on the single offset so
+      // 9. Per-step dust + audio — detect foot-plant transitions from the
+      //    locomotion phase. A foot "plants" when its lift height transitions
+      //    from >0 (swinging airborne) to 0 (grounded). This syncs dust + sound
+      //    to the ACTUAL walk cycle, not a fixed timer — each visible step gets
+      //    a puff + a tap. Gated by FOOTSTEP_MIN_SPEED so standing still (vx≈0,
+      //    feet already planted) doesn't fire. The offset is applied to the
+      //    world-space foot x (already un-mirrored via +facing/-facing).
+      const leftLift = locoPose.leftFootOffset.y;
+      const rightLift = locoPose.rightFootOffset.y;
+
+      if (prevLeftFootY > 0 && leftLift === 0 && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
+        spawnFootstepDust(player.x + player.width / 2 - player.facing * 5);
+        audio.playNoise(FOOTSTEP_SOUND_DUR, 'lowpass', FOOTSTEP_SOUND_FREQ, FOOTSTEP_SOUND_PEAK);
+      }
+      if (prevRightFootY > 0 && rightLift === 0 && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
+        spawnFootstepDust(player.x + player.width / 2 + player.facing * 5);
+        audio.playNoise(FOOTSTEP_SOUND_DUR, 'lowpass', FOOTSTEP_SOUND_FREQ, FOOTSTEP_SOUND_PEAK);
+      }
+      prevLeftFootY = leftLift;
+      prevRightFootY = rightLift;
+
+      // 10. Decay squash back to neutral — exponential on the single offset so
       //    the volume invariant (scaleX × scaleY === 1) holds throughout
       //    recovery. Independent-axis lerps (the pre-fix approach) break it.
       squashOffset *= SQUASH_DECAY;
 
-      // 10. Camera — lerp + clamp toward the player, with the target offset
+      // 11. Camera — lerp + clamp toward the player, with the target offset
       //     slightly in the facing direction (lookahead) so the player sees
       //     more of the level ahead. updateCamera returns a fresh Camera
       //     (pure-progression-ops discipline; never mutates).
@@ -656,8 +787,6 @@ export function initPlayground(
         { width: WORLD_W, height: WORLD_H },
         { width: VIEW_W, height: VIEW_H },
       );
-
-      tick += 1;
     },
     render: () => {
       render();
