@@ -430,3 +430,90 @@ main {
   touch-action: none;
   cursor: pointer;
 }
+
+/* =========================================================================
+   Playground section — playable platformer demo.
+   Layout/colors/spacing mirror the .lava-* and .hero-* sections so the three
+   read as siblings. The canvas keeps a 480×320 (3:2) aspect ratio.
+   ========================================================================= */
+
+.playground-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .playground-section {
+    grid-template-columns: 1fr 360px;
+    padding: 32px;
+  }
+}
+
+.playground-copy {
+  min-width: 0;
+}
+
+.playground-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.playground-blurb {
+  margin: 0 0 12px;
+  color: var(--palette-text-dim);
+  max-width: 50ch;
+}
+
+.playground-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.playground-snippet {
+  margin: 0;
+  padding: 12px 14px;
+  background: #0e0e12;
+  color: #e2e8f0;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------- Playground stage / canvas ---------- */
+
+.playground-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.playground-canvas {
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  aspect-ratio: 480 / 320;
+  background: #1a0d0a;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  /* Pixel-art crispness — outlineRect floors to the pixel grid. */
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  /* Block touch-gesture scrolling while the player is interacting. */
+  touch-action: none;
+  /* The canvas is keyboard-focusable gameplay — read as a play surface. */
+  cursor: default;
+}

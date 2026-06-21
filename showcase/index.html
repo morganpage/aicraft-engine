@@ -207,6 +207,45 @@ const [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity: 0.5 });
           ></canvas>
         </div>
       </section>
+
+      <!--
+        Section 3 — Playable platformer playground.
+        The "proof that the stack works" composite: input, collision, camera,
+        hit-stop, fixed-step game loop, and squash-stretch composed into a
+        playable mini-platformer. This is the first section to use the
+        library's createGameLoop module (the hero + lava-pool use hand-rolled
+        rAF loops).
+      -->
+      <section id="playground" class="section playground-section">
+        <div class="playground-copy">
+          <h2 class="playground-title">Move. Jump. Collide.</h2>
+          <p class="playground-blurb">
+            A playable platformer built from six library modules: input edges,
+            AABB collision, follow camera, hit-stop freeze, fixed-step loop, and
+            squash-stretch. Zero game engine. Zero dependencies. Just the library.
+          </p>
+          <p class="playground-hint">
+            <span class="kbd">←</span> <span class="kbd">→</span> to move ·
+            <span class="kbd">Space</span> to jump ·
+            <span class="kbd">R</span> to reset
+          </p>
+          <pre class="playground-snippet"><code>// Six modules compose into a game loop:
+const loop = createGameLoop({
+  step: (dt) => {
+    const input = keyboard.poll();
+    const xRes = resolveAxisX(body, vx, solids);
+    const yRes = resolveAxisY(body, vy, solids, prevBottom);
+    camera = updateCamera(camera, body, level, viewport);
+    if (yRes.landed) hitStop = triggerHitStop(hitStop);
+  },
+  render: () => { ctx.translate(-camera.x, -camera.y); /* draw */ },
+});</code></pre>
+        </div>
+        <div class="playground-stage">
+          <canvas class="playground-canvas" width="480" height="320"
+            aria-label="Playable platformer playground"></canvas>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">
