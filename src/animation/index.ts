@@ -20,3 +20,4 @@ export * from './locomotion';
 export * from './squash-stretch';
 export * from './spring';
 export * from './jump';
+export { drawSimpleFeet, DEFAULT_SIMPLE_FEET, type SimpleFeetConfig } from './simple-feet';
