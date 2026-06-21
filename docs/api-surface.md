@@ -17,7 +17,7 @@ Color math, pixel helpers, motion probe. (The animation helpers — `bob`, `puls
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `outlineRect(ctx, x, y, w, h, fill, outline?)` | function | Flat-fill rect with 1px dark outline; coords floored to pixel grid | `src/primitives/outline-rect.ts` |
+| `outlineRect(ctx, x, y, w, h, fill, outline?, coverage?)` | function | Flat-fill rect with 1px dark outline; `coverage` controls pixel-grid snapping: `'floor'` (default, snaps down) or `'ceil'` (snaps up) | `src/primitives/outline-rect.ts` |
 | `DEFAULT_OUTLINE_COLOR` | const | `'#1d1128'` — Spitekeep's near-black outline | `src/primitives/outline-rect.ts` |
 | `parseHex(hex)` | function | `#rrggbb` → `{r, g, b}` record; throws on invalid input | `src/primitives/color.ts` |
 | `toHex({r, g, b})` | function | `{r, g, b}` → `#rrggbb`; channels rounded and clamped | `src/primitives/color.ts` |
@@ -71,6 +71,26 @@ Hit-stop (freeze-frame) game-feel helper. Pure and deterministic: no `Math.rando
 | `triggerHitStop(state, duration?)` | function | Pure: start or extend a freeze; `remaining = max(current, duration)`. Duration defaults to `DEFAULT_HIT_STOP_DURATION` | `src/primitives/hit-stop.ts` |
 | `stepHitStop(state, dt)` | function | Pure: decrement `remaining` by `dt`, clamped at 0 | `src/primitives/hit-stop.ts` |
 | `isHitStopActive(state)` | function | Pure reader: `true` if `remaining > 0` | `src/primitives/hit-stop.ts` |
+
+#### `src/primitives/glow.ts`
+
+Additive radial-gradient glow stamp. Draws a brightest-at-center, fade-to-transparent glow using `globalCompositeOperation = 'lighter'` so overlapping glows accumulate (correct physical light behavior). Restores composite + fillStyle after drawing (no state leak). Closes the palette's reserved `feature` role: weapon glow, magical highlights, eye glow, lava brightness.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `drawGlow(ctx, x, y, radius, color, intensity?)` | function | Additive radial-gradient glow; `intensity` is peak alpha [0,1], defaults to `DEFAULT_GLOW_INTENSITY` | `src/primitives/glow.ts` |
+| `DEFAULT_GLOW_INTENSITY` | const | `1` — default peak alpha at glow center | `src/primitives/glow.ts` |
+
+#### `src/primitives/parallax.ts`
+
+Parallax background scroll helper. Pure: returns the scroll offset for a layer given the camera position and depth factor. Consumer translates the canvas by the returned offset before drawing the layer.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `parallaxOffset(cameraX, cameraY, factor)` | function | Compute scroll offset: `{x: -cameraX * factor, y: -cameraY * factor}`; normalises `-0` to `+0` | `src/primitives/parallax.ts` |
+| `PARALLAX_FAR` | const | `0.25` — typical factor for far background layers (distant mountains, stars) | `src/primitives/parallax.ts` |
+| `PARALLAX_MID` | const | `0.5` — typical factor for mid-depth layers (hills, trees) | `src/primitives/parallax.ts` |
+| `PARALLAX_NEAR` | const | `1.0` — gameplay-layer factor (same scroll as the world) | `src/primitives/parallax.ts` |
 
 ### `src/rng/`
 
@@ -429,6 +449,29 @@ Pure edge accumulator core. DOM-free, deterministic, fully unit-testable under N
 |---|---|---|---|
 | `createTouchButton(element)` | function | Defensive touch-button adapter. Tracks `pointerdown`/`pointerup`/`pointercancel`/`pointerleave` on a DOM element. Returns no-op when element is null. Sets `touchAction: 'none'` | `src/input/touch-button.ts` |
 
+### `src/save/`
+
+Defensive save-data storage backends and JSON load/write helpers. Follows the canonical defensive adapter pattern (`src/primitives/motion.ts`): lazy `window.localStorage` resolution, swallow all errors, never-throw public API. Zero cross-module imports.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SaveStorage` | interface | Storage backend contract: `load()`, `save(json)`, `clear()` — all must never throw | `src/save/types.ts` |
+| `DEFAULT_SAVE_KEY` | const | `'aicraft-save'` — default localStorage key | `src/save/constants.ts` |
+| `createLocalStorageSaveStorage(key?)` | function | Defensive localStorage backend. Lazily resolves `window.localStorage` inside methods. Falls back to no-op in Node/SSR | `src/save/storage.ts` |
+| `createMemorySaveStorage()` | function | In-memory closure backend for tests/SSR. No persistence across reloads | `src/save/storage.ts` |
+| `loadSave<T>(storage, defaultValue)` | function | Parse JSON from storage; returns `defaultValue` on any error (missing, corrupt, unavailable). Never throws | `src/save/storage.ts` |
+| `writeSave<T>(storage, value)` | function | Serialize and persist via `JSON.stringify`; silently fails on quota/stringify errors. Never throws | `src/save/storage.ts` |
+
+### `src/blend/`
+
+General pose-blend primitives. Standalone pure-arithmetic module for interpolating between two TRS poses by a weight. Independent of the animation pillar — `Pose2D` is structurally compatible with `BonePose` from `src/animation/types.ts` (duck typing) but defined separately to keep this module dependency-free.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Pose2D` | interface | Blendable 2D bone pose: optional `translation` (`{x,y}`), `rotation` (radians), `scale` (uniform scalar). Undefined fields resolve to identity | `src/blend/types.ts` |
+| `blendPose(a, b, weight)` | function | Interpolate two single-bone TRS poses; `weight` clamped to `[0,1]`. Returns fully-specified `Pose2D` (no undefined fields). Pure, never throws | `src/blend/lerp.ts` |
+| `blendPoses(posesA, posesB, weight)` | function | Element-wise blend of pose arrays; pads shorter array with identity. Returns new array of new objects. Pure, never throws | `src/blend/lerp.ts` |
+
 ---
 
 ## Pillar 2: Cosmetics (shipped, Phase 2)
@@ -675,7 +718,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, and `./input` (all shipped). As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./save`, and `./blend` (all shipped). As pillars ship, they are added here.
 
 ```ts
 export * from './primitives';
@@ -688,6 +731,8 @@ export * from './iap';
 export * from './collision';
 export * from './camera';
 export * from './input';
+export * from './save';
+export * from './blend';
 // Phase 4: export * from './fake3d';
 ```
 

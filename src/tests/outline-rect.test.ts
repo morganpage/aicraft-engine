@@ -39,4 +39,22 @@ describe('outlineRect', () => {
     outlineRect(ctx as never, 0, 0, 10, 10, '#000000');
     expect(ctx.strokeRect).toHaveBeenCalledWith(0.5, 0.5, 9, 9);
   });
+
+  it("extends fill by 1px under 'ceil' coverage on fractional position", () => {
+    const ctx = createMockCtx();
+    outlineRect(ctx as never, 10.7, 20.3, 32, 32, '#ff0000', undefined, 'ceil');
+    expect(ctx.fillRect).toHaveBeenCalledWith(10, 20, 33, 33);
+  });
+
+  it("is a no-op under 'ceil' coverage on integer position", () => {
+    const ctx = createMockCtx();
+    outlineRect(ctx as never, 10, 20, 32, 32, '#ff0000', undefined, 'ceil');
+    expect(ctx.fillRect).toHaveBeenCalledWith(10, 20, 32, 32);
+  });
+
+  it("rounds up fractional width/height under 'ceil' coverage", () => {
+    const ctx = createMockCtx();
+    outlineRect(ctx as never, 0, 0, 10.5, 10.5, '#ff0000', undefined, 'ceil');
+    expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 11, 11);
+  });
 });
