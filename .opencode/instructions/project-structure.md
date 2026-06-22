@@ -82,7 +82,7 @@ The top-level barrel re-exports everything from each pillar. Tree-shaking still 
 
 | Sibling | Path | Relationship |
 |---|---|---|
-| Spitekeep | `~/Documents/VSCODE/OPENCODE/ai-craft-game-dev-devil` | The codebase this library was extracted from; future consumer via submodule |
+| Spitekeep (now renamed **IMP - Not a Troll**) | `~/Documents/VSCODE/OPENCODE/ai-craft-game-dev-devil` | The codebase this library was extracted from; future consumer via submodule. (The Spitekeep project was renamed to "IMP - Not a Troll" — both names refer to the same repo at the path below.) |
 | AI Craft Strategy | `~/Documents/VSCODE/OPENCODE/ai-craft-strategy` | Strategic context — Clone-to-Jest methodology, Sokpop teardown, etc. |
 
 When researching or designing, the Sokpop teardown at `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` is the canonical reference for what the library must support.

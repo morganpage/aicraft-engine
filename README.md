@@ -7,7 +7,7 @@
 
 ## What this is
 
-A small TypeScript library extracted from the [Spitekeep](https://github.com/) codebase and generalised for reuse across every game in the [Clone-to-Jest pipeline](../ai-craft-strategy/knowledge/clone-to-jest-methodology.md). Three principles drive every design decision:
+A small TypeScript library extracted from the [Spitekeep](https://github.com/) codebase (now renamed **IMP - Not a Troll**) and generalised for reuse across every game in the [Clone-to-Jest pipeline](../ai-craft-strategy/knowledge/clone-to-jest-methodology.md). Three principles drive every design decision:
 
 1. **Ultra-minimalist rendering** — no imported art assets. Characters, worlds, and effects are drawn from vector primitives in code. Inspired by [Sokpop Collective](https://sokpop.itch.io/)'s ~100-title catalog and their public [fake-3D demo](https://sokpop.itch.io/sokpop-fake-3d-demo).
 2. **Algorithmic cosmetics** — skins, themes, and content variants are parameter presets, not art files. The algorithm IS the art. This gives a full IAP cosmetics surface with zero asset pipeline.
@@ -86,7 +86,7 @@ particles = step(particles, 1);  // advance + cull
 
 ## Conventions
 
-This library is a sibling of [Spitekeep](../ai-craft-game-dev-devil/) and shares its conventions exactly. See `docs/conventions.md` for the full list. Highlights:
+This library is a sibling of [Spitekeep](../ai-craft-game-dev-devil/) (now renamed **IMP - Not a Troll**) and shares its conventions exactly. See `docs/conventions.md` for the full list. Highlights:
 
 - **Zero runtime dependencies.** Adding one is a breaking change.
 - **Strict TypeScript.** `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, `isolatedModules`.
@@ -150,7 +150,7 @@ TBD (deferred pending scope decision — internal vs open-source vs Premium AI C
 
 ## Cross-references
 
-- [Spitekeep source](../ai-craft-game-dev-devil/) — the codebase this was extracted from
+- [Spitekeep source](../ai-craft-game-dev-devil/) — the codebase this was extracted from (now renamed **IMP - Not a Troll**)
 - [Clone-to-Jest methodology](../ai-craft-strategy/knowledge/clone-to-jest-methodology.md) — the pipeline this serves
 - [Sokpop teardown](../ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md) — reference study informing the design
 - [IAP redesign patterns](../ai-craft-strategy/knowledge/iap-redesign-patterns.md) — what the cosmetics + IAP pillars must support

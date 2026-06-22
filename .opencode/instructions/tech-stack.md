@@ -50,7 +50,7 @@ Anything that mutates logical state (entitlements, ownership, settings):
 - Never mutates input.
 - Never throws.
 
-Mirrors the discipline of `platform/progress.ts` in the sibling Spitekeep codebase.
+Mirrors the discipline of `platform/progress.ts` in the sibling Spitekeep codebase (Spitekeep has been renamed to **IMP - Not a Troll** — same repo).
 
 ## When in doubt
 
