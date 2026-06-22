@@ -379,6 +379,31 @@ Tile-grid collision layer. Queries the tile grid for overlapping tiles, converts
 | `resolveTileX(body, vx, query, tileSize)` | function | Horizontal tile-grid resolve: queries overlapping tiles, delegates to `resolveAxisX` | `src/collision/tiles.ts` |
 | `resolveTileY(body, vy, query, tileSize, prevBottom)` | function | Vertical tile-grid resolve: queries overlapping tiles, delegates to `resolveAxisY` with passthrough support | `src/collision/tiles.ts` |
 
+#### `src/collision/moving-gap.ts`
+
+> Decision: `docs/design/moving-gap-decision.md`.
+> Research: `docs/research/moving-gap-platform.md`.
+> Benchmark: `benchmarks/moving-gap/sample-sheet.png`.
+
+Moving-gap platform: a traveling absence of floor. Splits a span into 0–2 `Solid` fragments around a clamped gap. The geometry helper (`gapSolids`) enforces the "void never standable" invariant by clamping internally — no caller can produce fragments that escape the span. Optional deterministic motion state machine for sweep/chase/expand patterns. `GapGeometry` (not `GapState`) avoids confusion with `GapMotionState`. `path`/`loopMode` are optional on `GapMotionConfig` (only meaningful for sweep). NaN inputs throw (programmer error, consistent with `parseHex`).
+
+**Non-barrel export:** `sampleMovingGapScene` and its helper types (`MovingGapSampleRect`, `MovingGapSampleFrame`, `MovingGapSampleScene`, `MovingGapSampleSheet`) are exported from this file but deliberately NOT re-exported from `src/collision/index.ts`. They are benchmark-only data consumed by `benchmarks/_scripts/moving-gap-render.ts` via direct import — not part of the public API.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `GapSpanConfig` | type | Span definition: `{x, y, width, height, passthrough?}`. Immutable after creation | `src/collision/moving-gap.ts` |
+| `GapGeometry` | type | Geometry snapshot: `{centerX, width}` — where the gap is right now (world-space pixels) | `src/collision/moving-gap.ts` |
+| `GapTravelMode` | type | `'sweep' \| 'chase' \| 'expand'` — motion mode selector | `src/collision/moving-gap.ts` |
+| `GapLoopMode` | type | `'loop' \| 'pingpong'` — sweep endpoint behavior | `src/collision/moving-gap.ts` |
+| `GapMotionConfig` | type | Motion params: `travelMode`, `speed`, `gapWidth`, `path?`, `loopMode?`, `giveUpRadius?`, `minWidth?`, `maxWidth?`, `expandTicks?`, `initialCenterX?`. Mode-specific fields optional with documented defaults; `path` defaults to `[]`, `loopMode` defaults to `'loop'` | `src/collision/moving-gap.ts` |
+| `GapMotionState` | type | Motion state: `centerX`, `width`, `dist`, `dir`, `expandElapsed` | `src/collision/moving-gap.ts` |
+| `gapSolids(span, gap)` | function | **Invariant anchor.** Pure geometry: split span into 0–2 `Solid` fragments around a clamped gap. Four-guard clamp algorithm (NaN→throw, ≤0→full span, ≥span→void, else→clamp). Throws on NaN inputs | `src/collision/moving-gap.ts` |
+| `advanceGapMotion(state, dt, config, targetX?)` | function | Pure motion: advance gap state by one tick. Returns new `GapMotionState`. May produce unclamped `centerX`; `gapSolids` clamps before fragment generation | `src/collision/moving-gap.ts` |
+| `gapTileQuery(base, span, gap, tileSize)` | function | Pure: wrap a `TileSolidityQuery` to report `'empty'` for tiles inside the clamped gap. Single-row v1: only tiles overlapping the span's Y range are affected. Uses strict AABB overlap (not left-edge test) for tile membership. Clamped gap bounds computed once at wrap time, O(1) per tile | `src/collision/moving-gap.ts` |
+| `DEFAULT_GAP_WIDTH` | const | `64` — default gap width in pixels (GDD §6.13) | `src/collision/moving-gap.ts` |
+| `DEFAULT_GAP_SPEED` | const | `2` — default movement speed in px/tick (GDD §6.13) | `src/collision/moving-gap.ts` |
+| `DEFAULT_CHASE_GIVE_UP_RADIUS` | const | `200` — default chase give-up radius (~3× gap width; mirrors Spitekeep chase-disengage feel) | `src/collision/moving-gap.ts` |
+
 ### `src/camera/`
 
 Follow-camera: pure world-space position that lerps toward a target, clamped to level bounds. The renderer reads `Camera.x/y` and rounds to integer pixels only when applying the world transform.

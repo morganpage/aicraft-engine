@@ -22,3 +22,22 @@ export { aabbOverlap } from './aabb';
 export { resolveAxisX, resolveAxisY } from './resolve';
 
 export { worldToTile, tileToWorld, tileRect, resolveTileX, resolveTileY } from './tiles';
+
+export type {
+  GapSpanConfig,
+  GapGeometry,
+  GapTravelMode,
+  GapLoopMode,
+  GapMotionConfig,
+  GapMotionState,
+} from './moving-gap';
+
+export {
+  gapSolids,
+  createGapMotion,
+  advanceGapMotion,
+  gapTileQuery,
+  DEFAULT_GAP_WIDTH,
+  DEFAULT_GAP_SPEED,
+  DEFAULT_CHASE_GIVE_UP_RADIUS,
+} from './moving-gap';

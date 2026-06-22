@@ -9,7 +9,14 @@
  *   - `createKeyboardAdapter` polls input EXACTLY once per fixed tick and
  *     drains pressed/released edges (no stuck keys, no auto-repeat).
  *   - `resolveAxisX` / `resolveAxisY` run per-axis move-and-resolve over the
- *     `Solid[]` level, including a one-way passthrough platform.
+ *     per-tick `Solid[]` level (static geometry + the gap's fragments), including
+ *     a one-way passthrough platform.
+ *   - `gapSolids` + `createGapMotion` + `advanceGapMotion` from `collision`
+ *     drive a sweeping moving gap along a long floor segment (sweep +
+ *     pingpong). The span's static floor is carved out so the gap's fragments
+ *     are the sole floor inside it; a player standing on the span when the gap
+ *     reaches them falls through (pit-death, not overlap) and respawns at
+ *     spawn — the platformer-context demo of the moving-gap primitive.
  *   - `createCamera` / `updateCamera` lerp + clamp the camera across the
  *     960×320 world (2× the viewport width — the camera follows).
  *   - `createHitStop` / `triggerHitStop` / `stepHitStop` / `isHitStopActive`
@@ -78,7 +85,15 @@ import { createKeyboardAdapter, type KeyboardAdapter } from '../../src/input';
 import {
   resolveAxisX,
   resolveAxisY,
+  gapSolids,
+  createGapMotion,
+  advanceGapMotion,
+  DEFAULT_GAP_WIDTH,
+  DEFAULT_GAP_SPEED,
   type Solid,
+  type GapSpanConfig,
+  type GapMotionConfig,
+  type GapMotionState,
 } from '../../src/collision';
 import { createCamera, updateCamera, type Camera } from '../../src/camera';
 import {
@@ -132,19 +147,40 @@ const CANVAS_ZOOM = 1.25;
 
 // --- Level layout (world-space Solids) --------------------------------------
 
+/** Ground floor top-surface Y. The player stands on top (y = GROUND_Y − PLAYER_H). */
+const GROUND_Y = 288;
+/** Ground floor thickness (px). */
+const GROUND_HEIGHT = 32;
 /**
- * Static collision surfaces. Defines the level geometry the player collides
- * against. Walls bound the world; the ground floor spans the full width;
- * floating platforms give jump targets; one passthrough platform exercises
- * the one-way-platform logic in `resolveAxisY`.
+ * X where the moving-gap span begins. The ground floor is split here: static
+ * floor on both sides, gap-owned span in the middle (no static floor under
+ * the span — the gap's `gapSolids` fragments are the sole floor inside it).
  */
-const PLATFORMS: Solid[] = [
-  // Ground floor (full width).
-  { x: 0, y: 288, width: 960, height: 32 },
+const GAP_SPAN_X = 400;
+/** Moving-gap span width (px). Wide enough to be a threatening hazard zone. */
+const GAP_SPAN_WIDTH = 400;
+
+/**
+ * Static collision surfaces EXCLUDING the gap-owned span. The ground floor is
+ * split into two fragments around the carved span; the player can stand safely
+ * on either fragment. The span's fragments (from `gapSolids`, recomputed each
+ * tick from `gapState`) are appended at resolve time — see `tickSolids` in the
+ * fixed step.
+ */
+const STATIC_PLATFORMS: Solid[] = [
+  // Ground floor — left fragment (world left to the gap span).
+  { x: 0, y: GROUND_Y, width: GAP_SPAN_X, height: GROUND_HEIGHT },
+  // Ground floor — right fragment (gap span end to world right).
+  {
+    x: GAP_SPAN_X + GAP_SPAN_WIDTH,
+    y: GROUND_Y,
+    width: WORLD_W - (GAP_SPAN_X + GAP_SPAN_WIDTH),
+    height: GROUND_HEIGHT,
+  },
   // Left wall.
-  { x: 0, y: 0, width: 16, height: 288 },
+  { x: 0, y: 0, width: 16, height: GROUND_Y },
   // Right wall.
-  { x: 944, y: 0, width: 16, height: 288 },
+  { x: WORLD_W - 16, y: 0, width: 16, height: GROUND_Y },
   // Floating platforms.
   { x: 160, y: 224, width: 96, height: 16 },
   { x: 320, y: 176, width: 80, height: 16 },
@@ -153,6 +189,38 @@ const PLATFORMS: Solid[] = [
   // Passthrough platform (one-way — jump up through, land on top).
   { x: 480, y: 224, width: 96, height: 16, passthrough: true },
 ];
+
+/**
+ * The moving-gap span — a carved-out section of the ground floor. Has NO
+ * static floor; the gap's `gapSolids` fragments (recomputed each tick from
+ * `gapState`) are the sole floor inside it. A player standing on the span
+ * when the gap reaches them falls through into the pit below and respawns.
+ * Mirrors Spitekeep's movingVoid-demo level structure.
+ */
+const GAP_SPAN: GapSpanConfig = {
+  x: GAP_SPAN_X,
+  y: GROUND_Y,
+  width: GAP_SPAN_WIDTH,
+  height: GROUND_HEIGHT,
+};
+
+/**
+ * Gap motion — `sweep` + `pingpong`. The gap sweeps back and forth along the
+ * span, recurring so a visitor always sees the hazard within a few seconds.
+ * Path endpoints are the clamp bounds (gap flush at each span edge); ordered
+ * right → left so the gap starts at the far end and sweeps toward the player
+ * (who enters the span from the left), matching the user's described scenario.
+ */
+const GAP_MOTION: GapMotionConfig = {
+  travelMode: 'sweep',
+  speed: DEFAULT_GAP_SPEED,
+  gapWidth: DEFAULT_GAP_WIDTH,
+  loopMode: 'pingpong',
+  path: [
+    { x: GAP_SPAN_X + GAP_SPAN_WIDTH - DEFAULT_GAP_WIDTH / 2, y: 0 },
+    { x: GAP_SPAN_X + DEFAULT_GAP_WIDTH / 2, y: 0 },
+  ],
+};
 
 // --- Player -----------------------------------------------------------------
 
@@ -198,6 +266,13 @@ const AIR_CONTROL = 0.5;
 const JUMP_VELOCITY = -9;
 /** Terminal fall velocity (px/tick). Prevents unbounded acceleration. */
 const MAX_FALL = 12;
+/**
+ * Fall-off-world respawn margin. The player resets to spawn once their top
+ * edge exceeds WORLD_H + this margin — the pit-death consequence of falling
+ * through the moving gap (the floor is gone; gravity pulls them into the void).
+ * Gives a brief visible fall before the respawn so the death reads clearly.
+ */
+const RESPAWN_FALL_MARGIN = 64;
 /** Hit-stop freeze duration on a hard landing (ticks). */
 const HIT_STOP_DURATION = 4;
 /**
@@ -284,6 +359,10 @@ const COLOR_BG = '#1a0d0a';
 const COLOR_PLATFORM = '#3a2418';
 /** Passthrough-platform fill — slightly lighter brown for visual distinction. */
 const COLOR_PLATFORM_PASSTHROUGH = '#4a3020';
+/** Moving-gap void fill — near-black, reads as a pit / absence of floor.
+ *  Distinct from COLOR_BG so the gap reads as "a hole in the platform," not
+ *  "the platform ends here." */
+const COLOR_VOID = '#0a0506';
 /** Player fill — soft purple. Cute + friendly, deliberately distinct from
  *  Spitekeep's devil orange (#FE5701) so the two characters read as different
  *  castes at a glance. */
@@ -421,6 +500,13 @@ export function initPlayground(
   let blinkCountdown = 120;
   let blinkRemaining = 0;
 
+  // Moving-gap motion state — owns the gap's current center + width. Advanced
+  // once per fixed tick via advanceGapMotion (pure: returns a new state) BEFORE
+  // the per-tick solids are composed, so the gap is at its new position when
+  // the resolver runs (mirrors Spitekeep's update.ts: advance hazard → resolve).
+  // Reset to its initial sweep position by resetPlayer() (R-key + fall-off).
+  let gapState: GapMotionState = createGapMotion(GAP_MOTION);
+
   // --- Input adapter -------------------------------------------------------
   //
   // Poll EXACTLY once per fixed tick — input edges (pressed / released) are
@@ -498,9 +584,19 @@ export function initPlayground(
     // layer (the camera translate is still in effect — that one we keep).
     ctx.translate(-parallax.x, -parallax.y);
 
-    // Platforms — solid vs passthrough get visually distinct fills so the
-    // player can read which they'll land on from below.
-    for (const plat of PLATFORMS) {
+    // Static platforms — solid vs passthrough get visually distinct fills so
+    // the player can read which they’ll land on from below. The two ground
+    // floor fragments (y === GROUND_Y) are SKIPPED here: the ground is drawn
+    // as one continuous rect below so the floor reads as a single platform.
+    // Drawing the fragments individually would stroke vertical lines at
+    // x = GAP_SPAN_X and x = GAP_SPAN_X + GAP_SPAN_WIDTH (the span edges),
+    // which telegraphs the hazard's travel bounds — the player should
+    // discover the hole by seeing it move, not by reading boundary markers.
+    // The fragments still exist in STATIC_PLATFORMS for collision (see
+    // tickSolids); only the render read changes. Walls, floating platforms,
+    // and the passthrough platform render unchanged.
+    for (const plat of STATIC_PLATFORMS) {
+      if (plat.y === GROUND_Y) continue;
       outlineRect(
         ctx,
         plat.x,
@@ -510,6 +606,36 @@ export function initPlayground(
         plat.passthrough ? COLOR_PLATFORM_PASSTHROUGH : COLOR_PLATFORM,
       );
     }
+
+    // Continuous ground floor + moving void punch. The ground is drawn as ONE
+    // rect spanning the full world width so it reads as a single continuous
+    // platform — no per-fragment outlines, no static vertical lines marking
+    // the gap-span boundaries. The void is then punched on top, opening a
+    // clean hole that moves with `gapState`. The hole is the only visible
+    // feature on the ground; its left/right edges (which MOVE) are the crisp
+    // readable feature that defines the opening. Collision is a separate read
+    // of the same gap state (gapSolids in tickSolids) — render and physics
+    // share the source of truth but never desync because both derive from
+    // gapState on the same tick (mirrors Spitekeep's renderer discipline).
+    //
+    // Ground rect — fill + 1px outline. Vertical outline lines land ONLY at
+    // the world edges (x = 0, x = WORLD_W); the top/bottom edges span the
+    // full width and will be opened by the void punch below.
+    outlineRect(ctx, 0, GROUND_Y, WORLD_W, GROUND_HEIGHT, COLOR_PLATFORM);
+
+    // Void punch — the clamped gap region painted in COLOR_VOID on top of the
+    // ground rect. Covers the floor fill AND its top/bottom outline in the
+    // gap region so the hole opens cleanly; the void's left/right edges are
+    // hard color edges (platform → void → platform). Clamp mirrors gapSolids'
+    // guard-4 clamp; config is fixed (gapWidth=64 < spanWidth=400) so the
+    // normal case always holds and the pathological guards never trigger here.
+    const gapHalf = gapState.width / 2;
+    const minCenter = GAP_SPAN.x + gapHalf;
+    const maxCenter = GAP_SPAN.x + GAP_SPAN.width - gapHalf;
+    const voidCenter = Math.max(minCenter, Math.min(maxCenter, gapState.centerX));
+    const voidX = voidCenter - gapHalf;
+    ctx.fillStyle = COLOR_VOID;
+    ctx.fillRect(voidX, GROUND_Y, gapState.width, GROUND_HEIGHT);
 
     // Dust particles — drawn before the player so the character reads on top
     // of the puff. Alpha-fade + size-shrink over life (same pattern as the
@@ -710,6 +836,31 @@ export function initPlayground(
     dustParticles = [...dustParticles, ...dust];
   };
 
+  /**
+   * Reset the player to spawn + clear all transient FX. Shared by the R-key
+   * manual reset and the fall-off-world respawn (the moving-gap pit death).
+   * Re-initializes the gap motion so the hazard re-starts cleanly from its
+   * initial sweep position (far end → toward the player).
+   */
+  const resetPlayer = (): void => {
+    player.x = SPAWN_X;
+    player.y = SPAWN_Y;
+    player.vx = 0;
+    player.vy = 0;
+    player.onGround = true;
+    squashOffset = 0;
+    dustParticles = [];
+    shakeMagnitude = 0;
+    shakeTick = 0;
+    // Reset locomotion + foot-plant detectors so feet re-plant cleanly at
+    // spawn (no stale mid-stride pose, no spurious foot-plant firing).
+    loco = { phase: 0 };
+    prevLeftFootY = 0;
+    prevRightFootY = 0;
+    idleBlend = 0;
+    gapState = createGapMotion(GAP_MOTION);
+  };
+
   // --- Fixed-step game loop (createGameLoop) --------------------------------
   //
   // This is the first showcase section to use the library's own createGameLoop
@@ -776,32 +927,32 @@ export function initPlayground(
       // Reset — instant teleport back to spawn. Edge-triggered (pressed, not
       // held) so holding R doesn't keep re-teleporting. Clears all FX state so
       // a mid-flight reset doesn't leave stale dust / shake / squash lingering.
+      // Shared with the fall-off-world respawn (see resetPlayer).
       if (input['reset']?.pressed) {
-        player.x = SPAWN_X;
-        player.y = SPAWN_Y;
-        player.vx = 0;
-        player.vy = 0;
-        player.onGround = true;
-        squashOffset = 0;
-        dustParticles = [];
-        shakeMagnitude = 0;
-        shakeTick = 0;
-        // Reset locomotion + foot-plant detectors so feet re-plant cleanly at
-        // spawn (no stale mid-stride pose, no spurious foot-plant firing).
-        loco = { phase: 0 };
-        prevLeftFootY = 0;
-        prevRightFootY = 0;
-        idleBlend = 0;
+        resetPlayer();
       }
 
       // 4. Gravity — accumulate downward, clamped to terminal velocity.
       player.vy = Math.min(player.vy + GRAVITY, MAX_FALL);
 
-      // 5. Per-axis collision resolution (X then Y). prevBottom is captured
+      // 4b. Advance the moving gap BEFORE composing the per-tick solids, so
+      //     the gap is at its new position when the resolver runs (mirrors
+      //     Spitekeep's update.ts: advance hazard → resolve player). Pure:
+      //     returns a new GapMotionState; never mutates.
+      gapState = advanceGapMotion(gapState, 1, GAP_MOTION);
+
+      // 5. Per-axis collision resolution (X then Y) against the per-tick
+      //    solids: static geometry + the gap's fragments (rebuilt each tick
+      //    from the advanced gapState — the span has NO static floor; the
+      //    fragments are the sole floor inside it). prevBottom is captured
       //    BEFORE the vertical move so resolveAxisY's passthrough rule
       //    (land-on-top only) has the pre-move reference frame.
       const prevBottom = player.y + player.height;
-      const xRes = resolveAxisX(player, player.vx, PLATFORMS);
+      const tickSolids: Solid[] = [
+        ...STATIC_PLATFORMS,
+        ...gapSolids(GAP_SPAN, { centerX: gapState.centerX, width: gapState.width }),
+      ];
+      const xRes = resolveAxisX(player, player.vx, tickSolids);
       player.x = xRes.x;
       player.vx = xRes.vx;
 
@@ -811,11 +962,22 @@ export function initPlayground(
       const yRes = resolveAxisY(
         { x: player.x, y: player.y, width: player.width, height: player.height },
         player.vy,
-        PLATFORMS,
+        tickSolids,
         prevBottom,
       );
       player.y = yRes.y;
       player.vy = yRes.vy;
+
+      // 5b. Fall-off-world respawn — if the player fell through the moving gap
+      //     (or off any edge), reset to spawn once they're below the world
+      //     bottom + margin. This is the pit-death consequence of the
+      //     moving-gap primitive: the floor is gone, so gravity pulls them
+      //     into the void. Reset + return skips landing detection and the rest
+      //     of this tick (the player is back at spawn; next tick starts fresh).
+      if (player.y > WORLD_H + RESPAWN_FALL_MARGIN) {
+        resetPlayer();
+        return;
+      }
 
       // 6. Landing detection — squash + dust + shake + hit-stop, all gated by
       //    impact velocity. Triggered only on the transition airborne →
