@@ -2,7 +2,7 @@
  * Section 3 — Playable platformer playground.
  *
  * The "proof that the stack works" composite. A fully playable mini-platformer
- * on a 480×320 canvas that wires eleven library modules together:
+ * on a 600×400 canvas (drawn at 1.25× zoom for a larger character read) that wires eleven library modules together:
  *   - `createGameLoop` drives a fixed-step (1/60 s) loop with the library's
  *     own defensive rAF adapter — the first showcase section to use the
  *     game-loop module rather than a hand-rolled rAF loop.
@@ -88,7 +88,7 @@ import { mulberry32 } from '../../src/rng';
 import {
   advanceLocomotionByDisplacement,
   evaluateLocomotion,
-  DEFAULT_GAIT,
+  type GaitConfig,
   type LocomotionState,
 } from '../../src/animation/locomotion';
 import { drawSimpleFeet, DEFAULT_SIMPLE_FEET } from '../../src/animation/simple-feet';
@@ -104,9 +104,15 @@ const WORLD_W = 960;
 /** Full world height. Same as the viewport — no vertical camera scroll. */
 const WORLD_H = 320;
 /** Viewport width. The canvas's intrinsic horizontal resolution. */
-const VIEW_W = 480;
+const VIEW_W = 600;
 /** Viewport height. The canvas's intrinsic vertical resolution. */
-const VIEW_H = 320;
+const VIEW_H = 400;
+/**
+ * Render zoom factor — scales the world up so the character reads larger on
+ * the bigger canvas. The camera viewport is divided by this so camera clamping
+ * sees the same world area as before (480×320 effective).
+ */
+const CANVAS_ZOOM = 1.25;
 
 // --- Level layout (world-space Solids) --------------------------------------
 
@@ -210,10 +216,25 @@ const SQUASH_DECAY = 0.82;
 const LAUNCH_STRETCH = 0.15;
 /** Camera-target offset (px) in the player's facing direction (lookahead). */
 const CAMERA_LOOKAHEAD = 40;
-/** Dust-burst particle fill — warm cave-brown, matches the platform family. */
-const COLOR_DUST_LANDING = '#5a4030';
+
+/**
+ * Playground-specific gait — wider stride and higher lift than DEFAULT_GAIT
+ * so the walk reads clearly on a 32px-tall character. Doubling strideLength
+ * from 4 to 8 halves the step cadence (~2.3 steps/sec — natural walk rhythm)
+ * and makes each step visually pronounced.
+ */
+const PLAYGROUND_GAIT: Readonly<GaitConfig> = {
+  baseFrequency: 0.05,
+  strideLength: 8,
+  strideHeight: 5,
+  hipBobHeight: 2,
+  hipSwayWidth: 1,
+};
+
+/** Dust-burst particle fill — warm tan, clearly visible against the dark bg. */
+const COLOR_DUST_LANDING = '#9a8060';
 /** Footstep-dust fill — slightly darker than landing dust for visual hierarchy. */
-const COLOR_DUST_FOOTSTEP = '#4a3525';
+const COLOR_DUST_FOOTSTEP = '#8a7050';
 /** Minimum horizontal speed (px/tick) for footstep dust to spawn. */
 const FOOTSTEP_MIN_SPEED = 1;
 
@@ -422,6 +443,7 @@ export function initPlayground(
     // outlines on the pixel grid (no fractional-pixel seams). The shake offset
     // is added unrounded — a brief wobble is meant to jitter sub-pixel.
     ctx.save();
+    ctx.scale(CANVAS_ZOOM, CANVAS_ZOOM);
     ctx.translate(-Math.round(camera.x) + shakeX, -Math.round(camera.y) + shakeY);
 
     // Parallax starfield — scrolls at 0.3× the camera, so the stars lag the
@@ -486,7 +508,7 @@ export function initPlayground(
     // re-evaluated here from the current `loco` state (pure read) so the feet
     // track the exact phase even though the step function advanced it once per
     // fixed tick and render runs at host refresh rate.
-    const locoPose = evaluateLocomotion(loco, DEFAULT_GAIT);
+    const locoPose = evaluateLocomotion(loco, PLAYGROUND_GAIT);
     ctx.save();
     // Translate to body bottom-center (where the feet meet the ground). Uses
     // the UNSQUASHED bottom so feet stay glued to the floor during a landing
@@ -531,9 +553,9 @@ export function initPlayground(
    * Draw dust particles as alpha-faded filled circles. Reuses the lava-pool
    * section's particle-render pattern (`particleAlphaCurve` +
    * `particleSizeCurve`) so the dust reads consistently with the other
-   * procedural-FX sections. Each particle fades 0.7 → 0 alpha and shrinks from
-   * its spawn size to 0.5px over its lifetime; `globalAlpha` is reset after so
-   * subsequent draws aren't translucent.
+   * procedural-FX sections. Each particle fades 1.0 → 0 alpha and shrinks from
+   * its spawn size down to a 1px minimum over its lifetime; `globalAlpha` is
+   * reset after so subsequent draws aren't translucent.
    */
   const drawDust = (
     ctx: CanvasRenderingContext2D,
@@ -541,12 +563,12 @@ export function initPlayground(
   ): void => {
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
-      const alpha = particleAlphaCurve(p, 0.7, 0);
-      const radius = particleSizeCurve(p, p.size, 0.5);
+      const alpha = particleAlphaCurve(p, 1.0, 0);
+      const radius = particleSizeCurve(p, p.size, 1);
       ctx.globalAlpha = alpha;
       ctx.fillStyle = p.color ?? COLOR_DUST_LANDING;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.5, radius), 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, Math.max(1, radius), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -562,8 +584,8 @@ export function initPlayground(
     const dust = spawn(x, player.y + player.height - 1, {
       count: 2,
       speed: 0.5,
-      life: 8,
-      size: 1.5,
+      life: 12,
+      size: 2.5,
       color: COLOR_DUST_FOOTSTEP,
     });
     dustParticles = [...dustParticles, ...dust];
@@ -691,8 +713,8 @@ export function initPlayground(
               {
                 count: dustCount,
                 speed: Math.max(1, impact * 0.25),
-                life: 12,
-                size: 2,
+                life: 18,
+                size: 3,
                 color: COLOR_DUST_LANDING,
                 angleOffset: -Math.PI / 2,
               },
@@ -742,9 +764,9 @@ export function initPlayground(
       //    then derives hip/foot offsets as pure sin/cos of the phase.
       if (player.onGround) {
         const localDx = player.vx * player.facing;
-        loco = advanceLocomotionByDisplacement(loco, localDx, DEFAULT_GAIT);
+        loco = advanceLocomotionByDisplacement(loco, localDx, PLAYGROUND_GAIT);
       }
-      const locoPose = evaluateLocomotion(loco, DEFAULT_GAIT);
+      const locoPose = evaluateLocomotion(loco, PLAYGROUND_GAIT);
 
       // 9. Per-step dust + audio — detect foot-plant transitions from the
       //    locomotion phase. A foot "plants" when its lift height transitions
@@ -785,7 +807,7 @@ export function initPlayground(
           height: player.height,
         },
         { width: WORLD_W, height: WORLD_H },
-        { width: VIEW_W, height: VIEW_H },
+        { width: VIEW_W / CANVAS_ZOOM, height: VIEW_H / CANVAS_ZOOM },
       );
     },
     render: () => {

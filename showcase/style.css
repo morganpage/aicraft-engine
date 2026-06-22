@@ -434,7 +434,7 @@ main {
 /* =========================================================================
    Playground section — playable platformer demo.
    Layout/colors/spacing mirror the .lava-* and .hero-* sections so the three
-   read as siblings. The canvas keeps a 480×320 (3:2) aspect ratio.
+   read as siblings. The canvas keeps a 600×400 (3:2) aspect ratio.
    ========================================================================= */
 
 .playground-section {
@@ -502,9 +502,9 @@ main {
 
 .playground-canvas {
   width: 100%;
-  max-width: 480px;
+  max-width: 600px;
   height: auto;
-  aspect-ratio: 480 / 320;
+  aspect-ratio: 600 / 400;
   background: #1a0d0a;
   border: var(--outline-width) solid var(--outline);
   border-radius: var(--radius);
