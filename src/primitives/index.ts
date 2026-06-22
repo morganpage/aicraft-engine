@@ -43,4 +43,7 @@ export {
   PARALLAX_FAR,
   PARALLAX_MID,
   PARALLAX_NEAR,
+  tiledParallaxRange,
+  drawTiledParallax,
+  type TiledParallaxRange,
 } from './parallax';

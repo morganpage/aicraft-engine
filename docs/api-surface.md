@@ -83,7 +83,7 @@ Additive radial-gradient glow stamp. Draws a brightest-at-center, fade-to-transp
 
 #### `src/primitives/parallax.ts`
 
-Parallax background scroll helper. Pure: returns the scroll offset for a layer given the camera position and depth factor. Consumer translates the canvas by the returned offset before drawing the layer.
+Parallax background scroll helpers. Pure: returns the scroll offset (or tiled-geometry) for a layer given the camera position and depth factor. Consumer translates the canvas by the returned offset/draws tiles at the returned coordinates.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
@@ -91,6 +91,13 @@ Parallax background scroll helper. Pure: returns the scroll offset for a layer g
 | `PARALLAX_FAR` | const | `0.25` — typical factor for far background layers (distant mountains, stars) | `src/primitives/parallax.ts` |
 | `PARALLAX_MID` | const | `0.5` — typical factor for mid-depth layers (hills, trees) | `src/primitives/parallax.ts` |
 | `PARALLAX_NEAR` | const | `1.0` — gameplay-layer factor (same scroll as the world) | `src/primitives/parallax.ts` |
+| `TiledParallaxRange` | type | `{ startX, copies }` — draw geometry for a seamless-tiled layer along one axis | `src/primitives/parallax.ts` |
+| `tiledParallaxRange(camera, factor, tileWidth, viewportWidth)` | function | Pure 1D geometry: computes leftmost draw coordinate + copy count via Optimal Branching Remainder. Returns `TiledParallaxRange`. JSDoc documents overscan/seam-mitigation pattern and sub-pixel tileWidth performance. Guard: zero/negative `tileWidth` → `{ startX: 0, copies: 0 }` | `src/primitives/parallax.ts` |
+| `drawTiledParallax(ctx, drawTile, camera, factor, tileWidth, viewportWidth)` | function | Convenience wrapper: computes geometry via `tiledParallaxRange`, calls `drawTile(ctx, screenX)` for each copy using `tileWidth` as spacing. Asset-agnostic callback. Guard: zero/negative `tileWidth` → callback never called | `src/primitives/parallax.ts` |
+
+> Decision: `docs/design/seamless-tiled-parallax-decision.md`.
+> Proposal: `docs/design/seamless-tiled-parallax-proposal.md`.
+> Benchmark: `benchmarks/seamless-tiled-parallax/` (5 sample sheets — scroll-right, scroll-left, perfect-alignment, sub-pixel, comparison).
 
 ### `src/rng/`
 
