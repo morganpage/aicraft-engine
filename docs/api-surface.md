@@ -99,6 +99,8 @@ Parallax background scroll helpers. Pure: returns the scroll offset (or tiled-ge
 | `tiledParallaxRange(camera, factor, tileWidth, viewportWidth)` | function | Pure 1D geometry: computes leftmost draw coordinate + copy count via Optimal Branching Remainder. Returns `TiledParallaxRange`. JSDoc documents overscan/seam-mitigation pattern and sub-pixel tileWidth performance. Guard: zero/negative `tileWidth` → `{ startX: 0, copies: 0 }` | `src/primitives/parallax.ts` |
 | `drawTiledParallax(ctx, drawTile, camera, factor, tileWidth, viewportWidth)` | function | Convenience wrapper: computes geometry via `tiledParallaxRange`, calls `drawTile(ctx, screenX)` for each copy using `tileWidth` as spacing. Asset-agnostic callback. Guard: zero/negative `tileWidth` → callback never called | `src/primitives/parallax.ts` |
 
+> **Asset-agnostic callback validated:** the `drawTile: (ctx, screenX) => void` callback works with both procedural draws (hero/lava/playground sections render code-drawn tiles) and raster `drawImage` calls (parallax section renders AI-generated PNGs). The library stays zero-dep; the consumer supplies the art. See `showcase/README.md` section "Parallax section -- deep dive" for the consumer pattern.
+
 > Decision: `docs/design/seamless-tiled-parallax-decision.md`.
 > Proposal: `docs/design/seamless-tiled-parallax-proposal.md`.
 > Benchmark: `benchmarks/seamless-tiled-parallax/` (5 sample sheets — scroll-right, scroll-left, perfect-alignment, sub-pixel, comparison).

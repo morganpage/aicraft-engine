@@ -5,3 +5,9 @@ dist/
 .vite/
 coverage/
 .playwright-mcp/
+
+# Secrets — never commit. The showcase OpenAI image-gen workflow reads
+# OPENAI_API_KEY from here at dev time; the key must never enter git history.
+.env
+.env.*
+!.env.example

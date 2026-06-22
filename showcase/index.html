@@ -259,6 +259,63 @@ const loop = createGameLoop({
           <button class="playground-touch-btn playground-touch-btn--jump" type="button" aria-label="Jump">Jump</button>
         </div>
       </section>
+
+      <!--
+        Section 4 — Parallax background.
+        The first section to consume raster art: four gpt-image-2 PNGs,
+        greenscreen-keyed + mirror-padded for seamless tiling, scrolled by
+        the library's drawTiledParallax (asset-agnostic drawTile callback).
+      -->
+      <section id="parallax" class="section parallax-section">
+        <div class="parallax-copy">
+          <h2 class="parallax-title">Scroll through the underworld.</h2>
+          <p class="parallax-blurb">
+            Four layers painted by <span class="kbd">gpt-image-2</span>,
+            greenscreen-keyed, and mirror-padded for seamless tiling. The
+            library's <span class="kbd">drawTiledParallax</span> scrolls them
+            at scene-tuned depth factors (0.10 → 0.85) via an asset-agnostic
+            <span class="kbd">drawTile</span> callback — the first showcase
+            section to consume raster art, proving the callback is image-agnostic.
+          </p>
+
+          <div class="parallax-controls">
+            <button class="parallax-play" type="button" aria-label="Pause or play the parallax scroll" aria-pressed="false">
+              <span>⏸ Pause</span>
+            </button>
+
+            <label class="parallax-speed-label" for="parallax-speed">
+              Speed: <span class="parallax-speed-value">1.0×</span>
+              <input
+                id="parallax-speed"
+                class="parallax-speed"
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value="1"
+              />
+            </label>
+          </div>
+
+          <p class="parallax-hint">
+            <span class="kbd">⏸</span> pauses · slider sets scroll speed
+          </p>
+
+          <pre class="parallax-snippet"><code>// 4-layer tiled parallax — asset-agnostic drawTile callback
+drawTiledParallax(ctx, (c, x) => c.drawImage(skyImg, x, 0, W, H), cam.x, 0.10, W, W);
+drawTiledParallax(ctx, (c, x) => c.drawImage(ruinsImg, x, 0, W, H), cam.x, 0.50, W, W);
+// tiledParallaxRange wraps via % tileWidth → infinite seamless scroll</code></pre>
+        </div>
+
+        <div class="parallax-stage">
+          <canvas
+            class="parallax-canvas"
+            width="640"
+            height="320"
+            aria-label="IMP underworld parallax background"
+          ></canvas>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">

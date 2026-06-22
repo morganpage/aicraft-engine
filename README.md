@@ -19,7 +19,7 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 
 | Pillar | Modules | Status |
 |---|---|---|
-| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`) | Phase 1 |
+| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | Phase 1 |
 | **1. RNG** | Seeded mulberry32, distribution helpers | Phase 1 |
 | **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | Phase 1 |
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | Phase 1b |
@@ -81,6 +81,28 @@ let particles = spawn(player.x, player.y, {
 });
 particles = step(particles, 1);  // advance + cull
 ```
+
+---
+
+## Showcase
+
+The `showcase/` directory is a standalone Vite app that demos the library end-to-end. It is not shipped to consumers -- it is a reference and visual-validation tool that lives inside the repo. Run it with:
+
+```bash
+npm run showcase:dev     # dev server (prints a localhost URL)
+npm run showcase:build   # production build to showcase/dist/
+```
+
+Four sections, each an independent canvas:
+
+| Section | What it shows |
+|---|---|
+| Hero | Seeded slime-knight character (rng, animation, IK, locomotion, jump) |
+| Lava pool | Gerstner wave surface + heterogeneous particle emitters |
+| Playground | Playable platformer (input, collision, camera, hit-stop, game-loop) |
+| Parallax | 4-layer IMP underworld background with AI-generated raster art (`drawTiledParallax`) |
+
+The parallax section is the first to consume raster art, validating that the library's `drawTile` callback is asset-agnostic. See `showcase/README.md` for full details including the art regeneration pipeline.
 
 ---
 

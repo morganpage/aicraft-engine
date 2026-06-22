@@ -15,5 +15,5 @@
     "types": ["vite/client"]
   },
   "include": ["."],
-  "exclude": ["dist"]
+  "exclude": ["dist", "_scripts"]
 }

@@ -12,6 +12,7 @@ import { createStore } from './store';
 import { initHero } from './sections/hero';
 import { initLavaPool } from './sections/lava-pool';
 import { initPlayground } from './sections/playground';
+import { initParallax } from './sections/parallax';
 
 /**
  * Global showcase state. The hero fields are populated; the rest of the
@@ -102,4 +103,9 @@ if (lavaPoolSection) {
 const playgroundSection = document.getElementById('playground');
 if (playgroundSection) {
   initPlayground(playgroundSection, store);
+}
+
+const parallaxSection = document.getElementById('parallax');
+if (parallaxSection) {
+  initParallax(parallaxSection, store);
 }

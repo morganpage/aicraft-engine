@@ -594,3 +594,147 @@ main {
     display: flex;
   }
 }
+
+/* =========================================================================
+   Parallax background section — mirrors the .lava-* / .playground-* layout,
+   colors, and spacing so the four sections read as siblings. Copy on one
+   side, canvas stage on the other; 2-column grid at >=820px. The canvas
+   keeps a 640×320 (2:1) aspect ratio matching the painted tile sources.
+   ========================================================================= */
+
+.parallax-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .parallax-section {
+    grid-template-columns: 1fr 360px;
+    padding: 32px;
+  }
+}
+
+.parallax-copy {
+  min-width: 0;
+}
+
+.parallax-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.parallax-blurb {
+  margin: 0 0 20px;
+  color: var(--palette-text-dim);
+  max-width: 50ch;
+}
+
+.parallax-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+/* Pause/play button shares the primary-button look with the hero/lava
+ * buttons so the sections read as siblings. */
+.parallax-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--palette-base);
+  color: #fff;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.parallax-play:hover {
+  background: #ff7320;
+}
+
+.parallax-play:active {
+  transform: translateY(1px);
+}
+
+.parallax-play:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.parallax-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.parallax-speed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--palette-text-dim);
+}
+
+.parallax-speed-value {
+  color: var(--palette-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+}
+
+.parallax-speed {
+  width: 140px;
+  accent-color: var(--palette-base);
+}
+
+.parallax-snippet {
+  margin: 0;
+  padding: 12px 14px;
+  background: #0e0e12;
+  color: #e2e8f0;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------- Parallax stage / canvas ---------- */
+
+.parallax-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.parallax-canvas {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  aspect-ratio: 640 / 320;
+  /* Dark underworld sky — the placeholder fill (shown before PNGs decode). */
+  background: #0a0612;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  /* Painted (non-pixel) art — smooth downscaling from the 2048px source
+   * tiles. Deliberately NO image-rendering override: the default 'auto'
+   * (smooth interpolation) is correct for photographic/painted imagery,
+   * unlike the pixelated hero/playground canvases which use crisp-edges. */
+  touch-action: none;
+}
