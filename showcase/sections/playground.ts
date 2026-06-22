@@ -8,6 +8,14 @@
  *     game-loop module rather than a hand-rolled rAF loop.
  *   - `createKeyboardAdapter` polls input EXACTLY once per fixed tick and
  *     drains pressed/released edges (no stuck keys, no auto-repeat).
+ *   - `createTouchButtonSet` tracks three on-screen overlay buttons
+ *     (`◀` left / `▶` right / `Jump`) for coarse-pointer devices —
+ *     multi-touch-safe (per-element `pointerId` sets + a global document
+ *     safety net). The buttons are declarative markup in index.html,
+ *     revealed only on touch devices via `@media (pointer: coarse)` in
+ *     style.css. `orEdges` OR-merges keyboard + touch per action each tick
+ *     so either device drives the player. No reset button — R-key reset is
+ *     a power-user convenience and the fall-off respawn handles death.
  *   - `resolveAxisX` / `resolveAxisY` run per-axis move-and-resolve over the
  *     per-tick `Solid[]` level (static geometry + the gap's fragments), including
  *     a one-way passthrough platform.
@@ -81,7 +89,14 @@
  */
 
 import { createGameLoop, type GameLoop } from '../../src/game-loop';
-import { createKeyboardAdapter, type KeyboardAdapter } from '../../src/input';
+import {
+  createKeyboardAdapter,
+  createTouchButtonSet,
+  orEdges,
+  type KeyboardAdapter,
+  type PolledEdge,
+  type TouchButtonSetAdapter,
+} from '../../src/input';
 import {
   resolveAxisX,
   resolveAxisY,
@@ -104,6 +119,7 @@ import {
   outlineRect,
   parallaxOffset,
   drawGlow,
+  resizeCanvasToBackingStore,
 } from '../../src/primitives';
 import { volumeScale, breathe, DEFAULT_BREATH } from '../../src/animation/squash-stretch';
 import { sineShake, shakeEnvelope } from '../../src/animation/oscillators';
@@ -129,6 +145,14 @@ import type { Store } from '../store';
 import type { GlobalState } from '../main';
 
 // --- World / viewport dimensions -------------------------------------------
+
+/**
+ * Idle edge — the zero state `{held, pressed, released} = {false,false,false}`.
+ * Used as the fallback for `orEdges` when a keyboard or touch slot is absent
+ * (defensive: `orEdges` is not null-safe, so missing slots fall back to this
+ * rather than throwing). Mirrors the `IDLE` constant in the input adapters.
+ */
+const IDLE_EDGE: PolledEdge = { held: false, pressed: false, released: false };
 
 /** Full world width. 2× viewport — the camera follows the player horizontally. */
 const WORLD_W = 960;
@@ -414,25 +438,38 @@ const SUPPRESSED_CODES: ReadonlySet<string> = new Set([
 /**
  * Initialize the playground section.
  *
- * Wires the keyboard adapter, game loop, and rendering pipeline. Returns
- * without starting the loop when reduced motion is preferred (a single
- * static frame is rendered instead). The section cleans up its listeners +
- * the loop on `dispose()` — currently never called by the showcase (the
- * page is single-mount) but defensive for future single-page-app use.
+ * Wires the keyboard + touch adapters, game loop, and rendering pipeline.
+ * Returns without starting the loop when reduced motion is preferred (a
+ * single static frame is rendered instead). Returns a `dispose` callback
+ * that tears down both input adapters (keyboard + touch), the
+ * IntersectionObserver, and the window keydown listeners — defensive for
+ * future single-page-app use (currently never called by the showcase, which
+ * is single-mount).
  *
  * @param container - the `<section id="playground">` element
  * @param _store - the global observable store. Intentionally unused — the
  *   playground has no shared-seed concept (the player is local game state,
  *   not generated cosmetics). Accepted only to match the section-init
  *   signature.
+ * @returns A `dispose` callback. Call it to tear down listeners + observers
+ *   (idempotent — safe to call multiple times; the input adapters' own
+ *   `dispose` methods are idempotent and the observer/listener removals are
+ *   no-ops if already removed).
  */
 export function initPlayground(
   container: HTMLElement,
   // Underscore-prefixed: TypeScript's `noUnusedParameters` exempts these.
   _store: Store<GlobalState>,
-): void {
+): () => void {
   const canvas = container.querySelector<HTMLCanvasElement>('.playground-canvas')!;
   const ctx = canvas.getContext('2d')!;
+  // DPR-aware backing store: canvas.width/height = CSS size × devicePixelRatio
+  // so the canvas renders crisp on Retina / high-DPI mobile. Applied ONCE at
+  // setup as the base transform; all per-frame transforms (camera translate,
+  // CANVAS_ZOOM scale, facing mirror) compose on top via ctx.save/scale/
+  // translate/restore. CSS sizing is owned by style.css.
+  const dpr = resizeCanvasToBackingStore(canvas, VIEW_W, VIEW_H);
+  ctx.scale(dpr, dpr);
 
   // --- Local game state ----------------------------------------------------
 
@@ -516,9 +553,36 @@ export function initPlayground(
     codeToAction: {
       ArrowLeft: 'left',
       ArrowRight: 'right',
+      KeyA: 'left',
+      KeyD: 'right',
       Space: 'jump',
       KeyR: 'reset',
     },
+  });
+
+  // --- Touch adapter (on-screen buttons for coarse-pointer devices) -------
+  //
+  // Three overlay <button>s in .playground-stage (left / right / jump), hidden
+  // by default on desktop and revealed on touch devices via
+  // `@media (pointer: coarse)` in style.css. On desktop (display:none) the
+  // adapter still attaches listeners but pointer events never fire on a hidden
+  // element — the slots report idle edges forever, which OR-merge harmlessly
+  // with the keyboard. Array order is POSITIONAL and load-bearing:
+  //   [0] = left, [1] = right, [2] = jump.
+  // `null` elements (markup missing in an older mount) produce idle slots —
+  // `createTouchButtonSet` handles null defensively. `reset` stays
+  // keyboard-only (R-key power-user convenience; the touch UI is minimal).
+  const touchLeftBtn = container.querySelector<HTMLButtonElement>(
+    '.playground-touch-btn--left',
+  );
+  const touchRightBtn = container.querySelector<HTMLButtonElement>(
+    '.playground-touch-btn--right',
+  );
+  const touchJumpBtn = container.querySelector<HTMLButtonElement>(
+    '.playground-touch-btn--jump',
+  );
+  const touch: TouchButtonSetAdapter = createTouchButtonSet({
+    elements: [touchLeftBtn, touchRightBtn, touchJumpBtn],
   });
 
   // --- Audio unlock --------------------------------------------------------
@@ -872,8 +936,19 @@ export function initPlayground(
   const loop: GameLoop = createGameLoop({
     fixedDt: 1 / 60,
     step: () => {
-      // 1. Poll input — drain edge latches once per fixed tick.
-      const input = keyboard.poll();
+      // 1. Poll input — drain edge latches once per fixed tick. Keyboard and
+      //    touch are OR-merged per action so EITHER device drives the player:
+      //    `held` is OR'd (either source holding = held); pressed/released
+      //    edges are OR'd (either source producing the edge = it fires this
+      //    tick). Touch edges come from the on-screen buttons — idle on
+      //    desktop where the buttons are display:none. `reset` stays
+      //    keyboard-only (no touch reset button by design). The `?? IDLE_EDGE`
+      //    fallback guards against a missing slot (orEdges is not null-safe).
+      const kb = keyboard.poll();
+      const t = touch.poll(); // [leftEdge, rightEdge, jumpEdge] — positional
+      const leftEdge = orEdges(kb['left'] ?? IDLE_EDGE, t[0] ?? IDLE_EDGE);
+      const rightEdge = orEdges(kb['right'] ?? IDLE_EDGE, t[1] ?? IDLE_EDGE);
+      const jumpEdge = orEdges(kb['jump'] ?? IDLE_EDGE, t[2] ?? IDLE_EDGE);
 
       // 2. Advance hit-stop timer regardless of the freeze so the freeze
       //    actually ends. When active, skip the rest of the step (the temporal-
@@ -888,9 +963,9 @@ export function initPlayground(
       // 3. Apply input to velocity. Ground moves at MOVE_SPEED; air moves at
       //    AIR_CONTROL × MOVE_SPEED so jumps still steer but can't reverse on
       //    a dime. When idle on the ground, vx zeroes (snappy stop).
-      const left = input['left']?.held ?? false;
-      const right = input['right']?.held ?? false;
-      const jumpPressed = input['jump']?.pressed ?? false;
+      const left = leftEdge.held;
+      const right = rightEdge.held;
+      const jumpPressed = jumpEdge.pressed;
       const speed = player.onGround ? MOVE_SPEED : MOVE_SPEED * AIR_CONTROL;
       if (left && !right) {
         player.vx = -speed;
@@ -927,8 +1002,9 @@ export function initPlayground(
       // Reset — instant teleport back to spawn. Edge-triggered (pressed, not
       // held) so holding R doesn't keep re-teleporting. Clears all FX state so
       // a mid-flight reset doesn't leave stale dust / shake / squash lingering.
-      // Shared with the fall-off-world respawn (see resetPlayer).
-      if (input['reset']?.pressed) {
+      // Shared with the fall-off-world respawn (see resetPlayer). Keyboard-only
+      // (no touch reset button by design — touch UI stays minimal: move+jump).
+      if (kb['reset']?.pressed) {
         resetPlayer();
       }
 
@@ -1138,18 +1214,41 @@ export function initPlayground(
   // scroll gesture.
   window.addEventListener('keydown', onKeyDown, { capture: true });
 
+  // --- Teardown -----------------------------------------------------------
+  //
+  // Defensive cleanup for future single-page-app use (the showcase is
+  // currently single-mount so main.ts never calls this). Tears down BOTH
+  // input adapters — keyboard AND touch — so neither leaks window/document/
+  // element listeners, plus the IntersectionObserver and the two window
+  // keydown/pointerdown aux listeners (scroll-guard + audio-unlock). The
+  // game loop owns its own visibilitychange teardown internally. All
+  // underlying `dispose()` / `disconnect()` / `removeEventListener` calls
+  // are idempotent, so calling this multiple times is safe.
+  const dispose = (): void => {
+    keyboard.dispose();
+    touch.dispose();
+    observer.disconnect();
+    window.removeEventListener('keydown', onKeyDown, { capture: true });
+    window.removeEventListener('keydown', unlockAudio);
+    window.removeEventListener('pointerdown', unlockAudio);
+  };
+
   // --- Motion gate ---------------------------------------------------------
 
   // Reduced-motion branch: the render() above is the single static frame
-  // (character at spawn, camera at origin). Do NOT start the loop.
+  // (character at spawn, camera at origin). Do NOT start the loop. The
+  // dispose callback is still returned so listeners attached above (input
+  // adapters, observer, scroll-guard) can be cleaned up.
   if (shouldAnimate()) {
-    return;
+    return dispose;
   }
 
   loop.start();
 
   // The loop's own visibilitychange handler pauses-on-hidden; we don't need
   // a second one here (unlike the hand-rolled hero / lava-pool loops).
+
+  return dispose;
 }
 
 // ---------------------------------------------------------------------------

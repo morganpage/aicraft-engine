@@ -52,6 +52,7 @@ import {
   generateWaveLine,
   DEFAULT_GERSTNER,
   DEFAULT_WAVE_LINE,
+  resizeCanvasToBackingStore,
   type WaveLineConfig,
   type WavePoint,
 } from '../../src/primitives';
@@ -238,6 +239,12 @@ export function initLavaPool(
 ): void {
   const canvas = container.querySelector<HTMLCanvasElement>('.lava-canvas')!;
   const ctx = canvas.getContext('2d')!;
+  // DPR-aware backing store: canvas.width/height = CSS size × devicePixelRatio
+  // so the canvas renders crisp on Retina / high-DPI mobile. CSS sizing is
+  // owned by style.css — we only set the backing store + scale the context,
+  // so all subsequent drawing continues to use CSS-pixel coordinates.
+  const dpr = resizeCanvasToBackingStore(canvas, CANVAS_W, CANVAS_H);
+  ctx.scale(dpr, dpr);
   const surfaceBtn = container.querySelector<HTMLButtonElement>('.lava-surface')!;
   const intensitySlider = container.querySelector<HTMLInputElement>('.lava-intensity')!;
   const intensityValue = container.querySelector<HTMLElement>('.lava-intensity-value')!;

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>aicraft-engine — Zero-Dependency Procedural Rendering for Games</title>
     <meta
       name="description"
@@ -227,7 +227,8 @@ const [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity: 0.5 });
           <p class="playground-hint">
             <span class="kbd">←</span> <span class="kbd">→</span> to move ·
             <span class="kbd">Space</span> to jump ·
-            <span class="kbd">R</span> to reset
+            <span class="kbd">R</span> to reset ·
+            or the on-screen buttons on touch devices
           </p>
           <pre class="playground-snippet"><code>// Six modules compose into a game loop:
 const loop = createGameLoop({
@@ -244,6 +245,18 @@ const loop = createGameLoop({
         <div class="playground-stage">
           <canvas class="playground-canvas" width="600" height="400"
             aria-label="Playable platformer playground"></canvas>
+          <!--
+            On-screen touch controls — revealed only on coarse-pointer (touch)
+            devices via @media (pointer: coarse) in style.css. On desktop they
+            are display:none (keyboard-only); the adapter still attaches
+            listeners but they never fire (idle edges forever — harmless).
+            Array order in the touch set is load-bearing: [left, right, jump].
+            No reset button — R-key reset is a power-user convenience; the
+            fall-off respawn handles death recovery automatically.
+          -->
+          <button class="playground-touch-btn playground-touch-btn--left" type="button" aria-label="Move left">◀</button>
+          <button class="playground-touch-btn playground-touch-btn--right" type="button" aria-label="Move right">▶</button>
+          <button class="playground-touch-btn playground-touch-btn--jump" type="button" aria-label="Jump">Jump</button>
         </div>
       </section>
     </main>

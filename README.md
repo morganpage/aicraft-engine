@@ -25,7 +25,9 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | Phase 1b |
 | **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms (`gapSolids`, `advanceGapMotion`, `gapTileQuery`) | **Shipped** |
 | **1. Camera** | Follow camera (lerp, clamp, snap-to-target) | **Shipped** |
-| **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, OR-merge | **Shipped** |
+| **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, multi-touch button set, OR-merge | **Shipped** |
+| **1. Game loop** | Fixed-step accumulator, defensive RAF adapter, spiral-of-death guard, visibilitychange pause | **Shipped** |
+| **1. Audio** | WebAudio synthesized SFX adapter (oscillator tones, filtered noise), defensive lazy-unlock, mute/volume | **Shipped** |
 | **1. Save** | Defensive localStorage/memory backends, JSON load/write helpers (`SaveStorage`, `loadSave`, `writeSave`) | **Shipped** |
 | **1. Blend** | Pose-interpolation primitives (`Pose2D`, `blendPose`, `blendPoses`) — independent of animation pillar | **Shipped** |
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |

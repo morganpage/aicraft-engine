@@ -34,6 +34,10 @@ Color math, pixel helpers, motion probe. (The animation helpers — `bob`, `puls
 | `approach(current, target, maxDelta)` | function | Frame-rate-independent smoothing toward target | `src/primitives/pixel.ts` |
 | `prefersReducedMotion()` | function | Cached probe for `prefers-reduced-motion`; false in Node/SSR | `src/primitives/motion.ts` |
 | `resetMotionCacheForTests()` | function | Reset cache; tests only | `src/primitives/motion.ts` |
+| `FALLBACK_DPR` | const | `1` — fallback DPR when window is unavailable (Node, SSR, test) | `src/primitives/dpr.ts` |
+| `getDevicePixelRatio()` | function | Cached defensive probe for `window.devicePixelRatio`; returns `FALLBACK_DPR` in Node/SSR. Intended for one-shot startup reads | `src/primitives/dpr.ts` |
+| `resetDprCacheForTests()` | function | Reset cached DPR; tests only | `src/primitives/dpr.ts` |
+| `resizeCanvasToBackingStore(canvas, cssWidth, cssHeight)` | function | Resize canvas backing store to `round(cssWidth × dpr)` × `round(cssHeight × dpr)`; returns the fresh DPR for caller to `ctx.scale(dpr, dpr)`. Reads DPR fresh each call (NOT via the cache — DPR changes at runtime on monitor swap / browser zoom). Does NOT touch `canvas.style` | `src/primitives/dpr.ts` |
 
 - _research note: See `docs/research/procedural-locomotion.md` for planned trigonometric locomotion, squash/stretch, and Verlet-based spring chains._
 
@@ -439,7 +443,9 @@ Follow-camera: pure world-space position that lerps toward a target, clamped to 
 
 ### `src/input/`
 
-Deterministic edge accumulator + defensive device adapters. Two layers: pure core (`edges.ts`, `merge.ts`) for DOM-free unit testing, and defensive adapters (`keyboard.ts`, `touch-button.ts`) with lazy host resolution, error swallowing, and never-throw public APIs.
+Deterministic edge accumulator + defensive device adapters. Two layers: pure core (`edges.ts`, `merge.ts`) for DOM-free unit testing, and defensive adapters (`keyboard.ts`, `touch-button.ts`, `touch-button-set.ts`) with lazy host resolution, error swallowing, and never-throw public APIs.
+
+- _research note: See `docs/research/mobile-directional-input.md` for multi-touch pointer-ID tracking, virtual D-pads, and analog thumbsticks._
 
 #### `src/input/types.ts`
 
@@ -450,6 +456,8 @@ Deterministic edge accumulator + defensive device adapters. Two layers: pure cor
 | `KeyboardAdapter` | type | `{poll(), dispose()}` — maps `KeyboardEvent.code` to actions, manages one `EdgeAccumulator` per action | `src/input/types.ts` |
 | `KeyboardConfig` | type | `{codeToAction: Record<string, string>}` — maps key codes to action names | `src/input/types.ts` |
 | `TouchButtonAdapter` | type | `{poll(), dispose()}` — tracks pointer events on a single DOM element | `src/input/types.ts` |
+| `TouchButtonSetConfig` | type | `{ elements: readonly (HTMLElement \| null)[] }` — DOM elements for each button; nulls produce idle slots but keep alignment | `src/input/types.ts` |
+| `TouchButtonSetAdapter` | type | `{poll(): PolledEdge[], dispose(): void}` — multi-touch-safe button group; array-aligned with input | `src/input/types.ts` |
 
 #### `src/input/edges.ts`
 
@@ -479,7 +487,45 @@ Pure edge accumulator core. DOM-free, deterministic, fully unit-testable under N
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `createTouchButton(element)` | function | Defensive touch-button adapter. Tracks `pointerdown`/`pointerup`/`pointercancel`/`pointerleave` on a DOM element. Returns no-op when element is null. Sets `touchAction: 'none'` | `src/input/touch-button.ts` |
+| `createTouchButton(element)` | function | Defensive touch-button adapter. Tracks `pointerdown`/`pointerup`/`pointercancel`/`pointerleave` on a single DOM element. Returns no-op when element is null. Sets `touchAction: 'none'`. **Limitation:** no pointer-ID tracking (two fingers on same element cause cross-talk) and no global safety net — use `createTouchButtonSet` for multi-touch-safe button groups | `src/input/touch-button.ts` |
+
+#### `src/input/touch-button-set.ts`
+
+> Decision: `docs/design/mobile-directional-input-decision.md`.
+> Proposal: `docs/design/mobile-directional-input-proposal.md` (Approach B).
+
+Generic multi-touch-safe button group adapter. Takes an array of DOM elements (or nulls for missing slots), returns N `PolledEdge` outputs. Tracks pointer IDs per element with 0→≥1 / 1→0 transitions, preventing cross-talk when two fingers touch the same button. Global `document` `pointerup`/`pointercancel`/`pointerleave` safety net catches viewport-exit events (the stuck-button fix). Sets `touchAction: 'none'` on each non-null element. Short-circuits to a no-op adapter (still returning an idle array of the right length) when `window` is undefined (SSR safety). Direction-agnostic — the consumer maps array indices to semantics (directions, action buttons, etc.).
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `TouchButtonSetConfig` | type | `{ elements: readonly (HTMLElement \| null)[] }` — DOM elements for each button, in positional order. Null entries produce idle slots but keep array alignment | `src/input/types.ts` |
+| `TouchButtonSetAdapter` | type | `{ poll(): PolledEdge[], dispose(): void }` — drains N accumulators per tick; array-aligned with input | `src/input/types.ts` |
+| `createTouchButtonSet(config)` | function | Defensive multi-touch button set. Tracks pointer IDs per element with 0→≥1 / 1→0 transitions; global `document` safety net (`pointerup`/`pointercancel`/`pointerleave`). Sets `touchAction: 'none'` on each non-null element. Returns no-op adapter (still array-length-aligned) when `window` undefined | `src/input/touch-button-set.ts` |
+
+- _decision: `docs/design/mobile-directional-input-decision.md`_
+- _research note: `docs/research/mobile-directional-input.md` §Pattern 1, §Multi-Touch_
+- _existence proof: Spitekeep `src/input/touch.ts` (`TouchControls` class with identical pointer-ID tracking; ~120 lines of reusable core in a 414-line class that also includes CSS injection, capability detection, and DOM creation)_
+
+### `src/game-loop/`
+
+Fixed-step game loop — the connective tissue that ties input → simulation → render into a running game. Two layers: pure accumulator math (`advanceAccumulator`, DOM-free, unit-testable under Node) and a defensive host-touching adapter (`createGameLoop`) that lazily resolves `requestAnimationFrame` / `performance.now()` / `document`, swallows all errors, never throws. Includes spiral-of-death guard (`maxFrameDelta` clamp) and `visibilitychange` pause/resume so a backgrounded tab doesn't produce a catch-up burst on regain.
+
+#### `src/game-loop/fixed-step.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_FIXED_DT` | const | `1/60` — default fixed simulation timestep (60 Hz) | `src/game-loop/fixed-step.ts` |
+| `DEFAULT_MAX_FRAME_DELTA` | const | `1/6` — default max frame delta before clamping (~10 catch-up steps at 60 Hz; spiral-of-death guard) | `src/game-loop/fixed-step.ts` |
+| `AccumulatorStep` | type | `{accumulator, alpha}` — leftover time + interpolation alpha returned by `advanceAccumulator` | `src/game-loop/fixed-step.ts` |
+| `advanceAccumulator(accumulator, frameDelta, fixedDt, maxFrameDelta, step)` | function | Pure fixed-timestep math: clamps delta, calls `step(fixedDt)` once per whole step, returns leftover accumulator + alpha. No DOM, no globals, no `Date.now()` | `src/game-loop/fixed-step.ts` |
+| `createGameLoop(config)` | function | Defensive fixed-step loop adapter. Lazily resolves RAF / `performance.now()` / `document` at factory-call time. Handles `visibilitychange` pause/resume. `start()` is a silent no-op in Node/SSR. Never throws | `src/game-loop/fixed-step.ts` |
+
+#### `src/game-loop/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `GameLoopConfig` | type | `{fixedDt?, maxFrameDelta?, step, render}` — loop config; `step` receives `fixedDt` each call, `render` receives interpolation alpha | `src/game-loop/types.ts` |
+| `GameLoop` | interface | `{start(), stop(), isRunning(), dispose()}` — running loop handle; all methods idempotent and never-throw | `src/game-loop/types.ts` |
 
 ### `src/save/`
 
@@ -493,6 +539,18 @@ Defensive save-data storage backends and JSON load/write helpers. Follows the ca
 | `createMemorySaveStorage()` | function | In-memory closure backend for tests/SSR. No persistence across reloads | `src/save/storage.ts` |
 | `loadSave<T>(storage, defaultValue)` | function | Parse JSON from storage; returns `defaultValue` on any error (missing, corrupt, unavailable). Never throws | `src/save/storage.ts` |
 | `writeSave<T>(storage, value)` | function | Serialize and persist via `JSON.stringify`; silently fails on quota/stringify errors. Never throws | `src/save/storage.ts` |
+
+### `src/audio/`
+
+WebAudio synthesized SFX defensive adapter. Zero audio assets — every sound is generated on the fly from oscillators + a reused white-noise buffer. Follows the canonical defensive adapter pattern: lazy `AudioContext` resolution on first `unlock()` (never at module load), swallow all errors, never-throw public API, no-op fallback in Node/SSR. Per-instance factory pattern (each `createAudioAdapter` call creates an independent adapter with its own closure state). The library ships generic primitives (`playTone` / `playNoise`); consumers compose game-specific sounds from these two building blocks.
+
+> Note: `Math.random()` is used to fill the noise buffer. This is explicitly allowed — decorative audio side-effect, NOT deterministic simulation logic. Audio output never leaks back into game state.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `AudioAdapter` | interface | `{unlock(), isUnlocked(), playTone(...), playNoise(...), setMuted(...), isMuted(), setVolume(...), getVolume(), dispose()}` — WebAudio SFX adapter contract. All playback methods are no-op when muted, pre-unlock, or without WebAudio | `src/audio/types.ts` |
+| `DEFAULT_AUDIO_VOLUME` | const | `0.7` — default SFX volume | `src/audio/constants.ts` |
+| `createAudioAdapter()` | function | Defensive factory: independent adapter with private `AudioContext`, master gain, and noise buffer. Lazily resolves `AudioContext`/`webkitAudioContext` on first `unlock()`. Never throws | `src/audio/factory.ts` |
 
 ### `src/blend/`
 
@@ -750,7 +808,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./save`, and `./blend` (all shipped). As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, and `./blend` (all shipped). As pillars ship, they are added here.
 
 ```ts
 export * from './primitives';
@@ -763,6 +821,8 @@ export * from './iap';
 export * from './collision';
 export * from './camera';
 export * from './input';
+export * from './game-loop';
+export * from './audio';
 export * from './save';
 export * from './blend';
 // Phase 4: export * from './fake3d';

@@ -13,6 +13,12 @@ export {
 export { clamp, floor, lerp, approach } from './pixel';
 export { prefersReducedMotion, resetMotionCacheForTests } from './motion';
 export {
+  FALLBACK_DPR,
+  getDevicePixelRatio,
+  resetDprCacheForTests,
+  resizeCanvasToBackingStore,
+} from './dpr';
+export {
   createHitStop,
   triggerHitStop,
   stepHitStop,

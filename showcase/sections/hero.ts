@@ -26,6 +26,7 @@ import {
   HERO_GROUND_Y,
 } from '../helpers/slime-knight';
 import { shouldAnimate } from '../helpers/motion-gate';
+import { resizeCanvasToBackingStore } from '../../src/primitives';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
 
@@ -51,6 +52,12 @@ const WALK_SPEED_PX_PER_SEC = 90;
 export function initHero(container: HTMLElement, store: Store<GlobalState>): void {
   const canvas = container.querySelector<HTMLCanvasElement>('.hero-canvas')!;
   const ctx = canvas.getContext('2d')!;
+  // DPR-aware backing store: canvas.width/height = CSS size × devicePixelRatio
+  // so the canvas renders crisp on Retina / high-DPI mobile. CSS sizing is
+  // owned by style.css — we only set the backing store + scale the context,
+  // so all subsequent drawing continues to use CSS-pixel coordinates.
+  const dpr = resizeCanvasToBackingStore(canvas, HERO_CANVAS_SIZE, HERO_CANVAS_SIZE);
+  ctx.scale(dpr, dpr);
   const seedDisplay = container.querySelector<HTMLElement>('.hero-seed')!;
   const rerollBtn = container.querySelector<HTMLButtonElement>('.hero-reroll')!;
   const jumpBtn = container.querySelector<HTMLButtonElement>('.hero-jump')!;

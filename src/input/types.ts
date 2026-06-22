@@ -92,3 +92,35 @@ export interface TouchButtonAdapter {
   /** Remove all element listeners and release resources. Idempotent. */
   dispose(): void;
 }
+
+/** Configuration for {@link createTouchButtonSet}. */
+export interface TouchButtonSetConfig {
+  /**
+   * DOM elements for each button in the set, in positional order. `null`
+   * entries produce idle {@link PolledEdge} slots (SSR, element not yet
+   * mounted, query failed) but keep array alignment intact so consumers can
+   * destructure positionally: `const [left, right] = set.poll()`.
+   */
+  readonly elements: readonly (HTMLElement | null)[];
+}
+
+/**
+ * Multi-touch-safe button-set adapter — manages one {@link EdgeAccumulator}
+ * per input element and tracks `pointerId`s per slot so two fingers on the
+ * SAME button do not double-fire presses or spurious releases (the
+ * load-bearing multi-touch invariant). Adds a global `document` safety net
+ * (`pointerup` / `pointercancel` / `pointerleave`) so a pointer that exits
+ * the viewport without a clean per-element `pointerup` cannot leave a button
+ * stuck. Call `poll()` exactly once per fixed tick; call `dispose()` to tear
+ * down all listeners.
+ */
+export interface TouchButtonSetAdapter {
+  /**
+   * Drain all accumulators, returning a per-element edge snapshot array
+   * aligned with the input `elements` order. Call exactly once per tick.
+   * Null-element slots report idle `{held:false, pressed:false, released:false}`.
+   */
+  poll(): PolledEdge[];
+  /** Remove all per-element and document-level listeners. Idempotent. */
+  dispose(): void;
+}
