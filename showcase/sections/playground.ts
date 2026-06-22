@@ -43,6 +43,21 @@
  *   - `drawGlow` stamps a subtle additive glow under the character
  *     (demonstrates additive blending).
  *
+ * Character personality — a cute purple cyclops, deliberately distinct from
+ * Spitekeep's devil-orange character:
+ *   - `breathe` + `DEFAULT_BREATH` from `animation/squash-stretch` apply a
+ *     subtle ±5% vertical idle breathing oscillation, composed on top of the
+ *     squash/stretch scale by multiplying the two `Scale2D` pairs.
+ *   - Idle feet blend: when grounded + below the footstep-speed threshold, the
+ *     locomotion foot offsets ease toward zero (neutral stance) over ~12 ticks
+ *     so the character settles into a natural standing pose instead of freezing
+ *     mid-stride; snaps back to the live walk cycle in ~5 ticks when moving.
+ *   - A blinking cyclops eye (6×5 dark rect with a 2×2 white sparkle) drawn in
+ *     a body-local + facing-mirrored transform; collapses to a 6×1 line every
+ *     ~2-4 sec for ~83ms (render-tick driven — visual-only, never touches sim).
+ *   - An expressive mouth: a gentle quadratic-curve smile when grounded, a
+ *     small "o" (3×2) when airborne.
+ *
  * Motion-gated: if the user prefers reduced motion, a single static frame is
  * rendered (character standing at spawn, camera at origin) and the loop is
  * never started. Matches the hero / lava-pool gate exactly.
@@ -75,7 +90,7 @@ import {
   parallaxOffset,
   drawGlow,
 } from '../../src/primitives';
-import { volumeScale } from '../../src/animation/squash-stretch';
+import { volumeScale, breathe, DEFAULT_BREATH } from '../../src/animation/squash-stretch';
 import { sineShake, shakeEnvelope } from '../../src/animation/oscillators';
 import {
   spawn,
@@ -90,6 +105,7 @@ import {
   evaluateLocomotion,
   type GaitConfig,
   type LocomotionState,
+  type LocomotionPose,
 } from '../../src/animation/locomotion';
 import { drawSimpleFeet, DEFAULT_SIMPLE_FEET } from '../../src/animation/simple-feet';
 import { createAudioAdapter, type AudioAdapter } from '../../src/audio';
@@ -268,8 +284,13 @@ const COLOR_BG = '#1a0d0a';
 const COLOR_PLATFORM = '#3a2418';
 /** Passthrough-platform fill — slightly lighter brown for visual distinction. */
 const COLOR_PLATFORM_PASSTHROUGH = '#4a3020';
-/** Player fill — Spitekeep's bright devil orange. */
-const COLOR_PLAYER = '#FE5701';
+/** Player fill — soft purple. Cute + friendly, deliberately distinct from
+ *  Spitekeep's devil orange (#FE5701) so the two characters read as different
+ *  castes at a glance. */
+const COLOR_PLAYER = '#6c5ce7';
+/** Face feature color (eye + mouth) — matches DEFAULT_OUTLINE_COLOR for visual
+ *  cohesion with the body's outline. */
+const COLOR_FACE = '#1d1128';
 /** Parallax starfield dot fill. */
 const COLOR_STAR = '#5a4a3a';
 
@@ -383,6 +404,23 @@ export function initPlayground(
   let shakeTick = 0;
   let shakeMagnitude = 0;
 
+  // Idle feet blend weight [0,1]. 0 = full walk pose, 1 = full neutral stance.
+  // Eases toward 1 when grounded + below the footstep-speed threshold (so feet
+  // settle to a natural standing pose); snaps toward 0 when moving. Updated in
+  // the fixed step; read in render to blend the locomotion foot offsets.
+  let idleBlend = 0;
+
+  // Render-tick clock for visual-only oscillations (breathing). Advances once
+  // per render frame, never per fixed step, so it stays decoupled from the sim.
+  let renderTick = 0;
+
+  // Blink timing (render ticks). Visual-only — Math.random is acceptable here
+  // (decorative side-effect, never feeds simulation state).
+  // blinkCountdown: time until next blink fires (~2-4 sec between blinks).
+  // blinkRemaining: remaining closed-eye duration (0 = eye open).
+  let blinkCountdown = 120;
+  let blinkRemaining = 0;
+
   // --- Input adapter -------------------------------------------------------
   //
   // Poll EXACTLY once per fixed tick — input edges (pressed / released) are
@@ -483,8 +521,13 @@ export function initPlayground(
     // bottom-align vertically so the feet stay planted on the ground (a squash
     // reads as "compress down," not "shrink and float").
     const scale = volumeScale(squashOffset);
-    const dw = player.width * scale.scaleX;
-    const dh = player.height * scale.scaleY;
+    // Idle breathing — subtle ±5% vertical oscillation composed ON TOP of the
+    // squash/stretch scale (multiply the two volume-preserving Scale2D pairs).
+    // renderTick advances once per render frame (visual-only) so breathing
+    // paces with the host refresh rate, independent of the fixed-step sim.
+    const breath = breathe(renderTick, DEFAULT_BREATH);
+    const dw = player.width * scale.scaleX * breath.scaleX;
+    const dh = player.height * scale.scaleY * breath.scaleY;
     const dx = player.x + (player.width - dw) / 2;
     const dy = player.y + (player.height - dh);
 
@@ -509,6 +552,22 @@ export function initPlayground(
     // track the exact phase even though the step function advanced it once per
     // fixed tick and render runs at host refresh rate.
     const locoPose = evaluateLocomotion(loco, PLAYGROUND_GAIT);
+    // Blend foot offsets toward zero (neutral stance) when idle. At idleBlend=1,
+    // both feet sit at x=0, y=0 → drawSimpleFeet places them at ±idleSpread
+    // from the midline → a natural standing pose. Eases in over ~12 ticks when
+    // grounded + not moving (set in the step function); snaps back to the live
+    // walk-cycle pose in ~5 ticks when movement resumes.
+    const blendedPose: LocomotionPose = {
+      hipOffset: locoPose.hipOffset,
+      leftFootOffset: {
+        x: locoPose.leftFootOffset.x * (1 - idleBlend),
+        y: locoPose.leftFootOffset.y * (1 - idleBlend),
+      },
+      rightFootOffset: {
+        x: locoPose.rightFootOffset.x * (1 - idleBlend),
+        y: locoPose.rightFootOffset.y * (1 - idleBlend),
+      },
+    };
     ctx.save();
     // Translate to body bottom-center (where the feet meet the ground). Uses
     // the UNSQUASHED bottom so feet stay glued to the floor during a landing
@@ -521,7 +580,7 @@ export function initPlayground(
     // baseY = -3 so the feet overlap the body's lower edge by ~3px — the body
     // draws on top (next call), covering the overlap so only the bottom ~2px
     // of each foot reads as a visible sole peeking out below the body.
-    drawSimpleFeet(ctx, locoPose, {
+    drawSimpleFeet(ctx, blendedPose, {
       ...DEFAULT_SIMPLE_FEET,
       baseY: -3,
       color: COLOR_PLAYER,
@@ -530,11 +589,71 @@ export function initPlayground(
 
     outlineRect(ctx, dx, dy, dw, dh, COLOR_PLAYER);
 
+    // --- Face features (cute cyclops eye + expressive mouth) ---
+    // Drawn after the body rect, inside a body-local + facing-mirrored
+    // transform so the eye/sparkle shift toward the gaze-leading side. All
+    // timing here is render-tick driven (visual-only) — it never feeds back
+    // into the fixed-step simulation, so Math.random for blink variation is
+    // an acceptable decorative side-effect.
+    //
+    // Blink countdown: every ~2-4 sec collapse the eye to a thin line for
+    // ~83ms (5 render ticks at 60fps).
+    blinkCountdown -= 1;
+    if (blinkCountdown <= 0) {
+      blinkRemaining = 5;
+      blinkCountdown = 120 + Math.floor(Math.random() * 120);
+    }
+    const blinking = blinkRemaining > 0;
+    if (blinking) blinkRemaining -= 1;
+
+    ctx.save();
+    // Face origin: horizontal center of the body, ~35% down from the top
+    // (upper third = face area). Uses the breathing-scaled dw/dh so the face
+    // rides the breath with the body.
+    ctx.translate(dx + dw / 2, dy + dh * 0.35);
+    ctx.scale(player.facing, 1);
+
+    ctx.fillStyle = COLOR_FACE;
+    if (blinking) {
+      // Closed eye — thin horizontal line.
+      ctx.fillRect(-3, -1, 6, 1);
+    } else {
+      // Open eye — wide cute cyclops eye (6×5).
+      ctx.fillRect(-3, -3, 6, 5);
+      // White sparkle in the upper-right for a "cute" glint. Mirrored with the
+      // facing scale above so it sits on the gaze-leading side.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(1, -2, 2, 2);
+      ctx.fillStyle = COLOR_FACE;
+    }
+
+    // Mouth — reads grounded vs airborne.
+    if (!player.onGround) {
+      // Airborne "o" — small surprised mouth (3×2).
+      ctx.fillRect(-1, 4, 3, 2);
+    } else {
+      // Grounded smile — a shallow upward arc via a quadratic curve (corners
+      // high, middle dipping low → reads as a happy mouth). Control point
+      // y=7 pulls the midpoint below the y=4 endpoints.
+      ctx.strokeStyle = COLOR_FACE;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-3, 4);
+      ctx.quadraticCurveTo(0, 7, 3, 4);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
     ctx.restore();
 
     // Screen-space UI — drawn without the camera transform so it stays
     // anchored to the viewport, not the world.
     drawHUD(ctx);
+
+    // Advance the render-tick clock (drives idle breathing). Visual-only —
+    // never read by the fixed-step simulation.
+    renderTick += 1;
   };
 
   /** Draw the heads-up display — a small status line at the top-left. */
@@ -631,6 +750,15 @@ export function initPlayground(
       } else if (player.onGround) {
         player.vx = 0;
       }
+
+      // Idle feet blend — ease toward a neutral standing stance when grounded +
+      // still, snap back toward the live walk pose when moving. Keeps the feet
+      // from freezing mid-stride on stop (~12 ticks to settle, ~5 to release).
+      if (player.onGround && Math.abs(player.vx) < FOOTSTEP_MIN_SPEED) {
+        idleBlend = Math.min(1, idleBlend + 0.08);
+      } else {
+        idleBlend = Math.max(0, idleBlend - 0.2);
+      }
       // Jump — only from the ground (no double-jump in this minimal demo).
       if (jumpPressed && player.onGround) {
         player.vy = JUMP_VELOCITY;
@@ -663,6 +791,7 @@ export function initPlayground(
         loco = { phase: 0 };
         prevLeftFootY = 0;
         prevRightFootY = 0;
+        idleBlend = 0;
       }
 
       // 4. Gravity — accumulate downward, clamped to terminal velocity.
