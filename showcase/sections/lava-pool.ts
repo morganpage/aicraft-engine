@@ -37,29 +37,12 @@
  * store)` section signature but is intentionally unused (prefixed `_`).
  */
 
-import {
-  createEmitter,
-  stepEmitters,
-  particleAlphaCurve,
-  particleSizeCurve,
-  sampleConeVelocity,
-  step,
-  type ConeConfig,
-  type Emitter,
-  type Particle,
-} from '../../src/particles';
-import {
-  generateWaveLine,
-  DEFAULT_GERSTNER,
-  DEFAULT_WAVE_LINE,
-  resizeCanvasToBackingStore,
-  type WaveLineConfig,
-  type WavePoint,
-} from '../../src/primitives';
-import { mulberry32 } from '../../src/rng';
-import { shouldAnimate } from '../helpers/motion-gate';
-import type { Store } from '../store';
-import type { GlobalState } from '../main';
+import { createEmitter, stepEmitters, particleAlphaCurve, particleSizeCurve, sampleConeVelocity, step, type ConeConfig, type Emitter, type Particle } from "../../src/particles";
+import { generateWaveLine, DEFAULT_GERSTNER, DEFAULT_WAVE_LINE, resizeCanvasToBackingStore, type WaveLineConfig, type WavePoint } from "../../src/primitives";
+import { mulberry32 } from "../../src/rng";
+import { shouldAnimate } from "../helpers/motion-gate";
+import type { Store } from "../store";
+import type { GlobalState } from "../main";
 
 /** Fixed timestep — one tick per rAF frame. Rate / life / gravity / drag
  *  are in tick units (see module doc). rAF provides only wall-clock
@@ -113,7 +96,7 @@ const FIRE_LIFE = 30;
 const FIRE_SIZE = 3;
 /** Bright orange — overrides the lava body color so fire reads as
  *  distinct from the surface crust. */
-const COLOR_FIRE = '#FFAA00';
+const COLOR_FIRE = "#FFAA00";
 /** Cone: straight up (−π/2 in canvas coords where +y is down), spread π/3
  *  (60° — narrow column of sparks). Speed 3–5 px/tick — 2× the prior
  *  1.5–3 so sparks have enough initial velocity to clearly arc up-then-
@@ -142,7 +125,7 @@ const SMOKE_SEED = 99;
 const SMOKE_RATE = 0.8;
 const SMOKE_LIFE = 60;
 const SMOKE_SIZE = 6;
-const COLOR_SMOKE = '#888888';
+const COLOR_SMOKE = "#888888";
 /** Wider cone (spread π/2 = 90°) — smoke billows outward, fire columns. */
 const SMOKE_CONE = {
   baseAngle: -Math.PI / 2,
@@ -186,7 +169,7 @@ const SPLASH_LIFE = 35;
 const SPLASH_SIZE = 5;
 /** Bright yellow — reads as fresh molten lava thrown upward, distinct from
  *  the ambient fire orange (#FFAA00). */
-const COLOR_SPLASH = '#FFCC33';
+const COLOR_SPLASH = "#FFCC33";
 
 /** Directional cone — all particles thrown UPWARD in a 120° arc. This is
  *  what makes the splash read as a splash (not the old full-circle radial
@@ -212,13 +195,13 @@ const SPLASH_ALPHA_END = 0;
 
 /** Near-black warm background — a cave, not a void. Warm hue so the lava
  *  doesn't clash with a cool backdrop. */
-const COLOR_BG = '#1a0d0a';
+const COLOR_BG = "#1a0d0a";
 /** Deep red lava body fill. Saturated enough to read as molten, dark
  *  enough to contrast with the bright surface crust stroke. */
-const COLOR_LAVA_BODY = '#7a0a0a';
+const COLOR_LAVA_BODY = "#7a0a0a";
 /** Bright orange surface crust stroke — mirrors the fire color family so
  *  the surface reads as the top of the molten body. */
-const COLOR_LAVA_SURFACE = '#ff6a00';
+const COLOR_LAVA_SURFACE = "#ff6a00";
 /** Lava surface crust stroke weight (px). */
 const SURFACE_LINE_WIDTH = 2;
 
@@ -237,25 +220,25 @@ export function initLavaPool(
   // initHero; the lava pool runs entirely on local state.
   _store: Store<GlobalState>,
 ): void {
-  const canvas = container.querySelector<HTMLCanvasElement>('.lava-canvas')!;
-  const ctx = canvas.getContext('2d')!;
+  const canvas = container.querySelector<HTMLCanvasElement>(".lava-canvas")!;
+  const ctx = canvas.getContext("2d")!;
   // DPR-aware backing store: canvas.width/height = CSS size × devicePixelRatio
   // so the canvas renders crisp on Retina / high-DPI mobile. CSS sizing is
   // owned by style.css — we only set the backing store + scale the context,
   // so all subsequent drawing continues to use CSS-pixel coordinates.
   const dpr = resizeCanvasToBackingStore(canvas, CANVAS_W, CANVAS_H);
   ctx.scale(dpr, dpr);
-  const surfaceBtn = container.querySelector<HTMLButtonElement>('.lava-surface')!;
-  const intensitySlider = container.querySelector<HTMLInputElement>('.lava-intensity')!;
-  const intensityValue = container.querySelector<HTMLElement>('.lava-intensity-value')!;
-  const splashBtn = container.querySelector<HTMLButtonElement>('.lava-splash')!;
+  const surfaceBtn = container.querySelector<HTMLButtonElement>(".lava-surface")!;
+  const intensitySlider = container.querySelector<HTMLInputElement>(".lava-intensity")!;
+  const intensityValue = container.querySelector<HTMLElement>(".lava-intensity-value")!;
+  const splashBtn = container.querySelector<HTMLButtonElement>(".lava-splash")!;
 
   // Surface line region — shared by BOTH emitters. Particles spawn from
   // the rest position (flat line), not from the wave-displaced curve.
   // Matches the decision example and keeps the spawn distribution uniform
   // across the canvas (a wavy spawn line would cluster particles in troughs).
   const surfaceRegion = {
-    type: 'line' as const,
+    type: "line" as const,
     x1: 0,
     y1: SURFACE_Y,
     x2: CANVAS_W,
@@ -324,10 +307,10 @@ export function initLavaPool(
   // are untouched (see src/primitives/wave-line.ts). Applied per-octave in
   // deriveWaveConfig() so the user can scrub live without rebuilding the
   // emitters or the section.
-  const wavelengthSlider = container.querySelector<HTMLInputElement>('.lava-wavelength')!;
-  const wavelengthValue = container.querySelector<HTMLElement>('.lava-wavelength-value')!;
-  const speedSlider = container.querySelector<HTMLInputElement>('.lava-speed')!;
-  const speedValue = container.querySelector<HTMLElement>('.lava-speed-value')!;
+  const wavelengthSlider = container.querySelector<HTMLInputElement>(".lava-wavelength")!;
+  const wavelengthValue = container.querySelector<HTMLElement>(".lava-wavelength-value")!;
+  const speedSlider = container.querySelector<HTMLInputElement>(".lava-speed")!;
+  const speedValue = container.querySelector<HTMLElement>(".lava-speed-value")!;
 
   let wavelengthScale = Number(wavelengthSlider.value);
   let speedScale = Number(speedSlider.value);
@@ -361,9 +344,9 @@ export function initLavaPool(
   /** Swap wave mode + update the 🌊 button's label/aria to match. */
   const applySurfaceMode = (useGerstner: boolean): void => {
     waveConfig = useGerstner ? DEFAULT_GERSTNER : DEFAULT_WAVE_LINE;
-    const label = surfaceBtn.querySelector('span');
-    if (label) label.textContent = useGerstner ? 'Gerstner' : 'Sine';
-    surfaceBtn.setAttribute('aria-pressed', useGerstner ? 'true' : 'false');
+    const label = surfaceBtn.querySelector("span");
+    if (label) label.textContent = useGerstner ? "Gerstner" : "Sine";
+    surfaceBtn.setAttribute("aria-pressed", useGerstner ? "true" : "false");
   };
   applySurfaceMode(true);
 
@@ -373,47 +356,15 @@ export function initLavaPool(
     // Gerstner pinch travels rightward at octave.speed px/tick. The
     // runtime config is derived from the active base × the live slider
     // scales (wavelength + speed) so user tuning is immediately visible.
-    const surface = generateWaveLine(
-      0,
-      SURFACE_Y,
-      CANVAS_W,
-      SURFACE_Y,
-      SAMPLE_SPACING,
-      tick,
-      deriveWaveConfig(),
-    );
+    const surface = generateWaveLine(0, SURFACE_Y, CANVAS_W, SURFACE_Y, SAMPLE_SPACING, tick, deriveWaveConfig());
 
     // Draw order is intentional: smoke first (behind, billowing up), fire
     // second (in front, bright), splash last (on top, foreground action).
     drawBackground(ctx);
     drawLava(ctx, surface);
-    drawParticles(
-      ctx,
-      smokeEmitter.particles,
-      COLOR_SMOKE,
-      SMOKE_SIZE_START,
-      SMOKE_SIZE_END,
-      SMOKE_ALPHA_START,
-      SMOKE_ALPHA_END,
-    );
-    drawParticles(
-      ctx,
-      fireEmitter.particles,
-      COLOR_FIRE,
-      FIRE_SIZE_START,
-      FIRE_SIZE_END,
-      FIRE_ALPHA_START,
-      FIRE_ALPHA_END,
-    );
-    drawParticles(
-      ctx,
-      splashParticles,
-      COLOR_SPLASH,
-      SPLASH_SIZE_START,
-      SPLASH_SIZE_END,
-      SPLASH_ALPHA_START,
-      SPLASH_ALPHA_END,
-    );
+    drawParticles(ctx, smokeEmitter.particles, COLOR_SMOKE, SMOKE_SIZE_START, SMOKE_SIZE_END, SMOKE_ALPHA_START, SMOKE_ALPHA_END);
+    drawParticles(ctx, fireEmitter.particles, COLOR_FIRE, FIRE_SIZE_START, FIRE_SIZE_END, FIRE_ALPHA_START, FIRE_ALPHA_END);
+    drawParticles(ctx, splashParticles, COLOR_SPLASH, SPLASH_SIZE_START, SPLASH_SIZE_END, SPLASH_ALPHA_START, SPLASH_ALPHA_END);
   };
 
   // Initial paint — also serves as the single static frame for the
@@ -424,14 +375,14 @@ export function initLavaPool(
 
   // 🌊 Surface toggle — Gerstner ↔ Sine. Re-renders immediately so the
   // mode change is visible even with animation paused (or reduced-motion).
-  surfaceBtn.addEventListener('click', () => {
-    applySurfaceMode(waveConfig.mode === 'sine');
+  surfaceBtn.addEventListener("click", () => {
+    applySurfaceMode(waveConfig.mode === "sine");
     surfaceBtn.blur();
     render();
   });
 
   // 🔥 Intensity slider — updates local state; the loop reads it next tick.
-  intensitySlider.addEventListener('input', () => {
+  intensitySlider.addEventListener("input", () => {
     applyIntensity(Number(intensitySlider.value));
   });
 
@@ -439,11 +390,11 @@ export function initLavaPool(
   // immediately re-render so the change is visible even with the rAF loop
   // paused (or in reduced-motion mode). The loop picks up the new scales
   // on its next tick automatically via deriveWaveConfig().
-  wavelengthSlider.addEventListener('input', () => {
+  wavelengthSlider.addEventListener("input", () => {
     applyWavelength(Number(wavelengthSlider.value));
     render();
   });
-  speedSlider.addEventListener('input', () => {
+  speedSlider.addEventListener("input", () => {
     applySpeed(Number(speedSlider.value));
     render();
   });
@@ -479,7 +430,7 @@ export function initLavaPool(
     splashParticles = [...splashParticles, ...burst];
   };
 
-  splashBtn.addEventListener('click', () => {
+  splashBtn.addEventListener("click", () => {
     spawnBurstAt(CANVAS_W / 2, SURFACE_Y);
     splashBtn.blur();
   });
@@ -487,8 +438,8 @@ export function initLavaPool(
   // Canvas click — splash at the click point. Pointer events (not click)
   // for unified mouse/touch/pen. The canvas may be CSS-scaled relative to
   // its intrinsic resolution; scale click coords back to canvas space.
-  canvas.style.touchAction = 'none';
-  canvas.addEventListener('pointerdown', (e) => {
+  canvas.style.touchAction = "none";
+  canvas.addEventListener("pointerdown", (e) => {
     const rect = canvas.getBoundingClientRect();
     const scaleX = CANVAS_W / rect.width;
     const scaleY = CANVAS_H / rect.height;
@@ -519,11 +470,7 @@ export function initLavaPool(
     //    fire without smoke). stepEmitters integrates emission rates,
     //    spawns via region + cone sampling, advances with heterogeneous
     //    physics, and culls dead particles in one pure pass.
-    [fireEmitter, smokeEmitter] = stepEmitters(
-      [fireEmitter, smokeEmitter],
-      DT,
-      { gravity: GRAVITY, drag: DRAG, rateScale: intensity },
-    );
+    [fireEmitter, smokeEmitter] = stepEmitters([fireEmitter, smokeEmitter], DT, { gravity: GRAVITY, drag: DRAG, rateScale: intensity });
 
     // 3. Step splash particles (advance + cull) with their own drag.
     splashParticles = step(splashParticles, DT, {
@@ -540,7 +487,7 @@ export function initLavaPool(
 
   // Pause when the tab is hidden — saves CPU and avoids huge catch-up
   // bursts when the tab is re-shown. Mirrors hero.ts §visibility.
-  document.addEventListener('visibilitychange', () => {
+  document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       cancelAnimationFrame(rafId);
     } else if (!shouldAnimate()) {
@@ -567,10 +514,7 @@ function drawBackground(ctx: CanvasRenderingContext2D): void {
  * on top. Drawn in two passes (fill then stroke) so the stroke sits on
  * top of the fill seam without bleeding.
  */
-function drawLava(
-  ctx: CanvasRenderingContext2D,
-  surface: readonly WavePoint[],
-): void {
+function drawLava(ctx: CanvasRenderingContext2D, surface: readonly WavePoint[]): void {
   if (surface.length === 0) return;
 
   // Body fill — polyline → down to bottom-right → down to bottom-left → close.
@@ -608,15 +552,7 @@ function drawLava(
  * The radius is floored at 0.5 so a fully-shrunk particle still renders
  * as a single pixel (matches the pixel-art aesthetic).
  */
-function drawParticles(
-  ctx: CanvasRenderingContext2D,
-  particles: readonly Particle[],
-  fallbackColor: string,
-  sizeStart: number,
-  sizeEnd: number,
-  alphaStart: number,
-  alphaEnd: number,
-): void {
+function drawParticles(ctx: CanvasRenderingContext2D, particles: readonly Particle[], fallbackColor: string, sizeStart: number, sizeEnd: number, alphaStart: number, alphaEnd: number): void {
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i];
     const alpha = particleAlphaCurve(p, alphaStart, alphaEnd);
