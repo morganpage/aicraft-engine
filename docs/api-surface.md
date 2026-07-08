@@ -235,6 +235,20 @@ Effector locking for foot-pin / hand-hold. Bridges IK solvers with locomotion.
 | `advanceFootLock(state, isGrounded, footPos, dt, blendSpeed?)` | function | Pure state progression: ramp blend weight toward lock | `src/animation/foot-lock.ts` |
 | `getFootLockTarget(state, animatedFootPos)` | function | Lerp between animated and locked position | `src/animation/foot-lock.ts` |
 
+### `src/animation/foot-plant.ts`
+
+> Proposal: `docs/design/foot-plant-detection-proposal.md`.
+
+Foot-plant event detection: zero-crossing detector on the locomotion lift signal. Detects when each foot transitions from airborne (lift > 0) to planted (lift === 0) — the edge that consumers use to fire dust puffs and footstep audio. Complements `foot-lock.ts` (which smooths IK targets) and `locomotion.ts` (which generates the lift signal). Speed gate is consumer-side.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `FootPlantState` | type | Previous-tick lift heights: `{prevLeftLift, prevRightLift}` | `src/animation/foot-plant.ts` |
+| `FootPlantEvents` | type | Per-tick plant edges: `{leftPlanted, rightPlanted}` booleans | `src/animation/foot-plant.ts` |
+| `FootPlantResult` | type | Return of `advanceFootPlant`: `{state, events}` | `src/animation/foot-plant.ts` |
+| `createFootPlantState()` | function | Factory: fresh state with both prev-lift values at 0 | `src/animation/foot-plant.ts` |
+| `advanceFootPlant(state, leftLift, rightLift)` | function | Pure: detect plant edges + advance state. Speed gate is consumer-side | `src/animation/foot-plant.ts` |
+
 ### `src/animation/locomotion.ts`
 
 Trigonometric locomotion: phase-accumulator walk/run cycles with smooth speed transitions.

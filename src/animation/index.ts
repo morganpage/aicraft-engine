@@ -16,6 +16,7 @@ export * from './skin';
 export * from './oscillators';
 export * from './ik';
 export * from './foot-lock';
+export * from './foot-plant';
 export * from './locomotion';
 export * from './squash-stretch';
 export * from './spring';
