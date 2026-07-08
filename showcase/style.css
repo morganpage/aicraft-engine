@@ -140,7 +140,9 @@ main {
 }
 
 .hero-reroll,
-.hero-jump {
+.hero-jump,
+.hero-eyes,
+.hero-legs {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -157,17 +159,23 @@ main {
 }
 
 .hero-reroll:hover,
-.hero-jump:hover {
+.hero-jump:hover,
+.hero-eyes:hover,
+.hero-legs:hover {
   background: #ff7320;
 }
 
 .hero-reroll:active,
-.hero-jump:active {
+.hero-jump:active,
+.hero-eyes:active,
+.hero-legs:active {
   transform: translateY(1px);
 }
 
 .hero-reroll:focus-visible,
-.hero-jump:focus-visible {
+.hero-jump:focus-visible,
+.hero-eyes:focus-visible,
+.hero-legs:focus-visible {
   outline: 3px solid var(--palette-feature);
   outline-offset: 2px;
 }

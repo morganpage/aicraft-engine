@@ -127,6 +127,47 @@ const IDLE_SETTLE_TIME = 0.2;
  */
 const HERO_WALK_WRAP_MARGIN_FOOT = 16;
 
+/**
+ * Gap between the lowered body's bottom edge and the ground line at rest, in
+ * `'simpleFeet'` mode (canvas px). The simple-feet alternative has no IK legs,
+ * so the body drops down to sit near the ground (`simpleBodyShiftDown` removes
+ * the IK leg-reach headroom); this constant is the residual visible gap between
+ * the body bottom and `HERO_GROUND_Y`.
+ *
+ * The feet are GROUND-ANCHORED (`drawHeroSimpleFeet` draws each foot with its
+ * bottom on `HERO_GROUND_Y`), so `PEEK` controls the air gap between the body
+ * bottom and the top of each foot: the body bottom sits `PEEK` px above the
+ * ground, the foot top sits `SIMPLE_FEET_FOOT_H` px (= 20) above the ground.
+ * When `PEEK > SIMPLE_FEET_FOOT_H` there is a visible AIR GAP of
+ * `PEEK − SIMPLE_FEET_FOOT_H` px between the body bottom and each foot's top,
+ * and the full `SIMPLE_FEET_FOOT_H` of each foot is visible below the gap.
+ *
+ * 26px: with SIMPLE_FEET_FOOT_H = 20, the body bottom sits 26px above the
+ * ground and each foot top sits 20px above it → a 6px visible AIR GAP between
+ * the body and the top of each foot, with the full 20px of each foot visible
+ * below the gap. Reads as the blob hovering above its shoes — a clean cartoon
+ * silhouette for a slime character. Tunable (one constant).
+ */
+const SIMPLE_FEET_BODY_PEEK = 26;
+
+/**
+ * Simple-feet dimensions — 4× the playground's small devil feet (7×5).
+ * The hero canvas is 320px and the body is 70–90px wide, so 28×20px feet read
+ * as substantial planted shoes rather than tiny dots. `idleSpread` scales
+ * proportionally (5.5 → 22) so the two feet sit under the body's edges, not
+ * overlapping at the midline.
+ */
+const SIMPLE_FEET_FOOT_W = 28;
+const SIMPLE_FEET_FOOT_H = 20;
+const SIMPLE_FEET_IDLE_SPREAD = 22;
+
+/**
+ * Corner radius for the simple-feet rounded rects. Matches the body squircle's
+ * ~20% corner ratio (0.2 × SIMPLE_FEET_FOOT_H = 4), so the feet share the
+ * body's soft silhouette rather than reading as sharp mechanical boxes.
+ */
+const SIMPLE_FEET_CORNER_RADIUS = 4;
+
 // ---------------------------------------------------------------------------
 // HERO_RANGES — every tunable magic number lives here.
 // ---------------------------------------------------------------------------
@@ -1106,14 +1147,20 @@ function bodyTop(
  *   stay byte-identical). `options.emotion` enables the parametric mouth;
  *   omitted → no mouth drawn (benchmark byte-identical, exactly like `blink`),
  *   `0` → a drawn neutral flat line, positive → a smile Bézier, negative →
- *   the flat line morphs into a small nervous "o" circle.
+ *   the flat line morphs into a small nervous "o" circle. `options.legStyle`
+ *   selects the leg renderer: omitted / `'ik'` (the default) draws the 2-bone
+ *   IK limbs (benchmark byte-identical); `'simpleFeet'` draws two oversized
+ *   rounded-rect feet instead (`drawHeroSimpleFeet`), matching the body's own
+ *   color + stroke. The simple-feet path reuses the same locomotion foot
+ *   offsets the IK path consumes, so gait + jump + idle settle all drive both
+ *   leg styles identically.
  */
 export function drawSlimeKnight(
   ctx: CanvasRenderingContext2D,
   state: HeroFrameState,
   tick: number,
   look: { x: number; y: number } = { x: 0, y: 0 },
-  options: { blink?: boolean; emotion?: MouthEmotion } = {},
+  options: { blink?: boolean; emotion?: MouthEmotion; legStyle?: HeroLegStyle } = {},
 ): void {
   const { config } = state;
   const palette = config.palette;
@@ -1184,7 +1231,17 @@ export function drawSlimeKnight(
   // the canvas edges in `stepHero`); everything below derives from `bodyCx`.
   const jumpLift = jumpPose.yOffset + DEFAULT_TUCK.hipRaise * jumpPose.airborneBlend;
   const bodyCx = HERO_CENTER_X + state.x + hipOffset.x;
-  const bodyCy = heroCenterY(config) + hipOffset.y + jumpLift;
+
+  // Simple-feet mode lowers the body: no IK legs, so the leg-reach headroom
+  // (`(thigh + shin) * LEG_REACH_RATIO`) is removed and replaced with a small
+  // peek gap (SIMPLE_FEET_BODY_PEEK) so the body sits near the ground with the
+  // oversized feet planted below. The shift = reach − PEEK (always positive
+  // since reach ≈ 38–52px >> 26px). Zero in IK mode → byte-identical goldens.
+  const isSimpleFeet = options.legStyle === 'simpleFeet';
+  const simpleBodyShiftDown = isSimpleFeet
+    ? (config.boneLengths.thigh + config.boneLengths.shin) * LEG_REACH_RATIO - SIMPLE_FEET_BODY_PEEK
+    : 0;
+  const bodyCy = heroCenterY(config) + hipOffset.y + jumpLift + simpleBodyShiftDown;
 
   // Landing squat correction. Center-origin body scaling pulls the hip UP on
   // jump-induced squash (composedScaleY < 1), which extends the legs straight
@@ -1252,10 +1309,40 @@ export function drawSlimeKnight(
   //    unchanged.
   const leftHip = { x: hipLeftX, y: hipY };
   const rightHip = { x: hipRightX, y: hipY };
-  drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
-    config.boneLengths.shin, -1, palette);
-  drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
-    config.boneLengths.shin, -1, palette);
+
+  // Leg style toggle (showcase-only). The default (`'ik'` / omitted) runs the
+  // 2-bone IK limbs unchanged so benchmark renders stay byte-identical. The
+  // `'simpleFeet'` alternative draws two oversized rounded-rect feet directly
+  // (NOT via the library's `drawSimpleFeet`, which renders sharp 1px-outline
+  // rects sized for the playground's small devil). The hero's simple feet
+  // match the character's own styling: rounded corners, `palette.base` fill
+  // (same color as the body), and `CHUNKY_OUTLINE_WIDTH` stroke (same stroke
+  // size as the body + IK limbs). See `drawHeroSimpleFeet` below.
+  //
+  // GROUND-ANCHORING (the key behavioral fix): the feet transform is anchored
+  // to `(bodyCx, HERO_GROUND_Y + jumpLift)` — the GROUND LINE, lifted only by
+  // the jump — NOT to the breathing `hipY`. This DECOUPLES the feet from:
+  //   - the idle breath bounce (`composedScaleY` oscillation in `hipY`),
+  //   - the walk hip-bob (`hipOffset.y`),
+  //   - the landing squat drop (`landingDrop`).
+  // At idle, `jumpLift === 0` so the feet sit exactly on `HERO_GROUND_Y` and
+  // the body breathes ABOVE them independently — the "feet still on the
+  // ground, not affected by idle bounce" behavior. Only the per-foot walk-
+  // cycle lifts (inside `drawHeroSimpleFeet`, driven by `leftFootOffset` /
+  // `rightFootOffset`) raise an individual foot during its swing phase. During
+  // a jump, both the body and this anchor rise by `jumpLift`, so the feet
+  // leave the ground with the character and stay connected to the body.
+  if (options.legStyle === 'simpleFeet') {
+    ctx.save();
+    ctx.translate(bodyCx, HERO_GROUND_Y + jumpLift);
+    drawHeroSimpleFeet(ctx, leftFootOffset, rightFootOffset, palette);
+    ctx.restore();
+  } else {
+    drawLimb(ctx, rightHip, rightFoot, config.boneLengths.thigh,
+      config.boneLengths.shin, -1, palette);
+    drawLimb(ctx, leftHip, leftFoot, config.boneLengths.thigh,
+      config.boneLengths.shin, -1, palette);
+  }
 
   // 2. Body — rounded squircle (flat fill + chunky outline pass) + composed
   //    scale (breath × jumpScale; both volume-preserving → product is too).
@@ -1479,6 +1566,17 @@ function evaluateBlink(tick: number): number {
  *   static and identical across runs at every tick.
  */
 export type MouthEmotion = number; // [-1, 1] — nervous "o" … neutral … happy
+
+/**
+ * Hero leg rendering style. Omit / `'ik'` = the default 2-bone IK limbs
+ * (benchmark byte-identical); `'simpleFeet'` = two oversized rounded-rect feet
+ * drawn directly (`drawHeroSimpleFeet`, matching the body's own color + stroke,
+ * NOT the library's `animation/simple-feet.ts` playground renderer). The
+ * default (`'ik'`) MUST stay the benchmark path so any render that calls
+ * `drawSlimeKnight` without `legStyle` stays byte-identical to the goldens.
+ * Showcase-only state — NOT seed-derived.
+ */
+export type HeroLegStyle = 'ik' | 'simpleFeet';
 
 /**
  * Vertical offset of the mouth center from the body-local center, as a
@@ -1895,6 +1993,70 @@ function drawLimb(
   ctx.strokeStyle = palette.outline;
   ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
   roundRectPath(ctx, shoeCx - shoeW / 2, shoeCy - shoeH / 2, shoeW, shoeH, 3);
+  ctx.fill();
+  ctx.stroke();
+}
+
+/**
+ * Hero simple-feet renderer (showcase-local). Two oversized rounded-rect feet
+ * drawn in BODY-LOCAL coordinates relative to a GROUND-ANCHORED origin (the
+ * caller in `drawSlimeKnight` translates to the body's bottom-center ON THE
+ * GROUND LINE, lifted only by the jump).
+ *
+ * Why not use the library's `drawSimpleFeet` (`animation/simple-feet.ts`):
+ * that renderer draws sharp-cornered 1px-outline rects sized for the
+ * playground's small devil (7×5px). The hero needs feet that match its own
+ * character styling, so this helper renders directly with `roundRectPath`:
+ *   - 4× the playground size (`SIMPLE_FEET_FOOT_W/H`), so they read as
+ *     substantial planted shoes on the 320px canvas.
+ *   - ROUNDED corners (`SIMPLE_FEET_CORNER_RADIUS`), matching the body
+ *     squircle's ~20% corner ratio.
+ *   - `palette.base` fill — the SAME color as the body ("same color as
+ *     character"), not `palette.accent` (which is the IK leg color).
+ *   - `CHUNKY_OUTLINE_WIDTH` stroke (= 3px) — the SAME stroke size as the
+ *     body and IK limbs, not the library's 1px.
+ *
+ * Drawn BEFORE the body. With SIMPLE_FEET_BODY_PEEK > SIMPLE_FEET_FOOT_H there
+ * is a visible air gap between the body bottom and each foot's top, so the
+ * full foot is visible below the body (not covered by it) — reads as the blob
+ * hovering above its planted shoes.
+ *
+ * @param ctx             - canvas 2D context (caller owns transform: already
+ *                          translated to the ground anchor + facing-mirrored)
+ * @param leftFootOffset  - walk-cycle offset for the left foot (x = forward
+ *                          sway, y = lift height; both in px). ~0 at idle.
+ * @param rightFootOffset - walk-cycle offset for the right foot
+ * @param palette         - character palette (`base` fill, `outline` stroke)
+ */
+function drawHeroSimpleFeet(
+  ctx: CanvasRenderingContext2D,
+  leftFootOffset: Readonly<{ x: number; y: number }>,
+  rightFootOffset: Readonly<{ x: number; y: number }>,
+  palette: Palette,
+): void {
+  const w = SIMPLE_FEET_FOOT_W;
+  const h = SIMPLE_FEET_FOOT_H;
+  const halfW = w / 2;
+  // baseY = -h: the foot BOTTOM sits at the local origin (the ground anchor).
+  // The caller translates the origin to `HERO_GROUND_Y + jumpLift`, so the
+  // foot bottom rests on the ground line when grounded and lifts with the
+  // jump. The per-foot `offset.y` (walk-cycle lift) SUBTRACTS from baseY,
+  // raising an individual foot during its swing phase (the stepping anim).
+  // `offset.x` shifts the foot forward/back (the stride). At idle both
+  // offsets are ~0 (idle-settle blend) so both feet sit flat on the ground.
+  const baseY = -h;
+  const leftX = -SIMPLE_FEET_IDLE_SPREAD - halfW + leftFootOffset.x;
+  const leftY = baseY - leftFootOffset.y;
+  const rightX = SIMPLE_FEET_IDLE_SPREAD - halfW + rightFootOffset.x;
+  const rightY = baseY - rightFootOffset.y;
+
+  ctx.fillStyle = palette.base;
+  ctx.strokeStyle = palette.outline;
+  ctx.lineWidth = CHUNKY_OUTLINE_WIDTH;
+  roundRectPath(ctx, leftX, leftY, w, h, SIMPLE_FEET_CORNER_RADIUS);
+  ctx.fill();
+  ctx.stroke();
+  roundRectPath(ctx, rightX, rightY, w, h, SIMPLE_FEET_CORNER_RADIUS);
   ctx.fill();
   ctx.stroke();
 }

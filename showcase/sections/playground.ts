@@ -139,6 +139,7 @@ import {
   type LocomotionPose,
 } from '../../src/animation/locomotion';
 import { drawSimpleFeet, DEFAULT_SIMPLE_FEET } from '../../src/animation/simple-feet';
+import { createFootPlantState, advanceFootPlant } from '../../src/animation';
 import { createAudioAdapter, type AudioAdapter } from '../../src/audio';
 import { shouldAnimate } from '../helpers/motion-gate';
 import type { Store } from '../store';
@@ -503,12 +504,13 @@ export function initPlayground(
   // progression op (returns a new LocomotionState each tick).
   let loco: LocomotionState = { phase: 0 };
 
-  // Previous foot-lift heights — used to detect foot-plant transitions. A foot
-  // "plants" when its lift transitions from >0 (swinging airborne) to 0
-  // (grounded). Each plant spawns a dust puff + a footstep tap, synced to the
-  // ACTUAL walk cycle instead of a fixed timer.
-  let prevLeftFootY = 0;
-  let prevRightFootY = 0;
+  // Foot-plant detector state — threaded through the shared `advanceFootPlant`
+  // engine primitive each tick so it can observe the >0 → 0 descent edge of
+  // each foot's lift height (a foot "plants" when its lift transitions from >0
+  // airborne to 0 grounded). Each plant spawns a dust puff + a footstep tap,
+  // synced to the ACTUAL walk cycle instead of a fixed timer. Pure progression
+  // op (returns a new state each tick).
+  let plantState = createFootPlantState();
 
   // Audio adapter — defensive (lazy AudioContext, never-throw, no-op in Node).
   // Unlocked on first user gesture (see unlock listener below the keyboard
@@ -916,11 +918,11 @@ export function initPlayground(
     dustParticles = [];
     shakeMagnitude = 0;
     shakeTick = 0;
-    // Reset locomotion + foot-plant detectors so feet re-plant cleanly at
-    // spawn (no stale mid-stride pose, no spurious foot-plant firing).
+    // Reset locomotion + the foot-plant detector (engine primitive) so feet
+    // re-plant cleanly at spawn (no stale mid-stride pose, no spurious
+    // foot-plant firing).
     loco = { phase: 0 };
-    prevLeftFootY = 0;
-    prevRightFootY = 0;
+    plantState = createFootPlantState();
     idleBlend = 0;
     gapState = createGapMotion(GAP_MOTION);
   };
@@ -963,9 +965,15 @@ export function initPlayground(
       // 3. Apply input to velocity. Ground moves at MOVE_SPEED; air moves at
       //    AIR_CONTROL × MOVE_SPEED so jumps still steer but can't reverse on
       //    a dime. When idle on the ground, vx zeroes (snappy stop).
-      const left = leftEdge.held;
-      const right = rightEdge.held;
-      const jumpPressed = jumpEdge.pressed;
+      // Onscreen gate: only respond to input while this section is visible.
+      // Both the hero and this section listen on `window`, so without this gate
+      // pressing ←/→/A/D/Space drives both simultaneously (the offscreen
+      // section's footsteps/audio would layer on the visible one). The keyboard
+      // adapter still polls + drains edges every step regardless, so no
+      // stale-edge accumulation.
+      const left = onscreen && leftEdge.held;
+      const right = onscreen && rightEdge.held;
+      const jumpPressed = onscreen && jumpEdge.pressed;
       const speed = player.onGround ? MOVE_SPEED : MOVE_SPEED * AIR_CONTROL;
       if (left && !right) {
         player.vx = -speed;
@@ -1136,25 +1144,27 @@ export function initPlayground(
       const locoPose = evaluateLocomotion(loco, PLAYGROUND_GAIT);
 
       // 9. Per-step dust + audio — detect foot-plant transitions from the
-      //    locomotion phase. A foot "plants" when its lift height transitions
-      //    from >0 (swinging airborne) to 0 (grounded). This syncs dust + sound
-      //    to the ACTUAL walk cycle, not a fixed timer — each visible step gets
-      //    a puff + a tap. Gated by FOOTSTEP_MIN_SPEED so standing still (vx≈0,
-      //    feet already planted) doesn't fire. The offset is applied to the
-      //    world-space foot x (already un-mirrored via +facing/-facing).
-      const leftLift = locoPose.leftFootOffset.y;
-      const rightLift = locoPose.rightFootOffset.y;
-
-      if (prevLeftFootY > 0 && leftLift === 0 && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
+      //    locomotion phase via the shared `advanceFootPlant` engine primitive.
+      //    A foot "plants" when its lift height transitions from >0 (swinging
+      //    airborne) to 0 (grounded). This syncs dust + sound to the ACTUAL walk
+      //    cycle, not a fixed timer — each visible step gets a puff + a tap.
+      //    Gated by FOOTSTEP_MIN_SPEED so standing still (vx≈0, feet already
+      //    planted) doesn't fire. The offset is applied to the world-space foot
+      //    x (already un-mirrored via +facing/-facing).
+      const plant = advanceFootPlant(
+        plantState,
+        locoPose.leftFootOffset.y,
+        locoPose.rightFootOffset.y,
+      );
+      plantState = plant.state;
+      if (plant.events.leftPlanted && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
         spawnFootstepDust(player.x + player.width / 2 - player.facing * 5);
         audio.playNoise(FOOTSTEP_SOUND_DUR, 'lowpass', FOOTSTEP_SOUND_FREQ, FOOTSTEP_SOUND_PEAK);
       }
-      if (prevRightFootY > 0 && rightLift === 0 && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
+      if (plant.events.rightPlanted && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
         spawnFootstepDust(player.x + player.width / 2 + player.facing * 5);
         audio.playNoise(FOOTSTEP_SOUND_DUR, 'lowpass', FOOTSTEP_SOUND_FREQ, FOOTSTEP_SOUND_PEAK);
       }
-      prevLeftFootY = leftLift;
-      prevRightFootY = rightLift;
 
       // 10. Decay squash back to neutral — exponential on the single offset so
       //    the volume invariant (scaleX × scaleY === 1) holds throughout
