@@ -43,6 +43,7 @@ import { mulberry32 } from "../../src/rng";
 import { shouldAnimate } from "../helpers/motion-gate";
 import type { Store } from "../store";
 import type { GlobalState } from "../main";
+import { createGameLoop, type GameLoop } from "../../src/game-loop";
 
 /** Fixed timestep — one tick per rAF frame. Rate / life / gravity / drag
  *  are in tick units (see module doc). rAF provides only wall-clock
@@ -285,7 +286,6 @@ export function initLavaPool(
   let waveConfig: WaveLineConfig = DEFAULT_GERSTNER;
 
   let tick = 0;
-  let rafId = 0;
 
   // Intensity state — slider value (0–2) flows into stepEmitters via
   // `rateScale` each tick. At 0 the emitters go dormant; at 2 they emit
@@ -448,52 +448,32 @@ export function initLavaPool(
     spawnBurstAt(x, y);
   });
 
-  // --- Motion gate --------------------------------------------------------
+  // --- Fixed-step game loop (createGameLoop) ---------------------------
+  //
+  // Fixed 60 Hz sim (step) + variable-rate render, decoupled from the
+  // display refresh. On 120/144 Hz displays the sim no longer runs 2-2.4x
+  // too fast. Matches hero / playground / parallax.
+  const loop: GameLoop = createGameLoop({
+    fixedDt: 1 / 60,
+    step: () => {
+      // 1. Advance the wave time parameter (tick-based).
+      tick += 1;
+      // 2. Step emitters (rateScale: intensity is the live slider value).
+      [fireEmitter, smokeEmitter] = stepEmitters([fireEmitter, smokeEmitter], DT, { gravity: GRAVITY, drag: DRAG, rateScale: intensity });
+      // 3. Step splash particles (advance + cull).
+      splashParticles = step(splashParticles, DT, { gravity: GRAVITY, drag: SPLASH_DRAG });
+    },
+    render: () => {
+      render();
+    },
+  });
 
-  // If reduced motion is preferred, the render() above is the single
-  // static frame; DO NOT start the rAF loop. Mirrors hero.ts §motion-gate.
+  // Motion gate: if reduced motion is preferred, the render() above is the
+  // single static frame; DO NOT start the loop. Mirrors the other sections.
   if (shouldAnimate()) {
     return;
   }
-
-  // --- Fixed-dt animation loop -------------------------------------------
-
-  // One rAF = exactly DT ticks of sim. Per-tick determinism is preserved;
-  // wall-clock cadence varies with the host's refresh rate.
-  const loop = (): void => {
-    // 1. Advance the wave time parameter (tick-based; the wave's `t` is
-    //    the integer tick counter).
-    tick += 1;
-
-    // 2. Step emitters. `rateScale: intensity` (0–2) is the live slider
-    //    value — applied uniformly to both emitters (you don't intensify
-    //    fire without smoke). stepEmitters integrates emission rates,
-    //    spawns via region + cone sampling, advances with heterogeneous
-    //    physics, and culls dead particles in one pure pass.
-    [fireEmitter, smokeEmitter] = stepEmitters([fireEmitter, smokeEmitter], DT, { gravity: GRAVITY, drag: DRAG, rateScale: intensity });
-
-    // 3. Step splash particles (advance + cull) with their own drag.
-    splashParticles = step(splashParticles, DT, {
-      gravity: GRAVITY,
-      drag: SPLASH_DRAG,
-    });
-
-    // 4. Render.
-    render();
-
-    rafId = requestAnimationFrame(loop);
-  };
-  rafId = requestAnimationFrame(loop);
-
-  // Pause when the tab is hidden — saves CPU and avoids huge catch-up
-  // bursts when the tab is re-shown. Mirrors hero.ts §visibility.
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      cancelAnimationFrame(rafId);
-    } else if (!shouldAnimate()) {
-      rafId = requestAnimationFrame(loop);
-    }
-  });
+  loop.start();
 }
 
 // ---------------------------------------------------------------------------

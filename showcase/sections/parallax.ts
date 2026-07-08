@@ -26,6 +26,7 @@
  */
 
 import { drawTiledParallax, resizeCanvasToBackingStore } from '../../src/primitives';
+import { createGameLoop, type GameLoop } from '../../src/game-loop';
 import { shouldAnimate } from '../helpers/motion-gate';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
@@ -40,9 +41,10 @@ import midRuinsUrl from '../assets/parallax/mid-ruins.png';
 import foregroundUrl from '../assets/parallax/foreground.png';
 
 /** Fixed timestep (seconds per tick) — mirrors hero.ts. The camera advances
- *  by exactly DT × SCROLL_SPEED × speedMultiplier each frame so the scroll
- *  speed is frame-rate-independent (deterministic per-tick; rAF provides only
- *  wall-clock cadence). */
+ *  by exactly dt × SCROLL_SPEED × speedMultiplier each fixed step (60/sec,
+ *  pinned by the createGameLoop accumulator regardless of the host's refresh
+ *  rate) so the scroll speed is frame-rate-independent and deterministic
+ *  per-tick. */
 const DT = 1 / 60;
 
 /** Canvas dimensions. 640×320 (2:1) matches the tiles' 2:1 source aspect
@@ -98,7 +100,8 @@ interface ParallaxLayer {
  * Sets up the DPR-aware canvas, wires the pause/play + speed controls, then
  * asynchronously loads + decodes the four PNG layers. Once decoded, renders
  * the initial frame (cameraX = 0) and — unless reduced motion is preferred —
- * starts a fixed-dt rAF loop that auto-scrolls the camera rightward forever.
+ * starts the library's createGameLoop (fixed 60 Hz accumulator) which
+ * auto-scrolls the camera rightward forever.
  *
  * @param container - the `<section id="parallax">` element
  * @param _store - the global observable store. Intentionally unused — the
@@ -170,8 +173,6 @@ export function initParallax(
   // render() is a no-op clear until the first real paint.
   let layers: readonly ParallaxLayer[] = [];
 
-  let rafId = 0;
-
   /** Render one frame at the current cameraX. Clears, then draws each layer
    *  back-to-front via `drawTiledParallax` (sky → far-fortress → mid-ruins →
    *  foreground). Transparent PNGs composite over the opaque sky so depth
@@ -210,32 +211,45 @@ export function initParallax(
     applySpeed(Number(speedSlider.value));
   });
 
-  // --- Start the scroll loop ----------------------------------------------
-  // Hoisted into its own closure so the visibilitychange handler (registered
-  // inside) can resume it after the tab is re-shown. Called once, after the
-  // images decode and the reduced-motion gate passes.
-  const startLoop = (): void => {
-    const loop = (): void => {
+  // --- Fixed-step game loop (createGameLoop) --------------------------------
+  //
+  // Fixed 60 Hz via the library's createGameLoop, display-refresh-independent:
+  // the accumulator runs zero-or-more step(fixedDt) calls per rAF frame so the
+  // camera advances at exactly 60 Hz whether the host runs at 60, 120, or
+  // 144 Hz. (The previous hand-rolled one-step-per-rAF loop ran 2–2.4× too
+  // fast on high-refresh displays: each rAF fired one SCROLL_SPEED×DT
+  // advance, so a 120 Hz panel scrolled the scene 2× as fast.) createGameLoop
+  // also handles visibilitychange internally — pause-on-hidden, accumulator
+  // reset on regain — so the hand-rolled visibility handler is gone.
+  //
+  // Pause semantics: the pause/play button toggles the local `paused` flag,
+  // NOT the loop. When paused, step no-ops the camera advance but render
+  // still draws every frame — the frozen frame stays visible (so slider
+  // changes remain observable while paused) and an unpause is immediate.
+  // This preserves the section's existing pause behavior; only the scheduling
+  // substrate changed (rAF → fixed-step accumulator).
+  //
+  // The loop is CREATED here (synchronously) but not started — it only starts
+  // after the async PNG decode + initial paint + reduced-motion gate resolve
+  // (see the IIFE below). `layers` is captured by reference, so once decode
+  // populates it the loop's render draws the real tiles. With the loop
+  // unstarted, createGameLoop's visibilitychange listener is inert (its
+  // resume branch is gated on `running`, which stays false until start).
+  const loop: GameLoop = createGameLoop({
+    fixedDt: DT,
+    step: (dt) => {
+      // Advance the camera unless paused. See the pause-semantics note above.
       if (!paused) {
-        cameraX += SCROLL_SPEED * DT * speedMultiplier;
+        cameraX += SCROLL_SPEED * dt * speedMultiplier;
       }
+    },
+    render: () => {
+      // Draw the layers back-to-front at the current cameraX.
       render();
-      rafId = requestAnimationFrame(loop);
-    };
-    rafId = requestAnimationFrame(loop);
+    },
+  });
 
-    // Pause when the tab is hidden — saves CPU and avoids huge catch-up
-    // scrolls when the tab is re-shown. Mirrors hero.ts §visibility.
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        cancelAnimationFrame(rafId);
-      } else if (!shouldAnimate()) {
-        rafId = requestAnimationFrame(loop);
-      }
-    });
-  };
-
-  // --- Async image load → initial paint → motion gate → loop --------------
+  // --- Async image load → initial paint → motion gate → loop.start() --------
   //
   // Decode all four PNGs before the first real paint. `img.decode()` resolves
   // once the image is fully loaded AND decoded into a GPU-ready form, so the
@@ -267,13 +281,14 @@ export function initParallax(
       render();
 
       // Motion gate: if reduced motion is preferred, the render() above is the
-      // single static frame; DO NOT start the rAF loop. Mirrors hero.ts
-      // §motion-gate and lava-pool.ts §motion-gate.
+      // single static frame; DO NOT start the loop. Mirrors hero.ts
+      // §motion-gate and lava-pool.ts §motion-gate. (The createGameLoop was
+      // created above but, with start() never called, stays inert.)
       if (shouldAnimate()) {
         return;
       }
 
-      startLoop();
+      loop.start();
     } catch {
       // Image decode failed — the placeholder fill remains on the canvas and
       // the loop never starts. No crash; the showcase's other sections
