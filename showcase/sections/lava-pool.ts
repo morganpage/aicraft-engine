@@ -18,18 +18,22 @@
  *     the continuous emitters.
  *
  * Determinism / units: rate / life / gravity / drag are in TICK units
- * (one rAF frame = exactly DT = 1 tick of simulation). This matches the
- * particle-emitters decision's example pattern (`rate: 2`, `life: 30`,
+ * (one simulation step = exactly DT = 1 tick of simulation). This matches
+ * the particle-emitters decision's example pattern (`rate: 2`, `life: 30`,
  * `stepEmitters(emitters, 1, { gravity: 0.5 })`) so the spec's "rate
  * ~2/tick" and "life ~30" values are literal, and the steady-state count
  * works out to `rate × life` (fire ~60, smoke ~48 in flight). The wave's
- * `t` parameter is the integer tick counter. Same tick count → same
- * render, forever. rAF provides only wall-clock cadence; per-tick the
- * sim is deterministic.
+ * `t` parameter is the integer tick counter. The loop is driven by
+ * `createGameLoop`'s fixed-step accumulator (`fixedDt` 1/60 s), which runs
+ * zero-or-more `step` callbacks per rAF frame so the sim advances at
+ * exactly 60 Hz regardless of the host's refresh rate (60/120/144 Hz) —
+ * the old one-step-per-rAF model conflated rAF cadence with tick rate and
+ * ran 2–2.4× too fast on high-refresh displays. Same tick count → same
+ * render, forever; per-tick the sim is deterministic.
  *
  * Motion-gated: if the user prefers reduced motion, a single static frame
- * is rendered (the initial paint at tick 0) and the rAF loop is never
- * started. Matches the hero section's gate exactly.
+ * is rendered (the initial paint at tick 0) and the loop is never started.
+ * Matches the hero section's gate exactly.
  *
  * Local state: this section does NOT extend `GlobalState` — particle
  * systems don't have a shared seed concept the way character generation
@@ -45,11 +49,17 @@ import type { Store } from "../store";
 import type { GlobalState } from "../main";
 import { createGameLoop, type GameLoop } from "../../src/game-loop";
 
-/** Fixed timestep — one tick per rAF frame. Rate / life / gravity / drag
- *  are in tick units (see module doc). rAF provides only wall-clock
- *  cadence; the sim steps by exactly DT each frame so it is deterministic
- *  per-tick regardless of the host's refresh rate (cadence varies, sim
- *  does not). Mirrors the hero section's `DT` constant in shape. */
+/** One simulation tick — the delta handed to `stepEmitters` / `step` in
+ *  their native tick units (rate / life / gravity / drag are per-tick; see
+ *  module doc). NOT the `fixedDt` passed to `createGameLoop` — that is
+ *  1/60 s, inlined at the call site, and drives the accumulator; the two
+ *  constants are deliberately distinct (unlike the hero section, where a
+ *  single seconds-valued DT plays both roles). `createGameLoop`'s
+ *  accumulator runs zero-or-more `step` callbacks per rAF frame so the sim
+ *  advances at exactly 60 Hz regardless of the host's refresh rate
+ *  (60/120/144 Hz); each callback is one tick, so DT=1 is passed every
+ *  tick. The old one-step-per-rAF model conflated the two and ran 2–2.4×
+ *  too fast on high-refresh displays. */
 const DT = 1;
 
 /** Canvas dimensions. Wider than tall (480×280) so the pool reads as a
