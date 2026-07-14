@@ -57,6 +57,22 @@ import { mulberry32 } from './lib/aicraft-engine/src/rng';
 
 Vite + `moduleResolution: "bundler"` handle relative imports transparently — no build plumbing changes in the consumer. See `docs/integration.md` for full details.
 
+## Install (npm)
+
+The library is also published as compiled ESM + `.d.ts` (no source ships). The emitted entry is `dist/index.js` with full type declarations; consumers resolve it through `package.json` `exports`:
+
+```bash
+npm install aicraft-engine
+```
+
+```ts
+import { outlineRect, mulberry32, spawn } from 'aicraft-engine';
+```
+
+`sideEffects: false` is set, so bundlers tree-shake aggressively. Only `dist/` + `README.md` + `package.json` ship — `src/`, `tests/`, `showcase/`, `docs/`, and `benchmarks/` are excluded. The tarball carries no runtime dependencies.
+
+> **Bundler required.** The emitted ESM uses extensionless internal imports (`moduleResolution: "bundler"`). It resolves cleanly through Vite/esbuild/webpack but not through plain Node ESM without a bundler — appropriate for a Canvas2D game library whose consumers all bundle.
+
 ---
 
 ## Usage
@@ -128,6 +144,13 @@ npm install        # devDependencies only (typescript, vite, vitest)
 npm test           # vitest run
 npm run test:watch # vitest watch mode
 npm run build      # tsc --noEmit (typecheck gate)
+```
+
+The npm publish build is separate from the typecheck gate:
+
+```bash
+npm run build:dist # tsc -p tsconfig.build.json → emits dist/ (.js + .d.ts)
+npm publish        # prepack hook auto-runs build:dist, so the tarball is always fresh
 ```
 
 ## Agent team

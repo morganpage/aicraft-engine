@@ -1,12 +1,25 @@
 {
   "name": "aicraft-engine",
-  "private": true,
   "version": "0.1.0",
   "type": "module",
   "description": "Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for AI Craft games. Zero runtime dependencies.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit",
+    "build:dist": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build:dist",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
