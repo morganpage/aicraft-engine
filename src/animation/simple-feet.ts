@@ -53,6 +53,28 @@ export const DEFAULT_SIMPLE_FEET: Readonly<SimpleFeetConfig> = {
 /**
  * Draw two simple foot rectangles positioned by a locomotion pose.
  *
+ * ⚠ **Facing-mirror requirement (the moonwalk trap).** The foot offsets in
+ * `pose` are LOCAL-space — they assume the caller has ALREADY mirrored the
+ * canvas around the body's vertical axis via `ctx.scale(facing, 1)` before
+ * calling this function. If you translate to the body but forget the
+ * facing-mirror scale, the character will moonwalk: their feet will swing in
+ * LOCAL rightward phase while the body visually faces left, so the stride
+ * reads as backwards. This is silent — no error, no warning, just a wrong-
+ * looking walk. The canonical wrap is:
+ *
+ * ```ts
+ * ctx.save();
+ * ctx.translate(bodyCx, bodyBottomY);
+ * ctx.scale(facing, 1);            // facing: +1 right, -1 left
+ * drawSimpleFeet(ctx, pose, { ...DEFAULT_SIMPLE_FEET, color: palette.base });
+ * ctx.restore();
+ * ```
+ *
+ * (The same mirror requirement applies to any body geometry you draw inside
+ * the same save/restore block.) See also `evaluateLocomotion` and
+ * `advanceLocomotionByDisplacement` in `./locomotion.ts` — both produce /
+ * consume LOCAL-space offsets and have matching warnings.
+ *
  * Draws in BODY-LOCAL coordinates — the canvas is assumed to be already
  * translated to the body's screen position and scaled by facing. The caller
  * handles the world-space transform (`ctx.translate(bodyX, bodyY);
@@ -77,9 +99,11 @@ export const DEFAULT_SIMPLE_FEET: Readonly<SimpleFeetConfig> = {
  * @example
  * ```ts
  * const pose = evaluateLocomotion(loco, DEFAULT_GAIT);
+ * ctx.save();
  * ctx.translate(bodyX, bodyY);
  * ctx.scale(facing, 1);
  * drawSimpleFeet(ctx, pose, { ...DEFAULT_SIMPLE_FEET, color: palette.base });
+ * ctx.restore();
  * ```
  */
 export function drawSimpleFeet(

@@ -113,6 +113,16 @@ export function advanceLocomotion(
 /**
  * Derive hip / foot offsets from the current phase.
  *
+ * ⚠ **Facing-mirror requirement (the moonwalk trap).** The returned offsets
+ * are LOCAL-space relative to the (untranslated, unmirrored) body root. They
+ * ASSUME the caller wraps the draw in `ctx.scale(facing, 1)` (mirroring
+ * around the body's vertical axis) at RENDER time. If you feed these offsets
+ * straight into world-space drawing without the facing-mirror scale, a
+ * left-facing character will moonwalk: feet swing in local rightward phase
+ * while the body visually faces left. Silent failure — no error, just a
+ * backwards-looking stride. See `drawSimpleFeet` in `./simple-feet.ts` for
+ * the canonical `save → translate → scale(facing, 1) → draw → restore` wrap.
+ *
  * Feet swing forward/back as `cos(phase)`: forward (+stride) at phase 0, back
  * (-stride) at phase π. A foot lifts via `max(0, -sin(phase))` — during the
  * SECOND half of the cycle (phase ∈ [π, 2π]) when cos is RISING (the foot is
@@ -127,11 +137,18 @@ export function advanceLocomotion(
  * plant — and sways laterally in counter-phase with the feet. All math is pure
  * sin/cos; identical across IEEE 754 platforms.
  *
+ * Offsets use the Canvas2D axis convention (+X right, +Y down) but are
+ * relative to the body root in the body's LOCAL frame (the frame established
+ * by the caller's `ctx.translate(bodyX, bodyY); ctx.scale(facing, 1)`). The
+ * hip offset is applied to the character root; foot offsets are applied
+ * relative to the (untranslated) root and may be fed to an IK solver or drawn
+ * directly.
+ *
  * Pure reader: returns a new `LocomotionPose`; never mutates `state`.
  *
  * @param state - current locomotion state (only `phase` is read)
  * @param config - gait amplitudes
- * @returns hip + left/right foot offsets in px
+ * @returns hip + left/right foot offsets in px (LOCAL-space — see warning)
  */
 export function evaluateLocomotion(
   state: LocomotionState,
@@ -245,6 +262,15 @@ export const DEFAULT_TUCK: Readonly<TuckConfig> = {
  * geometry mirrors should pass LOCAL-space displacement (`dx * facing`) so the
  * phase always advances forward in local space, letting the mirror handle the
  * visual direction.
+ *
+ * And at RENDER time, you MUST still apply `ctx.scale(facing, 1)` around the
+ * draw (see `drawSimpleFeet` JSDoc in `./simple-feet.ts` for the canonical
+ * `save → translate → scale(facing, 1) → draw → restore` wrap) — the offsets
+ * returned by `evaluateLocomotion` are LOCAL-space and assume that mirror is
+ * in effect. Forgetting the render-side mirror produces a moonwalk: the
+ * character faces one way while their feet swing in the opposite direction's
+ * phase. The `dx * facing` fix above addresses the SIMULATION side; this
+ * mirror addresses the RENDER side. Both are required.
  *
  * @param state - current locomotion state
  * @param dx - actual horizontal displacement this tick (positive = right, in px)

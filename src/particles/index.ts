@@ -17,3 +17,12 @@ export {
   type StepEmittersOptions,
 } from './emitter';
 export { particleAge, particleSizeCurve, particleAlphaCurve } from './lifetime';
+export {
+  LAVA_FIRE_PARTICLES,
+  LAVA_SMOKE_PARTICLES,
+  LAVA_SURFACE_COLOR,
+  LAVA_BODY_COLOR,
+  WATER_BUBBLE_PARTICLES,
+  WATER_SURFACE_COLOR,
+  type ParticlePreset,
+} from './presets';

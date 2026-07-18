@@ -153,6 +153,24 @@ Deterministic particle system. Pure spawn/advance/cull, extended with heterogene
 | `particleSizeCurve(p, startSize, endSize)` | function | Linear size interpolation over lifetime; pure reader | `src/particles/lifetime.ts` |
 | `particleAlphaCurve(p, startAlpha, endAlpha)` | function | Linear alpha interpolation over lifetime; clamped to `[0, 1]` | `src/particles/lifetime.ts` |
 
+#### `src/particles/presets.ts`
+
+Tuned particle-emitter presets + surface colors, lifted verbatim from the lava-pool showcase so consumers get the hand-tuned lava look by default instead of re-inventing mediocre params (a real consumer game shipped a barely-flickering lava pool because it guessed at the values). Spread a preset into `createEmitter` and supply only the per-instance `region` + `rng`.
+
+**Units contract (the footgun):** all presets are in **TICK units** (one sim step = one tick; the showcase steps with `dt = 1`). `rate` is particles-per-tick, `life` is ticks, `gravityScale`/`dragScale` are per-tick multipliers layered on the world `gravity`/`drag` you pass to `stepEmitters`. Pair tick-unit presets with `dt = 1` in `stepEmitters`. If your game runs in SECONDS (`dt = 1/60`), convert (or multiply your `dt` by 60) — mixing tick-unit presets with a seconds-valued `dt` runs ~60× too slow. Each preset's JSDoc documents the exact `stepEmitters(emitters, 1, { gravity: 0.5 })` call to reproduce the showcase look.
+
+**Shared-world-gravity limitation (known footgun, tracked separately):** `stepEmitters` takes a SINGLE shared world `gravity`/`drag` for every emitter in the call. Heterogeneous behaviour (fire falls, smoke rises) is achieved ONLY via the per-particle `gravityScale`/`dragScale` baked into each preset — there is no per-emitter world-gravity override on `EmitterConfig`. The lava recipe pairs both emitters with the same `gravity: 0.5` and differs only in `gravityScale` (smoke negates the shared gravity to rise). TODO(per-emitter-gravity) is noted in the source; out of scope for this preset task.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `ParticlePreset` | type | `Readonly<Omit<EmitterConfig, 'region' \| 'rng'>>` — the spreadable preset shape (every required field except the per-instance `region`/`rng`) | `src/particles/presets.ts` |
+| `LAVA_FIRE_PARTICLES` | const | Fire emitter preset (tick units): rate 2, cone up `-π/2` spread `π/3` speed 3–5, gravityScale 0.4, dragScale 0.99, life 30, size 3, color `#FFAA00`. Verbatim from showcase `FIRE_*`. Pair with `stepEmitters(emitters, 1, { gravity: 0.5 })` | `src/particles/presets.ts` |
+| `LAVA_SMOKE_PARTICLES` | const | Smoke emitter preset (tick units): rate 0.8, cone up `-π/2` spread `π/2` speed 0.5–1.5, gravityScale -0.4 (buoyant), dragScale 0.99, life 60, size 6, color `#888888`. Verbatim from showcase `SMOKE_*`. Shares world gravity 0.5 with fire | `src/particles/presets.ts` |
+| `LAVA_SURFACE_COLOR` | const | `'#ff6a00'` — bright orange surface crust stroke; verbatim from showcase `COLOR_LAVA_SURFACE` | `src/particles/presets.ts` |
+| `LAVA_BODY_COLOR` | const | `'#7a0a0a'` — deep red lava body fill; verbatim from showcase `COLOR_LAVA_BODY` | `src/particles/presets.ts` |
+| `WATER_BUBBLE_PARTICLES` | const | Water-bubble emitter preset (tick units): rate 0.5, cone up `-π/2` spread `π/4` speed 0.5–1.5, gravityScale -0.2 (gentle buoyancy), dragScale 0.95 (high water resistance), life 40, size 2, color `#a0d8ff`. **DERIVED** (no showcase water section ships) — sensible starting point, tune to taste. Pair with `stepEmitters(emitters, 1, { gravity: 0.5 })` | `src/particles/presets.ts` |
+| `WATER_SURFACE_COLOR` | const | `'#2a7ad4'` — mid-blue water surface stroke; **DERIVED**, pairs with `WATER_BUBBLE_PARTICLES` | `src/particles/presets.ts` |
+
 ### `src/animation/types.ts`
 
 Shared foundation types for skeletal rigging, IK, and locomotion.
@@ -316,6 +334,25 @@ Verlet-PBD spring chains for secondary dynamics (hair, tails, cloaks).
 - _research note: `docs/research/procedural-locomotion.md` §Pattern 3_
 - _proposed in: `docs/design/procedural-motion-proposal.md`_
 - _elastic rod bending resistance investigated (Provot bend springs vs angular PBD): showcase-local for v1, L2 library export deferred until a second consumer arrives. See `docs/design/elastic-rod-antenna-decision.md`._
+
+#### `src/animation/spring-rod.ts`
+
+> Design: `docs/design/spring-rod-proposal.md`.
+> Builds on: `docs/research/springy-rod.md`.
+
+Stable springy-rod primitive: unified solver combining Verlet integration + PBD distance constraints + Provot bend constraints + directional rest-pose spring + tip-weight nudge, with structural stability guards (epsilon, velocity clamp, NaN reset, strain limit) baked in. Drop-in replacement for the showcase's 3-step correction pipeline. `advanceSpringChain` is kept (not deprecated) for advanced users who want the raw unguarded substrate.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SpringRodConfig` | type | Rod physics: `segmentLength`, `restDirection` (Vec2), `stiffness` [0,1], `tipWeight`, `subSteps`, `gravityX/Y`, `drag` | `src/animation/spring-rod.ts` |
+| `DEFAULT_SPRING_ROD` | const | Default `SpringRodConfig`: moderate stiffness, downward rest, no tip sag, no gravity | `src/animation/spring-rod.ts` |
+| `createSpringRod(count, anchorX, anchorY, segmentLength, restDirection)` | function | Factory: straight chain along restDirection from anchor, zero velocity | `src/animation/spring-rod.ts` |
+| `advanceSpringRod(nodes, anchorX, anchorY, dt, config)` | function | Pure unified solver: Verlet + distance + bend + rest-pose + tip-weight + stability guards. Returns new VerletNode[] (input not mutated). Never throws | `src/animation/spring-rod.ts` |
+
+- _determinism contract: same as `advanceSpringChain` — caller MUST use fixed `dt`_
+- _stability guarantees: epsilon-guarded division, velocity clamping, NaN/Infinity reset, strain limiting — all non-optional_
+- _research note: `docs/research/springy-rod.md`_
+- _showcase migration: `showcase/helpers/slime-knight.ts` can delete `applyAntennaBendConstraints`, `applyAntennaRestPose`, `applyAntennaTipWeight` (~150 lines) after this ships_
 
 ### `src/animation/jump.ts`
 
@@ -824,7 +861,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, and `./blend` (all shipped). As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation` (including the proposed `spring-rod` once shipped), `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, and `./blend` (all shipped). As pillars ship, they are added here.
 
 ```ts
 export * from './primitives';

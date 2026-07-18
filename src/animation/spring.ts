@@ -88,6 +88,14 @@ export const DEFAULT_SPRING: Readonly<SpringConfig> = {
  * Pure: returns a NEW array of NEW `VerletNode` objects; the input array and
  * its nodes are not mutated. Never throws.
  *
+ * @remark **For most secondary-dynamics use cases** (antennae, tails, hair,
+ * manes, capes), prefer `advanceSpringRod`, which adds Provot bend resistance,
+ * a directional rest-pose spring, a tapered tip-weight nudge, and the four
+ * structural stability guards (epsilon-guarded division, velocity clamping,
+ * strain limiting, NaN/Infinity reset). `advanceSpringChain` is the unguarded
+ * substrate for advanced custom pipelines (cloth, rope bridges, non-standard
+ * bend models) where the consumer owns the corrections and stability math.
+ *
  * @param nodes - current chain state (read-only)
  * @param anchorX - world X of the pinned root
  * @param anchorY - world Y of the pinned root
