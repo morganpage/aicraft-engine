@@ -31,7 +31,7 @@ export interface Rect {
 
 /**
  * A static collision surface. Extends {@link Rect} with an optional
- * passthrough flag.
+ * passthrough flag and an optional stable identity string.
  */
 export interface Solid extends Rect {
   /**
@@ -42,6 +42,23 @@ export interface Solid extends Rect {
    * Default: `false` (fully solid — blocks from all directions).
    */
   passthrough?: boolean;
+  /**
+   * Optional stable identity string for this solid. The platformer kernel
+   * (`src/platformer/`) reads this to populate `Contacts.groundId` /
+   * `leftWallId` / `rightWallId` / `ceilingId` — the durable "which solid am
+   * I touching" handle that survives re-creation of the solids array each tick
+   * (index identity would break under add/remove; reference equality breaks
+   * across serialized replays).
+   *
+   * Consumers assign stable string IDs to level geometry they need to track
+   * (moving platforms, named walls). Static decoration geometry may leave this
+   * `undefined`; the kernel normalizes an absent id to `null` in `Contacts`.
+   *
+   * Optional and non-breaking: existing collision code never reads this field.
+   *
+   * Default: `undefined`.
+   */
+  id?: string;
 }
 
 /**

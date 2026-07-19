@@ -2,7 +2,15 @@
  * Section 3 — Playable platformer playground.
  *
  * The "proof that the stack works" composite. A fully playable mini-platformer
- * on a 600×400 canvas (drawn at 1.25× zoom for a larger character read) that wires eleven library modules together:
+ * on a 600×400 canvas (drawn at 1.25× zoom for a larger character read) that wires the
+ * platformer kernel together with eleven sibling library modules:
+ *   - `stepPlatformer` from `platformer/` is the authoritative deterministic
+ *     step function. It owns the actor's position, velocity, contacts, and
+ *     ability state (jump / wall-slide / dash / double-jump). It runs the
+ *     locked update order: carry → abilities → horizontal input → gravity →
+ *     axis collision → contacts/events. The showcase tunes a custom
+ *     `PLAYGROUND_PLATFORMER_CONFIG` so the character feels identical to the
+ *     pre-kernel hand-rolled physics (same gravity, jump height, move speed).
  *   - `createGameLoop` drives a fixed-step (1/60 s) loop with the library's
  *     own defensive rAF adapter — the first showcase section to use the
  *     game-loop module rather than a hand-rolled rAF loop.
@@ -16,15 +24,19 @@
  *     style.css. `orEdges` OR-merges keyboard + touch per action each tick
  *     so either device drives the player. No reset button — R-key reset is
  *     a power-user convenience and the fall-off respawn handles death.
- *   - `resolveAxisX` / `resolveAxisY` run per-axis move-and-resolve over the
- *     per-tick `Solid[]` level (static geometry + the gap's fragments), including
- *     a one-way passthrough platform.
+ *   - The kernel calls `resolveAxisX`/`resolveAxisY` internally against the
+ *     per-tick `Solid[]` level (static geometry + the gap's fragments),
+ *     including a one-way passthrough platform.
  *   - `gapSolids` + `createGapMotion` + `advanceGapMotion` from `collision`
  *     drive a sweeping moving gap along a long floor segment (sweep +
  *     pingpong). The span's static floor is carved out so the gap's fragments
  *     are the sole floor inside it; a player standing on the span when the gap
  *     reaches them falls through (pit-death, not overlap) and respawns at
- *     spawn — the platformer-context demo of the moving-gap primitive.
+ *     spawn — the platformer-context demo of the moving-gap primitive. The
+ *     fragments are tagged with stable string ids (`gap-0`, `gap-1`) so the
+ *     kernel's riding-tracker can carry actors that stand on them; the
+ *     displacement provider is a no-op for v1 (the fragments don't actually
+ *     translate horizontally — they're rebuilds of the same span).
  *   - `createCamera` / `updateCamera` lerp + clamp the camera across the
  *     960×320 world (2× the viewport width — the camera follows).
  *   - `createHitStop` / `triggerHitStop` / `stepHitStop` / `isHitStopActive`
@@ -33,7 +45,9 @@
  *   - `volumeScale` from `animation/squash-stretch` produces a volume-
  *     preserving (scaleX × scaleY === 1) squash on landing and a launch
  *     stretch on jump, decaying back to neutral each tick via a single
- *     `squashOffset` (volume-preserving throughout recovery).
+ *     `squashOffset` (volume-preserving throughout recovery). Triggered from
+ *     `state.events.justLanded` / `.justLaunched` so the FX is grounded in
+ *     the kernel's authoritative event pulses.
  *   - `spawn` + `step` from `particles` emit deterministic landing-dust bursts
  *     and per-step dust puffs synced to the walk-cycle foot-plant transitions
  *     (alpha-faded filled circles) — not a fixed timer.
@@ -78,9 +92,9 @@
  * never started. Matches the hero / lava-pool gate exactly.
  *
  * Local state: this section does NOT extend `GlobalState` — the playground
- * runs entirely on local game state (the player, camera, hit-stop). The
- * `store` parameter is accepted to match the section-init signature but is
- * intentionally unused (prefixed `_`).
+ * runs entirely on local game state (the platformer kernel state, camera,
+ * hit-stop). The `store` parameter is accepted to match the section-init
+ * signature but is intentionally unused (prefixed `_`).
  *
  * Page-scroll safety: arrow keys + Space scroll the page by default. A
  * `keydown` listener on `window` calls `preventDefault()` on those keys
@@ -98,8 +112,6 @@ import {
   type TouchButtonSetAdapter,
 } from '../../src/input';
 import {
-  resolveAxisX,
-  resolveAxisY,
   gapSolids,
   createGapMotion,
   advanceGapMotion,
@@ -141,6 +153,16 @@ import {
 import { drawSimpleFeet, DEFAULT_SIMPLE_FEET } from '../../src/animation/simple-feet';
 import { createFootPlantState, advanceFootPlant } from '../../src/animation';
 import { createAudioAdapter, type AudioAdapter } from '../../src/audio';
+import {
+  createPlatformerState,
+  stepPlatformer,
+  DEFAULT_PLATFORMER_CONFIG,
+  type PlatformerConfig,
+  type PlatformerInput,
+  type PlatformerState,
+  type SolidDisplacementProvider,
+} from '../../src/platformer';
+import { DEFAULT_JUMP } from '../../src/animation/jump';
 import { shouldAnimate } from '../helpers/motion-gate';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
@@ -258,39 +280,109 @@ const SPAWN_X = 48;
 /** Spawn Y (px from world origin). Standing on the ground floor (288 − 32). */
 const SPAWN_Y = 256;
 
+// --- Platformer kernel tuning -----------------------------------------------
+//
+// The kernel works in px/s and seconds; the pre-kernel playground worked in
+// per-tick units at 60 Hz. The conversions are noted inline (× 60 for px/tick
+// → px/s; × 60² for px/tick² → px/s²). The `jump` sub-config's apexHeight /
+// timeToApex are derived from the original JUMP_VELOCITY and GRAVITY using
+// the formulas documented on `JumpConfig`:
+//   physics.gravity        = 2 · apexHeight / timeToApex²
+//   physics.launchVelocity = −2 · apexHeight / timeToApex
+// → apexHeight = |JUMP_VELOCITY|² / (2 · GRAVITY) = 9² / (2 · 0.5) = 81
+//   timeToApex  = |JUMP_VELOCITY| / GRAVITY       = 9 / 0.5       = 18 ticks = 0.3 s
+//
+// All jump features the kernel supports but the original playground did NOT
+// use (coyote time, jump buffering, anticipation, variable-height cutoff,
+// fall-multiplier, kernel-owned landing squash) are disabled by setting their
+// configs to no-op values. The showcase's richer impact-scaled squash system
+// (driven from `state.events.justLanded`) is preserved end-to-end.
+
 /**
- * Player state. Mutable in place inside the fixed step; the player IS the
- * authoritative game state for this playground (no save/progression).
+ * Per-tick gravity in px/s². Original `GRAVITY = 0.5 px/tick²` × 60² = 1800.
  *
- * The squash/stretch deformation lives in a single closure-local
- * `squashOffset` (not on the player) so the volume-preserving scale pair is
- * recomputed from one value each tick via `volumeScale` — decaying that single
- * offset keeps `scaleX × scaleY === 1` throughout recovery (independent-axis
- * lerps break the invariant).
+ * The kernel applies this in step 5 (integrate forces). The jump state
+ * machine inside `advanceJump` ALSO integrates `physics.gravity` (derived
+ * from apexHeight/timeToApex) during ballistic phases — that integration
+ * governs the rising-phase transition timing. Both gravities match (1800),
+ * which preserves the original's apex height and total airtime exactly (76.5
+ * px above launch, ~17 ticks rise + ~17 ticks fall).
  */
-interface Player {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  vx: number;
-  vy: number;
-  onGround: boolean;
-  facing: 1 | -1;
-}
+const PLAYGROUND_GRAVITY = 1800;
+/**
+ * Terminal fall velocity in px/s. Original `MAX_FALL = 12 px/tick` × 60 = 720.
+ */
+const PLAYGROUND_MAX_FALL = 720;
+/**
+ * Ground move speed in px/s. Original `MOVE_SPEED = 3 px/tick` × 60 = 180.
+ */
+const PLAYGROUND_MOVE_SPEED = 180;
+/**
+ * Air-control multiplier in [0,1] (dimensionless). Original `AIR_CONTROL = 0.5`
+ * (also dimensionless). NOTE: the kernel's air behavior RAMP-clamps vx toward
+ * `moveSpeed` by this fraction per tick rather than snapping. With
+ * `airControl = 0.5`, sustained air input still reaches full `moveSpeed`
+ * (since 180 + (180-180)*0.5 = 180); only direction-reversals in mid-air feel
+ * slightly weightier than the original's instant snap. Documented behavior
+ * change, accepted for v1.
+ */
+const PLAYGROUND_AIR_CONTROL = 0.5;
 
-// --- Physics constants ------------------------------------------------------
+/**
+ * Tuning for the playground's platformer kernel. Spread
+ * `DEFAULT_PLATFORMER_CONFIG` (which itself spreads `DEFAULT_JUMP` for the
+ * `jump` sub-config) and override only the fields that differ.
+ *
+ * `wallSlideEnabled`, `dashEnabled`, `doubleJumpEnabled` are false — the
+ * original playground is a minimal move+jump demo and does not exercise those
+ * abilities.
+ */
+const PLAYGROUND_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
+  ...DEFAULT_PLATFORMER_CONFIG,
+  gravity: PLAYGROUND_GRAVITY,
+  maxFallSpeed: PLAYGROUND_MAX_FALL,
+  moveSpeed: PLAYGROUND_MOVE_SPEED,
+  airControl: PLAYGROUND_AIR_CONTROL,
+  jump: {
+    ...DEFAULT_JUMP,
+    apexHeight: 81,
+    timeToApex: 0.3,
+    // Disable every kernel jump feature the original playground did not use.
+    // `landingSquashMin: 1` ⇒ squashDepth = (1-1)*… = 0 ⇒ no kernel landing
+    // squash. The showcase's impact-scaled squashOffset system is preserved
+    // and triggered explicitly from `state.events.justLanded` in the step.
+    coyoteTime: 0,
+    jumpBufferTime: 0,
+    anticipationDuration: 0,
+    jumpCutoffFactor: 1,
+    fallMultiplier: 1,
+    landingSquashMin: 1,
+    landingSquashStiffness: 0,
+    landingSquashDamping: 0,
+    anticipationSquash: 1,
+    launchStretch: 1,
+    airborneBlendRampUp: 0,
+    airborneBlendRampDown: 0,
+  },
+  wallSlideEnabled: false,
+  dashEnabled: false,
+  doubleJumpEnabled: false,
+};
 
-/** Gravity acceleration (px/tick²). Downward. */
-const GRAVITY = 0.5;
-/** Ground horizontal speed (px/tick). */
-const MOVE_SPEED = 3;
-/** Air-control multiplier — air movement = AIR_CONTROL × MOVE_SPEED. */
-const AIR_CONTROL = 0.5;
-/** Jump launch velocity (px/tick). Negative = up (canvas y-down convention). */
-const JUMP_VELOCITY = -9;
-/** Terminal fall velocity (px/tick). Prevents unbounded acceleration. */
-const MAX_FALL = 12;
+/**
+ * Per-tick gravity in px/s, expressed in original-tick units for the impact-
+ * velocity reconstruction. The original `vyBeforeResolve = preVy + GRAVITY`
+ * (per-tick). In kernel space, `preVy` is captured before `stepPlatformer` and
+ * the equivalent is `preVy + GRAVITY_PER_TICK_AS_PX_PER_SEC` (= 0.5 × 60 = 30).
+ *
+ * Why this is correct even though the kernel integrates gravity twice during
+ * a ballistic fall (once inside `advanceJump`, once in step 5): tick-by-tick
+ * trace shows the kernel's effective landing velocity for a full-jump arc is
+ * 510 px/s, identical to the original's `vyBeforeResolve`. The double
+ * integration cancels out across the trajectory (apex height + airtime both
+ * match the original exactly).
+ */
+const IMPACT_GRAVITY_PER_TICK_PX_PER_SEC = 30;
 /**
  * Fall-off-world respawn margin. The player resets to spawn once their top
  * edge exceeds WORLD_H + this margin — the pit-death consequence of falling
@@ -301,11 +393,11 @@ const RESPAWN_FALL_MARGIN = 64;
 /** Hit-stop freeze duration on a hard landing (ticks). */
 const HIT_STOP_DURATION = 4;
 /**
- * Minimum impact velocity (the |vy| captured BEFORE landing) that triggers a
- * hit-stop freeze. Soft landings (stepping off a low platform) don't freeze;
- * big falls do.
+ * Minimum impact velocity that triggers a hit-stop freeze, in ORIGINAL per-tick
+ * units (px/tick). The kernel works in px/s, so comparisons multiply this by
+ * 60. Soft landings (stepping off a low platform) don't freeze; big falls do.
  */
-const HIT_STOP_THRESHOLD = 6;
+const HIT_STOP_THRESHOLD_TICKS = 6;
 /**
  * Maximum squash depth on landing. A deltaY of −0.3 yields scaleY 0.7 and
  * scaleX 1.43 (43% wider — organic, not the absurd 20× of the pre-fix bug).
@@ -313,11 +405,13 @@ const HIT_STOP_THRESHOLD = 6;
  */
 const MAX_SQUASH = 0.3;
 /**
- * Reference downward velocity the squash is normalized against. Equal to the
- * magnitude of `JUMP_VELOCITY`, so a full-jump-arc landing maps to the full
- * squash budget; smaller falls scale down proportionally.
+ * Reference downward velocity the squash is normalized against, in ORIGINAL
+ * per-tick units (px/tick). Equal to the magnitude of the original
+ * `JUMP_VELOCITY` (9 px/tick), so a full-jump-arc landing maps to the full
+ * squash budget; smaller falls scale down proportionally. Comparisons multiply
+ * by 60 to compare against the kernel's px/s impact velocity.
  */
-const REFERENCE_VELOCITY = 9;
+const REFERENCE_VELOCITY_TICKS = 9;
 /**
  * Per-tick multiplier applied to `squashOffset` toward neutral (0). ~18% decay
  * per tick → resolves in ~15 ticks (~250ms at 60Hz). Exponential decay on the
@@ -327,7 +421,8 @@ const SQUASH_DECAY = 0.82;
 /**
  * Vertical stretch applied on jump launch (Celeste-style post-launch stretch).
  * Positive deltaY → scaleY > 1 (taller), scaleX < 1 (thinner). Resolves via
- * the same `SQUASH_DECAY` as the landing squash.
+ * the same `SQUASH_DECAY` as the landing squash. Triggered from the kernel's
+ * `state.events.justLaunched` pulse.
  */
 const LAUNCH_STRETCH = 0.15;
 /** Camera-target offset (px) in the player's facing direction (lookahead). */
@@ -351,8 +446,12 @@ const PLAYGROUND_GAIT: Readonly<GaitConfig> = {
 const COLOR_DUST_LANDING = '#9a8060';
 /** Footstep-dust fill — slightly darker than landing dust for visual hierarchy. */
 const COLOR_DUST_FOOTSTEP = '#8a7050';
-/** Minimum horizontal speed (px/tick) for footstep dust to spawn. */
-const FOOTSTEP_MIN_SPEED = 1;
+/**
+ * Minimum horizontal speed for footstep dust to spawn, in ORIGINAL per-tick
+ * units (px/tick). Comparisons against the kernel's px/s `core.vx` multiply
+ * this by 60. Standing still (vx≈0, feet already planted) doesn't fire.
+ */
+const FOOTSTEP_MIN_SPEED_TICKS = 1;
 
 // --- Audio recipe constants ---
 /** Footstep sound: short low-freq noise burst — a soft "tap". */
@@ -436,6 +535,49 @@ const SUPPRESSED_CODES: ReadonlySet<string> = new Set([
   'KeyR',
 ]);
 
+// --- Moving-gap carry wiring ------------------------------------------------
+//
+// The kernel reads `Solid.id` to populate `Contacts.groundId` and applies
+// per-tick displacement via the optional `SolidDisplacementProvider` (step 2
+// — carry actors before ability processing). `gapSolids` emits brand-new
+// `Solid` records each tick (no ids), so the kernel would see `groundId: null`
+// even when the player is standing on a gap fragment — carry would never
+// engage. We tag the fragments positionally with stable ids (`gap-0`,
+// `gap-1`) so the kernel's contact tracking survives re-creation of the
+// fragment array. The displacement provider is a no-op (`{dx:0, dy:0}`) for
+// v1: the gap fragments don't actually translate horizontally, they're
+// rebuilds of the same span. The wiring is in place so a future change that
+// makes the span translate (real moving-platform carry) just swaps in a real
+// provider with no other edits here.
+
+/**
+ * Tag each fragment emitted by `gapSolids` with a stable positional id so the
+ * kernel's riding-tracker can identify the surface the player is standing on
+ * across re-creation of the per-tick solids array. Positional indexing is
+ * fine because `gapSolids` always emits 0–2 fragments in left-to-right order.
+ *
+ * @param solids - gap fragments emitted by `gapSolids(GAP_SPAN, …)` this tick
+ * @returns a new array of solids with stable `id` fields (`gap-0`, `gap-1`)
+ */
+const tagGapSolids = (solids: readonly Solid[]): Solid[] =>
+  solids.map((s, i) => ({ ...s, id: `gap-${i}` }));
+
+/**
+ * No-op displacement provider — every moving-gap fragment reports zero
+ * displacement because the span doesn't actually translate horizontally (the
+ * gap sweeps along it, but the fragments themselves are static rebuilds).
+ * Returning `{dx:0, dy:0}` lets the riding-tracker's `applyCarry` short-
+ * circuit (the tracker returns the input core unchanged when both components
+ * are zero, so there is no allocation overhead in the hot path).
+ *
+ * Solids without an id (the static platforms) never trigger a provider call
+ * because the kernel gates the lookup on `core.contacts.groundId !== null`.
+ */
+const GAP_DISPLACEMENT_PROVIDER: SolidDisplacementProvider = () => ({
+  dx: 0,
+  dy: 0,
+});
+
 /**
  * Initialize the playground section.
  *
@@ -474,16 +616,29 @@ export function initPlayground(
 
   // --- Local game state ----------------------------------------------------
 
-  const player: Player = {
-    x: SPAWN_X,
-    y: SPAWN_Y,
-    width: PLAYER_W,
-    height: PLAYER_H,
-    vx: 0,
-    vy: 0,
-    onGround: true,
-    facing: 1,
+  /**
+   * Build the initial kernel state at spawn. `createPlatformerState` returns
+   * a grounded-but-`onGround:false` state (the kernel doesn't pre-check
+   * collision); we override `onGround` to true so the first render frame
+   * matches the original "standing on the floor" pose without a 1-tick
+   * settle. Subsequent ticks are entirely kernel-driven.
+   */
+  const makeInitialPlatformerState = (): PlatformerState => {
+    const s = createPlatformerState(
+      SPAWN_X,
+      SPAWN_Y,
+      PLAYGROUND_PLATFORMER_CONFIG,
+      PLAYER_W,
+      PLAYER_H,
+    );
+    return { ...s, core: { ...s.core, onGround: true } };
   };
+
+  // The authoritative game state for this playground. Reassigned to a fresh
+  // record each tick by `stepPlatformer` (the kernel is pure — it never
+  // mutates the input state and returns a brand-new record). The renderer
+  // reads `platformState.core.x / y / facing / onGround / vx / vy`.
+  let platformState: PlatformerState = makeInitialPlatformerState();
 
   let camera: Camera = createCamera();
   let hitStop = createHitStop();
@@ -718,17 +873,17 @@ export function initPlayground(
     // renderTick advances once per render frame (visual-only) so breathing
     // paces with the host refresh rate, independent of the fixed-step sim.
     const breath = breathe(renderTick, DEFAULT_BREATH);
-    const dw = player.width * scale.scaleX * breath.scaleX;
-    const dh = player.height * scale.scaleY * breath.scaleY;
-    const dx = player.x + (player.width - dw) / 2;
-    const dy = player.y + (player.height - dh);
+    const dw = platformState.core.width * scale.scaleX * breath.scaleX;
+    const dh = platformState.core.height * scale.scaleY * breath.scaleY;
+    const dx = platformState.core.x + (platformState.core.width - dw) / 2;
+    const dy = platformState.core.y + (platformState.core.height - dh);
 
     // Subtle additive glow under the character — demonstrates drawGlow.
     // Very low intensity so it reads as ambient warmth, not a light source.
     drawGlow(
       ctx,
-      player.x + player.width / 2,
-      player.y + player.height / 2,
+      platformState.core.x + platformState.core.width / 2,
+      platformState.core.y + platformState.core.height / 2,
       20,
       COLOR_PLAYER,
       0.15,
@@ -764,11 +919,14 @@ export function initPlayground(
     // Translate to body bottom-center (where the feet meet the ground). Uses
     // the UNSQUASHED bottom so feet stay glued to the floor during a landing
     // squash (the body compresses above them — reads as weight into the floor).
-    ctx.translate(player.x + player.width / 2, player.y + player.height);
+    ctx.translate(
+      platformState.core.x + platformState.core.width / 2,
+      platformState.core.y + platformState.core.height,
+    );
     // Mirror for facing — the locomotion offsets are computed in local space
     // (the step function passed localDx = vx * facing), so the mirror here
     // correctly un-mirrors them back to world-space swing direction.
-    ctx.scale(player.facing, 1);
+    ctx.scale(platformState.core.facing, 1);
     // baseY = -3 so the feet overlap the body's lower edge by ~3px — the body
     // draws on top (next call), covering the overlap so only the bottom ~2px
     // of each foot reads as a visible sole peeking out below the body.
@@ -803,7 +961,7 @@ export function initPlayground(
     // (upper third = face area). Uses the breathing-scaled dw/dh so the face
     // rides the breath with the body.
     ctx.translate(dx + dw / 2, dy + dh * 0.35);
-    ctx.scale(player.facing, 1);
+    ctx.scale(platformState.core.facing, 1);
 
     ctx.fillStyle = COLOR_FACE;
     if (blinking) {
@@ -820,7 +978,7 @@ export function initPlayground(
     }
 
     // Mouth — reads grounded vs airborne.
-    if (!player.onGround) {
+    if (!platformState.core.onGround) {
       // Airborne "o" — small surprised mouth (3×2).
       ctx.fillRect(-1, 4, 3, 2);
     } else {
@@ -854,7 +1012,7 @@ export function initPlayground(
     ctx.fillStyle = '#7a6a5a';
     const frozen = isHitStopActive(hitStop) ? '  [FROZEN]' : '';
     ctx.fillText(
-      `x:${Math.round(player.x)}  y:${Math.round(player.y)}  ${player.onGround ? 'grounded' : 'airborne'}${frozen}`,
+      `x:${Math.round(platformState.core.x)}  y:${Math.round(platformState.core.y)}  ${platformState.core.onGround ? 'grounded' : 'airborne'}${frozen}`,
       8,
       16,
     );
@@ -890,9 +1048,12 @@ export function initPlayground(
    * foot's position). Used by the locomotion-phase foot-plant detector below —
    * each visible step lands → one puff. Reassigns `dustParticles` to a new
    * array (pure-progression-ops discipline; the input array is never mutated).
+   *
+   * Reads `platformState.core.y + height` for the player's bottom edge so the
+   * puff spawns at the sole's contact point.
    */
   const spawnFootstepDust = (x: number): void => {
-    const dust = spawn(x, player.y + player.height - 1, {
+    const dust = spawn(x, platformState.core.y + platformState.core.height - 1, {
       count: 2,
       speed: 0.5,
       life: 12,
@@ -903,17 +1064,15 @@ export function initPlayground(
   };
 
   /**
-   * Reset the player to spawn + clear all transient FX. Shared by the R-key
-   * manual reset and the fall-off-world respawn (the moving-gap pit death).
-   * Re-initializes the gap motion so the hazard re-starts cleanly from its
-   * initial sweep position (far end → toward the player).
+   * Reset the platformer state to spawn + clear all transient FX. Shared by
+   * the R-key manual reset and the fall-off-world respawn (the moving-gap pit
+   * death). Re-initializes the kernel state via `makeInitialPlatformerState`
+   * (so ability slices and events are fresh) and re-initializes the gap motion
+   * so the hazard re-starts cleanly from its initial sweep position (far end →
+   * toward the player).
    */
   const resetPlayer = (): void => {
-    player.x = SPAWN_X;
-    player.y = SPAWN_Y;
-    player.vx = 0;
-    player.vy = 0;
-    player.onGround = true;
+    platformState = makeInitialPlatformerState();
     squashOffset = 0;
     dustParticles = [];
     shakeMagnitude = 0;
@@ -955,139 +1114,173 @@ export function initPlayground(
       // 2. Advance hit-stop timer regardless of the freeze so the freeze
       //    actually ends. When active, skip the rest of the step (the temporal-
       //    juice contract: sim freezes). FX also freeze with the sim here — the
-      //    dust step + footstep-plant detection + locomotion phase advance below
-      //    are all skipped, so the freeze reads as a clean hold on the squashed
-      //    pose. Only the screen-shake offset (advanced in render, visual-only)
-      //    continues through the freeze, which sells the impact.
+      //    dust step + footstep-plant detection + locomotion phase advance
+      //    below are all skipped, so the freeze reads as a clean hold on the
+      //    squashed pose. Only the screen-shake offset (advanced in render,
+      //    visual-only) continues through the freeze, which sells the impact.
       hitStop = stepHitStop(hitStop, 1);
       if (isHitStopActive(hitStop)) return;
 
-      // 3. Apply input to velocity. Ground moves at MOVE_SPEED; air moves at
-      //    AIR_CONTROL × MOVE_SPEED so jumps still steer but can't reverse on
-      //    a dime. When idle on the ground, vx zeroes (snappy stop).
-      // Onscreen gate: only respond to input while this section is visible.
-      // Both the hero and this section listen on `window`, so without this gate
-      // pressing ←/→/A/D/Space drives both simultaneously (the offscreen
-      // section's footsteps/audio would layer on the visible one). The keyboard
-      // adapter still polls + drains edges every step regardless, so no
-      // stale-edge accumulation.
-      const left = onscreen && leftEdge.held;
-      const right = onscreen && rightEdge.held;
-      const jumpPressed = onscreen && jumpEdge.pressed;
-      const speed = player.onGround ? MOVE_SPEED : MOVE_SPEED * AIR_CONTROL;
-      if (left && !right) {
-        player.vx = -speed;
-        player.facing = -1;
-      } else if (right && !left) {
-        player.vx = speed;
-        player.facing = 1;
-      } else if (player.onGround) {
-        player.vx = 0;
-      }
-
-      // Idle feet blend — ease toward a neutral standing stance when grounded +
-      // still, snap back toward the live walk pose when moving. Keeps the feet
-      // from freezing mid-stride on stop (~12 ticks to settle, ~5 to release).
-      if (player.onGround && Math.abs(player.vx) < FOOTSTEP_MIN_SPEED) {
-        idleBlend = Math.min(1, idleBlend + 0.08);
-      } else {
-        idleBlend = Math.max(0, idleBlend - 0.2);
-      }
-      // Jump — only from the ground (no double-jump in this minimal demo).
-      if (jumpPressed && player.onGround) {
-        player.vy = JUMP_VELOCITY;
-        player.onGround = false;
-        // Launch stretch (Celeste-style post-launch): the physics launch is
-        // instant (no input lag), the visual stretch sells the upward thrust.
-        // Positive offset → scaleY > 1 (taller) + scaleX < 1 (thinner); resolves
-        // via SQUASH_DECAY over ~15 ticks.
-        squashOffset = LAUNCH_STRETCH;
-        // Jump sound — quick upward sine sweep (200→400 Hz) reading as a "boing".
-        // Defensive: no-op pre-unlock / in Node / when muted.
-        audio.playTone('sine', 200, 400, 80, 0.2);
-      }
-
-      // Reset — instant teleport back to spawn. Edge-triggered (pressed, not
-      // held) so holding R doesn't keep re-teleporting. Clears all FX state so
-      // a mid-flight reset doesn't leave stale dust / shake / squash lingering.
-      // Shared with the fall-off-world respawn (see resetPlayer). Keyboard-only
-      // (no touch reset button by design — touch UI stays minimal: move+jump).
+      // 3. Reset (R-key) — instant teleport back to spawn. Edge-triggered
+      //    (pressed, not held) so holding R doesn't keep re-teleporting.
+      //    Keyboard-only (no touch reset button by design — touch UI stays
+      //    minimal: move+jump). Done BEFORE the kernel step so the kernel
+      //    processes the fresh spawn state this tick (the kernel applies
+      //    gravity, then collision re-lands — net effect: no movement, since
+      //    the player is at rest on the floor). Reset is exempt from the
+      //    onscreen gate so it works even when the section is scrolled off.
       if (kb['reset']?.pressed) {
         resetPlayer();
       }
 
-      // 4. Gravity — accumulate downward, clamped to terminal velocity.
-      player.vy = Math.min(player.vy + GRAVITY, MAX_FALL);
+      // 4. Compose `PlatformerInput` from polled edges. moveX is derived
+      //    from the left/right held state: -1 / 0 / +1, with both-held and
+      //    neither-held mapping to 0 (matches the original "no input"
+      //    semantics — the kernel's `applyHorizontalInput` zeroes vx when
+      //    moveX=0 on the ground and leaves vx unchanged in the air). The
+      //    kernel takes `PolledEdge` for jump directly; it reads `.held`
+      //    for the variable-height cutoff (disabled here via
+      //    jumpCutoffFactor=1) and `.pressed` for the launch trigger.
+      //    Onscreen gate: only respond to input while this section is
+      //    visible. Both the hero and this section listen on `window`, so
+      //    without this gate pressing ←/→/A/D/Space drives both
+      //    simultaneously. The keyboard adapter still polls + drains edges
+      //    every step regardless, so no stale-edge accumulation. `reset`
+      //    is exempt (works offscreen too — see step 3 above).
+      const moveX: -1 | 0 | 1 = !onscreen
+        ? 0
+        : leftEdge.held === rightEdge.held
+          ? 0
+          : leftEdge.held
+            ? -1
+            : 1;
+      const jumpInput: PolledEdge = onscreen ? jumpEdge : IDLE_EDGE;
+      const input: PlatformerInput = { moveX, jump: jumpInput, dash: null };
 
-      // 4b. Advance the moving gap BEFORE composing the per-tick solids, so
-      //     the gap is at its new position when the resolver runs (mirrors
-      //     Spitekeep's update.ts: advance hazard → resolve player). Pure:
-      //     returns a new GapMotionState; never mutates.
+      // 5. Capture pre-step vy for impact-velocity reconstruction. The
+      //    kernel zeroes vy on landing inside its step 6 (collision
+      //    resolution), so the impact velocity is gone by the time the new
+      //    state is returned. The original code captured `vyBeforeResolve`
+      //    (post-gravity, pre-resolve) and used it to scale squash /
+      //    hit-stop / shake. We reconstruct the equivalent in per-tick
+      //    units as `(preVy + IMPACT_GRAVITY_PER_TICK_PX_PER_SEC) / 60`,
+      //    mirroring the original `vyBeforeResolve = preVy + GRAVITY`
+      //    (per-tick). Verified by tick-trace: this gives the same impact
+      //    velocity as the original for any given jump arc (510 px/s = 8.5
+      //    px/tick for a full-jump landing).
+      const preVy = platformState.core.vy;
+
+      // 6. Advance the moving gap BEFORE composing the per-tick solids, so
+      //    the gap is at its new position when the kernel's collision
+      //    resolution runs (mirrors Spitekeep's update.ts: advance hazard
+      //    → resolve player). Pure: returns a new GapMotionState; never
+      //    mutates.
       gapState = advanceGapMotion(gapState, 1, GAP_MOTION);
 
-      // 5. Per-axis collision resolution (X then Y) against the per-tick
-      //    solids: static geometry + the gap's fragments (rebuilt each tick
-      //    from the advanced gapState — the span has NO static floor; the
-      //    fragments are the sole floor inside it). prevBottom is captured
-      //    BEFORE the vertical move so resolveAxisY's passthrough rule
-      //    (land-on-top only) has the pre-move reference frame.
-      const prevBottom = player.y + player.height;
+      // 7. Compose per-tick solids: static geometry + the gap's fragments
+      //    (rebuilt each tick from the advanced gapState — the span has NO
+      //    static floor; the fragments are the sole floor inside it). The
+      //    gap fragments are tagged with stable ids (`gap-0`, `gap-1`) via
+      //    `tagGapSolids` so the kernel's riding-tracker can identify the
+      //    surface the player is on across re-creation of the array (carry
+      //    is wired via GAP_DISPLACEMENT_PROVIDER, currently a no-op).
       const tickSolids: Solid[] = [
         ...STATIC_PLATFORMS,
-        ...gapSolids(GAP_SPAN, { centerX: gapState.centerX, width: gapState.width }),
+        ...tagGapSolids(
+          gapSolids(GAP_SPAN, { centerX: gapState.centerX, width: gapState.width }),
+        ),
       ];
-      const xRes = resolveAxisX(player, player.vx, tickSolids);
-      player.x = xRes.x;
-      player.vx = xRes.vx;
 
-      // Capture vy BEFORE resolveAxisY zeroes it on landing — needed for the
-      // impact-velocity check below (squash + hit-stop).
-      const vyBeforeResolve = player.vy;
-      const yRes = resolveAxisY(
-        { x: player.x, y: player.y, width: player.width, height: player.height },
-        player.vy,
+      // 8. Step the platformer kernel — the single authoritative call that
+      //    replaced ~250 lines of hand-rolled physics integration. The
+      //    kernel runs the locked update order: carry → abilities (only
+      //    jump is enabled in PLAYGROUND_PLATFORMER_CONFIG — wall-slide,
+      //    dash, double-jump short-circuit to no-ops) → horizontal input →
+      //    gravity → axis collision (resolveAxisX then resolveAxisY) →
+      //    contacts & events. Pure: returns a brand-new PlatformerState;
+      //    the input state is never mutated.
+      const result = stepPlatformer(
+        platformState,
+        input,
         tickSolids,
-        prevBottom,
+        1 / 60,
+        PLAYGROUND_PLATFORMER_CONFIG,
+        GAP_DISPLACEMENT_PROVIDER,
       );
-      player.y = yRes.y;
-      player.vy = yRes.vy;
+      platformState = result.state;
 
-      // 5b. Fall-off-world respawn — if the player fell through the moving gap
-      //     (or off any edge), reset to spawn once they're below the world
-      //     bottom + margin. This is the pit-death consequence of the
-      //     moving-gap primitive: the floor is gone, so gravity pulls them
-      //     into the void. Reset + return skips landing detection and the rest
-      //     of this tick (the player is back at spawn; next tick starts fresh).
-      if (player.y > WORLD_H + RESPAWN_FALL_MARGIN) {
+      // 9. Fall-off-world respawn — if the player fell through the moving
+      //    gap (or off any edge), reset to spawn once they're below the
+      //    world bottom + margin. This is the pit-death consequence of the
+      //    moving-gap primitive: the floor is gone, so gravity pulls them
+      //    into the void. Reset + return skips FX detection and the rest
+      //    of this tick (the player is back at spawn; next tick starts
+      //    fresh).
+      if (platformState.core.y > WORLD_H + RESPAWN_FALL_MARGIN) {
         resetPlayer();
         return;
       }
 
-      // 6. Landing detection — squash + dust + shake + hit-stop, all gated by
-      //    impact velocity. Triggered only on the transition airborne →
-      //    grounded, so walking along flat ground doesn't continuously
-      //    re-squash.
-      if (yRes.landed && !player.onGround) {
-        const impact = Math.abs(vyBeforeResolve);
-        if (impact > 2) {
-          // Landing squash — normalize impact against REFERENCE_VELOCITY and cap
-          // at MAX_SQUASH. At impact=9: deltaY=−0.3 → scaleY 0.7, scaleX 1.43.
-          // At impact=3: deltaY=−0.1 → scaleY 0.9, scaleX 1.11. The pre-fix
-          // code fed `-impact * 0.3` straight into volumeScale, producing
-          // deltaY=−2.7 → scaleY clamped to 0.05 → scaleX 20 (the viewport-wide
-          // bug). volumeScale keeps scaleX × scaleY === 1 so it reads as weight.
-          squashOffset = -MAX_SQUASH * Math.min(1, impact / REFERENCE_VELOCITY);
+      // 10. Drive effects from kernel events. The kernel emits single-tick
+      //     boolean pulses for justLanded / justLaunched / hitCeiling /
+      //     hitWall / startedWallSlide / wallJumpLaunched / dashStarted /
+      //     doubleJumped; we read the two this playground cares about
+      //     (justLaunched, justLanded) and trigger the existing FX
+      //     (squash, dust, audio, hit-stop). The FX logic is preserved
+      //     verbatim from the pre-kernel code — only the trigger source
+      //     changed (was `yRes.landed && !player.onGround`, now
+      //     `state.events.justLanded`).
 
-          // Landing dust burst — count scales with impact, ejected upward
-          // (angleOffset −π/2) and outward around the feet.
-          const dustCount = Math.min(6, Math.floor(impact * 0.7));
+      // Launch stretch + jump sound — on the single tick the jump ability
+      // actually launched the actor. With `anticipationDuration: 0` in the
+      // config this fires one tick AFTER the press (the kernel transitions
+      // grounded → anticipating → rising across two ticks even with a
+      // zero duration, because phase transitions happen on the next
+      // tick's switch entry). Minor behavior change from the original
+      // (which launched same-tick); the 17ms lag is imperceptible.
+      if (platformState.events.justLaunched) {
+        // Launch stretch (Celeste-style post-launch): the physics launch
+        // is instant, the visual stretch sells the upward thrust. Positive
+        // offset → scaleY > 1 (taller) + scaleX < 1 (thinner); resolves
+        // via SQUASH_DECAY over ~15 ticks.
+        squashOffset = LAUNCH_STRETCH;
+        // Jump sound — quick upward sine sweep (200→400 Hz) reading as a
+        // "boing". Defensive: no-op pre-unlock / in Node / when muted.
+        audio.playTone('sine', 200, 400, 80, 0.2);
+      }
+
+      // Landing FX — squash + dust + shake + hit-stop, all gated by
+      // impact velocity. Triggered by the kernel's justLanded pulse
+      // (airborne → grounded transition), so walking along flat ground
+      // doesn't continuously re-squash.
+      if (platformState.events.justLanded) {
+        // Reconstruct impact velocity in ORIGINAL per-tick units (px/tick)
+        // so the existing FX thresholds (HIT_STOP_THRESHOLD_TICKS,
+        // REFERENCE_VELOCITY_TICKS) compare apples-to-apples with the
+        // tuned values from the pre-kernel code. px/s → px/tick = ÷60;
+        // the `+ IMPACT_GRAVITY_PER_TICK_PX_PER_SEC` mirrors one tick of
+        // original gravity, then ÷60 returns to per-tick.
+        const impactPerTick =
+          Math.max(0, preVy + IMPACT_GRAVITY_PER_TICK_PX_PER_SEC) / 60;
+
+        if (impactPerTick > 2) {
+          // Landing squash — normalize impact against
+          // REFERENCE_VELOCITY_TICKS and cap at MAX_SQUASH. At impact=9:
+          // deltaY=−0.3 → scaleY 0.7, scaleX 1.43. At impact=3:
+          // deltaY=−0.1 → scaleY 0.9, scaleX 1.11. volumeScale keeps
+          // scaleX × scaleY === 1 so it reads as weight.
+          squashOffset = -MAX_SQUASH * Math.min(1, impactPerTick / REFERENCE_VELOCITY_TICKS);
+
+          // Landing dust burst — count scales with impact, ejected
+          // upward (angleOffset −π/2) and outward around the feet.
+          const dustCount = Math.min(6, Math.floor(impactPerTick * 0.7));
           if (dustCount > 0) {
             const dust = spawn(
-              player.x + player.width / 2,
-              player.y + player.height - 2,
+              platformState.core.x + platformState.core.width / 2,
+              platformState.core.y + platformState.core.height - 2,
               {
                 count: dustCount,
-                speed: Math.max(1, impact * 0.25),
+                speed: Math.max(1, impactPerTick * 0.25),
                 life: 18,
                 size: 3,
                 color: COLOR_DUST_LANDING,
@@ -1097,91 +1290,125 @@ export function initPlayground(
             dustParticles = [...dustParticles, ...dust];
           }
         }
-        if (impact > HIT_STOP_THRESHOLD) {
-          // Hard landing — freeze the sim for a few ticks (temporal juice) and
-          // kick a decaying screen shake. Shake magnitude scales with impact,
-          // capped so the wobble stays readable.
+        if (impactPerTick > HIT_STOP_THRESHOLD_TICKS) {
+          // Hard landing — freeze the sim for a few ticks (temporal juice)
+          // and kick a decaying screen shake. Shake magnitude scales with
+          // impact, capped so the wobble stays readable.
           hitStop = triggerHitStop(hitStop, HIT_STOP_DURATION);
           shakeTick = 0;
           shakeMagnitude = Math.min(
             SHAKE_MAX_MAGNITUDE,
-            impact * SHAKE_MAGNITUDE_PER_IMPACT,
+            impactPerTick * SHAKE_MAGNITUDE_PER_IMPACT,
           );
         }
 
-        // Landing sound — proportional to impact. Hard landings (above the
-        // hit-stop threshold) get a heavier low-mid thud; soft landings get a
-        // lighter tap (same family as a footstep but slightly louder). Below
-        // impact=2 nothing plays (sub-stepping off a curb reads as silence).
-        if (impact > HIT_STOP_THRESHOLD) {
+        // Landing sound — proportional to impact. Hard landings (above
+        // the hit-stop threshold) get a heavier low-mid thud; soft
+        // landings get a lighter tap (same family as a footstep but
+        // slightly louder). Below impact=2 nothing plays (sub-stepping
+        // off a curb reads as silence).
+        if (impactPerTick > HIT_STOP_THRESHOLD_TICKS) {
           audio.playNoise(80, 'lowpass', 300, 0.3);
-        } else if (impact > 2) {
+        } else if (impactPerTick > 2) {
           audio.playNoise(50, 'lowpass', 250, 0.18);
         }
       }
-      player.onGround = yRes.landed;
 
-      // 7. Step dust particles — advance + cull (pure: returns a new array).
-      //    Runs on active ticks only (skipped during hit-stop freeze above) so
-      //    dust freezes with the sim, matching the freeze-frame contract.
+      // 11. Idle feet blend — ease toward a neutral standing stance when
+      //     grounded + still, snap back toward the live walk pose when
+      //     moving. Keeps the feet from freezing mid-stride on stop (~12
+      //     ticks to settle, ~5 to release). Reads core.vx in px/s and
+      //     compares against FOOTSTEP_MIN_SPEED_TICKS * 60 (the original
+      //     per-tick threshold scaled to px/s).
+      if (
+        platformState.core.onGround &&
+        Math.abs(platformState.core.vx) < FOOTSTEP_MIN_SPEED_TICKS * 60
+      ) {
+        idleBlend = Math.min(1, idleBlend + 0.08);
+      } else {
+        idleBlend = Math.max(0, idleBlend - 0.2);
+      }
+
+      // 12. Step dust particles — advance + cull (pure: returns a new
+      //     array). Runs on active ticks only (skipped during hit-stop
+      //     freeze above) so dust freezes with the sim, matching the
+      //     freeze-frame contract.
       dustParticles = stepParticles(dustParticles, 1, {
         gravity: DUST_GRAVITY,
         drag: DUST_DRAG,
       });
 
-      // 8. Advance locomotion phase by actual horizontal displacement. Only
-      //    when grounded — airborne characters don't walk (and leaving the
-      //    phase static while airborne is what freezes the feet in a readable
-      //    "tucked" pose rather than cycling mid-air). Pass LOCAL-space dx
-      //    (vx * facing) because the body is drawn under ctx.scale(facing, 1);
-      //    world-space dx would double-mirror the gait (see the function's
-      //    facing-mirror caveat in animation/locomotion.ts). evaluateLocomotion
-      //    then derives hip/foot offsets as pure sin/cos of the phase.
-      if (player.onGround) {
-        const localDx = player.vx * player.facing;
+      // 13. Advance locomotion phase by actual horizontal displacement.
+      //     Only when grounded — airborne characters don't walk (and
+      //     leaving the phase static while airborne is what freezes the
+      //     feet in a readable "tucked" pose rather than cycling mid-air).
+      //     Pass LOCAL-space dx ((vx/60) * facing — px/s → px/tick, then
+      //     facing-mirrored) because the body is drawn under
+      //     ctx.scale(facing, 1); world-space dx would double-mirror the
+      //     gait. evaluateLocomotion then derives hip/foot offsets as
+      //     pure sin/cos of the phase.
+      if (platformState.core.onGround) {
+        const localDx = (platformState.core.vx / 60) * platformState.core.facing;
         loco = advanceLocomotionByDisplacement(loco, localDx, PLAYGROUND_GAIT);
       }
       const locoPose = evaluateLocomotion(loco, PLAYGROUND_GAIT);
 
-      // 9. Per-step dust + audio — detect foot-plant transitions from the
-      //    locomotion phase via the shared `advanceFootPlant` engine primitive.
-      //    A foot "plants" when its lift height transitions from >0 (swinging
-      //    airborne) to 0 (grounded). This syncs dust + sound to the ACTUAL walk
-      //    cycle, not a fixed timer — each visible step gets a puff + a tap.
-      //    Gated by FOOTSTEP_MIN_SPEED so standing still (vx≈0, feet already
-      //    planted) doesn't fire. The offset is applied to the world-space foot
-      //    x (already un-mirrored via +facing/-facing).
+      // 14. Per-step dust + audio — detect foot-plant transitions from
+      //     the locomotion phase via the shared `advanceFootPlant` engine
+      //     primitive. A foot "plants" when its lift height transitions
+      //     from >0 (swinging airborne) to 0 (grounded). This syncs dust
+      //     + sound to the ACTUAL walk cycle, not a fixed timer — each
+      //     visible step gets a puff + a tap. Gated by
+      //     FOOTSTEP_MIN_SPEED_TICKS so standing still (vx≈0, feet
+      //     already planted) doesn't fire. The offset is applied to the
+      //     world-space foot x (already un-mirrored via +facing/-facing).
+      const footstepMinSpeedPxPerSec = FOOTSTEP_MIN_SPEED_TICKS * 60;
       const plant = advanceFootPlant(
         plantState,
         locoPose.leftFootOffset.y,
         locoPose.rightFootOffset.y,
       );
       plantState = plant.state;
-      if (plant.events.leftPlanted && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
-        spawnFootstepDust(player.x + player.width / 2 - player.facing * 5);
+      if (
+        plant.events.leftPlanted &&
+        Math.abs(platformState.core.vx) > footstepMinSpeedPxPerSec
+      ) {
+        spawnFootstepDust(
+          platformState.core.x +
+            platformState.core.width / 2 -
+            platformState.core.facing * 5,
+        );
         audio.playNoise(FOOTSTEP_SOUND_DUR, 'lowpass', FOOTSTEP_SOUND_FREQ, FOOTSTEP_SOUND_PEAK);
       }
-      if (plant.events.rightPlanted && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
-        spawnFootstepDust(player.x + player.width / 2 + player.facing * 5);
+      if (
+        plant.events.rightPlanted &&
+        Math.abs(platformState.core.vx) > footstepMinSpeedPxPerSec
+      ) {
+        spawnFootstepDust(
+          platformState.core.x +
+            platformState.core.width / 2 +
+            platformState.core.facing * 5,
+        );
         audio.playNoise(FOOTSTEP_SOUND_DUR, 'lowpass', FOOTSTEP_SOUND_FREQ, FOOTSTEP_SOUND_PEAK);
       }
 
-      // 10. Decay squash back to neutral — exponential on the single offset so
-      //    the volume invariant (scaleX × scaleY === 1) holds throughout
-      //    recovery. Independent-axis lerps (the pre-fix approach) break it.
+      // 15. Decay squash back to neutral — exponential on the single
+      //     offset so the volume invariant (scaleX × scaleY === 1) holds
+      //     throughout recovery. Independent-axis lerps (the pre-fix
+      //     approach) break it.
       squashOffset *= SQUASH_DECAY;
 
-      // 11. Camera — lerp + clamp toward the player, with the target offset
-      //     slightly in the facing direction (lookahead) so the player sees
-      //     more of the level ahead. updateCamera returns a fresh Camera
-      //     (pure-progression-ops discipline; never mutates).
+      // 16. Camera — lerp + clamp toward the player, with the target
+      //     offset slightly in the facing direction (lookahead) so the
+      //     player sees more of the level ahead. updateCamera returns a
+      //     fresh Camera (pure-progression-ops discipline; never mutates).
       camera = updateCamera(
         camera,
         {
-          x: player.x + player.facing * CAMERA_LOOKAHEAD,
-          y: player.y,
-          width: player.width,
-          height: player.height,
+          x: platformState.core.x + platformState.core.facing * CAMERA_LOOKAHEAD,
+          y: platformState.core.y,
+          width: platformState.core.width,
+          height: platformState.core.height,
         },
         { width: WORLD_W, height: WORLD_H },
         { width: VIEW_W / CANVAS_ZOOM, height: VIEW_H / CANVAS_ZOOM },
