@@ -1,6 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { outlineRect, DEFAULT_OUTLINE_COLOR } from '../primitives/outline-rect';
+// Also import OutlineCoverage from the primitives barrel — pins the
+// public re-export and protects against barrel drift.
+import { type OutlineCoverage } from '../primitives';
 import { createMockCtx } from './_helpers';
+
+describe('OutlineCoverage (barrel export)', () => {
+  it('is importable from the primitives barrel', () => {
+    // Compile-time contract: the type alias resolves to the expected union.
+    // If `OutlineCoverage` is ever dropped from `src/primitives/index.ts`,
+    // `tsc --noEmit` fails at the import above; this assertion documents
+    // the intent at runtime.
+    const coverage: OutlineCoverage = 'floor';
+    expect(coverage).toBe('floor');
+  });
+});
 
 describe('outlineRect', () => {
   it('floors coordinates to integers', () => {

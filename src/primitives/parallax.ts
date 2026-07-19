@@ -159,7 +159,7 @@ export interface TiledParallaxRange {
  * @example
  * ```ts
  * // 4-layer side-scroller — one range per layer, one loop per layer
- * import { tiledParallaxRange, PARALLAX_FAR, PARALLAX_MID, PARALLAX_NEAR } from 'aicraft-engine/src/primitives';
+ * import { tiledParallaxRange, PARALLAX_FAR, PARALLAX_MID, PARALLAX_NEAR } from './lib/aicraft-engine/src/primitives';
  *
  * const layers = [
  *   { factor: 0.15, tileWidth: 512, draw: drawSkyFog },
@@ -254,7 +254,7 @@ export function tiledParallaxRange(
  * @example
  * ```ts
  * // 4-layer side-scroller — one wrapper call per layer
- * import { drawTiledParallax } from 'aicraft-engine/src/primitives';
+ * import { drawTiledParallax } from './lib/aicraft-engine/src/primitives';
  *
  * function renderBackground(ctx, cameraX, viewportWidth, viewportHeight) {
  *   drawTiledParallax(ctx, (c, x) => { c.fillStyle = '#1a1028'; c.fillRect(x, 0, 512, viewportHeight); }, cameraX, 0.15, 512, viewportWidth);

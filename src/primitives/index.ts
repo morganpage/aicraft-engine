@@ -1,4 +1,4 @@
-export { outlineRect, DEFAULT_OUTLINE_COLOR } from './outline-rect';
+export { outlineRect, DEFAULT_OUTLINE_COLOR, type OutlineCoverage } from './outline-rect';
 export {
   parseHex,
   toHex,

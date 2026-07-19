@@ -25,7 +25,9 @@ npm install -D vite
   ```ts
   import {
     createGameLoop, createKeyboardAdapter, createTouchButtonSet, orEdges,
-    resolveAxisX, resolveAxisY, aabbOverlap, solidTilesFromGrid,
+    resolveAxisX, resolveAxisY, aabbOverlap,
+    resolveTileX, resolveTileY, worldToTile, tileToWorld, tileRect,
+    type TileSolidityQuery,
     createCamera, updateCamera,
     createHitStop, triggerHitStop, stepHitStop, isHitStopActive,
     volumeScale, breathe, DEFAULT_BREATH,
@@ -63,7 +65,7 @@ npm install -D vite
 |---|---|
 | Game loop (60 Hz fixed) | `createGameLoop` |
 | Keyboard + touch input, edge merging | `createKeyboardAdapter`, `createTouchButtonSet`, `orEdges` |
-| Player/tile/world collision | `resolveAxisX`, `resolveAxisY`, `solidTilesFromGrid`, `aabbOverlap` |
+| Player/tile/world collision | `resolveAxisX`, `resolveAxisY`, `aabbOverlap`, `resolveTileX`, `resolveTileY`, `worldToTile`, `tileToWorld`, `tileRect`, `TileSolidityQuery` |
 | Follow camera with clamp + lookahead | `createCamera`, `updateCamera` |
 | Hit-stop freeze on heavy impacts | `createHitStop`, `triggerHitStop`, `stepHitStop`, `isHitStopActive` |
 | Player squash/stretch + idle breathing | `volumeScale`, `breathe`, `DEFAULT_BREATH` |
@@ -152,7 +154,45 @@ Each enemy: own hitbox (`aabbOverlap` vs player), own death = particle burst (`s
 
 ## 8. World & level generation
 
-- **Tile grid.** Solid/empty tiles. Collision via `solidTilesFromGrid` + `resolveTileX`/`resolveTileY` (or the `resolveAxisX`/`resolveAxisY` solids API — pick one and be consistent).
+- **Tile grid.** Solid/empty tiles. Build a `TileSolidityQuery` from your grid, then drive a per-axis move-and-resolve loop with `resolveTileX` / `resolveTileY`:
+
+  ```ts
+  // 1 = solid, 0 = empty. Y-major 2D array (grid[y][x]).
+  const grid: number[][] = [
+    [1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 1],
+    [1, 0, 1, 0, 1],
+    [1, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1],
+  ];
+  const TILE_SIZE = 16;
+
+  // Wrap the grid behind the engine's uniform tile-query interface.
+  // Out-of-bounds tiles read as 'empty' here; use 'solid' instead if you
+  // want level boundaries to act as walls.
+  const tileQuery: TileSolidityQuery = (tileX, tileY) => {
+    if (tileY < 0 || tileY >= grid.length || tileX < 0 || tileX >= grid[0].length) {
+      return 'empty';
+    }
+    return grid[tileY][tileX] === 1 ? 'solid' : 'empty';
+  };
+
+  // Per-axis move-and-resolve in the fixed `step` (player.x/y are the
+  // authoritative body position; vx/vy are per-tick velocity):
+  const prevBottom = player.y + player.height;
+  const xRes = resolveTileX(player, player.vx, tileQuery, TILE_SIZE);
+  player.x = xRes.x;
+  player.vx = xRes.vx;
+  if (xRes.hitWall) player.onWallHit();
+
+  const yRes = resolveTileY(player, player.vy, tileQuery, TILE_SIZE, prevBottom);
+  player.y = yRes.y;
+  player.vy = yRes.vy;
+  if (yRes.landed) player.onLand();
+  if (yRes.hitCeiling) player.onCeilingHit();
+  ```
+
+  Use `worldToTile` / `tileToWorld` / `tileRect` when you need to convert between world and tile coordinates (ray probes, debug overlay, spawn placement). One-way platforms are `'passthrough'` tiles — they only block downward movement and only when the body was above the tile last tick (`prevBottom` drives the rule inside `resolveTileY`).
 - **Procedural rooms** seeded per-level: `const rng = mulberry32(levelSeed)`. Place platforms, gaps, hazards, enemy spawns, coins, and the exit door using `nextInt`/`nextFloat`/`pick`. Same seed → same level forever (replay-perfect).
 - **Parallax background:** 3 layers via `drawTiledParallax` at depth factors 0.15 / 0.4 / 0.75, each a procedurally-drawn tile (no art) — distant silhouettes, mid ruins, foreground debris. Palette from `generatePalette(levelSeed)` so each level has a cohesive hue.
 - **Coins:** `outlineRect` diamonds in `palette.feature` with a `drawGlow`; on collect, a `spawn` sparkle burst + `audio.playTone` ping.

@@ -10,8 +10,6 @@ export interface SpawnOptions {
    * When `> 0`, an `rng` function must be provided.
    */
   speedJitter?: number;
-  /** Per-tick downward acceleration. Default `0`. */
-  gravity?: number;
   /** Initial life in ticks. */
   life: number;
   /** Render size (pixel radius or width — renderer-defined). */

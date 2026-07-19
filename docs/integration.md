@@ -44,19 +44,48 @@ This option is fine for **external consumers** (Premium AI Craft customers build
 
 ### Palette as a consumer of the engine
 
-The consumer's `palette.ts` should switch from a flat `as const` object to a factory that consumes the engine's palette-substitution layer (Phase 2):
+The consumer's `palette.ts` should switch from a flat `as const` object to a factory that consumes the engine's palette-resolution layer (Phase 2). The real engine APIs are `resolvePalette` (merge a base palette with overrides) and `generatePalette` (deterministic harmonic palette from a seed):
 
 ```ts
 // Before (Spitekeep-style)
 export const PALETTE = { devilBody: '#FE5701', ... } as const;
 
 // After (engine-integrated)
-import { createPalette } from './lib/aicraft-engine/src/palette';
-const BASE_PALETTE = { devilBody: '#FE5701', ... };
+import {
+  resolvePalette,
+  generatePalette,
+  type Palette,
+} from './lib/aicraft-engine/src/palette';
+
+// The engine's Palette is the canonical 5-slot contract:
+// { outline, base, accent, feature, background }. Consumers stop using
+// bespoke slot names (devilBody, ...) and map draw callbacks onto these slots.
+const BASE_PALETTE: Palette = {
+  outline: '#1d1128',
+  base: '#FE5701',
+  accent: '#8B0000',
+  feature: '#FFD700',
+  background: '#2a0a0a',
+};
+
+// Per-skin overrides: partial — missing slots inherit from BASE_PALETTE.
+const SKIN_OVERRIDES: Record<string, Partial<Palette>> = {
+  'ember-mage': { base: '#ff6a00', feature: '#ffeb3b' },
+  'frost-mage': { base: '#2a7ad4', accent: '#a0d8ff' },
+};
+
 export function getPalette(activeSkinId: string | null): Palette {
-  return createPalette(BASE_PALETTE, activeSkinId);
+  if (!activeSkinId || !(activeSkinId in SKIN_OVERRIDES)) return BASE_PALETTE;
+  return resolvePalette(BASE_PALETTE, SKIN_OVERRIDES[activeSkinId]);
+}
+
+// Procedural variant: same seed → same palette, forever. Contrast-repaired.
+export function getPaletteForSeed(seed: number): Palette {
+  return generatePalette(seed);
 }
 ```
+
+The simulation never reads color values — `Palette` lives in the deterministic core and is only resolved into hex strings for the renderer at draw time.
 
 ### Save schema extension
 
