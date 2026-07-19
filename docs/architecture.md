@@ -62,15 +62,23 @@ function grantEntitlement(save: SaveData, sku: string): SaveData {
 ```
 src/
 ├── index.ts              # Barrel export
-├── primitives/           # Pillar 1 — rendering helpers
+├── primitives/           # Pillar 1 — rendering helpers (outline, color, motion, glow, parallax)
 ├── rng/                  # Pillar 1 — seeded determinism
 ├── particles/            # Pillar 1 — deterministic FX
-├── animation/            # Pillar 1b — skeletal rig, IK, procedural locomotion, springs
+├── animation/            # Pillar 1 — skeletal rig, IK, procedural locomotion, springs
+├── collision/            # Pillar 1 — AABB, tile-grid, moving-gap platforms
+├── camera/               # Pillar 1 — follow camera (lerp, clamp, snap)
+├── input/                # Pillar 1 — edge accumulator, keyboard/touch adapters
+├── game-loop/            # Pillar 1 — fixed-step accumulator, defensive RAF adapter
+├── audio/                # Pillar 1 — WebAudio synthesized SFX adapter
+├── save/                 # Pillar 1 — defensive localStorage/memory save backends
+├── blend/                # Pillar 1 — pose interpolation (blendPose/blendPoses)
 ├── palette/              # Pillar 2 — skin palette substitution
 ├── cosmetics/            # Pillar 2 — algorithmic skins
 ├── iap/                  # Pillar 3 — IAP bridge + adapters
-├── fake3d/               # Pillar 4 — Sokpop-inspired 3D-in-2D
 └── tests/                # *.test.ts, mirrors Spitekeep's patterns
 ```
+
+_Planned: `fake3d/` (Pillar 4 — Sokpop-inspired billboarding/isometric/cube), `editor/` (Pillar 4 — headless level-editor core)._
 
 Each module ships with its own `index.ts` barrel and a colocated test file.

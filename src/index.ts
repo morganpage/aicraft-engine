@@ -19,3 +19,6 @@ export * from './game-loop';
 export * from './audio';
 export * from './save';
 export * from './blend';
+export * from './platformer';
+export * from './level';
+export * from './editor';

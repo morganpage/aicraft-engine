@@ -19,10 +19,10 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 
 | Pillar | Modules | Status |
 |---|---|---|
-| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | Phase 1 |
-| **1. RNG** | Seeded mulberry32, distribution helpers | Phase 1 |
-| **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | Phase 1 |
-| **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | Phase 1b |
+| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | **Shipped** |
+| **1. RNG** | Seeded mulberry32, distribution helpers | **Shipped** |
+| **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | **Shipped** |
+| **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | **Shipped** |
 | **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms (`gapSolids`, `advanceGapMotion`, `gapTileQuery`) | **Shipped** |
 | **1. Camera** | Follow camera (lerp, clamp, snap-to-target) | **Shipped** |
 | **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, multi-touch button set, OR-merge | **Shipped** |
@@ -30,8 +30,11 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Audio** | WebAudio synthesized SFX adapter (oscillator tones, filtered noise), defensive lazy-unlock, mute/volume | **Shipped** |
 | **1. Save** | Defensive localStorage/memory backends, JSON load/write helpers (`SaveStorage`, `loadSave`, `writeSave`) | **Shipped** |
 | **1. Blend** | Pose-interpolation primitives (`Pose2D`, `blendPose`, `blendPoses`) — independent of animation pillar | **Shipped** |
+| **1. Platformer kernel** | Composable character controller + ability pipeline (jump, wall-slide + wall-jump, dash, double-jump), moving-platform carry, stable contact identity, deterministic tick. `stepPlatformer`, `createPlatformerController`, `defaultPrecisionPipeline`, `DEFAULT_PLATFORMER_CONFIG` | **Shipped** |
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |
 | **2. Cosmetics** | Versioned manifest, seeded variant generation, multi-slot ownership | **Shipped** |
+| **2. Level schema** | Versioned platformer level format with discriminated-union entity taxonomy (spawn/exit/platform/trap/hazard/trigger/movingPlatform), forward-ladder migration, defensive validation, `TileSolidityQuery` bridge, canonical JSON + FNV-1a hashing. `validateLevel`, `migrateLevel`, `createTileQuery` | **Shipped** |
+| **2. Editor core** | Headless level-editor operations: serializable ops + snapshot undo/redo, transactions, multi-select, grid + edge snapping, in-memory clipboard, sandbox playtest boundary, prefab catalog. `applyOp`, `undo`, `beginTransaction`, `selectInRect`, `snapToEdges`, `enterPlaytest`, `DEFAULT_CATALOG` | **Shipped** |
 | **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (Poki/Jest/StoreKit/Play Billing deferred to Phase 5) | **Shipped** |
 | **4. Fake-3D** | Billboarding, isometric tiles, orthographic cube, heightmap | Phase 4 |
 | **5. Platform adapters** | Jest SDK, Poki SDK | Phase 5 (on-demand) |
@@ -140,7 +143,7 @@ This library is a sibling of [Spitekeep](../ai-craft-game-dev-devil/) (now renam
 ## Development
 
 ```bash
-npm install        # devDependencies only (typescript, vite, vitest)
+npm install        # devDependencies only (typescript, vite, vitest, canvas for headless benchmark rendering)
 npm test           # vitest run
 npm run test:watch # vitest watch mode
 npm run build      # tsc --noEmit (typecheck gate)
@@ -189,7 +192,7 @@ See `prompts/team.md` for the full orchestrator instructions.
 
 ## License
 
-TBD (deferred pending scope decision — internal vs open-source vs Premium AI Craft asset).
+MIT — see [LICENSE](./LICENSE).
 
 ---
 

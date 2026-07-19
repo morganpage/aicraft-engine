@@ -18,6 +18,7 @@ Color math, pixel helpers, motion probe. (The animation helpers — `bob`, `puls
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `outlineRect(ctx, x, y, w, h, fill, outline?, coverage?)` | function | Flat-fill rect with 1px dark outline; `coverage` controls pixel-grid snapping: `'floor'` (default, snaps down) or `'ceil'` (snaps up) | `src/primitives/outline-rect.ts` |
+| `OutlineCoverage` | type | `'floor' \| 'ceil'` — fill-extent policy for `outlineRect` (`'floor'` truncates to `floor(w/h)`; `'ceil'` covers the full geometric bounds for fractional-position rects) | `src/primitives/outline-rect.ts` |
 | `DEFAULT_OUTLINE_COLOR` | const | `'#1d1128'` — Spitekeep's near-black outline | `src/primitives/outline-rect.ts` |
 | `parseHex(hex)` | function | `#rrggbb` → `{r, g, b}` record; throws on invalid input | `src/primitives/color.ts` |
 | `toHex({r, g, b})` | function | `{r, g, b}` → `#rrggbb`; channels rounded and clamped | `src/primitives/color.ts` |
@@ -378,6 +379,18 @@ Apex-parameterized jump trajectory, state machine (coyote time, jump buffering, 
 - _landing squash uses an internal 1D spring-damper (`landingSquashStiffness`, `landingSquashDamping`); not exported_
 - _the library does NOT clamp `y` on landing — the consumer snaps the rendered position to the ground via its own collision resolution_
 
+### `src/animation/simple-feet.ts`
+
+Lightweight two-rectangle feet renderer driven by a `LocomotionPose`. The drop-in alternative to the full IK rig (`drawRig` + `solveLimb`): characters that only need two body-colored foot rects bobbing via `evaluateLocomotion`'s sin/cos output use `drawSimpleFeet`. No IK, no joints — the foot-lock is emergent (displacement-driven phase integration freezes phase when the character stops, planting the feet). Ported from Spitekeep's `render/devil-sprite.ts:1436-1469`.
+
+⚠ **Facing-mirror requirement:** the foot offsets in `pose` are LOCAL-space. The caller MUST wrap the body+feet draw in `ctx.scale(facing, 1)` around the body's vertical axis or the character moonwalks.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SimpleFeetConfig` | type | Foot rendering config: `footW`, `footH`, `idleSpread`, `baseY`, `color`, optional `outline`. All `readonly` — no magic numbers in the renderer | `src/animation/simple-feet.ts` |
+| `DEFAULT_SIMPLE_FEET` | const | Default `SimpleFeetConfig` matching Spitekeep's devil character (footW 7, footH 5, idleSpread 5.5, baseY 14, color `#FE5701`, outline `#1d1128`). Spread and override `color`/`outline` with your palette | `src/animation/simple-feet.ts` |
+| `drawSimpleFeet(ctx, pose, config)` | function | Draw two static foot rectangles positioned by a `LocomotionPose`. Uses `outlineRect` when `config.outline` is provided (1px outline, pixel-snapped), otherwise bare `fillRect`. Positions rounded to integers via `Math.round`. Caller owns transform/state | `src/animation/simple-feet.ts` |
+
 ### `src/animation/oscillators.ts` (migrated from `src/primitives/animation.ts`)
 
 General-purpose deterministic oscillators. Migrated cleanly out of `src/primitives/animation.ts` (that file is deleted; `src/primitives/index.ts` drops these exports). **No back-compat re-export shim** — the library has no consumers yet.
@@ -410,7 +423,7 @@ AABB overlap test, per-axis move-and-resolve against static solids, and tile-gri
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `Rect` | type | `{x, y, width, height}` — axis-aligned bounding box (world-space, top-left origin) | `src/collision/types.ts` |
-| `Solid` | type | Extends `Rect` with optional `passthrough?: boolean` — one-way platform flag (default `false` = fully solid) | `src/collision/types.ts` |
+| `Solid` | type | Extends `Rect` with optional `passthrough?: boolean` (one-way platform) and optional `id?: string` (stable contact identity used by the platformer kernel's `Contacts` record). Existing collision code ignores `id` — non-breaking addition | `src/collision/types.ts` |
 | `ResolveXResult` | type | `{x, vx, hitWall}` — resolved horizontal position + adjusted velocity + wall-hit flag | `src/collision/types.ts` |
 | `ResolveYResult` | type | `{y, vy, landed, hitCeiling}` — resolved vertical position + adjusted velocity + ground/ceiling flags | `src/collision/types.ts` |
 | `TileType` | type | `'empty' \| 'solid' \| 'passthrough'` — tile solidity classification | `src/collision/types.ts` |
@@ -462,6 +475,7 @@ Moving-gap platform: a traveling absence of floor. Splits a span into 0–2 `Sol
 | `GapMotionConfig` | type | Motion params: `travelMode`, `speed`, `gapWidth`, `path?`, `loopMode?`, `giveUpRadius?`, `minWidth?`, `maxWidth?`, `expandTicks?`, `initialCenterX?`. Mode-specific fields optional with documented defaults; `path` defaults to `[]`, `loopMode` defaults to `'loop'` | `src/collision/moving-gap.ts` |
 | `GapMotionState` | type | Motion state: `centerX`, `width`, `dist`, `dir`, `expandElapsed` | `src/collision/moving-gap.ts` |
 | `gapSolids(span, gap)` | function | **Invariant anchor.** Pure geometry: split span into 0–2 `Solid` fragments around a clamped gap. Four-guard clamp algorithm (NaN→throw, ≤0→full span, ≥span→void, else→clamp). Throws on NaN inputs | `src/collision/moving-gap.ts` |
+| `createGapMotion(config)` | function | Pure: initialize `GapMotionState` from a `GapMotionConfig`. Per-mode `centerX` default (sweep→`path[0].x`, chase/expand→`0`); override via `initialCenterX`. `width` is `gapWidth` (sweep/chase) or `minWidth` (expand). Never throws | `src/collision/moving-gap.ts` |
 | `advanceGapMotion(state, dt, config, targetX?)` | function | Pure motion: advance gap state by one tick. Returns new `GapMotionState`. May produce unclamped `centerX`; `gapSolids` clamps before fragment generation | `src/collision/moving-gap.ts` |
 | `gapTileQuery(base, span, gap, tileSize)` | function | Pure: wrap a `TileSolidityQuery` to report `'empty'` for tiles inside the clamped gap. Single-row v1: only tiles overlapping the span's Y range are affected. Uses strict AABB overlap (not left-edge test) for tile membership. Clamped gap bounds computed once at wrap time, O(1) per tile | `src/collision/moving-gap.ts` |
 | `DEFAULT_GAP_WIDTH` | const | `64` — default gap width in pixels (GDD §6.13) | `src/collision/moving-gap.ts` |
@@ -579,6 +593,99 @@ Fixed-step game loop — the connective tissue that ties input → simulation �
 |---|---|---|---|
 | `GameLoopConfig` | type | `{fixedDt?, maxFrameDelta?, step, render}` — loop config; `step` receives `fixedDt` each call, `render` receives interpolation alpha | `src/game-loop/types.ts` |
 | `GameLoop` | interface | `{start(), stop(), isRunning(), dispose()}` — running loop handle; all methods idempotent and never-throw | `src/game-loop/types.ts` |
+
+### `src/platformer/`
+
+> Decision: `docs/design/platformer-kernel-decision.md`.
+> Proposal: `docs/design/platformer-kernel-proposal.md` (Approach B: Composable Ability Processors).
+> Research: `docs/research/platformer-kernel.md`.
+
+Deterministic 2D platformer simulation kernel. Composes existing primitives (`advanceJump`, `resolveAxisX`/`resolveAxisY`, edge accumulators) into a single authoritative step function with composable ability processors. Single-actor v1; multi-actor deferred. Supports precision platformer conformance suite: coyote time, jump buffering, variable height, wall slide/jump, dash, double-jump, moving-platform push-and-carry.
+
+#### `src/platformer/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Contacts` | type | Contact identity: `groundId`, `leftWallId`, `rightWallId`, `ceilingId` (all `string \| null`). Populated from `Solid.id` via collision resolution | `src/platformer/types.ts` |
+| `PlatformerEvents` | type | Per-tick events: `justLanded`, `justLaunched`, `hitCeiling`, `hitWall`, `startedWallSlide`, `wallJumpLaunched`, `dashStarted`, `doubleJumped` (all `boolean`) | `src/platformer/types.ts` |
+| `PlatformerInput` | type | Per-tick input: `moveX` (-1/0/+1), `jump` (PolledEdge), `dash` (PolledEdge \| null) | `src/platformer/types.ts` |
+| `ActorCore` | type | Core physics state: `x`, `y`, `width`, `height`, `vx`, `vy`, `facing`, `onGround`, `contacts`. Strictly readonly per tick | `src/platformer/types.ts` |
+| `AbilityState` | interface | Base ability state: `kind` discriminator | `src/platformer/types.ts` |
+| `AbilityContext` | type | Read-only tick context passed to abilities: `core`, `input`, `dt`, `config` | `src/platformer/types.ts` |
+| `AbilityResult<T>` | type | Per-ability return: `core` (shallow-copied), `state`, `events` (partial) | `src/platformer/types.ts` |
+| `AbilityProcessor<T>` | interface | Ability processor: `kind` + `advance(ctx, state) → AbilityResult<T>`. Pure, never throws | `src/platformer/types.ts` |
+| `PlatformerState` | type | Full character state: `core`, `abilities` (Record by kind), `events`, `tick` | `src/platformer/types.ts` |
+| `PlatformerConfig` | type | All tunable knobs: gravity, maxFallSpeed, moveSpeed, airControl, jump, wallSlide*, dash*, doubleJump* | `src/platformer/types.ts` |
+| `MoveInput` | type | Convenience pair: `left` + `right` PolledEdge for building `PlatformerInput.moveX` | `src/platformer/types.ts` |
+| `JumpAbilityState` | type | Jump ability state: `kind: 'jump'`, wraps `JumpState` from `src/animation/jump` | `src/platformer/types.ts` |
+| `WallSlideAbilityState` | type | Wall-slide state: `kind: 'wallSlide'`, `sliding`, `side`, `lockTimer` | `src/platformer/types.ts` |
+| `DashAbilityState` | type | Dash state: `kind: 'dash'`, `timer`, `cooldown`, `dashesRemaining`, `dirX`, `dirY` | `src/platformer/types.ts` |
+| `DoubleJumpAbilityState` | type | Double-jump state: `kind: 'doubleJump'`, `jumpsRemaining` | `src/platformer/types.ts` |
+| `AnyAbilityState` | type | Discriminated union of all shipped ability states | `src/platformer/types.ts` |
+
+#### `src/platformer/constants.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_PLATFORMER_CONFIG` | const | Default config matching Sokpop-style precision platformer feel (gravity 980, moveSpeed 200, etc.) | `src/platformer/constants.ts` |
+| `DEFAULT_PLAYER_WIDTH` | const | `16` — default player body width in world units | `src/platformer/constants.ts` |
+| `DEFAULT_PLAYER_HEIGHT` | const | `24` — default player body height in world units | `src/platformer/constants.ts` |
+| `EMPTY_CONTACTS` | const | All-null `Contacts` — initial state for a freshly created actor | `src/platformer/constants.ts` |
+| `EMPTY_EVENTS` | const | All-false `PlatformerEvents` — starting point for per-tick event accumulation | `src/platformer/constants.ts` |
+
+#### `src/platformer/riding-tracker.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SolidDisplacement` | type | `{dx, dy}` — per-tick displacement of a moving solid in world units | `src/platformer/riding-tracker.ts` |
+| `SolidDisplacementProvider` | type | `(solidId: string) => SolidDisplacement \| null` — consumer-provided callback for moving-platform carry | `src/platformer/riding-tracker.ts` |
+| `RidingTracker` | type | `{applyCarry(core, getDisplacement)}` — applies riding solid's displacement to actor before abilities | `src/platformer/riding-tracker.ts` |
+| `createRidingTracker()` | function | Pure factory: fresh tracker reading `core.contacts.groundId` for carry. Returns input core unchanged (by reference) when no carry applies | `src/platformer/riding-tracker.ts` |
+
+#### `src/platformer/kernel.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `PlatformerController` | type | Stateless step function bound to a pipeline + config: `step(state, input, solids, dt) → {state}` | `src/platformer/kernel.ts` |
+| `PlatformerControllerOptions` | type | `{getSolidDisplacement?}` — optional moving-platform carry provider | `src/platformer/kernel.ts` |
+| `createPlatformerState(x, y, config?, width?, height?)` | function | Factory: grounded at-rest `PlatformerState` with all ability initial states. Pure, never throws | `src/platformer/kernel.ts` |
+| `createPlatformerController(pipeline, config, options?)` | function | Stateless controller bound to a fixed ability pipeline + config. Multiple characters can share one controller | `src/platformer/kernel.ts` |
+| `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` | function | Convenience: builds a default-precision controller and steps once. For hot loops, prefer `createPlatformerController` (avoids per-tick closure allocation) | `src/platformer/kernel.ts` |
+
+#### `src/platformer/pipelines.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `defaultPrecisionPipeline()` | function | Returns `[jumpAbility, wallSlideAbility, dashAbility, doubleJumpAbility]` — fresh array each call, safe to extend via spread | `src/platformer/pipelines.ts` |
+
+#### `src/platformer/abilities/jump-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `jumpAbility` | const | Jump ability processor (`kind: 'jump'`). Wraps `advanceJump` from `src/animation/jump`; emits `justLaunched` on launch tick | `src/platformer/abilities/jump-ability.ts` |
+
+#### `src/platformer/abilities/wall-slide-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `wallSlideAbility` | const | Wall-slide + wall-jump processor (`kind: 'wallSlide'`). Clamps `vy` to `wallSlideSpeed`, launches on `jump.pressed`, emits `startedWallSlide` / `wallJumpLaunched` | `src/platformer/abilities/wall-slide-ability.ts` |
+
+#### `src/platformer/abilities/dash-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `dashAbility` | const | Directional dash processor (`kind: 'dash'`). Overrides velocity for `dashDuration`, cooldown-gated, budget refills on land. Emits `dashStarted` | `src/platformer/abilities/dash-ability.ts` |
+
+#### `src/platformer/abilities/double-jump-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `doubleJumpAbility` | const | Double-jump processor (`kind: 'doubleJump'`). Second airborne impulse using jump launch velocity; budget refills on land. Emits `doubleJumped` | `src/platformer/abilities/double-jump-ability.ts` |
+
+- _decision: `docs/design/platformer-kernel-decision.md`_
+- _proposal: `docs/design/platformer-kernel-proposal.md`_
+- _research: `docs/research/platformer-kernel.md`_
+- _composes with: `src/animation/jump.ts` (`advanceJump`), `src/collision/resolve.ts` (`resolveAxisX`/`resolveAxisY`), `src/input/edges.ts` (`pollEdge`)_
 
 ### `src/save/`
 
@@ -834,7 +941,197 @@ localStorage-backed adapter for local dev. Lazily resolves `window.localStorage`
 
 ---
 
-## Pillar 4: Fake-3D (planned, Phase 4)
+## Pillar 4: Level Schema (shipped)
+
+> Decision: `docs/design/level-schema-decision.md`.
+> Proposal: `docs/design/level-schema-proposal.md` (Approach B: Opinionated Platformer Schema).
+> Research: `docs/research/level-schema.md`.
+
+### `src/level/`
+
+Versioned, serializable 2D platformer level schema with forward-ladder migration, defensive validation, and a tile-grid bridge to `src/collision/`. Ships an opinionated entity taxonomy (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform) that mirrors Spitekeep's `LevelData` shape. Consumer extends via typed `props` bags on each entity kind.
+
+#### `src/level/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `LevelRect` | type | `{x, y, width, height}` — serializable AABB (world-space, top-left origin) | `src/level/types.ts` |
+| `EntityId` | type | `number` — stable monotonic entity identifier | `src/level/types.ts` |
+| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform'` — shipped entity kinds (non-breaking union expansion for future kinds) | `src/level/types.ts` |
+| `ExitProps` | type | `{isTrap: boolean, locked: boolean}` — exit props; `isTrap` marks decoy/failure exits | `src/level/types.ts` |
+| `PlatformProps` | type | `{visual?: 'normal' \| 'cracked' \| 'dark'}` — platform visual variant hint | `src/level/types.ts` |
+| `TrapProps` | type | `{type: string, params: Record<string, unknown>}` — trap dispatch key + untyped params bag | `src/level/types.ts` |
+| `DecorationProps` | type | `{sprite: string, flipX?: boolean}` — decoration sprite key + flip | `src/level/types.ts` |
+| `TriggerProps` | type | `{action: string, params: Record<string, unknown>}` — rectangular event zone | `src/level/types.ts` |
+| `MovingPlatformProps` | type | `{speed, path, loopMode?}` — kinematic platform motion (path is `readonly {x, y}[]`) | `src/level/types.ts` |
+| `LevelEntity` | type | Discriminated union on `kind` with kind-specific `props` — 9 variants | `src/level/types.ts` |
+| `TileGrid` | type | `{data, cols, rows, tileSize}` — flat row-major tile-value integer array | `src/level/types.ts` |
+| `LevelFlags` | type | `{lookahead?, foreground?, background?}` — optional renderer flags | `src/level/types.ts` |
+| `LevelData` | type | Complete level schema: version, id, name, dimensions, spawn, tiles, entities, nextEntityId, bottomLava?, hints?, flags? | `src/level/types.ts` |
+| `ValidationResult` | type | `{valid, errors[]}` — never-throw validation outcome | `src/level/types.ts` |
+| `ValidationError` | type | `{path, message, severity}` — single diagnostic (dotted path into level) | `src/level/types.ts` |
+| `ValidationErrorSeverity` | type | `'error' \| 'warning'` — severity of a validation diagnostic | `src/level/types.ts` |
+| `LevelMigration` | type | `(raw: Record<string, unknown>) => Record<string, unknown>` — forward-ladder migration step | `src/level/types.ts` |
+
+#### `src/level/constants.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `LEVEL_VERSION` | const | `1` — current level schema version | `src/level/constants.ts` |
+| `DEFAULT_TILE_SIZE` | const | `16` — default tile grid cell size in pixels | `src/level/constants.ts` |
+| `DEFAULT_LEVEL_WIDTH` | const | `960` — default level width (single-screen) | `src/level/constants.ts` |
+| `DEFAULT_LEVEL_HEIGHT` | const | `540` — default level height (single-screen) | `src/level/constants.ts` |
+| `DEFAULT_ENTITY_ID_START` | const | `1` — first entity ID allocated by `allocateEntityId` (0 is reserved sentinel) | `src/level/constants.ts` |
+
+#### `src/level/migrate.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `LevelMigrationResult` | type | `{level, fromVersion, toVersion, errors}` — migration outcome (level is `null` on failure) | `src/level/migrate.ts` |
+| `migrateLevel(raw, migrations, targetVersion)` | function | Defensive forward-ladder migration: applies version steps in order, coerces/clamps/strips, returns guaranteed-valid shape. Never throws on any input | `src/level/migrate.ts` |
+
+#### `src/level/validate.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `validateLevel(raw)` | function | Defensive structural validation: version, dimensions, bounds, entity IDs/uniqueness, tile grid shape, per-kind prop shape. Returns `ValidationResult`. Never throws | `src/level/validate.ts` |
+
+#### `src/level/tiles.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createTileQuery(grid, typeMap)` | function | Bridge: build a `TileSolidityQuery` from a `TileGrid` + integer-to-TileType mapper. Out-of-bounds and malformed inputs degrade to `'empty'`; never throws | `src/level/tiles.ts` |
+
+#### `src/level/entity-id.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `allocateEntityId(level)` | function | Pure: returns `{id, nextEntityId}` for a new entity. Monotonic, no `Math.random`. Falls back to `DEFAULT_ENTITY_ID_START` if counter is missing | `src/level/entity-id.ts` |
+
+#### `src/level/serialize.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `canonicalize(value)` | function | RFC 8785 key-sorting JSON canonicalizer. Deterministic, circular-safe, handles non-finite numbers. Pure, zero-dep, never throws | `src/level/serialize.ts` |
+| `fnv1a(text)` | function | 32-bit FNV-1a hash → unsigned integer in `[0, 2^32)`. For share-code generation. Pure, zero-dep | `src/level/serialize.ts` |
+
+- _proposal: `docs/design/level-schema-proposal.md`_
+- _decision: `docs/design/level-schema-decision.md`_
+- _research: `docs/research/level-schema.md`_
+- _composes with: `src/collision/types.ts` (`TileSolidityQuery`, `TileType`)_
+
+### `src/editor/`
+
+> Decision: `docs/design/editor-core-decision.md`.
+> Proposal: `docs/design/editor-core-proposal.md`.
+> Research: `docs/research/editor-core.md`.
+
+Headless level-editor core. Pure operations over `LevelData` — no DOM, no rendering, no mouse handling. Provides undo/redo, selection, transactions, snapping, playtest boundary, clipboard, prefab catalog, and validation diagnostics. Operations are serializable data (no closures) for future multiplayer collaboration readiness. Composes with `src/level/validate.ts` and `src/level/entity-id.ts`.
+
+Architecture: **serializable operations + snapshot history (hybrid)**. Undo restores pre-snapshots; redo restores post-snapshots. The serializable `EditorOperation` record is kept for diagnostics and future CRDT integration. `EditorState` is immutable — every reducer returns a new state.
+
+#### `src/editor/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `EditorOperation` | type | Discriminated union of serializable editor operations: `addEntity`, `removeEntity`, `updateEntityProps`, `moveEntities`, `setEntityRect`, `paintTiles`, `setSpawnPoint`, `batch` | `src/editor/types.ts` |
+| `HistoryEntry` | type | `{ op, preSnapshot, postSnapshot, label, transactionId }` — one undo/redo step | `src/editor/types.ts` |
+| `SelectionMode` | type | `'replace' \| 'add' \| 'subtract' \| 'toggle'` | `src/editor/types.ts` |
+| `SelectionState` | type | `{ ids: ReadonlySet<EntityId> }` — pure-data selection (no closures) | `src/editor/types.ts` |
+| `SnapGuide` | type | `{ axis: 'x' \| 'y'; position; start; end }` — alignment guide for UI rendering | `src/editor/types.ts` |
+| `EditorState` | type | Full headless document: `level`, `undoStack`, `redoStack`, `maxHistoryDepth`, `selection`, `nextTransactionId`, `pendingTransaction`, `playtestSnapshot`, `validation` | `src/editor/types.ts` |
+| `ClipboardEntry` | type | `{ entities: readonly LevelEntity[] }` — in-memory only, never serialized to disk in v1 | `src/editor/types.ts` |
+| `CatalogEntry` | type | `{ kind, label, defaultRect, defaultProps }` — prefab descriptor | `src/editor/types.ts` |
+| `EntityCatalog` | type | `{ entries: Readonly<Record<string, CatalogEntry>> }` | `src/editor/types.ts` |
+
+#### `src/editor/constants.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_MAX_HISTORY_DEPTH` | const | `100` — default max undo entries before oldest is evicted | `src/editor/constants.ts` |
+| `DEFAULT_GRID_SIZE` | const | `16` — default snap-grid size in world units | `src/editor/constants.ts` |
+| `DEFAULT_SNAP_THRESHOLD` | const | `4` — default edge-snap threshold in pixels | `src/editor/constants.ts` |
+
+#### `src/editor/operations.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `applyOp(state, op)` | function | Pure reducer: applies one `EditorOperation` to `EditorState`, returns new state with new `LevelData` (deep JSON-cloned). Pushes to undo stack (unless inside a transaction). Recomputes `validation`. Never throws — unknown entity IDs are silent no-ops | `src/editor/operations.ts` |
+| `applyBatch(state, ops, label)` | function | Convenience: applies N ops as one batch with one history entry | `src/editor/operations.ts` |
+
+#### `src/editor/history.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `undo(state)` | function | Pure: pops top of undoStack, restores preSnapshot, pushes entry to redoStack | `src/editor/history.ts` |
+| `redo(state)` | function | Pure: pops top of redoStack, restores postSnapshot, pushes entry back to undoStack | `src/editor/history.ts` |
+| `beginTransaction(state)` | function | Pure: marks state as in-transaction. Throws if already in a transaction (programmer error) | `src/editor/history.ts` |
+| `commitTransaction(state, label)` | function | Pure: collapses pending ops into one batch, pushes to history with label. Clears redo stack | `src/editor/history.ts` |
+| `canUndo(state)` | function | Pure reader: `undoStack.length > 0` | `src/editor/history.ts` |
+| `canRedo(state)` | function | Pure reader: `redoStack.length > 0` | `src/editor/history.ts` |
+| `clearHistory(state)` | function | Pure: empties both stacks. Useful after loading a new level | `src/editor/history.ts` |
+
+#### `src/editor/selection.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `select(state, id, mode)` | function | Pure: select one entity by ID with the given mode | `src/editor/selection.ts` |
+| `selectMany(state, ids, mode)` | function | Pure: select multiple entities | `src/editor/selection.ts` |
+| `selectInRect(state, rect, mode)` | function | Pure: select all entities whose rect overlaps the given rect (marquee) | `src/editor/selection.ts` |
+| `clearSelection(state)` | function | Pure: empty selection set | `src/editor/selection.ts` |
+| `selectAll(state)` | function | Pure: select all entity IDs | `src/editor/selection.ts` |
+| `isInSelection(state, id)` | function | Pure reader | `src/editor/selection.ts` |
+
+Selection is ephemeral — NOT recorded in history.
+
+#### `src/editor/snapping.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `snapToGrid(x, y, gridSize?)` | function | Pure: rounds coords to nearest grid multiple. Normalises `-0` to `+0` | `src/editor/snapping.ts` |
+| `snapRectToGrid(rect, gridSize?)` | function | Pure: snaps rect's top-left corner to grid (preserves dimensions) | `src/editor/snapping.ts` |
+| `snapToEdges(movedRect, otherRects, threshold?)` | function | Pure: edge-aligns `movedRect` to the closest edge in `otherRects` if within threshold. Returns `{ rect, guides }` — guides are for UI rendering | `src/editor/snapping.ts` |
+
+#### `src/editor/clipboard.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `copySelection(state)` | function | Pure: returns `ClipboardEntry` with selected entities, or null if selection empty | `src/editor/clipboard.ts` |
+| `pasteClipboard(state, clipboard, at)` | function | Pure: pastes entities at offset from their bounding-box top-left. Allocates new stable IDs. Pushes a `batch` op to history | `src/editor/clipboard.ts` |
+
+#### `src/editor/playtest.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `enterPlaytest(state)` | function | Pure: returns `{ snapshot, runtimeLevel }` — both deep JSON-clones of the current level. Consumer runs their simulation against `runtimeLevel`; editor stays frozen | `src/editor/playtest.ts` |
+| `exitPlaytest(state, snapshot)` | function | Pure: restores the snapshot as the editor's level. Discards any runtime mutations. History preserved (editor can still undo prior edits) | `src/editor/playtest.ts` |
+
+#### `src/editor/catalog.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_CATALOG` | const | Ships one `CatalogEntry` per `EntityKind` (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform) with sensible defaults | `src/editor/catalog.ts` |
+| `createCatalogEntry(kind, label, defaultRect?, defaultProps?)` | function | Helper for consumers to build custom catalog entries | `src/editor/catalog.ts` |
+| `instantiateCatalogEntry(entry, at)` | function | Returns an `addEntity` op for placing this catalog entry at the given position. Caller applies via `applyOp` | `src/editor/catalog.ts` |
+
+#### `src/editor/factory.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createEditorState(level, options?)` | function | Factory: initial `EditorState` with empty history, empty selection, validation cache populated. `options.maxHistoryDepth` overrides default | `src/editor/factory.ts` |
+
+#### `src/editor/index.ts`
+
+Barrel re-export of all public editor APIs. Uses `export type` for type-only re-exports per `isolatedModules`.
+
+- _decision: `docs/design/editor-core-decision.md`_
+- _proposal: `docs/design/editor-core-proposal.md`_
+- _research: `docs/research/editor-core.md`_
+- _composes with: `src/level/types.ts` (`LevelData`, `LevelEntity`, `EntityId`, `EntityKind`, `LevelRect`), `src/level/validate.ts` (`validateLevel`, `ValidationResult`), `src/level/entity-id.ts` (`allocateEntityId`)_
+
+---
+
+## Pillar 5: Fake-3D (planned, Phase 4)
 
 ### `src/fake3d/` (planned)
 
@@ -847,7 +1144,7 @@ Sokpop-inspired fake-3D rendering on Canvas2D. Reference: `docs/research/fake-3d
 
 ---
 
-## Pillar 5: Platform Adapters (on-demand)
+## Pillar 6: Platform Adapters (on-demand)
 
 ### `src/iap/adapters/jest.ts` (deferred)
 
@@ -861,7 +1158,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation` (including the proposed `spring-rod` once shipped), `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, and `./blend` (all shipped). As pillars ship, they are added here.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, `./blend`, `./platformer`, and `./level`.
 
 ```ts
 export * from './primitives';
@@ -878,6 +1175,9 @@ export * from './game-loop';
 export * from './audio';
 export * from './save';
 export * from './blend';
+export * from './platformer';
+export * from './level';
+export * from './editor';
 // Phase 4: export * from './fake3d';
 ```
 
