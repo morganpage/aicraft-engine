@@ -67,10 +67,24 @@ describe('DEFAULT_CATALOG', () => {
   });
 
   it('movingPlatform default props include a path array', () => {
-    const mp = DEFAULT_CATALOG.entries['moving-platform'];
-    if (!mp) throw new Error('missing moving-platform');
+    const mp = DEFAULT_CATALOG.entries['movingPlatform'];
+    if (!mp) throw new Error('missing movingPlatform');
     expect(Array.isArray(mp.defaultProps.path)).toBe(true);
     expect(typeof mp.defaultProps.speed).toBe('number');
+  });
+
+  it('catalog keys match EntityKind verbatim (no surprise lowercase-kebab)', () => {
+    // Every EntityKind must work as a direct key. Regression test for the
+    // earlier 'moving-platform' key inconsistency.
+    expect(DEFAULT_CATALOG.entries['spawn']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['exit']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['platform']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['passthrough']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['trap']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['hazard']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['decoration']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['trigger']).toBeDefined();
+    expect(DEFAULT_CATALOG.entries['movingPlatform']).toBeDefined();
   });
 });
 

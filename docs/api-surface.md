@@ -296,6 +296,25 @@ Advances the locomotion pillar with displacement-driven phase (kills foot-slidin
 - _decision: `docs/design/jump-walk-proposal.md` (Approach A: Composable Separate Functions)_
 - _adds to existing `src/animation/locomotion.ts` without modifying any previously-shipped exports_
 
+#### Locomotion extensions (additive, shipped)
+
+Idle-foot stance blend: a pure pose helper that transitions a walk-cycle pose
+toward a neutral standing stance with configurable foot spread. Fixes the
+IK-parity idle overlap: feet cross during walking (`idleSpread = 0`) but settle
+slightly apart at full idle rather than overlapping as one. `idleFootSpread` is
+the **total center-to-center distance** — each foot targets `±spread/2`. To
+choose a spread, use `footW + desiredGap` (hero: 28+2=30; playground: 7+1=8).
+No engine default (scale is character-specific). Non-finite inputs degrade to 0;
+finite values clamped. Never throws.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `blendLocomotionToStance(pose, stanceBlend, idleFootSpread)` | function | Pure: blend a `LocomotionPose` toward a neutral standing stance. `stanceBlend` = blend weight (0 = walk, 1 = idle; non-finite → 0, finite clamped [0,1]); `idleFootSpread` = total center-to-center distance in px at full idle (non-finite → 0, finite clamped ≥0). Each foot targets `±spread/2`. Hip and foot Y blend toward 0. Composition: stance blend FIRST, then `blendAirborneTuck`. Consumer owns stop/ground detection. Never throws | `src/animation/locomotion.ts` |
+
+- _decision: `docs/design/idle-foot-stance-decision.md`_
+- _benchmark: `benchmarks/idle-foot-stance/hero-comparison.png`, `benchmarks/idle-foot-stance/playground-comparison.png`_
+- _proposed in: `docs/design/idle-foot-stance-proposal.md`_
+
 - _see also `src/animation/oscillators.ts` for the migrated `bob` / `pulse` / `sineShake` / `shakeEnvelope` helpers_
 - _research note: `docs/research/procedural-locomotion.md` §Pattern 1_
 - _research note: `docs/research/jump-walk-locomotion.md` for deterministic jumping, walking, and state-machine coupling_
@@ -383,12 +402,17 @@ Apex-parameterized jump trajectory, state machine (coyote time, jump buffering, 
 
 Lightweight two-rectangle feet renderer driven by a `LocomotionPose`. The drop-in alternative to the full IK rig (`drawRig` + `solveLimb`): characters that only need two body-colored foot rects bobbing via `evaluateLocomotion`'s sin/cos output use `drawSimpleFeet`. No IK, no joints — the foot-lock is emergent (displacement-driven phase integration freezes phase when the character stops, planting the feet). Ported from Spitekeep's `render/devil-sprite.ts:1436-1469`.
 
+**Orbital gait (IK parity):** Setting `idleSpread: 0` makes both feet center on the body midline, orbiting symmetrically via `cos(phase) * strideLength`. At each footfall endpoint, both feet have equal magnitude from the midline on opposite sides — the same trajectory as the IK version's co-located-hips foot targets, without bones. See `IK_PARITY_FEET` preset.
+
 ⚠ **Facing-mirror requirement:** the foot offsets in `pose` are LOCAL-space. The caller MUST wrap the body+feet draw in `ctx.scale(facing, 1)` around the body's vertical axis or the character moonwalks.
+
+> Proposal: `docs/design/simple-feet-gait-proposal.md`. Decision: `docs/design/simple-feet-gait-decision.md`.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `SimpleFeetConfig` | type | Foot rendering config: `footW`, `footH`, `idleSpread`, `baseY`, `color`, optional `outline`. All `readonly` — no magic numbers in the renderer | `src/animation/simple-feet.ts` |
+| `SimpleFeetConfig` | type | Foot rendering config: `footW`, `footH`, `idleSpread`, `baseY`, `color`, optional `outline`. All `readonly` — no magic numbers in the renderer. `idleSpread` controls foot center distance from the midline (0 = orbital crossing / IK-parity; 5.5 = wide stance) | `src/animation/simple-feet.ts` |
 | `DEFAULT_SIMPLE_FEET` | const | Default `SimpleFeetConfig` matching Spitekeep's devil character (footW 7, footH 5, idleSpread 5.5, baseY 14, color `#FE5701`, outline `#1d1128`). Spread and override `color`/`outline` with your palette | `src/animation/simple-feet.ts` |
+| `IK_PARITY_FEET` | const | `SimpleFeetConfig` with `idleSpread: 0` — orbital gait preset. Feet center on the body midline, orbiting symmetrically with endpoint parity at each footfall. Mimics the IK version's foot-target trajectory without bones. Spread and override `footW`/`footH`/`color` with your character config | `src/animation/simple-feet.ts` |
 | `drawSimpleFeet(ctx, pose, config)` | function | Draw two static foot rectangles positioned by a `LocomotionPose`. Uses `outlineRect` when `config.outline` is provided (1px outline, pixel-snapped), otherwise bare `fillRect`. Positions rounded to integers via `Math.round`. Caller owns transform/state | `src/animation/simple-feet.ts` |
 
 ### `src/animation/oscillators.ts` (migrated from `src/primitives/animation.ts`)
@@ -957,7 +981,7 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 |---|---|---|---|
 | `LevelRect` | type | `{x, y, width, height}` — serializable AABB (world-space, top-left origin) | `src/level/types.ts` |
 | `EntityId` | type | `number` — stable monotonic entity identifier | `src/level/types.ts` |
-| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform'` — shipped entity kinds (non-breaking union expansion for future kinds) | `src/level/types.ts` |
+| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform'` — shipped entity kinds (non-breaking union expansion for future kinds). CANDIDATE: `'enemy'` (added by `src/platformer/enemy/`) | `src/level/types.ts` |
 | `ExitProps` | type | `{isTrap: boolean, locked: boolean}` — exit props; `isTrap` marks decoy/failure exits | `src/level/types.ts` |
 | `PlatformProps` | type | `{visual?: 'normal' \| 'cracked' \| 'dark'}` — platform visual variant hint | `src/level/types.ts` |
 | `TrapProps` | type | `{type: string, params: Record<string, unknown>}` — trap dispatch key + untyped params bag | `src/level/types.ts` |
@@ -1129,6 +1153,61 @@ Barrel re-export of all public editor APIs. Uses `export type` for type-only re-
 - _research: `docs/research/editor-core.md`_
 - _composes with: `src/level/types.ts` (`LevelData`, `LevelEntity`, `EntityId`, `EntityKind`, `LevelRect`), `src/level/validate.ts` (`validateLevel`, `ValidationResult`), `src/level/entity-id.ts` (`allocateEntityId`)_
 
+### `src/platformer/enemy/` (Pillar 4)
+
+> Proposal: `docs/design/platformer-enemy-archetypes-proposal.md` (Approach A: Extend EntityKind + Behavior Registry).
+> Research: `docs/research/platformer-enemy-archetypes.md`.
+> Status: **SHIPPED** — compile, step, renderer, behavior registry all implemented.
+
+Deterministic reusable platformer enemy archetypes. Ships two MVP archetypes (spinny contact-patrol, turret ranged-shooter) with a behavior-handler registry for consumer extensibility. Enemies serialize into `LevelData` as a new `'enemy'` entity kind and compile to a flat runtime state for the game loop.
+
+#### `src/platformer/enemy/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `EnemyArchetype` | type | `'spinny' \| 'turret' \| string` — behavior dispatch key (free string for extensibility) | `src/platformer/enemy/types.ts` |
+| `EnemyProps` | type | Serialized enemy config: `archetype`, `speed`, `patrolPath`, `patrolLoopMode`, `ledgeTurnAround`, `fireRate`, `projectileSpeed`, `projectileSize`, `projectileType`, `aimDirection`, `detectionRadius`, `color` — all optional with documented defaults | `src/platformer/enemy/types.ts` |
+| `EnemyState` | type | Runtime enemy state: `id`, `x`, `y`, `vx`, `vy`, `facing`, `behavior`, `timers`, `alive`, `data?` — immutable per tick | `src/platformer/enemy/types.ts` |
+| `EnemyStepResult` | type | Per-tick result: `state`, `spawnedProjectiles`, `events` | `src/platformer/enemy/types.ts` |
+| `EnemyBehaviorHandler` | type | `(state, props, ctx) → EnemyStepResult` — pure, deterministic, never throws | `src/platformer/enemy/types.ts` |
+| `EnemyUpdateContext` | type | Read-only tick context: `playerX/Y/Width/Height`, `solids`, `tileSize`, `tick`, `dt` | `src/platformer/enemy/types.ts` |
+| `EnemyBehaviorRegistry` | type | `{ handlers: Readonly<Record<string, EnemyBehaviorHandler>> }` | `src/platformer/enemy/types.ts` |
+
+#### `src/platformer/enemy/registry.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createEnemyBehaviorRegistry(custom?)` | function | Factory: creates registry with `spinnyBehavior` + `turretBehavior` pre-registered, plus any custom handlers | `src/platformer/enemy/registry.ts` |
+| `spinnyBehavior` | const | Built-in spinny patrol behavior handler (contact hazard, ledge-detection, path patrol) | `src/platformer/enemy/registry.ts` |
+| `turretBehavior` | const | Built-in turret shooting behavior handler (cooldown-gated, aimed or fixed projectiles) | `src/platformer/enemy/registry.ts` |
+
+#### `src/platformer/enemy/projectile.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `ProjectileState` | type | Kinematic AABB: `id`, `x`, `y`, `vx`, `vy`, `width`, `height`, `alive` | `src/platformer/enemy/projectile.ts` |
+| `stepProjectile(p, solids, playerRect, dt)` | function | Pure: move, check solid collision, check player overlap. Returns `{ projectile, hitPlayer }` | `src/platformer/enemy/projectile.ts` |
+
+#### `src/platformer/enemy/compile.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `compileEnemies(level)` | function | Pure: extract `'enemy'` entities from `LevelData`, compile to `CompiledEnemy[]`. Initial state position from entity rect, archetype/params from props. Never throws | `src/platformer/enemy/compile.ts` |
+| `stepEnemies(enemies, registry, ctx)` | function | Pure: step all enemies by dt via behavior registry, return `{ enemies, projectiles }`. Dead/unknown enemies passed through unchanged. Never throws | `src/platformer/enemy/compile.ts` |
+| `StepEnemiesResult` | type | `{ enemies: readonly CompiledEnemy[], projectiles: readonly ProjectileState[] }` — result of `stepEnemies` | `src/platformer/enemy/compile.ts` |
+
+#### `src/platformer/enemy/renderer.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `EnemyPalette` | type | Optional per-archetype color overrides: `spinny`, `turret`, `default`, `indicator`, `projectile` | `src/platformer/enemy/renderer.ts` |
+| `drawEnemies(ctx, enemies, tick, palette?)` | function | Renderer-adjacent: spinny enemies rotate by `tick * angularSpeed`, turret enemies show direction indicator. Uses `outlineRect`. Dead enemies skipped. Never throws | `src/platformer/enemy/renderer.ts` |
+| `drawProjectiles(ctx, projectiles, palette?)` | function | Renderer-adjacent: draw active projectiles as small outlined rects. Dead projectiles skipped. Never throws | `src/platformer/enemy/renderer.ts` |
+
+- _proposed in: `docs/design/platformer-enemy-archetypes-proposal.md`_
+- _research: `docs/research/platformer-enemy-archetypes.md`_
+- _composes with: `src/collision/types.ts` (`Solid`, `Rect`), `src/collision/aabb.ts` (`aabbOverlap`), `src/collision/tiles.ts` (`worldToTile`), `src/primitives/outline-rect.ts` (`outlineRect`)_
+
 ---
 
 ## Pillar 5: Fake-3D (planned, Phase 4)
@@ -1158,7 +1237,7 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, `./blend`, `./platformer`, and `./level`.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, `./blend`, `./platformer`, `./level`, and `./editor`.
 
 ```ts
 export * from './primitives';

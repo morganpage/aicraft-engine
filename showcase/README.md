@@ -6,7 +6,7 @@ Each section renders an independent canvas that exercises a specific cluster of 
 
 ---
 
-## Run / Build / Typecheck
+## Run / Build / Typecheck / Test
 
 Commands are run from the **repo root** (`aicraft-engine/`):
 
@@ -15,8 +15,12 @@ Commands are run from the **repo root** (`aicraft-engine/`):
 | `npm run showcase:dev` | Dev server (prints a localhost URL) |
 | `npm run showcase:build` | Production build to `showcase/dist/` |
 | `npm run showcase:typecheck` | tsc gate for the showcase (separate tsconfig) |
+| `npm run showcase:test` | Vitest run of the showcase's DOM-free pure-logic suites (`showcase/tests/*.test.ts`) — CI / pre-commit |
+| `npm run showcase:test:watch` | Same suite in watch mode |
 
 The showcase has its own `showcase/tsconfig.json` that excludes `showcase/_scripts/` (Node-only generators) from the browser typecheck. The `vite/client` ambient types provide `.png` import typing.
+
+The showcase also has its own Vitest config (`showcase/vitest.config.ts`) separate from the root library suite. The showcase's DOM-coupled section code (`sections/playground.ts`) imports browser APIs (`window`, `matchMedia`, `IntersectionObserver`, `AudioContext`) and cannot be unit-tested under the project's Node-only Vitest setup without adding `jsdom` (forbidden by the tech-stack rules). Instead, the pure logic the section actually uses — the play/edit session boundary and the mouse/editing math — is extracted into `sections/playground-session.ts` and `sections/playground-helpers.ts` (the section imports these helpers, so the suite exercises the same code path the live showcase runs).
 
 ---
 
@@ -26,7 +30,7 @@ The showcase has its own `showcase/tsconfig.json` that excludes `showcase/_scrip
 |---|---|---|
 | **Hero** | `#hero` | Seeded slime-knight character: rng, animation, IK, locomotion, jump |
 | **Lava pool** | `#lava-pool` | Gerstner wave surface + heterogeneous particle emitters (wave-line, particles) |
-| **Playground** | `#playground` | Playable platformer: input, collision, camera, hit-stop, game-loop, squash-stretch |
+| **Playground** | `#playground` | Playable platformer with integrated level editor: Edit/Play toggle, click-drag to draw platforms, click-to-place for fixed-size kinds, multi-select + drag to move, moving-platform path widget with draggable waypoints, undo/redo, playtest sandbox via `enterPlaytest`/`exitPlaytest`. Composes the editor core (`applyOp`, `undo`, `select`, `snapToGrid`, `entityAtPoint`, `findCatalogEntry`), the platformer kernel (`compileLevel`, `stepPlatformer`, `advanceMovingPlatform`, `createMovingPlatformDisplacementProvider`), the renderer helpers (`drawLevelEntity`, `drawActor`), and all game-feel polish (squash/stretch, dust, hit-stop, screen shake, locomotion, audio) |
 | **Parallax** | `#parallax` | 4-layer IMP underworld background: `drawTiledParallax` with AI-generated raster art (primitives/parallax) |
 
 The hero, lava-pool, and playground sections draw entirely from procedural primitives in code. The parallax section is the first to consume raster PNGs, validating that `drawTiledParallax`'s `drawTile` callback is asset-agnostic.

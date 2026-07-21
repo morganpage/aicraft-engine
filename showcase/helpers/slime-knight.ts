@@ -33,6 +33,7 @@ import {
   evaluateLocomotion,
   evaluateJump,
   blendAirborneTuck,
+  blendLocomotionToStance,
   solveLimb,
   DEFAULT_BREATH,
   DEFAULT_GAIT,
@@ -44,6 +45,7 @@ import {
   type JumpInputs,
   type JumpState,
   type LocomotionState,
+  type LocomotionPose,
   type SpringConfig,
   type VerletNode,
 } from '../../src/animation';
@@ -153,13 +155,33 @@ const SIMPLE_FEET_BODY_PEEK = 26;
 /**
  * Simple-feet dimensions — 4× the playground's small devil feet (7×5).
  * The hero canvas is 320px and the body is 70–90px wide, so 28×20px feet read
- * as substantial planted shoes rather than tiny dots. `idleSpread` scales
- * proportionally (5.5 → 22) so the two feet sit under the body's edges, not
- * overlapping at the midline.
+ * as substantial planted shoes rather than tiny dots.
+ *
+ * `SIMPLE_FEET_IDLE_SPREAD = 0` matches the engine's `IK_PARITY_FEET` preset:
+ * both feet center on the body midline and the locomotion pose's
+ * `cos(phase) · strideLength` term drives them symmetrically across it. At
+ * each footfall endpoint the feet have equal magnitude from the midline on
+ * opposite sides and swap sides each half-cycle — the same foot-target
+ * trajectory as the full IK rig with co-located hips, drawn with this
+ * showcase-local chunky rounded-rect renderer. See the simple-feet gait
+ * decision (`docs/design/simple-feet-gait-decision.md`).
  */
 const SIMPLE_FEET_FOOT_W = 28;
 const SIMPLE_FEET_FOOT_H = 20;
-const SIMPLE_FEET_IDLE_SPREAD = 22;
+const SIMPLE_FEET_IDLE_SPREAD = 0;
+
+/**
+ * Total center-to-center foot distance at full idle stance (px). The stance
+ * target for each foot is `±HERO_IDLE_FOOT_SPREAD / 2` from the body
+ * midline. `footW + desiredGap` (= 28 + 2 = 30) yields a tight 2 px visible
+ * gap between the inner edges of the two foot rectangles at full blend:
+ * each foot sits `±15 px` from the midline, inner edges at `±1 px`, total
+ * gap = 2 px. Matches the locked semantics in
+ * `docs/design/idle-foot-stance-decision.md` (hero spread = 30) and feeds
+ * `blendLocomotionToStance` in `drawSlimeKnight`. Tunable — raise for a
+ * wider stance, lower for feet that almost touch.
+ */
+const HERO_IDLE_FOOT_SPREAD = SIMPLE_FEET_FOOT_W + 2;
 
 /**
  * Corner radius for the simple-feet rounded rects. Matches the body squircle's
@@ -1171,37 +1193,35 @@ export function drawSlimeKnight(
   const pose = evaluateLocomotion(state.locomotion, config.gaitConfig);
   const jumpPose = evaluateJump(state.jump);
 
-  // Idle settle blend — ramps the locomotion offsets toward neutral (0,0) when
-  // the hero is idle so the feet lower to the ground instead of freezing
+  // Idle settle stance blend — ramps the locomotion pose toward a neutral
+  // standing stance when the hero is idle so the feet lower to the ground and
+  // settle slightly apart (HERO_IDLE_FOOT_SPREAD) instead of freezing
   // mid-stride. Scaled by (1 - airborneBlend) so the airborne tuck takes
-  // priority when jumping (jump from idle → feet go to tuck, not neutral).
+  // priority when jumping (jump from idle → feet go to tuck, not stance).
+  // Composition order (locked in the decision): stance blend FIRST, then
+  // `blendAirborneTuck` on each foot. The consumer (this renderer) owns the
+  // stop/ground gating via `state.idleSettle * (1 - airborneBlend)`.
   const groundIdle = state.idleSettle * (1 - jumpPose.airborneBlend);
-  const hipOffset = {
-    x: pose.hipOffset.x * (1 - groundIdle),
-    y: pose.hipOffset.y * (1 - groundIdle),
-  };
+  const stancePose: LocomotionPose = blendLocomotionToStance(
+    pose,
+    groundIdle,
+    HERO_IDLE_FOOT_SPREAD,
+  );
+  const hipOffset = stancePose.hipOffset;
 
-  // Airborne tuck: blend walk-cycle foot offsets toward the tuck pose before IK.
-  // airborneBlend=0 → pure walk offset; =1 → full tuck. No-op when grounded.
-  // The idle blend is applied FIRST (toward neutral (0,0)), then the airborne
-  // tuck composes on top — so a jump from idle sends the feet to the tuck pose
-  // (groundIdle is zeroed by the (1 - airborneBlend) factor above), not to the
-  // idle-neutral pose.
-  const leftGroundOffset = {
-    x: pose.leftFootOffset.x * (1 - groundIdle),
-    y: pose.leftFootOffset.y * (1 - groundIdle),
-  };
-  const rightGroundOffset = {
-    x: pose.rightFootOffset.x * (1 - groundIdle),
-    y: pose.rightFootOffset.y * (1 - groundIdle),
-  };
+  // Airborne tuck: blend the STANCE-BLENDED foot offsets toward the tuck pose
+  // before IK. airborneBlend=0 → pure stance offset; =1 → full tuck. No-op
+  // when grounded. At idle+grounded (groundIdle=1, airborneBlend=0) the feet
+  // rest at ±HERO_IDLE_FOOT_SPREAD/2; at walking+airborne (groundIdle=0,
+  // airborneBlend=1) the stance blend is zeroed by the (1-airborneBlend)
+  // factor and the tuck overrides completely.
   const leftFootOffset = blendAirborneTuck(
-    leftGroundOffset,
+    stancePose.leftFootOffset,
     jumpPose.airborneBlend,
     DEFAULT_TUCK,
   );
   const rightFootOffset = blendAirborneTuck(
-    rightGroundOffset,
+    stancePose.rightFootOffset,
     jumpPose.airborneBlend,
     DEFAULT_TUCK,
   );

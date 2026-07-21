@@ -168,3 +168,49 @@ export function selectAll(state: EditorState): EditorState {
 export function isInSelection(state: EditorState, id: EntityId): boolean {
   return state.selection.ids.has(id);
 }
+
+/**
+ * Hit-test a single point against the level's entities. Returns the
+ * topmost-most entity whose rect contains the point, or `null` if none.
+ *
+ * "Topmost" = the last entity in `level.entities` array order (i.e. the
+ * one drawn last, visually on top). This matches typical editor hit-test
+ * expectations: clicking on overlapping entities selects the visible one.
+ *
+ * Pure reader — never mutates input. Never throws.
+ *
+ * @example
+ * ```ts
+ * canvas.addEventListener('mousedown', (e) => {
+ *   const rect = canvas.getBoundingClientRect();
+ *   const x = e.clientX - rect.left;
+ *   const y = e.clientY - rect.top;
+ *   const hit = entityAtPoint(editorState.level, { x, y });
+ *   if (hit) {
+ *     editorState = select(editorState, hit.id, 'replace');
+ *   }
+ * });
+ * ```
+ *
+ * @param level - Level to hit-test against.
+ * @param point - World-space point to test.
+ * @returns The topmost entity at that point, or `null`.
+ */
+export function entityAtPoint(
+  level: { readonly entities: readonly { readonly id: EntityId; readonly rect: LevelRect }[] },
+  point: { readonly x: number; readonly y: number },
+): { readonly id: EntityId; readonly rect: LevelRect } | null {
+  for (let i = level.entities.length - 1; i >= 0; i--) {
+    const e = level.entities[i];
+    const r = e.rect;
+    if (
+      point.x >= r.x &&
+      point.x < r.x + r.width &&
+      point.y >= r.y &&
+      point.y < r.y + r.height
+    ) {
+      return e;
+    }
+  }
+  return null;
+}

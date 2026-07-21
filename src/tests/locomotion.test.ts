@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
+import * as aicraft from '../index';
 import {
   advanceLocomotion,
   advanceLocomotionByDisplacement,
   evaluateLocomotion,
   blendAirborneTuck,
+  blendLocomotionToStance,
   scaledGait,
   DEFAULT_GAIT,
   DEFAULT_TUCK,
   type LocomotionState,
+  type LocomotionPose,
   type GaitConfig,
   type TuckConfig,
 } from '../animation/locomotion';
@@ -316,5 +319,222 @@ describe('blendAirborneTuck', () => {
     const out = blendAirborneTuck({ x: 0, y: 0 }, 1, cfg);
     expect(out.x).toBeCloseTo(-1, 10);
     expect(out.y).toBeCloseTo(-4, 10);
+  });
+});
+
+describe('blendLocomotionToStance', () => {
+  /** Canonical hand-built pose with distinct non-zero values on every field. */
+  const POSE: LocomotionPose = {
+    hipOffset: { x: 1.5, y: -0.5 },
+    leftFootOffset: { x: 4, y: 3 },
+    rightFootOffset: { x: -4, y: 0 },
+  };
+
+  /** Hero-scale total center-to-center foot distance (footW 28 + gap 2). */
+  const HERO_SPREAD = 30;
+  /** Playground-scale total center-to-center foot distance (footW 7 + gap 1). */
+  const PLAYGROUND_SPREAD = 8;
+
+  it('is exported from the top-level public surface', () => {
+    expect(typeof aicraft.blendLocomotionToStance).toBe('function');
+    expect(typeof blendLocomotionToStance).toBe('function');
+  });
+
+  it('stanceBlend = 0 → returns every input pose field unchanged (identity at zero)', () => {
+    const out = blendLocomotionToStance(POSE, 0, HERO_SPREAD);
+    expect(out.hipOffset.x).toBeCloseTo(POSE.hipOffset.x, 10);
+    expect(out.hipOffset.y).toBeCloseTo(POSE.hipOffset.y, 10);
+    expect(out.leftFootOffset.x).toBeCloseTo(POSE.leftFootOffset.x, 10);
+    expect(out.leftFootOffset.y).toBeCloseTo(POSE.leftFootOffset.y, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(POSE.rightFootOffset.x, 10);
+    expect(out.rightFootOffset.y).toBeCloseTo(POSE.rightFootOffset.y, 10);
+  });
+
+  it('stanceBlend = 1 → feet at ±spread/2, foot Y = 0, hip = (0, 0) (full stance target)', () => {
+    const out = blendLocomotionToStance(POSE, 1, HERO_SPREAD);
+    expect(out.hipOffset.x).toBeCloseTo(0, 10);
+    expect(out.hipOffset.y).toBeCloseTo(0, 10);
+    expect(out.leftFootOffset.x).toBeCloseTo(-HERO_SPREAD / 2, 10);
+    expect(out.leftFootOffset.y).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(HERO_SPREAD / 2, 10);
+    expect(out.rightFootOffset.y).toBeCloseTo(0, 10);
+  });
+
+  it('full stance at playground scale → feet at ±4 (spread 8 / 2)', () => {
+    const out = blendLocomotionToStance(POSE, 1, PLAYGROUND_SPREAD);
+    expect(out.leftFootOffset.x).toBeCloseTo(-4, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(4, 10);
+  });
+
+  it('stanceBlend = 0.5 → lerp midpoint between walk pose and stance target', () => {
+    const halfSpread = HERO_SPREAD / 2;
+    const t = 0.5;
+    const out = blendLocomotionToStance(POSE, t, HERO_SPREAD);
+    expect(out.hipOffset.x).toBeCloseTo(POSE.hipOffset.x * (1 - t), 10);
+    expect(out.hipOffset.y).toBeCloseTo(POSE.hipOffset.y * (1 - t), 10);
+    expect(out.leftFootOffset.x).toBeCloseTo(
+      POSE.leftFootOffset.x + (-halfSpread - POSE.leftFootOffset.x) * t,
+      10,
+    );
+    expect(out.leftFootOffset.y).toBeCloseTo(POSE.leftFootOffset.y * (1 - t), 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(
+      POSE.rightFootOffset.x + (halfSpread - POSE.rightFootOffset.x) * t,
+      10,
+    );
+    expect(out.rightFootOffset.y).toBeCloseTo(POSE.rightFootOffset.y * (1 - t), 10);
+  });
+
+  it('full stance is symmetric: leftFoot.x + rightFoot.x = 0 (midline symmetry)', () => {
+    const out = blendLocomotionToStance(POSE, 1, HERO_SPREAD);
+    expect(out.leftFootOffset.x + out.rightFootOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('midpoint is symmetric: leftFoot.x + rightFoot.x = 0 when the input is symmetric', () => {
+    const symmetric: LocomotionPose = {
+      hipOffset: { x: 0, y: -1 },
+      leftFootOffset: { x: 5, y: 2 },
+      rightFootOffset: { x: -5, y: 3 },
+    };
+    const out = blendLocomotionToStance(symmetric, 0.5, HERO_SPREAD);
+    expect(out.leftFootOffset.x + out.rightFootOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('at blend 0 the walk-cycle endpoint is unchanged (IK parity preserved)', () => {
+    // A phase-0 pose from evaluateLocomotion: feet at ±strideLength (IK parity).
+    const walkPose = evaluateLocomotion({ phase: 0 }, DEFAULT_GAIT);
+    const out = blendLocomotionToStance(walkPose, 0, HERO_SPREAD);
+    expect(out.leftFootOffset.x).toBeCloseTo(walkPose.leftFootOffset.x, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(walkPose.rightFootOffset.x, 10);
+    expect(out.leftFootOffset.y).toBeCloseTo(walkPose.leftFootOffset.y, 10);
+    expect(out.rightFootOffset.y).toBeCloseTo(walkPose.rightFootOffset.y, 10);
+    expect(out.hipOffset.x).toBeCloseTo(walkPose.hipOffset.x, 10);
+    expect(out.hipOffset.y).toBeCloseTo(walkPose.hipOffset.y, 10);
+  });
+
+  it('does not mutate the input pose (pure progression op)', () => {
+    const pose: LocomotionPose = {
+      hipOffset: { x: 1, y: 2 },
+      leftFootOffset: { x: 3, y: 4 },
+      rightFootOffset: { x: 5, y: 6 },
+    };
+    const snap = JSON.parse(JSON.stringify(pose));
+    blendLocomotionToStance(pose, 0.7, HERO_SPREAD);
+    expect(pose).toEqual(snap);
+  });
+
+  it('is pure: same inputs → equal but independent output objects (fresh each call)', () => {
+    const a = blendLocomotionToStance(POSE, 0.3, HERO_SPREAD);
+    const b = blendLocomotionToStance(POSE, 0.3, HERO_SPREAD);
+    expect(a).toEqual(b);
+    expect(a).not.toBe(b);
+    expect(a.hipOffset).not.toBe(b.hipOffset);
+    expect(a.leftFootOffset).not.toBe(b.leftFootOffset);
+    expect(a.rightFootOffset).not.toBe(b.rightFootOffset);
+    // Output sub-objects are NOT aliases of the input sub-objects (deep copy).
+    expect(a.hipOffset).not.toBe(POSE.hipOffset);
+    expect(a.leftFootOffset).not.toBe(POSE.leftFootOffset);
+    expect(a.rightFootOffset).not.toBe(POSE.rightFootOffset);
+  });
+
+  // -----------------------------------------------------------------------
+  // Defensive handling (locked semantics §8 of the decision)
+  // -----------------------------------------------------------------------
+
+  it('treats NaN stanceBlend as 0 (pure walk pose)', () => {
+    const out = blendLocomotionToStance(POSE, NaN, HERO_SPREAD);
+    expect(out.hipOffset.x).toBeCloseTo(POSE.hipOffset.x, 10);
+    expect(out.hipOffset.y).toBeCloseTo(POSE.hipOffset.y, 10);
+    expect(out.leftFootOffset.x).toBeCloseTo(POSE.leftFootOffset.x, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(POSE.rightFootOffset.x, 10);
+  });
+
+  it('treats +Infinity stanceBlend as 0 (defensive, never throws)', () => {
+    const out = blendLocomotionToStance(POSE, Infinity, HERO_SPREAD);
+    expect(out.leftFootOffset.x).toBeCloseTo(POSE.leftFootOffset.x, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(POSE.rightFootOffset.x, 10);
+  });
+
+  it('treats -Infinity stanceBlend as 0 (defensive, never throws)', () => {
+    const out = blendLocomotionToStance(POSE, -Infinity, HERO_SPREAD);
+    expect(out.leftFootOffset.x).toBeCloseTo(POSE.leftFootOffset.x, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(POSE.rightFootOffset.x, 10);
+  });
+
+  it('clamps stanceBlend > 1 to 1 (full stance)', () => {
+    const out = blendLocomotionToStance(POSE, 1.5, HERO_SPREAD);
+    expect(out.leftFootOffset.x).toBeCloseTo(-HERO_SPREAD / 2, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(HERO_SPREAD / 2, 10);
+    expect(out.leftFootOffset.y).toBeCloseTo(0, 10);
+    expect(out.hipOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('clamps stanceBlend < 0 to 0 (pure walk pose)', () => {
+    const out = blendLocomotionToStance(POSE, -0.5, HERO_SPREAD);
+    expect(out.leftFootOffset.x).toBeCloseTo(POSE.leftFootOffset.x, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(POSE.rightFootOffset.x, 10);
+  });
+
+  it('treats NaN idleFootSpread as 0 (feet converge at the midline at full blend)', () => {
+    const out = blendLocomotionToStance(POSE, 1, NaN);
+    expect(out.leftFootOffset.x).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('treats +Infinity idleFootSpread as 0 (defensive, never throws)', () => {
+    const out = blendLocomotionToStance(POSE, 1, Infinity);
+    expect(out.leftFootOffset.x).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('treats -Infinity idleFootSpread as 0 (defensive, never throws)', () => {
+    const out = blendLocomotionToStance(POSE, 1, -Infinity);
+    expect(out.leftFootOffset.x).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('clamps negative idleFootSpread to 0 (defensive)', () => {
+    const out = blendLocomotionToStance(POSE, 1, -10);
+    expect(out.leftFootOffset.x).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(0, 10);
+  });
+
+  it('zero idleFootSpread at full blend → both feet at the midline (Y = 0)', () => {
+    const out = blendLocomotionToStance(POSE, 1, 0);
+    expect(out.leftFootOffset.x).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.x).toBeCloseTo(0, 10);
+    expect(out.leftFootOffset.y).toBeCloseTo(0, 10);
+    expect(out.rightFootOffset.y).toBeCloseTo(0, 10);
+  });
+
+  it('never throws on any numeric input (defensive contract)', () => {
+    expect(() => blendLocomotionToStance(POSE, NaN, NaN)).not.toThrow();
+    expect(() => blendLocomotionToStance(POSE, Infinity, -Infinity)).not.toThrow();
+    expect(() => blendLocomotionToStance(POSE, -Infinity, Infinity)).not.toThrow();
+    expect(() => blendLocomotionToStance(POSE, 1e308, 1e308)).not.toThrow();
+    expect(() => blendLocomotionToStance(POSE, -1e308, -1e308)).not.toThrow();
+  });
+
+  it('composition: stance blend FIRST then airborne tuck → idle+grounded then jump works', () => {
+    // The documented composition: blendLocomotionToStance FIRST, then
+    // blendAirborneTuck on each foot from the stance-blended pose. At
+    // idle+grounded (stanceBlend=1, airborneBlend=0) the feet are at
+    // ±spread/2; at walking+airborne (stanceBlend=0, airborneBlend=1) the
+    // feet are at the tuck offset.
+    const stancePose = blendLocomotionToStance(POSE, 1, HERO_SPREAD);
+    const idleGroundedLeft = blendAirborneTuck(
+      stancePose.leftFootOffset,
+      0,
+      DEFAULT_TUCK,
+    );
+    expect(idleGroundedLeft.x).toBeCloseTo(-HERO_SPREAD / 2, 10);
+
+    const walkingAirbornePose = blendLocomotionToStance(POSE, 0, HERO_SPREAD);
+    const walkingAirborneLeft = blendAirborneTuck(
+      walkingAirbornePose.leftFootOffset,
+      1,
+      DEFAULT_TUCK,
+    );
+    expect(walkingAirborneLeft.x).toBeCloseTo(DEFAULT_TUCK.tuckOffset.x, 10);
+    expect(walkingAirborneLeft.y).toBeCloseTo(DEFAULT_TUCK.tuckOffset.y, 10);
   });
 });

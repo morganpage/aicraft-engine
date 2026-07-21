@@ -332,3 +332,115 @@ export function blendAirborneTuck(
     y: footOffset.y + (config.tuckOffset.y - footOffset.y) * t,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Idle foot stance blend.
+// Additive — the exports above are unchanged. See
+// `docs/design/idle-foot-stance-decision.md` for the locked semantics.
+// ---------------------------------------------------------------------------
+
+/**
+ * Blend a locomotion pose toward a neutral standing stance.
+ *
+ * When the character stops walking, the locomotion phase freezes and the
+ * foot offsets retain their last swing/stance values. This function
+ * smoothly transitions the pose toward a neutral standing stance where
+ * both feet rest on the ground at a configurable spread.
+ *
+ * `idleFootSpread` is the **total center-to-center distance** between the
+ * two feet at full idle (stanceBlend = 1). The stance target for each foot
+ * is:
+ *   - Left:  `{ x: -idleFootSpread / 2, y: 0 }`
+ *   - Right: `{ x: +idleFootSpread / 2, y: 0 }`
+ *
+ * To choose a visibly-distinct spread: use `footW + desiredGap`. E.g. hero
+ * (footW 28, gap 2) → spread 30; playground (footW 7, gap 1) → spread 8.
+ * There is no engine default because foot scale is character-specific.
+ *
+ * Foot Y is blended toward 0 (grounded) — the swing-phase lift fades out
+ * so the foot lowers to the ground. Hip offset is also blended toward
+ * neutral (0, 0) — the walk-cycle bob and sway fade out.
+ *
+ * **Determinism contract:** pure function of `(pose, stanceBlend,
+ * idleFootSpread)`. Same inputs → same output, forever. No side effects.
+ * Returns a fresh `LocomotionPose`; the input is never mutated. Never
+ * throws.
+ *
+ * **Defensive handling (non-finite inputs):**
+ *   - `stanceBlend`: finite values clamped to [0, 1]; non-finite (NaN,
+ *     Infinity, -Infinity) treated as 0 (pure walk pose).
+ *   - `idleFootSpread`: finite values clamped to >= 0 (negative treated
+ *     as 0); non-finite treated as 0.
+ *   - Never throws on any numeric input.
+ *
+ * **Composition order:** apply `blendLocomotionToStance` FIRST, then
+ * `blendAirborneTuck` on each foot. Stance blend happens before airborne
+ * tuck. The consumer owns stop/ground detection — the engine does NOT
+ * couple speed or grounded state. This way:
+ *   - Idle + grounded: stance blend = 1 → feet at ±idleFootSpread/2
+ *   - Walking + grounded: stance blend = 0 → pure walk pose
+ *   - Idle + airborne: consumer gates stanceBlend by (1 - airborneBlend),
+ *     then tuck overrides → feet tuck
+ *   - Walking + airborne: stance blend = 0, tuck overrides → feet tuck
+ *
+ * @param pose - locomotion pose from `evaluateLocomotion`
+ * @param stanceBlend - blend weight. 0 = pure walk pose, 1 = pure
+ *   standing stance. Consumer-owned (speed/ground detection is NOT in the
+ *   engine). Finite values clamped to [0, 1]; non-finite treated as 0.
+ * @param idleFootSpread - total center-to-center distance in px between
+ *   the two feet at full idle (stanceBlend = 1). Each foot sits at
+ *   ±spread/2 from the body midline. Use `footW + desiredGap` for
+ *   visibly distinct rectangles. No engine default (scale is
+ *   character-specific). Finite values clamped to >= 0; non-finite
+ *   treated as 0.
+ * @returns a new `LocomotionPose` with blended offsets
+ *
+ * @example
+ * ```ts
+ * // Hero: footW=28, desiredGap=2 → spread=30
+ * const pose = evaluateLocomotion(loco, DEFAULT_GAIT);
+ * const stanceBlend = idleSettle * (1 - jumpPose.airborneBlend);
+ * const stancePose = blendLocomotionToStance(pose, stanceBlend, 30);
+ * const leftFoot = blendAirborneTuck(stancePose.leftFootOffset, jumpPose.airborneBlend, DEFAULT_TUCK);
+ * const rightFoot = blendAirborneTuck(stancePose.rightFootOffset, jumpPose.airborneBlend, DEFAULT_TUCK);
+ * ```
+ *
+ * @example
+ * ```ts
+ * // Playground: footW=7, desiredGap=1 → spread=8 (no airborne tuck)
+ * const locoPose = evaluateLocomotion(loco, PLAYGROUND_GAIT);
+ * const stancePose = blendLocomotionToStance(locoPose, idleBlend, 8);
+ * drawSimpleFeet(ctx, stancePose, { ...IK_PARITY_FEET, baseY, color });
+ * ```
+ */
+export function blendLocomotionToStance(
+  pose: LocomotionPose,
+  stanceBlend: number,
+  idleFootSpread: number,
+): LocomotionPose {
+  // Defensive: non-finite → 0, finite → clamped. Per the decision's locked
+  // semantics §8: NaN / ±Infinity stanceBlend is treated as 0 (pure walk);
+  // NaN / ±Infinity idleFootSpread is treated as 0 (feet converge).
+  const t = Number.isFinite(stanceBlend)
+    ? Math.max(0, Math.min(1, stanceBlend))
+    : 0;
+  const spread = Number.isFinite(idleFootSpread)
+    ? Math.max(0, idleFootSpread)
+    : 0;
+  const halfSpread = spread / 2;
+
+  return {
+    hipOffset: {
+      x: pose.hipOffset.x * (1 - t),
+      y: pose.hipOffset.y * (1 - t),
+    },
+    leftFootOffset: {
+      x: pose.leftFootOffset.x + (-halfSpread - pose.leftFootOffset.x) * t,
+      y: pose.leftFootOffset.y * (1 - t),
+    },
+    rightFootOffset: {
+      x: pose.rightFootOffset.x + (halfSpread - pose.rightFootOffset.x) * t,
+      y: pose.rightFootOffset.y * (1 - t),
+    },
+  };
+}

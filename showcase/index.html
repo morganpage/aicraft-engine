@@ -214,54 +214,83 @@ const [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity: 0.5 });
       </section>
 
       <!--
-        Section 3 — Playable platformer playground.
-        The "proof that the stack works" composite: input, collision, camera,
-        hit-stop, fixed-step game loop, and squash-stretch composed into a
-        playable mini-platformer. This is the first section to use the
-        library's createGameLoop module (the hero + lava-pool use hand-rolled
-        rAF loops).
+        Section 3 — Unified platformer playground + level editor.
+        Play mode: a playable platformer with full game-feel polish (squash,
+        dust, hit-stop, screen shake, locomotion, audio). Edit mode: catalog
+        toolbar + click-drag to draw sizeable kinds, click-to-place fixed
+        kinds, select/drag/move, undo/redo, and a draggable waypoint widget
+        for moving platforms. Toggle between them with the toolbar button.
       -->
-      <section id="playground" class="section playground-section">
+      <section id="playground" class="section playground-section" data-mode="play">
         <div class="playground-copy">
-          <h2 class="playground-title">Move. Jump. Collide.</h2>
+          <h2 class="playground-title">Move. Jump. Edit.</h2>
           <p class="playground-blurb">
-            A playable platformer built from six library modules: input edges,
-            AABB collision, follow camera, hit-stop freeze, fixed-step loop, and
-            squash-stretch. Zero game engine. Zero dependencies. Just the library.
+            A playable platformer built from the library's input, collision,
+            kernel, and FX modules — plus an integrated level editor. Toggle
+            <strong>Edit</strong> to draw your own platforms with click-drag,
+            place spawns / exits / moving platforms, and drag the cyan
+            waypoint handles to redefine a moving platform's path. Press
+            <strong>Play</strong> and the kernel runs against your level
+            through a snapshot boundary — Stop restores the editor with full
+            undo history preserved.
           </p>
           <p class="playground-hint">
             <span class="kbd">←</span> <span class="kbd">→</span> to move ·
             <span class="kbd">Space</span> to jump ·
             <span class="kbd">R</span> to reset ·
-            or the on-screen buttons on touch devices
+            toggle <strong>✎ Edit</strong> to modify the level ·
+            click-drag to draw platforms ·
+            click a moving platform to drag its waypoints
           </p>
-          <pre class="playground-snippet"><code>// Six modules compose into a game loop:
-const loop = createGameLoop({
-  step: (dt) => {
-    const input = keyboard.poll();
-    const xRes = resolveAxisX(body, vx, solids);
-    const yRes = resolveAxisY(body, vy, solids, prevBottom);
-    camera = updateCamera(camera, body, level, viewport);
-    if (yRes.landed) hitStop = triggerHitStop(hitStop);
-  },
-  render: () => { ctx.translate(-camera.x, -camera.y); /* draw */ },
-});</code></pre>
+          <pre class="playground-snippet"><code>// Editor + playtest loop compose from public APIs:
+const state = createEditorState(level);
+let next = applyOp(state, instantiateCatalogEntry(entry, at).op);
+// Play: snapshot → compile → run kernel → render
+const { snapshot, runtimeLevel } = enterPlaytest(next);
+const compiled = compileLevel(runtimeLevel);
+let runtime = compiled.initialState;
+runtime = stepPlatformer(runtime, input, compiled.staticSolids, dt).state;
+// Stop: restore editor from snapshot, history preserved
+next = exitPlaytest(next, snapshot);</code></pre>
         </div>
         <div class="playground-stage">
-          <canvas class="playground-canvas" width="600" height="400"
-            aria-label="Playable platformer playground"></canvas>
+          <div class="playground-mode-row">
+            <button class="playground-btn playground-mode-toggle" type="button" aria-pressed="false">✎ Edit</button>
+          </div>
+          <div class="playground-toolbar" role="toolbar" aria-label="Editor tools">
+            <button class="playground-btn" data-kind="platform" type="button" aria-pressed="true">Platform</button>
+            <button class="playground-btn" data-kind="passthrough" type="button" aria-pressed="false">Passthrough</button>
+            <button class="playground-btn" data-kind="hazard" type="button" aria-pressed="false">Hazard</button>
+            <button class="playground-btn" data-kind="spawn" type="button" aria-pressed="false">Spawn</button>
+            <button class="playground-btn" data-kind="exit" type="button" aria-pressed="false">Exit</button>
+            <button class="playground-btn" data-kind="movingPlatform" type="button" aria-pressed="false">Moving Platform</button>
+            <button class="playground-btn" data-kind="enemy" data-archetype="spinny" type="button" aria-pressed="false">Spinny</button>
+            <button class="playground-btn" data-kind="enemy" data-archetype="turret" type="button" aria-pressed="false">Turret</button>
+            <span class="playground-toolbar-sep" aria-hidden="true"></span>
+            <button class="playground-btn" data-mode="select" type="button" aria-pressed="false">Select</button>
+            <button class="playground-btn playground-undo" type="button">↶ Undo</button>
+          </div>
           <!--
-            On-screen touch controls — revealed only on coarse-pointer (touch)
-            devices via @media (pointer: coarse) in style.css. On desktop they
-            are display:none (keyboard-only); the adapter still attaches
-            listeners but they never fire (idle edges forever — harmless).
-            Array order in the touch set is load-bearing: [left, right, jump].
-            No reset button — R-key reset is a power-user convenience; the
-            fall-off respawn handles death recovery automatically.
+            Canvas + touch controls are wrapped together in
+            .playground-canvas-wrap so the touch buttons can be anchored to
+            the canvas's CSS-pixel rect (not the wider stage column, which
+            also contains the toolbar + status panel). The wrap keeps the
+            overlay buttons positioned over the play surface on every width.
           -->
-          <button class="playground-touch-btn playground-touch-btn--left" type="button" aria-label="Move left">◀</button>
-          <button class="playground-touch-btn playground-touch-btn--right" type="button" aria-label="Move right">▶</button>
-          <button class="playground-touch-btn playground-touch-btn--jump" type="button" aria-label="Jump">Jump</button>
+          <div class="playground-canvas-wrap">
+            <canvas class="playground-canvas" width="600" height="400"
+              aria-label="Playable platformer playground + level editor"></canvas>
+            <!--
+              On-screen touch controls — revealed only on coarse-pointer
+              (touch) devices via @media (pointer: coarse) in style.css, AND
+              only while the section is in Play mode ([data-mode="play"]).
+              Hidden in Edit mode (touch editing is out of scope for v1).
+            -->
+            <button class="playground-touch-btn playground-touch-btn--left" type="button" aria-label="Move left">◀</button>
+            <button class="playground-touch-btn playground-touch-btn--right" type="button" aria-label="Move right">▶</button>
+            <button class="playground-touch-btn playground-touch-btn--jump" type="button" aria-label="Jump">Jump</button>
+          </div>
+          <div class="playground-status" role="status" aria-live="polite">Playing.</div>
         </div>
       </section>
 
@@ -321,6 +350,13 @@ drawTiledParallax(ctx, (c, x) => c.drawImage(ruinsImg, x, 0, W, H), cam.x, 0.50,
           ></canvas>
         </div>
       </section>
+
+      <!--
+        (Section 5 — Level editor + playtest loop — has been merged into
+        Section 3, the playground. The standalone Editor section is gone;
+        its toolbar, drag-draw, undo/redo, and moving-platform path widget
+        now live inside the unified playground section above.)
+      -->
     </main>
 
     <footer class="site-footer">

@@ -49,7 +49,8 @@ export type EntityKind =
   | 'hazard'
   | 'decoration'
   | 'trigger'
-  | 'movingPlatform';
+  | 'movingPlatform'
+  | 'enemy';
 
 /**
  * Props for the `'exit'` kind. `isTrap` marks decoy/failure exits (Spitekeep's
@@ -111,6 +112,18 @@ export interface MovingPlatformProps {
 }
 
 /**
+ * Props for the `'enemy'` kind. The `archetype` field dispatches to a
+ * behavior handler in the enemy registry; `params` is an untyped bag
+ * whose shape depends on the archetype (same pattern as `TrapProps.params`).
+ */
+export interface EnemyProps {
+  /** Archetype identifier (e.g. `'spinny'`, `'turret'`). Dispatch key. */
+  readonly archetype: string;
+  /** Untyped parameter bag — shape depends on `archetype`. */
+  readonly params: Record<string, unknown>;
+}
+
+/**
  * Entity with kind-specific props via a discriminated union on `kind`.
  *
  * The variants with `props: Record<string, never>` (`spawn`, `passthrough`,
@@ -126,7 +139,8 @@ export type LevelEntity =
   | { readonly id: EntityId; readonly kind: 'hazard'; readonly rect: LevelRect; readonly props: Record<string, never> }
   | { readonly id: EntityId; readonly kind: 'decoration'; readonly rect: LevelRect; readonly props: DecorationProps }
   | { readonly id: EntityId; readonly kind: 'trigger'; readonly rect: LevelRect; readonly props: TriggerProps }
-  | { readonly id: EntityId; readonly kind: 'movingPlatform'; readonly rect: LevelRect; readonly props: MovingPlatformProps };
+  | { readonly id: EntityId; readonly kind: 'movingPlatform'; readonly rect: LevelRect; readonly props: MovingPlatformProps }
+  | { readonly id: EntityId; readonly kind: 'enemy'; readonly rect: LevelRect; readonly props: EnemyProps };
 
 /**
  * Flat tile grid. Indexing: `data[tileY * cols + tileX]`. `0` is empty by

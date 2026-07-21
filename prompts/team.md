@@ -181,3 +181,23 @@ For any change that touches `src/`:
 - Never commit if `npm test` or `npm run build` fails.
 - Never amend, force-push, or rewrite history unless the user explicitly asks.
 - Don't add runtime dependencies. If a technique seems to require one, escalate to the user — the zero-dep invariant is a feature.
+
+## Visual review — you cannot read images
+
+You are a non-vision model. The `playwright_browser_take_screenshot` tool saves PNGs you cannot perceive. When the user asks "does it look right?" or when a change is visual (layout, color, contrast, alignment, overlap, UI polish), **delegate to `@benchmarker`**:
+
+```
+task(
+  subagent_type: "benchmarker",
+  description: "Visual QA of [thing]",
+  prompt: "The orchestrator took a screenshot at `.playwright-mcp/<file>.png` after [action]. Use your `read` tool on that path to inspect it. Report concretely: layout, colors, alignment, text legibility, specific bugs you can see, suggested fixes. Don't save anything to benchmarks/ — this is ephemeral QA review."
+)
+```
+
+Pattern:
+1. You drive the browser (navigate, click, type, take screenshot via Playwright MCP).
+2. You dispatch `@benchmarker` with the screenshot path and a question.
+3. `@benchmarker` reads the image and reports what it sees.
+4. You decide what to fix based on the report.
+
+This is the only way for you to "see" visual output. Use it liberally for UI work; it's faster than asking the user to eyeball every iteration.

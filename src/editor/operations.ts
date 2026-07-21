@@ -161,6 +161,13 @@ function makeEntity(
         rect,
         props: props as unknown as Extract<LevelEntity, { kind: 'movingPlatform' }>['props'],
       };
+    case 'enemy':
+      return {
+        id,
+        kind,
+        rect,
+        props: props as unknown as Extract<LevelEntity, { kind: 'enemy' }>['props'],
+      };
   }
 }
 
@@ -169,6 +176,44 @@ function makeEntity(
  */
 function translateRect(rect: LevelRect, dx: number, dy: number): LevelRect {
   return { x: rect.x + dx, y: rect.y + dy, width: rect.width, height: rect.height };
+}
+
+/**
+ * Translate a `{x, y}` point by `(dx, dy)` and return a new point.
+ * Used to keep movingPlatform path waypoints in lockstep with body moves.
+ */
+function translatePoint(
+  p: { readonly x: number; readonly y: number },
+  dx: number,
+  dy: number,
+): { x: number; y: number } {
+  return { x: p.x + dx, y: p.y + dy };
+}
+
+/**
+ * Coerce a raw `path` array (as stored on `MovingPlatformProps`) into the
+ * mutable `{x,y}[]` shape used by the reducer. Returns `null` if `props`
+ * is not a movingPlatform props bag or `path` is not an array. Used by
+ * `moveEntities` / `setEntityRect` to keep body + path coherent without
+ * requiring the playground to issue a separate `updateEntityProps` op.
+ */
+function coerceMovingPath(
+  props: Record<string, unknown>,
+): { x: number; y: number }[] | null {
+  if (!props || !Array.isArray((props as { path?: unknown }).path)) return null;
+  const raw = (props as { path: unknown[] }).path;
+  const out: { x: number; y: number }[] = [];
+  for (const p of raw) {
+    if (p === null || typeof p !== 'object') {
+      out.push({ x: 0, y: 0 });
+      continue;
+    }
+    const r = p as { x?: unknown; y?: unknown };
+    const x = typeof r.x === 'number' && Number.isFinite(r.x) ? r.x : 0;
+    const y = typeof r.y === 'number' && Number.isFinite(r.y) ? r.y : 0;
+    out.push({ x, y });
+  }
+  return out;
 }
 
 /**
@@ -211,24 +256,111 @@ function applyMutation(level: WritableLevel, op: EditorOperation): boolean {
     case 'moveEntities': {
       const idSet = new Set(op.ids);
       let changed = false;
+      // Use an explicit holder object so TS does not narrow through
+      // closure assignments (the .map callback writes these; TS's flow
+      // analysis cannot follow that the callback runs synchronously).
+      const acc: {
+        spawnDelta: { dx: number; dy: number } | null;
+      } = { spawnDelta: null };
       const next = level.entities.map((e): LevelEntity => {
         if (!idSet.has(e.id)) return e;
         changed = true;
-        return { ...e, rect: translateRect(e.rect, op.dx, op.dy) };
+        const translatedRect = translateRect(e.rect, op.dx, op.dy);
+        // For movingPlatform entities, translate the path along with the
+        // body so the runtime (which compiles path[0] as the home
+        // position) stays coherent with the body the user dragged. Without
+        // this, the platform snaps back to its old path[0] on play.
+        if (e.kind === 'movingPlatform') {
+          const path = coerceMovingPath(e.props as unknown as Record<string, unknown>);
+          const newPath =
+            path !== null
+              ? path.map((p) => translatePoint(p, op.dx, op.dy))
+              : (e.props as unknown as { path?: unknown }).path;
+          const updated = {
+            ...e,
+            rect: translatedRect,
+            props: { ...(e.props as unknown as object), path: newPath },
+          } as unknown as LevelEntity;
+          return updated;
+        }
+        // For spawn entities, record the delta so we can propagate it to
+        // level.spawn below. (Spawn rect changes must update level.spawn
+        // or compileLevel() reads a stale spawn and the player spawns at
+        // the wrong place.)
+        if (e.kind === 'spawn') {
+          acc.spawnDelta = { dx: op.dx, dy: op.dy };
+        }
+        return { ...e, rect: translatedRect };
       });
       if (!changed) return false;
       level.entities = next;
+      if (acc.spawnDelta !== null) {
+        level.spawn = {
+          x: level.spawn.x + acc.spawnDelta.dx,
+          y: level.spawn.y + acc.spawnDelta.dy,
+        };
+      }
       return true;
     }
     case 'setEntityRect': {
       let changed = false;
+      // Same closure-narrowing workaround as moveEntities: use an explicit
+      // holder object so TS does not narrow these back to `never` after
+      // the .map callback runs.
+      const acc: {
+        spawnFromEntity: { x: number; y: number } | null;
+        movingPlatformUpdate:
+          | { entityId: EntityId; oldRect: LevelRect; newRect: LevelRect }
+          | null;
+      } = { spawnFromEntity: null, movingPlatformUpdate: null };
       const next = level.entities.map((e): LevelEntity => {
         if (e.id !== op.id) return e;
         changed = true;
+        if (e.kind === 'spawn') {
+          // Record the new top-left so we can propagate to level.spawn.
+          acc.spawnFromEntity = { x: op.rect.x, y: op.rect.y };
+        }
+        if (e.kind === 'movingPlatform') {
+          // Record old + new top-left so path[0] can be translated to
+          // match the body. Subsequent waypoints preserve their relative
+          // offset from path[0].
+          acc.movingPlatformUpdate = {
+            entityId: e.id,
+            oldRect: e.rect,
+            newRect: op.rect,
+          };
+        }
         return { ...e, rect: op.rect };
       });
       if (!changed) return false;
       level.entities = next;
+      if (acc.spawnFromEntity !== null) {
+        level.spawn = { x: acc.spawnFromEntity.x, y: acc.spawnFromEntity.y };
+      }
+      if (acc.movingPlatformUpdate !== null) {
+        // Translate path[0] to the new body top-left, and translate the
+        // rest of the path by the same delta so the relative shape is
+        // preserved.
+        const update = acc.movingPlatformUpdate;
+        const dx = update.newRect.x - update.oldRect.x;
+        const dy = update.newRect.y - update.oldRect.y;
+        const targetId = update.entityId;
+        const newRect = update.newRect;
+        level.entities = level.entities.map((e): LevelEntity => {
+          if (e.id !== targetId) return e;
+          if (e.kind !== 'movingPlatform') return e;
+          const props = e.props as unknown as Record<string, unknown>;
+          const path = coerceMovingPath(props);
+          if (path === null || path.length === 0) return e;
+          const newPath = path.map((p, i) =>
+            i === 0 ? { x: newRect.x, y: newRect.y } : translatePoint(p, dx, dy),
+          );
+          return {
+            ...e,
+            props: { ...props, path: newPath },
+          } as unknown as LevelEntity;
+        });
+      }
       return true;
     }
     case 'paintTiles': {

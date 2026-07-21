@@ -26,7 +26,30 @@ export interface SimpleFeetConfig {
   readonly footW: number;
   /** Foot height in px. */
   readonly footH: number;
-  /** Horizontal distance of each foot center from the body midline, in px. */
+  /**
+   * Horizontal distance of each foot CENTER from the body midline at neutral
+   * phase, in px.
+   *
+   * Controls the stance / crossing behavior of the gait. The foot CENTER at
+   * phase φ is `∓idleSpread ± cos(φ) · strideLength` (left / right); the rect
+   * corner that `drawSimpleFeet` actually draws is offset by `-footW/2` from
+   * that center.
+   *
+   * - **`0`** — orbital crossing / IK-parity. Both feet center on the midline
+   *   and orbit symmetrically via `cos(phase) · strideLength`. At each
+   *   footfall endpoint (phase `0` and `π`) both feet have equal magnitude
+   *   from the midline on opposite sides, swapping sides each half-cycle.
+   *   This is the same foot-target trajectory as the full IK rig with
+   *   co-located hips. See {@link IK_PARITY_FEET}.
+   * - **`strideLength`** — feet just touch at the midline crossing; partial
+   *   crossing gait.
+   * - **default `5.5`** — wide stance; the stride amplitude never overcomes
+   *   the spread, so the feet swing in parallel arcs and never cross.
+   *
+   * Values between `0` and `strideLength` produce partial crossing; values
+   * greater than `strideLength` produce a parallel-arc "waddle" with no
+   * crossing.
+   */
   readonly idleSpread: number;
   /** Vertical offset from the body origin to the feet baseline (positive = below). */
   readonly baseY: number;
@@ -48,6 +71,46 @@ export const DEFAULT_SIMPLE_FEET: Readonly<SimpleFeetConfig> = {
   baseY: 14,
   color: '#FE5701',
   outline: '#1d1128',
+};
+
+/**
+ * IK-parity orbital-gait preset: {@link DEFAULT_SIMPLE_FEET} with
+ * {@link SimpleFeetConfig.idleSpread} overridden to `0`.
+ *
+ * With `idleSpread: 0`, both feet center on the body midline and the
+ * locomotion pose's `cos(phase) · strideLength` term drives them symmetrically
+ * across it. At each footfall endpoint (phase `0` and `π`), both feet have
+ * equal magnitude from the midline on opposite sides:
+ *
+ * ```
+ * leftCenter  = cos(φ) · strideLength
+ * rightCenter = -cos(φ) · strideLength
+ * ```
+ *
+ * - Phase `0`:    left at `+strideLength`, right at `-strideLength` (sides swapped).
+ * - Phase `π/2`:  both feet at `0` (midline crossing / overlap).
+ * - Phase `π`:    left at `-strideLength`, right at `+strideLength` (sides swapped back).
+ *
+ * This is the same foot-target trajectory the full IK rig produces when both
+ * hips are co-located on the body midline (the canonical slime-knight setup),
+ * without requiring bones or a solver. Use this preset to mimic the IK
+ * version's silhouette with the cheap two-rect renderer.
+ *
+ * Consumers spread this and override palette / size fields:
+ *
+ * ```ts
+ * drawSimpleFeet(ctx, pose, {
+ *   ...IK_PARITY_FEET,
+ *   footW: 5, footH: 4, baseY: -3,
+ *   color: shade(palette.base, 0.65), outline: palette.outline,
+ * });
+ * ```
+ *
+ * See also the "Orbital gait" section on {@link drawSimpleFeet}.
+ */
+export const IK_PARITY_FEET: Readonly<SimpleFeetConfig> = {
+  ...DEFAULT_SIMPLE_FEET,
+  idleSpread: 0,
 };
 
 /**
@@ -91,6 +154,18 @@ export const DEFAULT_SIMPLE_FEET: Readonly<SimpleFeetConfig> = {
  * If `config.outline` is provided, uses {@link outlineRect} (1px outline,
  * pixel-grid snapped). Otherwise uses bare `ctx.fillRect` (no outline —
  * faster, matches Spitekeep's `outlineFeet: false` option).
+ *
+ * **Orbital gait.** The foot CENTER positions are
+ * `∓idleSpread ± cos(phase) · strideLength` (left / right). At
+ * {@link IK_PARITY_FEET} (`idleSpread: 0`), both feet center on the midline
+ * and the stride term drives them symmetrically across it: at each footfall
+ * endpoint both feet have equal magnitude (`strideLength`) from the midline
+ * on opposite sides, swapping sides each half-cycle, and they cross at the
+ * midline every half-cycle. This is IK-parity without bones. With the default
+ * `idleSpread: 5.5`, the spread exceeds the stride amplitude and the feet
+ * swing in parallel arcs without crossing (wide stance). Values between `0`
+ * and `strideLength` produce partial crossing. See
+ * {@link SimpleFeetConfig.idleSpread} for the full formula.
  *
  * @param ctx    - canvas 2D context (caller owns transform/state)
  * @param pose   - locomotion pose from `evaluateLocomotion`

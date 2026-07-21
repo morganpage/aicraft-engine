@@ -69,3 +69,52 @@ export { jumpAbility } from './abilities/jump-ability';
 export { wallSlideAbility } from './abilities/wall-slide-ability';
 export { dashAbility } from './abilities/dash-ability';
 export { doubleJumpAbility } from './abilities/double-jump-ability';
+
+export {
+  compileLevel,
+  advanceMovingPlatform,
+  movingPlatformToSolid,
+  createMovingPlatformDisplacementProvider,
+  type CompiledLevel,
+  type CompiledMovingPlatform,
+  type CompileLevelOptions,
+} from './level-runtime';
+
+export {
+  drawLevelEntity,
+  drawActor,
+  drawTileGrid,
+  DEFAULT_ENTITY_PALETTE,
+  type EntityPalette,
+  type DrawLevelEntityOptions,
+  type DrawLevelEntityOverrideMap,
+} from './renderer';
+
+export {
+  PRECISION_PLATFORMER,
+  CLASSIC_PLATFORMER,
+  EXPLORATION_PLATFORMER,
+  PUZZLE_PLATFORMER,
+} from './presets';
+
+export {
+  createEnemyBehaviorRegistry,
+  spinnyBehavior,
+  turretBehavior,
+  stepProjectile,
+  compileEnemies,
+  stepEnemies,
+  drawEnemies,
+  drawProjectiles,
+  type StepEnemiesResult,
+  type EnemyPalette,
+  type EnemyArchetype,
+  type EnemyState,
+  type EnemyStepResult,
+  type EnemyBehaviorHandler,
+  type EnemyUpdateContext,
+  type ProjectileState,
+  type ProjectileStepResult,
+  type CompiledEnemy,
+  type EnemyBehaviorRegistry,
+} from './enemy';

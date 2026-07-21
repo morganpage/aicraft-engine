@@ -26,7 +26,9 @@
     "test:watch": "vitest",
     "showcase:dev": "vite --config showcase/vite.config.ts",
     "showcase:build": "vite build --config showcase/vite.config.ts",
-    "showcase:typecheck": "tsc --noEmit --project showcase/tsconfig.json"
+    "showcase:typecheck": "tsc --noEmit --project showcase/tsconfig.json",
+    "showcase:test": "vitest run --config showcase/vitest.config.ts",
+    "showcase:test:watch": "vitest --config showcase/vitest.config.ts"
   },
   "devDependencies": {
     "canvas": "^3.2.3",

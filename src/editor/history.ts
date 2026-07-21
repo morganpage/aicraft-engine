@@ -27,6 +27,7 @@ import type {
   EditorState,
   HistoryEntry,
 } from './types';
+import { validateLevel } from '../level/validate';
 
 /**
  * Pop the top of the undo stack, restore the pre-snapshot, and push the
@@ -36,6 +37,9 @@ import type {
  *
  * Selection is defensively cleared if any of its IDs no longer exist
  * in the restored level (e.g. the undone op had added them).
+ *
+ * The validation cache is recomputed against the restored level so the
+ * status panel reflects the post-undo state, not the pre-undo state.
  *
  * @param state - Current editor state (never mutated).
  * @returns A fresh editor state with the top undo entry reverted.
@@ -55,6 +59,7 @@ export function undo(state: EditorState): EditorState {
     undoStack: stack,
     redoStack: [...state.redoStack, entry],
     selection: { ids: prunedSelection },
+    validation: validateLevel(restoredLevel),
   };
 }
 
@@ -64,6 +69,9 @@ export function undo(state: EditorState): EditorState {
  *
  * If the redo stack is empty, returns the input state unchanged.
  *
+ * The validation cache is recomputed against the re-applied level so the
+ * status panel reflects the post-redo state, not the pre-redo state.
+ *
  * @param state - Current editor state (never mutated).
  * @returns A fresh editor state with the top redo entry re-applied.
  */
@@ -71,11 +79,13 @@ export function redo(state: EditorState): EditorState {
   if (state.redoStack.length === 0) return state;
   const stack = [...state.redoStack];
   const entry = stack.pop() as HistoryEntry;
+  const restoredLevel = entry.postSnapshot;
   return {
     ...state,
-    level: entry.postSnapshot,
+    level: restoredLevel,
     undoStack: [...state.undoStack, entry],
     redoStack: stack,
+    validation: validateLevel(restoredLevel),
   };
 }
 

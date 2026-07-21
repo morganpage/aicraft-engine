@@ -31,6 +31,7 @@ const DEFAULT_RECT_BY_KIND: Readonly<Record<EntityKind, LevelRect>> = {
   decoration: { x: 0, y: 0, width: 16, height: 16 },
   trigger: { x: 0, y: 0, width: 16, height: 16 },
   movingPlatform: { x: 0, y: 0, width: 48, height: 16 },
+  enemy: { x: 0, y: 0, width: 16, height: 16 },
 };
 
 /**
@@ -48,6 +49,7 @@ const DEFAULT_PROPS_BY_KIND: Readonly<Record<EntityKind, Record<string, unknown>
   decoration: { sprite: 'default' },
   trigger: { action: 'showHint', params: {} },
   movingPlatform: { speed: 60, path: [{ x: 0, y: 0 }, { x: 48, y: 0 }], loopMode: 'loop' },
+  enemy: { archetype: 'spinny', params: {} },
 };
 
 /**
@@ -63,14 +65,16 @@ const DEFAULT_LABEL_BY_KIND: Readonly<Record<EntityKind, string>> = {
   decoration: 'Decoration',
   trigger: 'Trigger',
   movingPlatform: 'Moving Platform',
+  enemy: 'Enemy',
 };
 
 /**
  * The shipped default catalog — one entry per {@link EntityKind}.
  *
- * Keys are lowercase-kebab versions of the kind (`'movingPlatform'`
- * becomes `'moving-platform'`). Consumers may assemble their own
- * `EntityCatalog` by spreading this and adding custom entries.
+ * Keys are the `EntityKind` strings verbatim (e.g. `'movingPlatform'`).
+ * Consumers may assemble their own `EntityCatalog` by spreading this and
+ * adding custom entries, or call {@link findCatalogEntry} to look up an
+ * entry by kind without remembering the key.
  */
 export const DEFAULT_CATALOG: EntityCatalog = {
   entries: {
@@ -122,11 +126,29 @@ export const DEFAULT_CATALOG: EntityCatalog = {
       defaultRect: DEFAULT_RECT_BY_KIND.trigger,
       defaultProps: DEFAULT_PROPS_BY_KIND.trigger,
     },
-    'moving-platform': {
+    'movingPlatform': {
       kind: 'movingPlatform',
       label: DEFAULT_LABEL_BY_KIND.movingPlatform,
       defaultRect: DEFAULT_RECT_BY_KIND.movingPlatform,
       defaultProps: DEFAULT_PROPS_BY_KIND.movingPlatform,
+    },
+    enemy: {
+      kind: 'enemy',
+      label: 'Enemy',
+      defaultRect: DEFAULT_RECT_BY_KIND.enemy,
+      defaultProps: DEFAULT_PROPS_BY_KIND.enemy,
+    },
+    spinny: {
+      kind: 'enemy',
+      label: 'Spinny Enemy',
+      defaultRect: { x: 0, y: 0, width: 16, height: 16 },
+      defaultProps: { archetype: 'spinny', params: { speed: 60, ledgeTurnAround: true, patrolPath: [{ x: 0, y: 0 }, { x: 48, y: 0 }] } },
+    },
+    turret: {
+      kind: 'enemy',
+      label: 'Turret Enemy',
+      defaultRect: { x: 0, y: 0, width: 16, height: 16 },
+      defaultProps: { archetype: 'turret', params: { fireRate: 1, projectileSpeed: 120, projectileSize: 6 } },
     },
   },
 };
@@ -209,4 +231,37 @@ export function instantiateCatalogEntry(
       props: entry.defaultProps,
     },
   };
+}
+
+/**
+ * Look up a {@link CatalogEntry} by its `EntityKind`.
+ *
+ * Convenience helper: `DEFAULT_CATALOG.entries` is keyed by the kind string,
+ * so direct access works for every kind (`entries['platform']`,
+ * `entries['movingPlatform']`). This helper exists for code that holds a
+ * kind dynamically (e.g. from a UI selection) and wants a typed lookup that
+ * returns `undefined` instead of requiring the caller to remember the key.
+ *
+ * @example
+ * ```ts
+ * const entry = findCatalogEntry(DEFAULT_CATALOG, selectedKind);
+ * if (entry) {
+ *   const { op } = instantiateCatalogEntry(entry, mousePos);
+ *   state = applyOp(state, op);
+ * }
+ * ```
+ *
+ * @param catalog - Catalog to search.
+ * @param kind    - Entity kind to look up.
+ * @returns The matching entry, or `undefined` if no entry matches.
+ */
+export function findCatalogEntry(
+  catalog: EntityCatalog,
+  kind: EntityKind,
+): CatalogEntry | undefined {
+  for (const key in catalog.entries) {
+    const entry = catalog.entries[key];
+    if (entry && entry.kind === kind) return entry;
+  }
+  return undefined;
 }

@@ -59,6 +59,7 @@ export {
   clearSelection,
   selectAll,
   isInSelection,
+  entityAtPoint,
 } from './selection';
 
 export { snapToGrid, snapRectToGrid, snapToEdges } from './snapping';
@@ -70,6 +71,7 @@ export { enterPlaytest, exitPlaytest } from './playtest';
 export {
   DEFAULT_CATALOG,
   createCatalogEntry,
+  findCatalogEntry,
   instantiateCatalogEntry,
 } from './catalog';
 

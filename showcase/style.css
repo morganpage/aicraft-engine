@@ -441,27 +441,22 @@ main {
 }
 
 /* =========================================================================
-   Playground section — playable platformer demo.
-   Layout/colors/spacing mirror the .lava-* and .hero-* sections so the three
-   read as siblings. The canvas keeps a 600×400 (3:2) aspect ratio.
+   Playground section — playable platformer demo with integrated editor.
+   One-column layout at ALL widths: the explanation (title + blurb + hint +
+   code snippet) renders first, then the stage (toolbar + canvas + status)
+   at the full available section width. The canvas keeps its 600×400 (3:2)
+   aspect ratio via responsive CSS sizing.
    ========================================================================= */
 
 .playground-section {
   display: grid;
   grid-template-columns: 1fr;
   gap: 24px;
-  align-items: center;
+  align-items: start;
   padding: 24px;
   background: var(--palette-surface);
   border: var(--outline-width) solid var(--outline);
   border-radius: var(--radius-lg);
-}
-
-@media (min-width: 820px) {
-  .playground-section {
-    grid-template-columns: 1fr 360px;
-    padding: 32px;
-  }
 }
 
 .playground-copy {
@@ -479,7 +474,7 @@ main {
 .playground-blurb {
   margin: 0 0 12px;
   color: var(--palette-text-dim);
-  max-width: 50ch;
+  max-width: 60ch;
 }
 
 .playground-hint {
@@ -505,14 +500,33 @@ main {
 /* ---------- Playground stage / canvas ---------- */
 
 .playground-stage {
-  position: relative; /* anchor for the absolutely-positioned touch buttons */
+  position: relative;
   display: flex;
-  justify-content: center;
+  /* Stack mode-row, toolbar, canvas-wrap, status vertically so each can
+   * take the full column width. Without this, flex defaults to row and the
+   * toolbar competes horizontally with the 600px canvas — shrinking to
+   * ~124px and wrapping every button onto its own line. */
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Canvas + touch-overlay anchor. The wrap establishes the positioning
+ * context for the absolutely-positioned touch buttons so they overlay the
+ * canvas's CSS-pixel rect (not the wider stage column). It also paces the
+ * canvas at the available column width while preserving the 600×400 (3:2)
+ * aspect ratio via the canvas's own `aspect-ratio`. */
+.playground-canvas-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .playground-canvas {
+  display: block;
   width: 100%;
-  max-width: 600px;
   height: auto;
   aspect-ratio: 600 / 400;
   background: #1a0d0a;
@@ -530,12 +544,13 @@ main {
 
 /* ---------- Playground touch controls (coarse-pointer only) ----------
  *
- * Three overlay <button>s positioned in the bottom corners of the stage.
- * HIDDEN BY DEFAULT on fine-pointer (desktop) devices — desktop users have a
- * keyboard and showing touch buttons there would clutter the demo. Revealed
- * via @media (pointer: coarse) below (phones / tablets). The adapter still
- * attaches pointer listeners when the buttons are display:none; they simply
- * never receive events (idle edges forever — correct, harmless).
+ * Three overlay <button>s positioned in the bottom corners of the canvas
+ * wrapper. HIDDEN BY DEFAULT on fine-pointer (desktop) devices — desktop
+ * users have a keyboard and showing touch buttons there would clutter the
+ * demo. Revealed via @media (pointer: coarse) below (phones / tablets).
+ * The adapter still attaches pointer listeners when the buttons are
+ * display:none; they simply never receive events (idle edges forever —
+ * correct, harmless).
  */
 
 .playground-touch-btn {
@@ -601,6 +616,146 @@ main {
   .playground-touch-btn {
     display: flex;
   }
+}
+
+/* =========================================================================
+   Playground editor controls — toolbar (catalog + select + undo) +
+   mode-toggle row + status panel. These appear inside .playground-stage
+   in BOTH modes, but [data-mode] on the section controls visibility:
+   - .playground-mode-row (the toggle button) is always visible.
+   - .playground-toolbar (catalog + select + undo) is visible only in Edit.
+   - .playground-touch-btn is visible only in Play (and only on touch).
+   ========================================================================= */
+
+.playground-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* The toolbar (kind buttons + select + undo) is hidden in Play mode; the
+ * data-mode attribute on the section toggles it. The mode-toggle button
+ * inside .playground-mode-row stays visible in both modes. */
+.playground-toolbar {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--palette-bg);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+}
+
+.playground-section[data-mode="edit"] .playground-toolbar {
+  display: flex;
+}
+
+/* Toolbar separator — thin vertical rule between kind buttons and the
+ * Select / Undo cluster. */
+.playground-toolbar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: rgba(232, 232, 238, 0.18);
+}
+
+.playground-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--palette-surface);
+  color: var(--palette-text);
+  border: 2px solid var(--outline);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.playground-btn:hover:not(:disabled) {
+  background: #2a2a32;
+}
+
+.playground-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.playground-btn:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.playground-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Active kind / select / mode-toggle button — accent fill so the current
+ * tool reads at a glance. */
+.playground-btn--active,
+.playground-btn[aria-pressed="true"] {
+  background: var(--palette-base);
+  color: #fff;
+  border-color: var(--outline);
+}
+
+.playground-btn--active:hover,
+.playground-btn[aria-pressed="true"]:hover {
+  background: #ff7320;
+}
+
+/* The mode-toggle button uses the purple "interactive" accent so it stands
+ * out from the kind/select cluster (it's the primary navigation affordance
+ * between the two modes). */
+.playground-mode-toggle.playground-btn--active {
+  background: var(--palette-feature);
+  color: #fff;
+}
+
+.playground-mode-toggle.playground-btn--active:hover {
+  background: #9159f0;
+}
+
+/* Status panel — validation / mode hint. Mirrors the editor-errors pattern. */
+.playground-status {
+  width: 100%;
+  margin: 0 auto;
+  padding: 8px 12px;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--palette-text-dim);
+  background: var(--palette-bg);
+  border: 2px solid var(--outline);
+  border-radius: var(--radius);
+  word-break: break-word;
+}
+
+.playground-status--invalid {
+  color: #ffd0d0;
+  border-color: #5a1a1a;
+}
+
+/* In Edit mode, the canvas cursor is a crosshair (placement / selection).
+ * In Play mode (default), it stays default (gameplay). */
+.playground-section[data-mode="edit"] .playground-canvas {
+  cursor: crosshair;
+}
+
+/* Touch buttons are hidden in Edit mode (touch editing is out of scope). */
+.playground-section[data-mode="edit"] .playground-touch-btn {
+  display: none !important;
 }
 
 /* =========================================================================
@@ -746,3 +901,10 @@ main {
    * unlike the pixelated hero/playground canvases which use crisp-edges. */
   touch-action: none;
 }
+
+/* =========================================================================
+   Editor section — level editor + playtest loop demo.
+   (Merged into the playground section. The .editor-* rules below were
+   removed; the playground's .playground-toolbar / .playground-btn etc.
+   cover the same functionality. See the Playground section CSS above.)
+   ========================================================================= */

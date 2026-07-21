@@ -10,6 +10,7 @@ import {
   clearHistory,
   createEditorState,
 } from '../editor';
+import { validateLevel } from '../level/validate';
 import type { LevelData } from '../level/types';
 
 function baseLevel(): LevelData {
@@ -220,5 +221,63 @@ describe('undo clears stale selection', () => {
     };
     const undone = undo(selected);
     expect(undone.selection.ids.has(newId)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: validation cache must be recomputed after undo / redo.
+//
+// Before the fix, undo/redo restored the level from the snapshot but left
+// the validation cache pointing at the pre-undo state — so the status panel
+// showed stale errors / stale "valid" after a history navigation.
+// ---------------------------------------------------------------------------
+
+describe('undo / redo recompute validation cache (integration hardening)', () => {
+  it('undo recomputes the validation cache from the restored level', () => {
+    // Start with a valid level, then add a duplicate-spawn (invalid) op.
+    const initial = createEditorState(baseLevel());
+    expect(initial.validation.valid).toBe(true);
+    const invalid = applyOp(initial, {
+      type: 'addEntity',
+      kind: 'spawn',
+      rect: { x: 0, y: 0, width: 16, height: 16 },
+      props: {},
+    });
+    // Validation now reports the duplicate-spawn error.
+    expect(invalid.validation.valid).toBe(false);
+    // Undo must restore BOTH the level AND a validation cache that reflects
+    // the restored (valid) level — not just shallow-copy the stale cache.
+    const undone = undo(invalid);
+    expect(undone.level).toEqual(initial.level);
+    expect(undone.validation.valid).toBe(true);
+    expect(undone.validation.errors).toEqual(initial.validation.errors);
+  });
+
+  it('redo recomputes the validation cache from the re-applied level', () => {
+    const initial = createEditorState(baseLevel());
+    const invalid = applyOp(initial, {
+      type: 'addEntity',
+      kind: 'spawn',
+      rect: { x: 0, y: 0, width: 16, height: 16 },
+      props: {},
+    });
+    const undone = undo(invalid);
+    expect(undone.validation.valid).toBe(true);
+    const redone = redo(undone);
+    // Redo restores the duplicate-spawn level; validation must report
+    // invalid again, not carry over the post-undo "valid" cache.
+    expect(redone.level).toEqual(invalid.level);
+    expect(redone.validation.valid).toBe(false);
+    expect(redone.validation.errors).toEqual(invalid.validation.errors);
+  });
+
+  it('undo validation cache is byte-identical to fresh validateLevel() of the restored level', () => {
+    // Stronger than just .valid: the entire diagnostics list must match.
+    const initial = createEditorState(baseLevel());
+    const withEntity = applyOp(initial, addPlatform);
+    const undone = undo(withEntity);
+    // Re-validate from scratch via the public validator and compare.
+    const fresh = validateLevel(undone.level);
+    expect(undone.validation).toEqual(fresh);
   });
 });

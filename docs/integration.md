@@ -1,6 +1,10 @@
 # Integration
 
-## How to consume aicraft-engine
+End-to-end wiring guide for building a platformer with an editor using `aicraft-engine`.
+
+---
+
+## 1. Install
 
 ### Option A: Git submodule (recommended)
 
@@ -40,190 +44,359 @@ The library is structured to be publishable, but doing so adds a `dependencies` 
 
 This option is fine for **external consumers** (Premium AI Craft customers building their own games outside the Spitekeep family), but not for sibling games in the Clone-to-Jest pipeline.
 
-## Consumer-side integration patterns
+---
 
-### Palette as a consumer of the engine
+## 2. The mental model
 
-The consumer's `palette.ts` should switch from a flat `as const` object to a factory that consumes the engine's palette-resolution layer (Phase 2). The real engine APIs are `resolvePalette` (merge a base palette with overrides) and `generatePalette` (deterministic harmonic palette from a seed):
+```
+[Level Data]  ←──authored state──→  [Editor Core]  ←──ops──→  [Your UI]
+     │
+     └──compileLevel──→  [Platformer Kernel]  ←──tick──→  [Renderer]
+```
+
+**`LevelData` is the source of truth.** It's a plain JSON object — versioned, typed, migration-ready. You author it in the editor or load it from a file. Everything downstream reads from it; nothing writes back to it except editor ops.
+
+**The editor core owns `EditorState`** (level + undo/redo history + selection + validation cache). It applies serializable operations (`addEntity`, `moveEntities`, `paintTiles`, etc.) via `applyOp` and returns a fresh state each time. The editor never mutates directly — pure reducer pattern, like Redux for your level.
+
+**The platformer kernel runs against a runtime view of the level.** `compileLevel(level)` extracts static solids and initial actor state from the authored `LevelData`. The kernel never sees the editor; it only sees `Solid[]` and `PlatformerState`. This clean boundary means runtime mutations (player position, moving platforms) never pollute your authored state.
+
+**The renderer is your job.** The library provides per-entity draw helpers (`drawLevelEntity`, `drawActor`, `drawTileGrid`) and a palette of primitives (`outlineRect`, `shade`, etc.), but no full-screen renderer. You own the canvas, the camera, the draw loop.
+
+**Playtest mode clones the level** so runtime mutations never pollute authored state. `enterPlaytest` deep-clones twice (one for the snapshot, one for the runtime copy); `exitPlaytest` restores from the snapshot. The editor's undo history survives the round-trip.
+
+---
+
+## 3. Minimum viable platformer
+
+A complete, playable platformer in ~60 lines. Paste this into a fresh Vite project and see a controllable character on screen.
 
 ```ts
-// Before (Spitekeep-style)
-export const PALETTE = { devilBody: '#FE5701', ... } as const;
-
-// After (engine-integrated)
+import { type LevelData } from './lib/aicraft-engine/src/level';
 import {
-  resolvePalette,
-  generatePalette,
-  type Palette,
-} from './lib/aicraft-engine/src/palette';
+  compileLevel,
+  stepPlatformer,
+  drawLevelEntity,
+  drawActor,
+  drawTileGrid,
+} from './lib/aicraft-engine/src/platformer';
+import { createKeyboardAdapter } from './lib/aicraft-engine/src/input';
+import { createGameLoop } from './lib/aicraft-engine/src/game-loop';
+import { resizeCanvasToBackingStore } from './lib/aicraft-engine/src/primitives';
 
-// The engine's Palette is the canonical 5-slot contract:
-// { outline, base, accent, feature, background }. Consumers stop using
-// bespoke slot names (devilBody, ...) and map draw callbacks onto these slots.
-const BASE_PALETTE: Palette = {
-  outline: '#1d1128',
-  base: '#FE5701',
-  accent: '#8B0000',
-  feature: '#FFD700',
-  background: '#2a0a0a',
+// --- Level data (or load from JSON) ---
+const level: LevelData = {
+  version: 1,
+  id: 'demo',
+  name: 'Demo Level',
+  width: 960,
+  height: 540,
+  tileSize: 16,
+  spawn: { x: 32, y: 400 },
+  tiles: {
+    data: [
+      ...Array(60).fill(1), // top row: solid
+      ...Array(59).fill(0), 1, // bottom row: floor
+    ],
+    cols: 60,
+    rows: 2,
+    tileSize: 16,
+  },
+  entities: [
+    { id: 1, kind: 'spawn', rect: { x: 32, y: 400, width: 16, height: 24 }, props: {} },
+    { id: 2, kind: 'platform', rect: { x: 128, y: 350, width: 64, height: 16 }, props: {} },
+    { id: 3, kind: 'platform', rect: { x: 256, y: 300, width: 64, height: 16 }, props: {} },
+  ],
+  nextEntityId: 4,
 };
 
-// Per-skin overrides: partial — missing slots inherit from BASE_PALETTE.
-const SKIN_OVERRIDES: Record<string, Partial<Palette>> = {
-  'ember-mage': { base: '#ff6a00', feature: '#ffeb3b' },
-  'frost-mage': { base: '#2a7ad4', accent: '#a0d8ff' },
-};
+// --- Compile level into runtime solids + initial player state ---
+const { staticSolids, initialState } = compileLevel(level);
 
-export function getPalette(activeSkinId: string | null): Palette {
-  if (!activeSkinId || !(activeSkinId in SKIN_OVERRIDES)) return BASE_PALETTE;
-  return resolvePalette(BASE_PALETTE, SKIN_OVERRIDES[activeSkinId]);
+// --- Input ---
+const keyboard = createKeyboardAdapter({
+  codeToAction: {
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+    Space: 'jump',
+  },
+});
+
+// --- Canvas setup ---
+const canvas = document.querySelector<HTMLCanvasElement>('canvas')!;
+const ctx = canvas.getContext('2d')!;
+const dpr = resizeCanvasToBackingStore(canvas, 600, 400);
+ctx.scale(dpr, dpr);
+
+// --- Game state (compileLevel already positioned initialState at level.spawn) ---
+let platformerState = initialState;
+
+// --- Game loop ---
+const loop = createGameLoop({
+  step: (_dt) => {
+    const edges = keyboard.poll();
+    const left = edges['left']  ?? { held: false, pressed: false, released: false };
+    const right = edges['right'] ?? { held: false, pressed: false, released: false };
+    const jump = edges['jump']  ?? { held: false, pressed: false, released: false };
+
+    const moveX: -1 | 0 | 1 = left.held ? -1 : right.held ? 1 : 0;
+
+    platformerState = stepPlatformer(
+      platformerState,
+      { moveX, jump, dash: null },
+      staticSolids,
+      1 / 60,
+    ).state;
+  },
+  render: (_alpha) => {
+    ctx.fillStyle = '#1a0d0a';
+    ctx.fillRect(0, 0, 600, 400);
+
+    // Draw tile grid
+    drawTileGrid(ctx, level.tiles, (c, x, y, tileValue, size) => {
+      if (tileValue !== 0) {
+        c.fillStyle = '#3a2a1a';
+        c.fillRect(x, y, size, size);
+      }
+    });
+
+    // Draw level entities
+    for (const entity of level.entities) {
+      drawLevelEntity(ctx, entity);
+    }
+
+    // Draw player (default palette uses Spitekeep orange #fe5701; spread a custom palette to override)
+    drawActor(ctx, platformerState.core);
+  },
+});
+
+loop.start();
+```
+
+This gives you:
+- A character that spawns at `(32, 400)` and falls onto a floor
+- Left/right movement with arrow keys
+- Jump with spacebar (with coyote time and variable-height jump)
+- Wall-slide and wall-jump (enabled by default)
+- Dash (enabled by default — press dash key or remove from input)
+- Collision against tile grid and entity platforms
+
+> **Source files:** `compileLevel` is in `src/platformer/level-runtime.ts`. `drawLevelEntity`, `drawActor`, `drawTileGrid` are in `src/platformer/renderer.ts`. `stepPlatformer` is in `src/platformer/kernel.ts`.
+
+---
+
+## 4. Minimum viable editor
+
+Click-to-place platforms with undo. Same canvas, editor UI layered on top.
+
+```ts
+import { createEditorState, applyOp, undo, canUndo } from './lib/aicraft-engine/src/editor';
+import { type LevelData } from './lib/aicraft-engine/src/level';
+import { drawLevelEntity, drawTileGrid } from './lib/aicraft-engine/src/platformer';
+
+// --- Same level data as above ---
+const level: LevelData = { /* ... same as section 3 ... */ };
+
+// --- Editor state ---
+let editorState = createEditorState(level);
+
+// --- Click handler: add a platform ---
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / 16) * 16; // snap to grid
+  const y = Math.round((e.clientY - rect.top) / 16) * 16;
+
+  editorState = applyOp(editorState, {
+    type: 'addEntity',
+    kind: 'platform',
+    rect: { x, y, width: 48, height: 16 },
+    props: {},
+  });
+
+  render(); // re-render after state change
+});
+
+// --- Undo button ---
+document.getElementById('undo-btn')!.addEventListener('click', () => {
+  if (canUndo(editorState)) {
+    editorState = undo(editorState);
+    render();
+  }
+});
+
+// --- Render ---
+function render() {
+  ctx.fillStyle = '#1a0d0a';
+  ctx.fillRect(0, 0, 600, 400);
+
+  // No need to compile solids in the editor — just draw what's there
+  drawTileGrid(ctx, editorState.level.tiles, (c, x, y, tileValue, size) => {
+    if (tileValue !== 0) {
+      c.fillStyle = '#3a2a1a';
+      c.fillRect(x, y, size, size);
+    }
+  });
+
+  for (const entity of editorState.level.entities) {
+    drawLevelEntity(ctx, entity);
+  }
+
+  // Show validation errors in a panel
+  const errorPanel = document.getElementById('errors')!;
+  const errors = editorState.validation.errors.filter(e => e.severity === 'error');
+  errorPanel.textContent = errors.length === 0
+    ? 'Level is valid'
+    : errors.map(e => e.message).join('\n');
 }
 
-// Procedural variant: same seed → same palette, forever. Contrast-repaired.
-export function getPaletteForSeed(seed: number): Palette {
-  return generatePalette(seed);
+render();
+```
+
+Key patterns:
+- **`createEditorState(level)`** deep-clones the level, runs initial validation, and returns a fresh `EditorState`.
+- **`applyOp(state, op)`** is a pure reducer — returns a new state, never mutates. The op is a plain serializable object (no closures).
+- **`undo(state)`** pops the last snapshot and restores. `canUndo(state)` checks if there's anything to pop.
+- **`state.validation.errors`** is recomputed on every `applyOp` call. Read it to show errors in your UI.
+
+---
+
+## 5. Playtest mode
+
+Playtest creates a sandbox boundary: the editor's authoritative level is never touched by runtime mutations.
+
+```ts
+import { enterPlaytest, exitPlaytest } from './lib/aicraft-engine/src/editor';
+import { compileLevel, type PlatformerState } from './lib/aicraft-engine/src/platformer';
+import type { LevelData } from './lib/aicraft-engine/src/level';
+
+let runtimeState: PlatformerState | null = null;
+let playtestSnapshot: LevelData | null = null;
+
+function startPlaytest() {
+  const result = enterPlaytest(editorState);
+  playtestSnapshot = result.snapshot;
+
+  // Compile the runtime copy — fresh solids, fresh initial state.
+  // `initialState` is a full PlatformerState positioned at level.spawn with default dimensions.
+  const compiled = compileLevel(result.runtimeLevel);
+  runtimeState = compiled.initialState;
+  // Store compiled.staticSolids for use in the game loop.
+}
+
+function stopPlaytest() {
+  if (playtestSnapshot === null) return;
+  editorState = exitPlaytest(editorState, playtestSnapshot);
+  runtimeState = null;
+  playtestSnapshot = null;
+  render(); // re-render the editor
 }
 ```
 
-The simulation never reads color values — `Palette` lives in the deterministic core and is only resolved into hex strings for the renderer at draw time.
+Why this matters:
+- `enterPlaytest` deep-clones twice: `snapshot` (for restore) and `runtimeLevel` (for your sim to mutate).
+- The kernel writes to `runtimeLevel` (moving platforms change position, etc.), but the editor's `state.level` is untouched.
+- `exitPlaytest` restores the editor from the snapshot. Undo history is preserved.
+- The two clones are independent — mutating `runtimeLevel` never affects `snapshot`.
 
-### Save schema extension
+---
 
-The consumer's `SaveData` (Spitekeep's `platform/types.ts`) migrates to a new version that carries cosmetic-ownership fields:
+## 6. Wiring a custom entity type
+
+The library's `EntityKind` is a closed union: `spawn | exit | platform | passthrough | trap | hazard | decoration | trigger | movingPlatform`. Adding a new kind requires either a library update or a fork.
+
+**Simplest path: use `trap` or `trigger` with a `type` discriminator.** This matches Spitekeep's existing pattern — a "spring" entity is a `trap` with `props: { type: 'spring', params: { bounceVelocity: -400 } }`.
 
 ```ts
-// Spitekeep v1
-interface SaveData {
-  version: 1;
-  // ... existing fields
-}
-
-// Spitekeep v2 (after Phase 2 integration)
-interface SaveData {
-  version: 2;
-  // ... existing fields
-  equippedSkin: string | null;
-  ownedSkins: string[];
-}
+// Authoring in the editor
+editorState = applyOp(editorState, {
+  type: 'addEntity',
+  kind: 'trap',
+  rect: { x: 128, y: 384, width: 16, height: 8 },
+  props: { type: 'spring', params: { bounceVelocity: -400 } },
+});
 ```
 
-The migration logic in `platform/save.ts` upgrades v1 → v2 by adding defaults.
-
-### IAP bridge instance
-
-The consumer creates a single IAP bridge instance at startup and passes it to whoever needs to query or transact:
+**Drawing your custom entity** — the renderer's `drawLevelEntity` handles built-in kinds. For custom kinds, use the `drawOverride` callback:
 
 ```ts
-// platform/iap.ts in the consumer
-import { createLocalStorageIAPAdapter } from './lib/aicraft-engine/src/iap/adapters/local-storage';
-export const iap = createLocalStorageIAPAdapter({ catalog: [...], storageKey: 'aicraft-iap' });
+drawLevelEntity(ctx, entity, {
+  drawOverride: (ctx, entity) => {
+    if (entity.kind === 'trap' && entity.props.type === 'spring') {
+      ctx.fillStyle = '#FFD700';
+      ctx.fillRect(entity.rect.x, entity.rect.y, entity.rect.width, entity.rect.height);
+      // Draw a spring coil shape...
+    }
+  },
+});
 ```
 
-### Parallax background layers
-
-#### The layer-stack pattern
-
-A multi-layer seamless-scroll background assigns each layer a parallax factor (far = slow, near = fast) and a seamless tile width. Layers closer to the camera scroll faster and use smaller tiles for more visual detail.
-
-Example: a hellscape side-scroller with 5 layers.
-
-| Layer | Content | Factor | Tile width | Module |
-|---|---|---|---|---|
-| 1 | dark purple/red fog gradient | 0.05 | wide (800) | `src/primitives/parallax.ts` |
-| 2 | distant fortress silhouettes | 0.12 | 600 | `src/primitives/parallax.ts` |
-| 3 | lavafalls, demon statues, towers | 0.25 | 400 | `src/primitives/parallax.ts` |
-| 4 | chains, stalactites, ruins | 0.45 | 300 | `src/primitives/parallax.ts` |
-| 5 | embers / smoke particles | n/a | n/a | `src/particles/` |
-
-Layer 5 is **not** a parallax layer — it uses the deterministic particle system from `src/particles/`. Don't try to force particles through `tiledParallaxRange`.
-
-#### The render loop
-
-Two approaches: the `drawTiledParallax` convenience wrapper (most cases), or `tiledParallaxRange` directly (when you need the geometry for WebGL, custom transforms, or composing with other effects).
+**Handling the interaction in the kernel** — the kernel emits `contacts` events each tick. After `stepPlatformer`, check for overlaps with your spring entity:
 
 ```ts
-import {
-  drawTiledParallax,
-  parallaxOffset,
-} from './lib/aicraft-engine/src/primitives';
-// import { stepEmitters } from './lib/aicraft-engine/src/particles';
+const { state: nextState, events } = stepPlatformer(state, input, solids, dt);
 
-function renderBackground(
-  ctx: CanvasRenderingContext2D,
-  cameraX: number,
-  cameraY: number,
-  vw: number,
-  vh: number,
-) {
-  // Layer 1: opaque sky gradient (does not tile — just a fill translated by parallaxOffset)
-  const sky = parallaxOffset(cameraX, cameraY, 0.05);
-  ctx.save();
-  ctx.translate(sky.x, sky.y);
-  drawSkyGradient(ctx, vw, vh);
-  ctx.restore();
-
-  // Layers 2-4: seamless tiling via convenience wrapper
-  drawTiledParallax(ctx, (c, x) => drawFarFortress(c, x, vh), cameraX, 0.12, 600, vw);
-  drawTiledParallax(ctx, (c, x) => drawMidStatues(c, x, vh), cameraX, 0.25, 400, vw);
-  drawTiledParallax(ctx, (c, x) => drawNearChains(c, x, vh), cameraX, 0.45, 300, vw);
-
-  // Layer 5: particles (uses src/particles — not parallax)
-  // emitters = stepEmitters(emitters, dt);
-  // drawEmbers(ctx, emitters);
-}
-```
-
-When you need the raw geometry (e.g. for WebGL draw calls or composing with other transforms), use `tiledParallaxRange` directly:
-
-```ts
-import {
-  tiledParallaxRange,
-  PARALLAX_FAR,
-} from './lib/aicraft-engine/src/primitives';
-
-function renderFortressLayer(
-  ctx: CanvasRenderingContext2D,
-  cameraX: number,
-  vw: number,
-  vh: number,
-) {
-  const range = tiledParallaxRange(cameraX, PARALLAX_FAR, 600, vw);
-  for (let i = 0; i < range.copies; i++) {
-    drawFarFortress(ctx, range.startX + i * 600, vh);
+// Check if player is on the ground near a spring
+if (events.justLanded && nextState.core.contacts.groundId) {
+  const spring = level.entities.find(
+    e => e.kind === 'trap'
+      && e.props.type === 'spring'
+      && e.id === Number(nextState.core.contacts.groundId),
+  );
+  if (spring) {
+    // Apply bounce: override vy for next tick
+    state = { ...nextState, core: { ...nextState.core, vy: spring.props.params.bounceVelocity } };
+    continue;
   }
 }
+state = nextState;
 ```
 
-#### The seamless-tile requirement (critical)
+> **Note:** `compileLevel` assigns each compiled solid an id of the form `'entity-<entityId>'`. To match a contact back to its source entity, parse the prefix off `contacts.groundId` (e.g. `'entity-7'` → entity id `7`).
 
-The helper computes correct geometry, but **visual seamlessness is the asset's responsibility.** The left edge of each tile must visually match its right edge.
+---
 
-Rules of thumb:
-- Avoid unique landmarks (a giant statue, a hell gate) at the tile edge unless they continue cleanly across the seam.
-- Big landmarks go in the middle of the tile; edges use repeatable shapes (cliffs, haze, chains, silhouettes).
-- Use sine-wave hills or repeating gradients where possible — they wrap by construction.
-- Test by setting `camera = tileWidth / factor` and inspecting: the seam should be invisible.
+## 7. Tuning game feel
 
-#### Sub-pixel mitigation
+The library ships four config presets — each is a `PlatformerConfig` spread over `DEFAULT_PLATFORMER_CONFIG`:
 
-Two documented patterns for handling sub-pixel camera positions:
+```ts
+import {
+  PRECISION_PLATFORMER,
+  CLASSIC_PLATFORMER,
+  EXPLORATION_PLATFORMER,
+  PUZZLE_PLATFORMER,
+} from './lib/aicraft-engine/src/platformer';
+```
 
-- **Smooth scroll (default):** Pass `tileWidth` as-is. Tiles slide continuously. May show 1px anti-aliasing blur on hard edges at sub-pixel camera positions. Best for painted / organic art styles.
-- **Pixel-art sharp:** In the `drawTile` callback, draw with integer-snapped coordinates: `Math.round(screenX)`. Tiles jump by 1px at integer camera boundaries. Best for crisp pixel art.
+| Preset | Feel |
+|---|---|
+| `PRECISION_PLATFORMER` | Snappy, tight control. Low air control, fast dash, wall-slide. The default. |
+| `CLASSIC_PLATFORMER` | Mario-like. Higher air control, no wall-slide, double-jump enabled. |
+| `EXPLORATION_PLATFORMER` | Floaty, relaxed. Slow fall, generous jump, no dash. |
+| `PUZZLE_PLATFORMER` | Minimal movement. Slow speed, no dash/wall-slide. Focus on puzzle elements. |
 
-A third pattern for eliminating sub-pixel seam gaps in float mode: **overscan** — draw each tile 1px wider (`tileWidth + 1` in the `drawTile` body) so adjacent tiles overlap by 1px. Trade-off: 1px of overdraw per seam, but zero sub-pixel gaps. See the JSDoc in `src/primitives/parallax.ts` for the canonical overscan discussion.
+**Swapping presets mid-game is allowed** — the kernel is stateless across ticks for config. Just pass a different config:
 
-#### Hybrid set-piece pattern (advanced)
+```ts
+// Switch to puzzle mode when entering a puzzle room
+const config = inPuzzleRoom ? PUZZLE_PLATFORMER : PRECISION_PLATFORMER;
+platformerState = stepPlatformer(platformerState, input, solids, 1 / 60, config).state;
+```
 
-A few infinite-loop layers (`tiledParallaxRange` / `drawTiledParallax`) handle the ambient background. Occasionally-spawned unique set pieces (giant demon statue, skull arch) are projected at the same parallax depth using `parallaxOffset` — not `tiledParallaxRange`. This gives infinite scroll plus variety without bloating tile assets. The set piece is drawn at `camera * factor` offset, same as any parallax layer; the only difference is that it's a one-off draw call, not a repeating tile. See `docs/design/seamless-tiled-parallax-proposal.md` for the full pattern.
+**Custom configs** — spread any preset and override:
 
-#### Vertical tiling
+```ts
+const myConfig = {
+  ...CLASSIC_PLATFORMER,
+  gravity: 1200, // heavier gravity for a "weighty" feel
+  jump: { ...CLASSIC_PLATFORMER.jump, maxHoldTime: 0.15 },
+};
+```
 
-The helper is 1D (single axis). For vertical or 2D scroll, call `tiledParallaxRange` twice — once per axis. Side-scrollers typically fix Y and only need the X call. Top-down games with vertical parallax (e.g. clouds above, terrain below) call both and combine the offsets.
+---
 
-## Shipping to mobile
+## 8. Shipping to mobile
 
-Mobile web play adds constraints that desktop avoids: browser zoom hijacking touch, iOS rubber-band scrolling, audio autoplay policies, Retina scaling, and the need for on-screen touch controls. This section is a checklist of every mobile deployment pattern the engine supports, with the engine helpers that implement each piece and the showcase as the worked example.
+Mobile web play adds constraints that desktop avoids: browser zoom hijacking touch, iOS rubber-band scrolling, audio autoplay policies, Retina scaling, and the need for on-screen touch controls. This section is a checklist of every mobile deployment pattern the engine supports.
 
 ### 1. Viewport meta — lock zoom
 
@@ -234,8 +407,6 @@ iOS Safari allows pinch-to-zoom and double-tap-to-zoom on any page. Both break g
 ```
 
 `maximum-scale=1.0` disables pinch zoom; `user-scalable=no` disables double-tap zoom. `width=device-width` keeps the layout width correct across devices.
-
-> **Reference:** `showcase/index.html` line 5.
 
 ### 2. `overscroll-behavior: none` — prevent rubber-band / pull-to-refresh
 
@@ -248,8 +419,6 @@ html, body {
   overscroll-behavior: none;
 }
 ```
-
-> **Reference:** `showcase/style.css` line 43 (`overscroll-behavior: none` on `body`).
 
 ### 3. `touch-action: none` — prevent browser gesture interception
 
@@ -264,9 +433,6 @@ Apply `touch-action: none` to the canvas in CSS:
 ```
 
 The engine's touch adapters (`createTouchButtonSet`, `createTouchButton`) set `element.style.touchAction = 'none'` on each button element automatically — so on-screen buttons work without a CSS rule. But the canvas itself needs it in your stylesheet.
-
-> **Reference:** `showcase/style.css` lines 517-518 (`.playground-canvas`).
-> **Engine exports:** `createTouchButtonSet` (`src/input/touch-button-set.ts`), `createTouchButton` (`src/input/touch-button.ts`).
 
 ### 4. DPR / Retina scaling — crisp rendering on high-DPI displays
 
@@ -290,16 +456,15 @@ ctx.scale(dpr, dpr);
 
 After this setup, your game code draws in CSS-pixel coordinates (`ctx.fillRect(0, 0, 600, 400)`) and the engine handles the DPR scaling. No `Math.round(x * dpr)` at every draw call.
 
-**Determinism boundary:** DPR is host-touching (`window.devicePixelRatio`). Call `resizeCanvasToBackingStore` at canvas setup and on `resize` events — never inside the fixed-step simulation. The returned DPR flows into your render code as a parameter, matching the discipline prescribed in `docs/architecture.md` rule 4.
+**Determinism boundary:** DPR is host-touching (`window.devicePixelRatio`). Call `resizeCanvasToBackingStore` at canvas setup and on `resize` events — never inside the fixed-step simulation. The returned DPR flows into your render code as a parameter.
 
-**Fresh read on resize:** `resizeCanvasToBackingStore` reads DPR fresh every call (not via the cached `getDevicePixelRatio`). This is intentional — `devicePixelRatio` changes when a browser window is dragged between monitors of different DPI, or when browser zoom is adjusted. The cached `getDevicePixelRatio()` is intended for one-shot startup reads where the cached value is fine.
+**Fresh read on resize:** `resizeCanvasToBackingStore` reads DPR fresh every call (not via the cached `getDevicePixelRatio`). This is intentional — `devicePixelRatio` changes when a browser window is dragged between monitors of different DPI, or when browser zoom is adjusted.
 
-> **Reference:** `showcase/sections/playground.ts` lines 471-472.
 > **Engine exports:** `resizeCanvasToBackingStore`, `getDevicePixelRatio`, `FALLBACK_DPR` (`src/primitives/dpr.ts`).
 
 ### 5. Audio unlock on first user gesture
 
-Mobile browsers block `AudioContext` from producing sound until a user gesture (tap, keypress) has occurred. The engine's `createAudioAdapter()` creates a defensive WebAudio adapter; calling `unlock()` on the first gesture resumes the context and arms playback. The pattern: register one-shot `keydown` and `pointerdown` listeners on `window`, call `audio.unlock()` inside them, then remove the listeners:
+Mobile browsers block `AudioContext` from producing sound until a user gesture (tap, keypress) has occurred. The engine's `createAudioAdapter()` creates a defensive WebAudio adapter; calling `unlock()` on the first gesture resumes the context and arms playback:
 
 ```ts
 import { createAudioAdapter } from './lib/aicraft-engine/src/audio';
@@ -317,7 +482,6 @@ window.addEventListener('pointerdown', unlockAudio);
 
 After `unlock()`, `audio.playTone(...)` and `audio.playNoise(...)` produce sound. Before unlock (or in Node/SSR), they are silent no-ops — a game never crashes because audio failed.
 
-> **Reference:** `showcase/sections/playground.ts` lines 595-601.
 > **Engine exports:** `createAudioAdapter`, `AudioAdapter` (`src/audio/factory.ts`).
 
 ### 6. Touch controls — the composition recipe
@@ -368,22 +532,9 @@ const jumpEdge  = orEdges(kb['jump']  ?? IDLE_EDGE, t[2] ?? IDLE_EDGE);
 
 Array order in the touch set is load-bearing — the consumer maps indices to semantics via destructuring. The `?? IDLE_EDGE` fallback guards against a missing slot (`orEdges` is not null-safe).
 
-#### Single-button path
-
-For a standalone action (e.g. a single jump button):
-
-```ts
-import { createTouchButton } from './lib/aicraft-engine/src/input';
-
-const jumpBtn = createTouchButton(document.getElementById('jump-btn'));
-// Per-tick:
-const edge = jumpBtn.poll();
-if (edge.pressed) bufferJump();
-```
-
 #### CSS gating: reveal on touch devices only
 
-On-screen buttons are invisible on desktop (keyboard-only) and revealed only on touch devices. The showcase uses `@media (pointer: coarse), (hover: none)`:
+On-screen buttons are invisible on desktop (keyboard-only) and revealed only on touch devices:
 
 ```css
 .touch-btn {
@@ -401,32 +552,13 @@ On-screen buttons are invisible on desktop (keyboard-only) and revealed only on 
 
 The adapter still attaches listeners when buttons are `display: none` — they simply never receive events (idle edges forever, harmless).
 
-> **Reference:** `showcase/style.css` lines 533-595, `showcase/index.html` lines 257-259.
 > **Engine exports:** `createTouchButtonSet`, `createTouchButton`, `orEdges` (`src/input/`).
-
-#### Multi-touch safety (handled by the adapter)
-
-`createTouchButtonSet` tracks a `Set<pointerId>` per element with `0→≥1` press / `1→0` release transitions. Two fingers on the same button produce one `held=true`; lifting one finger keeps `held=true`; lifting both produces a single `released` edge. A global `document` listener catches `pointerup`/`pointercancel`/`pointerleave` so a pointer that exits the viewport without a clean per-element `pointerup` (e.g. swipe to the notification bar) cannot leave a button stuck.
-
-The consumer does not need to implement any of this — the adapter handles it.
-
-#### Named directional shape (thin wrapper)
-
-If you want a `{left, right, up, down}` named object instead of positional indices, destructure the poll result:
-
-```ts
-const [left, right, up, down] = dpad.poll();
-```
-
-A convenience wrapper (`createVirtualDpad`) is documented as out-of-scope for now — ~15 lines on top of `createTouchButtonSet`, to be added when a second consumer wants it.
-
-> **Decision:** `docs/design/mobile-directional-input-decision.md`.
 
 ### 7. `prefers-reduced-motion` — gate non-essential motion
 
 Some users enable the OS-level "reduce motion" setting to avoid motion sickness or distraction. The engine's `prefersReducedMotion()` returns a cached boolean: `true` when the user has requested reduced motion, `false` in Node/SSR (safe default — render the animation).
 
-**Hard-binary gate** (what the showcase does): render a single static frame and skip the game loop entirely:
+**Hard-binary gate:** render a single static frame and skip the game loop entirely:
 
 ```ts
 import { prefersReducedMotion } from './lib/aicraft-engine/src/primitives';
@@ -438,7 +570,7 @@ if (prefersReducedMotion()) {
 loop.start();
 ```
 
-**Partial reduction** (alternative): the helper just returns a boolean, so you can scale down rather than eliminate — e.g. halve screen-shake amplitude, zero out breathing oscillation, or reduce particle counts:
+**Partial reduction:** the helper just returns a boolean, so you can scale down rather than eliminate — e.g. halve screen-shake amplitude, zero out breathing oscillation, or reduce particle counts:
 
 ```ts
 const reduced = prefersReducedMotion();
@@ -446,7 +578,6 @@ const shakeAmp = reduced ? maxShake * 0.3 : maxShake;
 const breath = reduced ? 0 : breathe(tick, DEFAULT_BREATH);
 ```
 
-> **Reference:** `showcase/sections/playground.ts` lines 1242-1244.
 > **Engine export:** `prefersReducedMotion()` (`src/primitives/motion.ts`).
 
 ### 8. Fixed-timestep + background tab safety
@@ -462,11 +593,9 @@ The consumer does not need to implement either — `createGameLoop` manages it i
 
 > **Engine exports:** `createGameLoop`, `DEFAULT_FIXED_DT`, `DEFAULT_MAX_FRAME_DELTA` (`src/game-loop/fixed-step.ts`).
 
----
-
 ### Minimal mobile shell
 
-A copy-pasteable starting point. Combines the viewport meta, overscroll lock, DPR-scaled canvas, touch-action, and the audio-unlock pattern. Copy this into your game's entry point and build on top of it.
+A copy-pasteable starting point. Combines the viewport meta, overscroll lock, DPR-scaled canvas, touch-action, and the audio-unlock pattern.
 
 **HTML:**
 
@@ -555,7 +684,61 @@ const loop = createGameLoop({
 loop.start();
 ```
 
-## Synchronization strategy
+---
+
+## 9. Save / load
+
+Level JSON persists to `localStorage` via the defensive save helpers.
+
+```ts
+import {
+  createLocalStorageSaveStorage,
+  loadSave,
+  writeSave,
+} from './lib/aicraft-engine/src/save';
+import { validateLevel, migrateLevel, LEVEL_VERSION } from './lib/aicraft-engine/src/level';
+import type { LevelData } from './lib/aicraft-engine/src/level';
+
+const storage = createLocalStorageSaveStorage('my-game-levels');
+
+// Save
+function saveLevel(level: LevelData): void {
+  writeSave(storage, level);
+}
+
+// Load (with migration + validation)
+function loadLevel(id: string): LevelData | null {
+  const raw = loadSave(storage, null) as LevelData | null;
+  if (raw === null) return null;
+
+  // Migrate if version mismatch
+  let level = raw;
+  if (level.version !== LEVEL_VERSION) {
+    level = migrateLevel(level, []).level; // pass your migration steps
+  }
+
+  // Validate before using
+  const result = validateLevel(level);
+  if (!result.valid) {
+    console.error('Loaded level has errors:', result.errors);
+    return null;
+  }
+
+  return level;
+}
+```
+
+**Rules:**
+- Never `JSON.parse` untrusted shared levels without `validateLevel` first.
+- `writeSave` is defensive — silently fails on quota exceeded, private mode, etc.
+- `loadSave` returns `defaultValue` on any error (missing save, corrupt JSON, backend unavailable).
+- Migration steps are consumer-provided — the library ships the ladder runner, not the steps themselves.
+
+> **Engine exports:** `createLocalStorageSaveStorage`, `createMemorySaveStorage`, `loadSave`, `writeSave` (`src/save/`).
+
+---
+
+## 10. Synchronization strategy
 
 When `aicraft-engine` evolves, consumers update via:
 

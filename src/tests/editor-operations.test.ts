@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyOp, applyBatch, createEditorState } from '../editor';
 import type { EditorState } from '../editor/types';
-import type { LevelData, LevelRect } from '../level/types';
+import type { LevelData, LevelRect, LevelEntity, MovingPlatformProps } from '../level/types';
 
 /** A minimal valid level: spawn + exit, 10x10 tile grid, next id = 3. */
 function baseLevel(): LevelData {
@@ -378,3 +378,144 @@ describe('applyOp — purity', () => {
     expect(state.level.entities.length).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests for integration-hardening pass.
+//
+// These cover concrete bugs found in the playground:
+//   - moveEntities on a movingPlatform must translate its path along with
+//     the body so the platform doesn't snap back to its old path on play.
+//   - moveEntities / setEntityRect on a spawn entity must update
+//     level.spawn so the runtime player actually spawns at the new position.
+//   - setEntityRect on a movingPlatform body must translate path[0] to
+//     match (body and first waypoint stay coherent).
+// ---------------------------------------------------------------------------
+
+/** Build a level with a movingPlatform + spawn + exit so the moving-platform
+ *  + spawn coherence tests have realistic fixtures. */
+function levelWithMovingPlatformAndSpawn(): LevelData {
+  return {
+    version: 1,
+    id: 'mp-level',
+    name: 'MP',
+    width: 400,
+    height: 240,
+    tileSize: 16,
+    spawn: { x: 32, y: 32 },
+    tiles: { data: new Array(15 * 15).fill(0), cols: 15, rows: 15, tileSize: 16 },
+    entities: [
+      {
+        id: 1,
+        kind: 'spawn',
+        rect: { x: 32, y: 32, width: 16, height: 16 },
+        props: {},
+      },
+      {
+        id: 2,
+        kind: 'exit',
+        rect: { x: 352, y: 32, width: 16, height: 16 },
+        props: { isTrap: false, locked: false },
+      },
+      {
+        id: 3,
+        kind: 'movingPlatform',
+        rect: { x: 100, y: 100, width: 48, height: 16 },
+        props: {
+          speed: 60,
+          path: [
+            { x: 100, y: 100 },
+            { x: 200, y: 100 },
+          ],
+          loopMode: 'loop',
+        } satisfies MovingPlatformProps,
+      },
+    ],
+    nextEntityId: 4,
+  };
+}
+
+describe('applyOp — moveEntities coherence (integration hardening)', () => {
+  it('translates a movingPlatform path along with its body (regression: body/path divergence)', () => {
+    const state = createEditorState(levelWithMovingPlatformAndSpawn());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [3],
+      dx: 50,
+      dy: 30,
+    });
+    const mp = next.level.entities.find((e) => e.id === 3);
+    if (!mp || mp.kind !== 'movingPlatform') throw new Error('missing movingPlatform');
+    // Body shifted by (50, 30)
+    expect(mp.rect.x).toBe(150);
+    expect(mp.rect.y).toBe(130);
+    // Path must shift by the same delta so the platform does not snap back
+    // to its old home position when compiled.
+    expect(mp.props.path).toEqual([
+      { x: 150, y: 130 },
+      { x: 250, y: 130 },
+    ]);
+  });
+
+  it('updates level.spawn when a spawn entity is moved (regression: cosmetic spawn editing)', () => {
+    const state = createEditorState(levelWithMovingPlatformAndSpawn());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [1],
+      dx: 64,
+      dy: 16,
+    });
+    // Both the spawn entity's rect AND the level's authoritative spawn
+    // field must move together — otherwise compileLevel() reads a stale
+    // spawn and the player spawns at the wrong place.
+    expect(next.level.spawn).toEqual({ x: 96, y: 48 });
+    const spawn = next.level.entities.find((e) => e.id === 1);
+    expect(spawn?.rect.x).toBe(96);
+    expect(spawn?.rect.y).toBe(48);
+  });
+
+  it('updates level.spawn for exactly the dx/dy applied (multiple spawn moves accumulate)', () => {
+    const state = createEditorState(levelWithMovingPlatformAndSpawn());
+    const step1 = applyOp(state, { type: 'moveEntities', ids: [1], dx: 16, dy: 0 });
+    const step2 = applyOp(step1, { type: 'moveEntities', ids: [1], dx: 0, dy: 32 });
+    expect(step2.level.spawn).toEqual({ x: 48, y: 64 });
+  });
+});
+
+describe('applyOp — setEntityRect coherence (integration hardening)', () => {
+  it('updates level.spawn when a spawn entity rect is set (regression: cosmetic spawn editing)', () => {
+    const state = createEditorState(levelWithMovingPlatformAndSpawn());
+    const next = applyOp(state, {
+      type: 'setEntityRect',
+      id: 1,
+      rect: { x: 80, y: 64, width: 16, height: 16 },
+    });
+    // The level.spawn must reflect the new spawn entity position so
+    // compileLevel() reads a coherent spawn.
+    expect(next.level.spawn).toEqual({ x: 80, y: 64 });
+    const spawn = next.level.entities.find((e) => e.id === 1);
+    expect(spawn?.rect).toEqual({ x: 80, y: 64, width: 16, height: 16 });
+  });
+
+  it('translates path[0] to match a movingPlatform body change (regression: body/path divergence)', () => {
+    const state = createEditorState(levelWithMovingPlatformAndSpawn());
+    const next = applyOp(state, {
+      type: 'setEntityRect',
+      id: 3,
+      rect: { x: 150, y: 130, width: 48, height: 16 },
+    });
+    const mp = next.level.entities.find((e) => e.id === 3);
+    if (!mp || mp.kind !== 'movingPlatform') throw new Error('missing movingPlatform');
+    // path[0] should track the new body top-left so the "home" position
+    // stays coherent. The remaining waypoints preserve their relative
+    // offset from path[0].
+    expect(mp.props.path[0]).toEqual({ x: 150, y: 130 });
+    // Second waypoint should preserve the original relative offset
+    // (path[1] - path[0] === {100, 0} before and after).
+    expect(mp.props.path[1]).toEqual({ x: 250, y: 130 });
+  });
+});
+
+// Compile-time assertion that LevelEntity is reachable for the type import.
+// (noUnusedLocals gate would flag an unused import otherwise)
+const _typeOnlyLevelEntity: LevelEntity | null = null;
+void _typeOnlyLevelEntity;

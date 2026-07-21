@@ -97,10 +97,30 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.createPlatformerController).toBe('function');
   });
 
+  it('platformer glue: compileLevel is a function, drawLevelEntity is a function, PRECISION_PLATFORMER is an object', () => {
+    expect(typeof aicraft.compileLevel).toBe('function');
+    expect(typeof aicraft.drawLevelEntity).toBe('function');
+    expect(typeof aicraft.PRECISION_PLATFORMER).toBe('object');
+    expect(aicraft.PRECISION_PLATFORMER).not.toBeNull();
+  });
+
   it('editor: applyOp and createEditorState are functions, DEFAULT_CATALOG is an object', () => {
     expect(typeof aicraft.applyOp).toBe('function');
     expect(typeof aicraft.createEditorState).toBe('function');
     expect(typeof aicraft.DEFAULT_CATALOG).toBe('object');
     expect(aicraft.DEFAULT_CATALOG).not.toBeNull();
+  });
+
+  it('enemy: createEnemyBehaviorRegistry, stepProjectile, compileEnemies, drawEnemies, drawProjectiles are functions, spinnyBehavior is an object', () => {
+    expect(typeof aicraft.createEnemyBehaviorRegistry).toBe('function');
+    expect(typeof aicraft.stepProjectile).toBe('function');
+    expect(typeof aicraft.compileEnemies).toBe('function');
+    expect(typeof aicraft.stepEnemies).toBe('function');
+    expect(typeof aicraft.drawEnemies).toBe('function');
+    expect(typeof aicraft.drawProjectiles).toBe('function');
+    expect(typeof aicraft.spinnyBehavior).toBe('object');
+    expect(aicraft.spinnyBehavior).not.toBeNull();
+    expect(typeof aicraft.turretBehavior).toBe('object');
+    expect(aicraft.turretBehavior).not.toBeNull();
   });
 });

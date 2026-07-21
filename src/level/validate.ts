@@ -337,6 +337,21 @@ function validatePropsByKind(
       }
       break;
     }
+    case 'enemy': {
+      if (typeof props.archetype !== 'string') {
+        errors.push(err(`${base}.archetype`, 'enemy.archetype must be a string'));
+      }
+      if (props.speed !== undefined && !isFiniteNumber(props.speed)) {
+        errors.push(err(`${base}.speed`, 'enemy.speed must be a finite number or undefined'));
+      }
+      if (props.fireRate !== undefined && !isFiniteNumber(props.fireRate)) {
+        errors.push(err(`${base}.fireRate`, 'enemy.fireRate must be a finite number or undefined'));
+      }
+      if (props.projectileSpeed !== undefined && !isFiniteNumber(props.projectileSpeed)) {
+        errors.push(err(`${base}.projectileSpeed`, 'enemy.projectileSpeed must be a finite number or undefined'));
+      }
+      break;
+    }
     default:
       errors.push(err(entityBase, `unknown entity kind "${kind}"`));
       break;

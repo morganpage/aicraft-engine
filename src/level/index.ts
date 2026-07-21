@@ -25,6 +25,7 @@ export type {
   DecorationProps,
   TriggerProps,
   MovingPlatformProps,
+  EnemyProps,
   LevelEntity,
   TileGrid,
   LevelFlags,

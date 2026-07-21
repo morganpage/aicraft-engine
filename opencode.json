@@ -6,7 +6,7 @@
   ],
   "agent": {
     "team": {
-      "description": "Primary orchestrator for the aicraft-engine library. Coordinates a research-first R&D loop: @researcher surveys prior art, @api-designer proposes 2-3 API approaches with trade-offs, @architect critiques against conventions, @coder prototypes and implements, @benchmarker renders sample outputs for visual comparison. Less linear than a feature-driven TDD loop because the work is abstraction-shaped, not feature-shaped.",
+      "description": "Primary orchestrator for the aicraft-engine library. Non-vision model — cannot read images; delegates visual review to @benchmarker. Coordinates a research-first R&D loop: @researcher surveys prior art, @api-designer proposes 2-3 API approaches with trade-offs, @architect critiques against conventions, @coder prototypes and implements, @benchmarker renders sample outputs and reviews orchestrator-supplied screenshots for visual comparison. Less linear than a feature-driven TDD loop because the work is abstraction-shaped, not feature-shaped.",
       "mode": "primary",
       "model": "zai-coding-plan/glm-5.2",
       "temperature": 0.4,
@@ -88,7 +88,7 @@
     "coder": {
       "description": "TDD implementer for the library. Writes failing tests first for deterministic helpers (color math, RNG, particles, entitlements). Implements the smallest correct change. May prototype rendering approaches in src/_prototype/ during exploration.",
       "mode": "subagent",
-      "model": "zai-coding-plan/glm-5.2",
+      "model": "xiaomi-token-plan-ams/mimo-v2.5-pro",
       "temperature": 0.2,
       "steps": 60,
       "color": "#2ECC71",
@@ -100,7 +100,7 @@
       }
     },
     "benchmarker": {
-      "description": "Visual QA via headless canvas rendering. Renders sample outputs (skin variant sheets, procedural character galleries, fake-3D scene renders) to PNG. Compares approaches side-by-side. Reports visual issues: clipping, contrast failures, broken outlines, off-grid pixels. Vision-capable.",
+      "description": "Vision-capable visual QA. Two modes: (1) render mode — headless canvas rendering to benchmarks/<technique>/ for sample sheets, variant comparisons, stress tests; (2) review mode — inspects PNG screenshots the orchestrator supplies (typically Playwright screenshots of the running showcase) and reports concretely on layout, colors, alignment, contrast, specific bugs. The orchestrator cannot read images; this agent is its eyes.",
       "mode": "subagent",
       "model": "google/gemini-3.5-flash",
       "temperature": 0.3,
