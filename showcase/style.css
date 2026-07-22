@@ -912,26 +912,19 @@ main {
 /* =========================================================================
    Spider section — procedural legs showcase. Mirrors the .hero-* /
    .lava-* / .parallax-* layout, colors, and spacing so the sections read
-   as siblings. Copy on one side, canvas stage on the other; 2-column grid
-   at >=820px.
+   as siblings. Explanation on top, canvas stage below; single-column
+   (matches the playground section layout).
    ========================================================================= */
 
 .spider-section {
   display: grid;
   grid-template-columns: 1fr;
   gap: 24px;
-  align-items: center;
+  align-items: start;
   padding: 24px;
   background: var(--palette-surface);
   border: var(--outline-width) solid var(--outline);
   border-radius: var(--radius-lg);
-}
-
-@media (min-width: 820px) {
-  .spider-section {
-    grid-template-columns: 1fr 360px;
-    padding: 32px;
-  }
 }
 
 .spider-copy {
