@@ -150,6 +150,12 @@ export const DEFAULT_CATALOG: EntityCatalog = {
       defaultRect: { x: 0, y: 0, width: 16, height: 16 },
       defaultProps: { archetype: 'turret', params: { fireRate: 1, projectileSpeed: 120, projectileSize: 6 } },
     },
+    spider: {
+      kind: 'enemy',
+      label: 'Spider Enemy',
+      defaultRect: { x: 0, y: 0, width: 16, height: 16 },
+      defaultProps: { archetype: 'spider', params: { speed: 50, gaitMode: 'coordinated', ledgeTurnAround: true } },
+    },
   },
 };
 

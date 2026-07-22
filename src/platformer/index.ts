@@ -101,6 +101,7 @@ export {
   createEnemyBehaviorRegistry,
   spinnyBehavior,
   turretBehavior,
+  spiderBehavior,
   stepProjectile,
   compileEnemies,
   stepEnemies,

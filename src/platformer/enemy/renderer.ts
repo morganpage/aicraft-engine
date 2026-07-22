@@ -2,9 +2,10 @@
  * Enemy and projectile renderer helpers (renderer-adjacent layer).
  *
  * Draws enemies with per-archetype visual treatment (spinny enemies rotate,
- * turret enemies show a direction indicator) and projectiles as small
- * outlined rects. Touches only the `CanvasRenderingContext2D` passed in by
- * the caller — no global state, no DOM reads.
+ * turret enemies show a direction indicator, spider enemies draw procedural
+ * legs and body segments) and projectiles as small outlined rects. Touches
+ * only the `CanvasRenderingContext2D` passed in by the caller — no global
+ * state, no DOM reads.
  *
  * Uses `Math.sin` / `Math.cos` for rotation — these are renderer-adjacent
  * visual transforms, not simulation logic, so trigonometric functions are
@@ -15,6 +16,11 @@
 
 import type { CompiledEnemy, ProjectileState } from './types';
 import { outlineRect, DEFAULT_OUTLINE_COLOR } from '../../primitives/outline-rect';
+import type { SpiderState, SpiderPalette } from '../../animation/spider/spider-state';
+import type { SpiderConfig } from '../../animation/spider/types';
+import { createSpiderState } from '../../animation/spider/spider-state';
+import { splitSpiderConfig, DEFAULT_SPIDER, DEFAULT_SPIDER_PALETTE } from '../../animation/spider/types';
+import { evaluateSpiderPose, drawSpider } from '../../animation/spider/spider';
 
 /**
  * Default enemy body width (px) for drawing.
@@ -84,6 +90,10 @@ const DEFAULT_ENEMY_PALETTE: Readonly<EnemyPalette> = {
  *   enemy's logical position.
  * - **Turret enemies**: drawn with a direction indicator line showing the
  *   `aimDirection` from their params (defaults to right).
+ * - **Spider enemies**: procedural legs, segmented body (cephalothorax +
+ *   abdomen), eyes, chelicerae, pedipalps, and seeded jitter outline.
+ *   Reads `state.data.spider` for the deterministic gait state; lazily
+ *   initialises on first render if missing (legacy/external state).
  * - **Unknown archetypes**: drawn as a static outlined rect (same as the
  *   default entity renderer).
  *
@@ -178,6 +188,40 @@ export function drawEnemies(
       ctx.moveTo(cx, cy);
       ctx.lineTo(cx + nx * TURRET_INDICATOR_LENGTH, cy + ny * TURRET_INDICATOR_LENGTH);
       ctx.stroke();
+    } else if (enemy.archetype === 'spider') {
+      try {
+        // Read or lazily-initialise spider state
+        let spiderState = enemy.state.data.spider as SpiderState | undefined;
+        if (!spiderState) {
+          // Derive jitterSeed from initial x (same formula as spiderBehavior)
+          const jitterSeed = (Math.abs(Math.floor(enemy.state.x)) * 2654435761) >>> 0;
+          const bodyCX = enemy.state.x + HALF_SIZE;
+          const bodyCY = enemy.state.y + HALF_SIZE;
+          const cfg = buildSpiderVisualConfigFromParams(enemy.params);
+          spiderState = createSpiderState(cfg, jitterSeed, bodyCX, bodyCY);
+        }
+
+        const cfg = buildSpiderVisualConfigFromParams(enemy.params);
+        const { visual } = splitSpiderConfig(cfg);
+        const bodyCX = enemy.state.x + HALF_SIZE;
+        const bodyCY = enemy.state.y + HALF_SIZE;
+        const spiderTick = typeof enemy.state.data.tick === 'number' ? enemy.state.data.tick : tick;
+
+        const pose = evaluateSpiderPose(
+          spiderState,
+          bodyCX,
+          bodyCY,
+          enemy.state.facing,
+          enemy.state.vx,
+          enemy.state.vy,
+          spiderTick,
+          visual,
+        );
+        drawSpider(ctx, pose, visual);
+      } catch {
+        // Fallback to outlined rect on any degenerate state
+        outlineRect(ctx, x, y, w, h, fill, DEFAULT_OUTLINE_COLOR);
+      }
     } else {
       // Unknown archetype — static outlined rect.
       outlineRect(ctx, x, y, w, h, fill, DEFAULT_OUTLINE_COLOR);
@@ -207,4 +251,17 @@ export function drawProjectiles(
     if (!p || !p.alive) continue;
     outlineRect(ctx, p.x, p.y, p.width, p.height, fill, DEFAULT_OUTLINE_COLOR);
   }
+}
+
+/**
+ * Build a SpiderConfig from enemy params, merging palette overrides onto defaults.
+ */
+function buildSpiderVisualConfigFromParams(params: Record<string, unknown>): SpiderConfig {
+  const paletteOverride = params.palette && typeof params.palette === 'object'
+    ? { ...DEFAULT_SPIDER_PALETTE, ...(params.palette as Partial<SpiderPalette>) }
+    : DEFAULT_SPIDER_PALETTE;
+  return {
+    ...DEFAULT_SPIDER,
+    palette: paletteOverride,
+  };
 }

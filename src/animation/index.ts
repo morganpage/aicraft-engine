@@ -23,3 +23,4 @@ export * from './spring';
 export * from './spring-rod';
 export * from './jump';
 export { drawSimpleFeet, DEFAULT_SIMPLE_FEET, IK_PARITY_FEET, type SimpleFeetConfig } from './simple-feet';
+export * from './spider';

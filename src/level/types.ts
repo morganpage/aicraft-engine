@@ -117,7 +117,7 @@ export interface MovingPlatformProps {
  * whose shape depends on the archetype (same pattern as `TrapProps.params`).
  */
 export interface EnemyProps {
-  /** Archetype identifier (e.g. `'spinny'`, `'turret'`). Dispatch key. */
+  /** Archetype identifier (e.g. `'spinny'`, `'turret'`, `'spider'`). Dispatch key. */
   readonly archetype: string;
   /** Untyped parameter bag — shape depends on `archetype`. */
   readonly params: Record<string, unknown>;

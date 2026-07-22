@@ -22,7 +22,7 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | **Shipped** |
 | **1. RNG** | Seeded mulberry32, distribution helpers | **Shipped** |
 | **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | **Shipped** |
-| **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators | **Shipped** |
+| **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators, procedural spider enemy (multi-legged IK gait, segmented body) | **Shipped** |
 | **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms (`gapSolids`, `advanceGapMotion`, `gapTileQuery`) | **Shipped** |
 | **1. Camera** | Follow camera (lerp, clamp, snap-to-target) | **Shipped** |
 | **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, multi-touch button set, OR-merge | **Shipped** |

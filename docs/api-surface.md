@@ -438,6 +438,77 @@ Named constants shared across the animation pillar (no magic numbers). IK-solver
 | `SINGULAR_MATRIX_DET_THRESHOLD` | const | `1e-8` — determinant below this marks a 2×3 matrix singular in `worldToLocal` | `src/animation/constants.ts` |
 | `FOOT_LOCK_DEFAULT_BLEND_SPEED` | const | `10` — default blend-weight change per second for `advanceFootLock` | `src/animation/constants.ts` |
 
+### `src/animation/spider/` (SHIPPED)
+
+> Decision: `docs/design/procedural-spider-locomotion-decision.md`.
+> Proposal: `docs/design/procedural-spider-locomotion-proposal.md`.
+> Research: `docs/research/procedural-spider-locomotion.md`.
+> Benchmark: `benchmarks/spider/sample-sheet.png`.
+
+Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gait.ts`), ground sampling (`ground-sample.ts`), and state facade (`spider-state.ts`). Renderer-adjacent: pose evaluation and body/leg drawing (`spider.ts`). Supports `'coordinated'` (alternating tetrapod) and `'frantic'` (free-stepping with neighbour-lock) gait modes. 8 legs (4 foreground + 4 background), full segmented body (cephalothorax + abdomen + eyes + chelicerae + pedipalps), terrain-adaptive foot placement via `TileSolidityQuery`. Floor-only v1 scope — non-breaking wall/ceiling extension via a `samplingDirection` config field on `sampleGround`. Composes existing primitives: `solveLimb` (IK), `spring-rod` (pedipalps), `breathe` (squash-stretch), `worldToTile`/`tileToWorld` (collision), `mulberry32` (seeded body jitter).
+
+#### `src/animation/spider/gait.ts` — deterministic core
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SpiderGaitMode` | type | `'coordinated' \| 'frantic'` — gait mode selector | `src/animation/spider/gait.ts` |
+| `LegRestPosition` | type | `{angle: number, distance: number}` — per-leg rest position definition (angle in degrees from +X axis, distance in px from body center) | `src/animation/spider/gait.ts` |
+| `GaitLegState` | type | Per-leg state: id, set ('A'\|'B'), footX/Y, stepPhase, step arc positions (start/end/mid), isSwinging, index, restLocalX/Y | `src/animation/spider/gait.ts` |
+| `GaitState` | type | `{legs: readonly GaitLegState[], phase}` — gait solver state carried across ticks | `src/animation/spider/gait.ts` |
+| `SpiderGaitConfig` | type | Gait solver config: mode, legCount, comfortRadius, overshootFactor, stepHeight, stepDuration, phaseAdvanceRate, legRestPositions, groundSampleSteps, motionScale. All fields readonly | `src/animation/spider/gait.ts` |
+| `createGaitState(config, legRestPositions, bodyX?, bodyY?)` | function | Factory: initial gait state for N legs per side, sets assigned alternately (even→A, odd→B). Rest offsets computed from initial body position | `src/animation/spider/gait.ts` |
+| `advanceGait(state, bodyX, bodyY, vx, vy, facing, dt, config, tileQuery, tileSize, tick)` | function | Pure: advance gait by one tick. Coordinated mode: Set A swings while Set B planted, within-set rolling wave. Frantic mode: free-step with neighbour-lock. Lazy ground sampling (only when comfort radius exceeded). Returns fresh GaitState | `src/animation/spider/gait.ts` |
+| `getGaitFootPosition(leg)` | function | Pure reader: get world foot position (planted or sampling step arc at stepPhase) | `src/animation/spider/gait.ts` |
+| `sampleStepArc(start, mid, end, t)` | function | Pure: quadratic Bezier sample for parabolic step lift. Non-finite `t` clamps to [0,1] | `src/animation/spider/gait.ts` |
+
+#### `src/animation/spider/ground-sample.ts` — deterministic core
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `GroundSampleResult` | type | `{point: Vec2, normal: Vec2, hasGround: boolean}` — surface point + outward normal + found flag | `src/animation/spider/ground-sample.ts` |
+| `sampleGround(originX, originY, directionX, directionY, maxDistance, tileSize, tileQuery)` | function | Pure: sample nearest solid tile in a given direction via `TileSolidityQuery`. Returns the **surface point** (top edge for downward sampling), not a point inside the tile. v1 hard-codes downward `{x:0, y:1}` at the call site; direction param is the non-breaking extension hook for wall/ceiling. Never throws | `src/animation/spider/ground-sample.ts` |
+
+#### `src/animation/spider/spider-state.ts` — deterministic state facade
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SpiderPalette` | type | Body palette: `{cephFill, abdFill, legFg, legBg, eyeFill, cheliceraeFill, palpFill, outline}` — all hex strings, no magic colors | `src/animation/spider/spider-state.ts` |
+| `EyeDefinition` | type | Per-eye definition: `{dx, dy, r}` — offset from ceph center + radius | `src/animation/spider/spider-state.ts` |
+| `CheliceraDefinition` | type | Per-chelicera definition: `{dx, dy, angle}` — offset + base angle in radians | `src/animation/spider/spider-state.ts` |
+| `SpiderVisualConfig` | type | Visual-only config (36+ fields): cephRadius, abdRx/Ry, abdOffsetX, breathFrequency/Amplitude, jointRadius, bodyJitterAmplitude, palpSegmentLength/Stiffness, thighLength/shinLength, thighWidth/shinWidth, legOutlineWidth, kneeKnobScale/hipKnobScale, kneeSpikeLength/Width, bodyYOffset, bodyOutlineWidth, palpTwitchFreq/Amp, palpWidth/TipWidth, bgLegOffsetX/Y, jitterVertexCount, eyeDefinitions, chelicerae, cheliceraeLength/Width/TipRadius, palette, legRestPositions, groundSampleSteps, motionScale | `src/animation/spider/spider-state.ts` |
+| `SpiderState` | type | Bundled spider state: `{gait: GaitState, palpL: readonly VerletNode[], palpR: readonly VerletNode[], jitterSeed: number}` — deterministic core, no renderer imports | `src/animation/spider/spider-state.ts` |
+| `createSpiderState(config, jitterSeed, initialBodyX, initialBodyY)` | function | Factory: initialise bundled spider state — gait via `createGaitState` + both pedipalp spring-rods via `createSpringRod`. Pure, never throws | `src/animation/spider/spider-state.ts` |
+| `stepSpider(state, bodyX, bodyY, vx, vy, facing, dt, config, tileQuery, tileSize, tick)` | function | Pure: advance whole spider one tick — `advanceGait` + `advanceSpringRod` (both palps). Returns fresh SpiderState. Never throws | `src/animation/spider/spider-state.ts` |
+
+#### `src/animation/spider/types.ts` — combined config
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SpiderConfig` | type | Combined gait + visual config. Extends `SpiderGaitConfig` and `SpiderVisualConfig`. All fields readonly. Consumers spread `DEFAULT_SPIDER` and override fields | `src/animation/spider/types.ts` |
+| `splitSpiderConfig(config)` | function | Pure: split `SpiderConfig` into `{gait: SpiderGaitConfig, visual: SpiderVisualConfig}`. Never throws | `src/animation/spider/types.ts` |
+
+#### `src/animation/spider/spider.ts` — renderer-adjacent
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `LegPose` | type | Resolved leg pose: `{rootX, rootY, jointX, jointY, endX, endY, isBg}` — IK result in world space | `src/animation/spider/spider.ts` |
+| `SpiderPose` | type | Fully resolved spider pose ready for drawing: cephalothorax, abdomen, eyes, chelicerae, legPoses, palpChains, jitterOffsets | `src/animation/spider/spider.ts` |
+| `evaluateSpiderPose(state, bodyX, bodyY, facing, vx, vy, tick, visualConfig)` | function | Pure: compute full rendering pose from deterministic state. Composes `solveLimb` (IK), `breathe` (abdomen breathing), `mulberry32` (seeded jitter). No simulation mutation. Never throws | `src/animation/spider/spider.ts` |
+| `drawSpider(ctx, pose, visualConfig)` | function | Renderer-adjacent: draw spider pose. Order: bg legs → abdomen (jittered outline) → ceph (jittered outline) → 8 eyes → chelicerae fangs → fg legs (tapered with knee knob/optional spike) → pedipalps (tapered polylines). `ctx.save()`/`ctx.restore()`. Never throws | `src/animation/spider/spider.ts` |
+
+#### `src/animation/spider/constants.ts` — defaults
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_SPIDER_PALETTE` | const | Default `SpiderPalette`: dark-purple body (`#4a2d6b`), red eyes (`#ff2222`), dark outline (`#1d1128`) | `src/animation/spider/constants.ts` |
+| `DEFAULT_SPIDER` | const | Default `SpiderConfig` matching Sokpop-scale side-view spider. Coordinated gait, 4 legs per side, tuned step params, 8 eye definitions, 2 chelicerae, per-leg rest positions | `src/animation/spider/constants.ts` |
+
+- _decision: `docs/design/procedural-spider-locomotion-decision.md`_
+- _proposal: `docs/design/procedural-spider-locomotion-proposal.md`_
+- _research: `docs/research/procedural-spider-locomotion.md`_
+- _benchmark: `benchmarks/spider/sample-sheet.png`_
+- _composes with: `src/animation/ik/limb.ts` (`solveLimb`), `src/animation/spring-rod.ts` (`createSpringRod`, `advanceSpringRod`), `src/animation/squash-stretch.ts` (`breathe`), `src/collision/types.ts` (`TileSolidityQuery`), `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/rng/mulberry32.ts` (seeded body jitter)_
+
 ### `src/collision/`
 
 AABB overlap test, per-axis move-and-resolve against static solids, and tile-grid collision. The foundational platformer collision layer. All exports are pure functions over plain data: no host access, no `Math.random`, no global state.

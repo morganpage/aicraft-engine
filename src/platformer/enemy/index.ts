@@ -26,6 +26,7 @@ export {
   createEnemyBehaviorRegistry,
   spinnyBehavior,
   turretBehavior,
+  spiderBehavior,
 } from './registry';
 
 export { stepProjectile } from './projectile';
