@@ -47,6 +47,11 @@ const CANVAS_H = 320;
 const TILE_SIZE = 16;
 const FLOOR_Y = 192;
 
+/** Body clearance above the floor (px, scaled per spider). Matches the
+ *  validated benchmark — must be < thighLength+shinLength (48) so legs
+ *  bend and feet reach the floor. */
+const BODY_CLEARANCE = 18;
+
 const WALK_SPEED = 90;
 
 interface SpiderInstance {
@@ -217,7 +222,7 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
   const defs = createInstanceDefs();
   const instances: SpiderInstance[] = defs.map((d) => {
     const sizeScale = d.config.cephRadius / DEFAULT_SPIDER.cephRadius;
-    const bodyY = FLOOR_Y - sizeScale * 55;
+    const bodyY = FLOOR_Y - sizeScale * BODY_CLEARANCE;
     return {
       config: d.config,
       state: createSpiderState(d.config, d.jitterSeed, d.startX, bodyY),
