@@ -908,3 +908,114 @@ main {
    removed; the playground's .playground-toolbar / .playground-btn etc.
    cover the same functionality. See the Playground section CSS above.)
    ========================================================================= */
+
+/* =========================================================================
+   Spider section — procedural legs showcase. Mirrors the .hero-* /
+   .lava-* / .parallax-* layout, colors, and spacing so the sections read
+   as siblings. Copy on one side, canvas stage on the other; 2-column grid
+   at >=820px.
+   ========================================================================= */
+
+.spider-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .spider-section {
+    grid-template-columns: 1fr 360px;
+    padding: 32px;
+  }
+}
+
+.spider-copy {
+  min-width: 0;
+}
+
+.spider-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.spider-blurb {
+  margin: 0 0 20px;
+  color: var(--palette-text-dim);
+  max-width: 50ch;
+}
+
+.spider-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.spider-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.spider-speed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--palette-text-dim);
+}
+
+.spider-speed-value {
+  color: var(--palette-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+}
+
+.spider-speed {
+  width: 140px;
+  accent-color: var(--palette-base);
+}
+
+.spider-snippet {
+  margin: 0;
+  padding: 12px 14px;
+  background: #0e0e12;
+  color: #e2e8f0;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------- Spider stage / canvas ---------- */
+
+.spider-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.spider-canvas {
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  aspect-ratio: 560 / 320;
+  background: #0b0f19;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  touch-action: none;
+}

@@ -352,6 +352,64 @@ drawTiledParallax(ctx, (c, x) => c.drawImage(ruinsImg, x, 0, W, H), cam.x, 0.50,
       </section>
 
       <!--
+        Section 5 — Spider (procedural legs).
+        Live-animated showcase of the library's procedural spider module.
+      -->
+      <section id="spider" class="section spider-section">
+        <div class="spider-copy">
+          <h2 class="spider-title">Spider &mdash; procedural legs that anchor to the ground</h2>
+          <p class="spider-blurb">
+            Each spider is driven by an IK gait solver with switchable
+            coordinated / frantic modes, terrain-adaptive foot placement via
+            tile-grid queries, and a segmented body with breathing oscillation,
+            jittered outlines, and spring-rod pedipalps. Four variants below:
+            two walkers at different scales and speeds, plus two idle palette
+            showcases. All deterministic from fixed seeds.
+          </p>
+
+          <div class="spider-controls">
+            <button class="spider-gait hero-reroll" type="button" aria-label="Toggle coordinated vs frantic gait" aria-pressed="false">
+              🕷 <span>Coordinated</span>
+            </button>
+
+            <label class="spider-speed-label" for="spider-speed">
+              Speed: <span class="spider-speed-value">1.0x</span>
+              <input
+                id="spider-speed"
+                class="spider-speed"
+                type="range"
+                min="0"
+                max="3"
+                step="0.1"
+                value="1"
+              />
+            </label>
+          </div>
+
+          <p class="spider-hint">
+            <span class="kbd">🕷</span> toggles gait mode · slider scales movement speed
+          </p>
+
+          <pre class="spider-snippet"><code>// Deterministic spider simulation (fixed dt, tile query)
+const tileQuery: TileSolidityQuery = (tx, ty) =>
+  ty * tileSize >= floorY ? 'solid' : 'empty';
+state = stepSpider(state, bodyX, bodyY, vx, vy, facing, dt,
+  config, tileQuery, tileSize, tick);
+const pose = evaluateSpiderPose(state, bodyX, bodyY, facing,
+  vx, vy, tick, config);
+drawSpider(ctx, pose, config);</code></pre>
+        </div>
+
+        <div class="spider-stage">
+          <canvas
+            class="spider-canvas"
+            width="560"
+            height="320"
+            aria-label="Animated procedural spiders with IK gait, breathing, and pedipalps"
+          ></canvas>
+        </div>
+      </section>
+      <!--
         (Section 5 — Level editor + playtest loop — has been merged into
         Section 3, the playground. The standalone Editor section is gone;
         its toolbar, drag-draw, undo/redo, and moving-platform path widget
