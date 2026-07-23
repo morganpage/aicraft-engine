@@ -39,22 +39,33 @@ import { shouldAnimate } from '../helpers/motion-gate';
 import type { TileSolidityQuery } from '../../src/collision/types';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
+import {
+  createShowcaseSpiderLanes,
+  groundShowcaseSpiderState,
+  scaleShowcaseSpiderConfig,
+  tuneShowcaseSpiderSpeed,
+} from './spider-config';
 
 const DT = 1 / 60;
 
-const CANVAS_W = 560;
-const CANVAS_H = 320;
+const CANVAS_W = 960;
+const CANVAS_H = 360;
 const TILE_SIZE = 16;
-const FLOOR_Y = 192;
+const FLOOR_Y = 224;
 
 /** Body clearance above the floor (px, scaled per spider). Matches the
- *  validated benchmark — must be < thighLength+shinLength (48) so legs
- *  bend and feet reach the floor. */
-const BODY_CLEARANCE = 18;
+ *  validated benchmark — must be less than the full leg reach
+ *  (hipRadius + coxaLength + femurLength + tibiaLength = 56) so legs
+ *  bend and feet reach the floor at mid-extension. The gait and the
+ *  renderer both read this clearance via the caller's `bodyY`, so the
+ *  two stay consistent (previously the renderer was lifted by an extra
+ *  `bodyYOffset`, leaving the gait to deadlock). */
+const BODY_CLEARANCE = 28;
 
 const WALK_SPEED = 90;
 
 interface SpiderInstance {
+  readonly baseConfig: SpiderConfig;
   config: SpiderConfig;
   state: SpiderState;
   bodyX: number;
@@ -116,6 +127,7 @@ function tintPalette(base: SpiderPalette, factor: number): SpiderPalette {
 }
 
 function createInstanceDefs(): readonly {
+  readonly baseConfig: SpiderConfig;
   readonly config: SpiderConfig;
   readonly startX: number;
   readonly vx: number;
@@ -125,74 +137,43 @@ function createInstanceDefs(): readonly {
 }[] {
   const green = makeGreenPalette();
   const red = makeRedPalette();
-
-  return [
-    {
-      config: {
-        ...DEFAULT_SPIDER,
-        mode: 'coordinated',
-        stepDuration: 0.18,
-        phaseAdvanceRate: 0.08,
-        motionScale: 1.2,
-        cephRadius: DEFAULT_SPIDER.cephRadius * 1.2,
-        abdRx: DEFAULT_SPIDER.abdRx * 1.2,
-        abdRy: DEFAULT_SPIDER.abdRy * 1.2,
-        thighLength: DEFAULT_SPIDER.thighLength * 1.2,
-        shinLength: DEFAULT_SPIDER.shinLength * 1.2,
-        abdOffsetX: DEFAULT_SPIDER.abdOffsetX * 1.2,
-        palette: tintPalette(DEFAULT_SPIDER_PALETTE, 1.15),
-      },
-      startX: 84,
-      vx: WALK_SPEED,
-      jitterSeed: 42,
-      laneMin: 30,
-      laneMax: 170,
-    },
-    {
-      config: {
-        ...DEFAULT_SPIDER,
-        mode: 'frantic',
-        stepDuration: 0.1,
-        comfortRadius: 8,
-        motionScale: 0.7,
-        cephRadius: DEFAULT_SPIDER.cephRadius * 0.7,
-        abdRx: DEFAULT_SPIDER.abdRx * 0.7,
-        abdRy: DEFAULT_SPIDER.abdRy * 0.7,
-        thighLength: DEFAULT_SPIDER.thighLength * 0.7,
-        shinLength: DEFAULT_SPIDER.shinLength * 0.7,
-        abdOffsetX: DEFAULT_SPIDER.abdOffsetX * 0.7,
-      },
-      startX: 213,
-      vx: WALK_SPEED * 1.4,
-      jitterSeed: 101,
-      laneMin: 155,
-      laneMax: 310,
-    },
-    {
-      config: {
-        ...DEFAULT_SPIDER,
-        mode: 'coordinated',
-        palette: green,
-      },
-      startX: 347,
-      vx: 15,
-      jitterSeed: 202,
-      laneMin: 295,
-      laneMax: 430,
-    },
-    {
-      config: {
-        ...DEFAULT_SPIDER,
-        mode: 'coordinated',
-        palette: red,
-      },
-      startX: 476,
-      vx: 0,
-      jitterSeed: 303,
-      laneMin: 476,
-      laneMax: 476,
-    },
+  const speeds = [WALK_SPEED, WALK_SPEED * 0.8, 15, 0];
+  const baseConfigs = [
+    scaleShowcaseSpiderConfig({
+      ...DEFAULT_SPIDER,
+      mode: 'coordinated',
+      stepDuration: 0.18,
+      phaseAdvanceRate: 0.16,
+      palette: tintPalette(DEFAULT_SPIDER_PALETTE, 1.15),
+    }, 1.2),
+    scaleShowcaseSpiderConfig({
+      ...DEFAULT_SPIDER,
+      mode: 'frantic',
+      stepDuration: 0.1,
+      comfortRadius: 8,
+    }, 0.7),
+    scaleShowcaseSpiderConfig({
+      ...DEFAULT_SPIDER,
+      mode: 'coordinated',
+      palette: green,
+    }, 1),
+    scaleShowcaseSpiderConfig({
+      ...DEFAULT_SPIDER,
+      mode: 'coordinated',
+      palette: red,
+    }, 1),
   ];
+  const lanes = createShowcaseSpiderLanes(baseConfigs, CANVAS_W);
+
+  return baseConfigs.map((baseConfig, index) => ({
+    baseConfig,
+    config: tuneShowcaseSpiderSpeed(baseConfig, speeds[index]),
+    startX: lanes[index].center,
+    vx: speeds[index],
+    jitterSeed: [42, 101, 202, 303][index],
+    laneMin: index === 3 ? lanes[index].center : lanes[index].min,
+    laneMax: index === 3 ? lanes[index].center : lanes[index].max,
+  }));
 }
 
 /**
@@ -212,8 +193,11 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
   const gaitBtn = container.querySelector<HTMLButtonElement>('.spider-gait')!;
   const speedSlider = container.querySelector<HTMLInputElement>('.spider-speed')!;
   const speedValue = container.querySelector<HTMLElement>('.spider-speed-value')!;
+  const legsSlider = container.querySelector<HTMLInputElement>('.spider-legs')!;
+  const legsValue = container.querySelector<HTMLElement>('.spider-legs-value')!;
 
   let speedMultiplier = 1;
+  let totalLegs = 8;
   let gaitMode: 'coordinated' | 'frantic' = 'coordinated';
   let tick = 0;
 
@@ -224,8 +208,16 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
     const sizeScale = d.config.cephRadius / DEFAULT_SPIDER.cephRadius;
     const bodyY = FLOOR_Y - sizeScale * BODY_CLEARANCE;
     return {
+      baseConfig: d.baseConfig,
       config: d.config,
-      state: createSpiderState(d.config, d.jitterSeed, d.startX, bodyY),
+      state: groundShowcaseSpiderState(
+        createSpiderState(d.config, d.jitterSeed, d.startX, bodyY, 1),
+        d.startX,
+        bodyY,
+        1,
+        FLOOR_Y,
+        d.config,
+      ),
       bodyX: d.startX,
       bodyY,
       vx: d.vx,
@@ -247,6 +239,13 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
   const applySpeed = (s: number): void => {
     speedMultiplier = s;
     speedValue.textContent = `${s.toFixed(1)}x`;
+    for (const inst of instances) {
+      inst.config = tuneShowcaseSpiderSpeed({
+        ...inst.baseConfig,
+        mode: inst.config.mode,
+        legCount: totalLegs / 2,
+      }, Math.abs(inst.baseVx * speedMultiplier));
+    }
   };
   applySpeed(speedMultiplier);
 
@@ -255,7 +254,11 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
     applyGaitLabel();
     for (const inst of instances) {
       if (inst.baseVx !== 0) {
-        inst.config = { ...inst.config, mode: gaitMode };
+        inst.config = tuneShowcaseSpiderSpeed({
+          ...inst.baseConfig,
+          mode: gaitMode,
+          legCount: totalLegs / 2,
+        }, Math.abs(inst.baseVx * speedMultiplier));
       }
     }
     gaitBtn.blur();
@@ -263,6 +266,32 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
 
   speedSlider.addEventListener('input', () => {
     applySpeed(Number(speedSlider.value));
+  });
+
+  legsSlider.addEventListener('input', () => {
+    totalLegs = Number(legsSlider.value);
+    legsValue.textContent = String(totalLegs);
+    for (const inst of instances) {
+      inst.config = tuneShowcaseSpiderSpeed({
+        ...inst.baseConfig,
+        mode: inst.config.mode,
+        legCount: totalLegs / 2,
+      }, Math.abs(inst.baseVx * speedMultiplier));
+      inst.state = groundShowcaseSpiderState(
+        createSpiderState(
+          inst.config,
+          inst.jitterSeed,
+          inst.bodyX,
+          inst.bodyY,
+          inst.facing,
+        ),
+        inst.bodyX,
+        inst.bodyY,
+        inst.facing,
+        FLOOR_Y,
+        inst.config,
+      );
+    }
   });
 
   const step = (dt: number): void => {

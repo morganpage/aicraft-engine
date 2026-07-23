@@ -973,6 +973,12 @@ main {
   min-width: 3ch;
 }
 
+.spider-legs-value {
+  color: var(--palette-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 1ch;
+}
+
 .spider-speed {
   width: 140px;
   accent-color: var(--palette-base);
@@ -996,14 +1002,16 @@ main {
 
 .spider-stage {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
+  overflow-x: auto;
 }
 
 .spider-canvas {
   width: 100%;
-  max-width: 560px;
+  min-width: 720px;
+  max-width: 960px;
   height: auto;
-  aspect-ratio: 560 / 320;
+  aspect-ratio: 960 / 360;
   background: #0b0f19;
   border: var(--outline-width) solid var(--outline);
   border-radius: var(--radius);

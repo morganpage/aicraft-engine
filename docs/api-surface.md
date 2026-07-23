@@ -77,6 +77,9 @@ Hit-stop (freeze-frame) game-feel helper. Pure and deterministic: no `Math.rando
 | `stepHitStop(state, dt)` | function | Pure: decrement `remaining` by `dt`, clamped at 0 | `src/primitives/hit-stop.ts` |
 | `isHitStopActive(state)` | function | Pure reader: `true` if `remaining > 0` | `src/primitives/hit-stop.ts` |
 
+- _research note: See `docs/research/minimalist-death-feedback.md` for satisfying player-death feedback (hit-stop, screen shake, palette swap, particle bursts)._
+- _death feedback recipe (shipped showcase-local): `docs/design/minimalist-death-feedback-decision.md` — Stack A uses 6-tick hit-stop as the impact anchor; implemented in `showcase/sections/playground-death.ts`_
+
 #### `src/primitives/glow.ts`
 
 Additive radial-gradient glow stamp. Draws a brightest-at-center, fade-to-transparent glow using `globalCompositeOperation = 'lighter'` so overlapping glows accumulate (correct physical light behavior). Restores composite + fillStyle after drawing (no state leak). Closes the palette's reserved `feature` role: weapon glow, magical highlights, eye glow, lava brightness.
@@ -445,7 +448,7 @@ Named constants shared across the animation pillar (no magic numbers). IK-solver
 > Research: `docs/research/procedural-spider-locomotion.md`.
 > Benchmark: `benchmarks/spider/sample-sheet.png`.
 
-Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gait.ts`), ground sampling (`ground-sample.ts`), and state facade (`spider-state.ts`). Renderer-adjacent: pose evaluation and body/leg drawing (`spider.ts`). Supports `'coordinated'` (alternating tetrapod) and `'frantic'` (free-stepping with neighbour-lock) gait modes. 8 legs (4 foreground + 4 background), full segmented body (cephalothorax + abdomen + eyes + chelicerae + pedipalps), terrain-adaptive foot placement via `TileSolidityQuery`. Floor-only v1 scope — non-breaking wall/ceiling extension via a `samplingDirection` config field on `sampleGround`. Composes existing primitives: `solveLimb` (IK), `spring-rod` (pedipalps), `breathe` (squash-stretch), `worldToTile`/`tileToWorld` (collision), `mulberry32` (seeded body jitter).
+Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gait.ts`), ground sampling (`ground-sample.ts`), three-segment leg geometry (`geometry.ts`), and state facade (`spider-state.ts`). Renderer-adjacent: pose evaluation and body/leg drawing (`spider.ts`). Supports `'coordinated'` (alternating tetrapod) and `'frantic'` (free-stepping with neighbour-lock) gait modes. 8 legs (4 foreground + 4 background), full segmented body (cephalothorax + abdomen + eyes + chelicerae + pedipalps), terrain-adaptive foot placement via `TileSolidityQuery`. Floor-only v1 scope — non-breaking wall/ceiling extension via a `samplingDirection` config field on `sampleGround`. Composes existing primitives: `spring-rod` (pedipalps), `breathe` (squash-stretch), `worldToTile`/`tileToWorld` (collision), `mulberry32` (seeded body jitter).
 
 #### `src/animation/spider/gait.ts` — deterministic core
 
@@ -454,10 +457,10 @@ Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gai
 | `SpiderGaitMode` | type | `'coordinated' \| 'frantic'` — gait mode selector | `src/animation/spider/gait.ts` |
 | `LegRestPosition` | type | `{angle: number, distance: number}` — per-leg rest position definition (angle in degrees from +X axis, distance in px from body center) | `src/animation/spider/gait.ts` |
 | `GaitLegState` | type | Per-leg state: id, set ('A'\|'B'), footX/Y, stepPhase, step arc positions (start/end/mid), isSwinging, index, restLocalX/Y | `src/animation/spider/gait.ts` |
-| `GaitState` | type | `{legs: readonly GaitLegState[], phase}` — gait solver state carried across ticks | `src/animation/spider/gait.ts` |
-| `SpiderGaitConfig` | type | Gait solver config: mode, legCount, comfortRadius, overshootFactor, stepHeight, stepDuration, phaseAdvanceRate, legRestPositions, groundSampleSteps, motionScale. All fields readonly | `src/animation/spider/gait.ts` |
-| `createGaitState(config, legRestPositions, bodyX?, bodyY?)` | function | Factory: initial gait state for N legs per side, sets assigned alternately (even→A, odd→B). Rest offsets computed from initial body position | `src/animation/spider/gait.ts` |
-| `advanceGait(state, bodyX, bodyY, vx, vy, facing, dt, config, tileQuery, tileSize, tick)` | function | Pure: advance gait by one tick. Coordinated mode: Set A swings while Set B planted, within-set rolling wave. Frantic mode: free-step with neighbour-lock. Lazy ground sampling (only when comfort radius exceeded). Returns fresh GaitState | `src/animation/spider/gait.ts` |
+| `GaitState` | type | `{legs, phase, facing?, activeSet?, servicedLegs?}` — authoritative gait state with turn-safe within-side pairing and fair set/service bookkeeping | `src/animation/spider/gait.ts` |
+| `SpiderGaitConfig` | type | Gait solver config: mode, legCount, comfortRadius, `geometry` (shared `SpiderLegGeometryConfig`), overshootFactor, stepHeight, stepDuration, phaseAdvanceRate, per-side legRestPositions, groundSampleSteps, motionScale | `src/animation/spider/gait.ts` |
+| `createGaitState(config, legRestPositions, bodyX?, bodyY?, initialFacing?)` | function | Factory: initial gait state for N legs per side, with opposing alternating sets and canonical facing-relative rest offsets | `src/animation/spider/gait.ts` |
+| `advanceGait(state, bodyX, bodyY, vx, vy, facing, dt, config, tileQuery, tileSize, tick)` | function | Pure gait advance. Coordinated mode enforces strict alternating-tetrapod support, corresponding-pair lock, fair service, and compressed-foot priority. Frantic mode keeps independent feet with neighbour/pair/support locks. Turns remap front-to-rear within each side | `src/animation/spider/gait.ts` |
 | `getGaitFootPosition(leg)` | function | Pure reader: get world foot position (planted or sampling step arc at stepPhase) | `src/animation/spider/gait.ts` |
 | `sampleStepArc(start, mid, end, t)` | function | Pure: quadratic Bezier sample for parabolic step lift. Non-finite `t` clamps to [0,1] | `src/animation/spider/gait.ts` |
 
@@ -468,6 +471,21 @@ Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gai
 | `GroundSampleResult` | type | `{point: Vec2, normal: Vec2, hasGround: boolean}` — surface point + outward normal + found flag | `src/animation/spider/ground-sample.ts` |
 | `sampleGround(originX, originY, directionX, directionY, maxDistance, tileSize, tileQuery)` | function | Pure: sample nearest solid tile in a given direction via `TileSolidityQuery`. Returns the **surface point** (top edge for downward sampling), not a point inside the tile. v1 hard-codes downward `{x:0, y:1}` at the call site; direction param is the non-breaking extension hook for wall/ceiling. Never throws | `src/animation/spider/ground-sample.ts` |
 
+#### `src/animation/spider/geometry.ts` — three-segment leg geometry
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SpiderLegGeometryConfig` | type | Shared three-segment geometry: `{hipRadius, coxaLength, femurLength, tibiaLength, minExtensionRatio, maxExtensionRatio, jointSafetyMargin, minDistalAdvanceRatio}` — used by gait solver and renderer. `minDistalAdvanceRatio` sets the minimum outward tibia advance (anti-fold anatomical sector) as a fraction of tibia length | `src/animation/spider/geometry.ts` |
+| `FemurTibiaAnnuli` | type | Workspace bounds: `{hardMin, softMin, softMax, hardMax}` — femur+tibia annulus radii for IK validity | `src/animation/spider/geometry.ts` |
+| `LegStepRequest` | type | Structured per-leg step request: `{needsStep, urgency, restError, workspaceError, sectorError, hardViolation}` — absolute workspace + anatomical-sector validity for gait decisions (`sectorError` > 0 marks a folded-Z foot needing replant) | `src/animation/spider/geometry.ts` |
+| `computeHipPosition(bodyX, bodyY, facing, restLocal, geometry)` | function | Pure: hip joint world position on body circle at `hipRadius` from body center along leg's rest angle | `src/animation/spider/geometry.ts` |
+| `computeCoxaEndpoint(hip, facing, restLocal, geometry)` | function | Pure: fixed coxa endpoint extending from hip along mirrored rest direction by `coxaLength` | `src/animation/spider/geometry.ts` |
+| `computeFemurTibiaAnnuli(geometry)` | function | Pure: workspace annulus bounds (`hardMin/softMin/softMax/hardMax`) from femur+tibia lengths, offset by `jointSafetyMargin` in px | `src/animation/spider/geometry.ts` |
+| `projectTargetIntoWorkspace(coxa, target, geometry)` | function | Pure: project foot target into hard annulus — clamps to `hardMin`/`hardMax` range from coxa | `src/animation/spider/geometry.ts` |
+| `projectGroundedTargetIntoWorkspace(coxa, target, geometry, facing, restLocalX)` | function | Pure: project grounded target preserving ground Y with anatomical tie-break — keeps target on anatomically correct side of coxa | `src/animation/spider/geometry.ts` |
+| `solveThreeSegmentLeg(bodyX, bodyY, facing, restLocal, target, geometry)` | function | Pure: full three-segment IK — fixed coxa endpoint + analytical femur/tibia two-bone solve with stable anatomical pole bend. Returns `{hip, coxa, knee, foot}` positions | `src/animation/spider/geometry.ts` |
+| `computeLegStepRequest(bodyX, bodyY, facing, restLocal, footPos, geometry, comfortRadius)` | function | Pure: structured `LegStepRequest` with absolute workspace + anatomical-sector validity — combines rest-error, workspace annulus, folded-Z (`sectorError`), and hard-violation diagnostics | `src/animation/spider/geometry.ts` |
+
 #### `src/animation/spider/spider-state.ts` — deterministic state facade
 
 | Export | Kind | Summary | Source |
@@ -475,39 +493,40 @@ Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gai
 | `SpiderPalette` | type | Body palette: `{cephFill, abdFill, legFg, legBg, eyeFill, cheliceraeFill, palpFill, outline}` — all hex strings, no magic colors | `src/animation/spider/spider-state.ts` |
 | `EyeDefinition` | type | Per-eye definition: `{dx, dy, r}` — offset from ceph center + radius | `src/animation/spider/spider-state.ts` |
 | `CheliceraDefinition` | type | Per-chelicera definition: `{dx, dy, angle}` — offset + base angle in radians | `src/animation/spider/spider-state.ts` |
-| `SpiderVisualConfig` | type | Visual-only config (36+ fields): cephRadius, abdRx/Ry, abdOffsetX, breathFrequency/Amplitude, jointRadius, bodyJitterAmplitude, palpSegmentLength/Stiffness, thighLength/shinLength, thighWidth/shinWidth, legOutlineWidth, kneeKnobScale/hipKnobScale, kneeSpikeLength/Width, bodyYOffset, bodyOutlineWidth, palpTwitchFreq/Amp, palpWidth/TipWidth, bgLegOffsetX/Y, jitterVertexCount, eyeDefinitions, chelicerae, cheliceraeLength/Width/TipRadius, palette, legRestPositions, groundSampleSteps, motionScale | `src/animation/spider/spider-state.ts` |
+| `SpiderVisualConfig` | type | Visual-only config: body, palette, eye/fang/palp geometry, independent near/far leg rendering, three-segment leg geometry (coxaWidth, femurWidth, tibiaWidth), shared `SpiderLegGeometryConfig`, outlines, jitter, rest positions, and motion settings | `src/animation/spider/spider-state.ts` |
 | `SpiderState` | type | Bundled spider state: `{gait: GaitState, palpL: readonly VerletNode[], palpR: readonly VerletNode[], jitterSeed: number}` — deterministic core, no renderer imports | `src/animation/spider/spider-state.ts` |
-| `createSpiderState(config, jitterSeed, initialBodyX, initialBodyY)` | function | Factory: initialise bundled spider state — gait via `createGaitState` + both pedipalp spring-rods via `createSpringRod`. Pure, never throws | `src/animation/spider/spider-state.ts` |
+| `createSpiderState(config, jitterSeed, initialBodyX, initialBodyY, initialFacing?)` | function | Factory: initialise bundled spider state — configurable gait via `createGaitState` + both pedipalp spring-rods via `createSpringRod`. Pure, never throws | `src/animation/spider/spider-state.ts` |
 | `stepSpider(state, bodyX, bodyY, vx, vy, facing, dt, config, tileQuery, tileSize, tick)` | function | Pure: advance whole spider one tick — `advanceGait` + `advanceSpringRod` (both palps). Returns fresh SpiderState. Never throws | `src/animation/spider/spider-state.ts` |
 
 #### `src/animation/spider/types.ts` — combined config
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `SpiderConfig` | type | Combined gait + visual config. Extends `SpiderGaitConfig` and `SpiderVisualConfig`. All fields readonly. Consumers spread `DEFAULT_SPIDER` and override fields | `src/animation/spider/types.ts` |
-| `splitSpiderConfig(config)` | function | Pure: split `SpiderConfig` into `{gait: SpiderGaitConfig, visual: SpiderVisualConfig}`. Never throws | `src/animation/spider/types.ts` |
+| `SpiderConfig` | type | Combined gait + visual config. Extends `SpiderGaitConfig` and `SpiderVisualConfig`. Includes `geometry` (shared `SpiderLegGeometryConfig`) which is partitioned into both gait and visual halves by `splitSpiderConfig`. All fields readonly. Consumers spread `DEFAULT_SPIDER` and override fields | `src/animation/spider/types.ts` |
+| `splitSpiderConfig(config)` | function | Pure: split `SpiderConfig` into `{gait: SpiderGaitConfig, visual: SpiderVisualConfig}`, partitioning the shared `geometry` config into both halves. Never throws | `src/animation/spider/types.ts` |
 
 #### `src/animation/spider/spider.ts` — renderer-adjacent
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `LegPose` | type | Resolved leg pose: `{rootX, rootY, jointX, jointY, endX, endY, isBg}` — IK result in world space | `src/animation/spider/spider.ts` |
+| `LegPose` | type | Three-segment leg IK result: `{hipX, hipY, coxaX, coxaY, kneeX, kneeY, footX, footY, isBg}` — hip → coxa → knee → foot in world space | `src/animation/spider/spider.ts` |
 | `SpiderPose` | type | Fully resolved spider pose ready for drawing: cephalothorax, abdomen, eyes, chelicerae, legPoses, palpChains, jitterOffsets | `src/animation/spider/spider.ts` |
-| `evaluateSpiderPose(state, bodyX, bodyY, facing, vx, vy, tick, visualConfig)` | function | Pure: compute full rendering pose from deterministic state. Composes `solveLimb` (IK), `breathe` (abdomen breathing), `mulberry32` (seeded jitter). No simulation mutation. Never throws | `src/animation/spider/spider.ts` |
-| `drawSpider(ctx, pose, visualConfig)` | function | Renderer-adjacent: draw spider pose. Order: bg legs → abdomen (jittered outline) → ceph (jittered outline) → 8 eyes → chelicerae fangs → fg legs (tapered with knee knob/optional spike) → pedipalps (tapered polylines). `ctx.save()`/`ctx.restore()`. Never throws | `src/animation/spider/spider.ts` |
+| `evaluateSpiderPose(state, bodyX, bodyY, facing, vx, vy, tick, visualConfig)` | function | Pure: compute full rendering pose from deterministic state. Composes `solveThreeSegmentLeg` (three-segment coxa/femur/tibia IK via fixed coxa + analytical femur/tibia), `breathe` (abdomen breathing), `mulberry32` (seeded jitter). No simulation mutation. Never throws | `src/animation/spider/spider.ts` |
+| `drawSpider(ctx, pose, visualConfig)` | function | Renderer-adjacent: draw spider pose. Order: bg legs → abdomen (jittered outline) → ceph (jittered outline) → 8 eyes → chelicerae fangs → fg legs (three tapered segments: coxa/femur/tibia with knee knob at femur/tibia junction and coxa knob at hip/coxa junction) → pedipalps (tapered polylines). `ctx.save()`/`ctx.restore()`. Never throws | `src/animation/spider/spider.ts` |
 
 #### `src/animation/spider/constants.ts` — defaults
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `DEFAULT_SPIDER_PALETTE` | const | Default `SpiderPalette`: dark-purple body (`#4a2d6b`), red eyes (`#ff2222`), dark outline (`#1d1128`) | `src/animation/spider/constants.ts` |
-| `DEFAULT_SPIDER` | const | Default `SpiderConfig` matching Sokpop-scale side-view spider. Coordinated gait, 4 legs per side, tuned step params, 8 eye definitions, 2 chelicerae, per-leg rest positions | `src/animation/spider/constants.ts` |
+| `DEFAULT_SPIDER_GEOMETRY` | const | Default `SpiderLegGeometryConfig`: tuned three-segment geometry (hipRadius, coxaLength, femurLength, tibiaLength, extension ratios, joint safety margin) for Sokpop-scale side-view spider | `src/animation/spider/constants.ts` |
+| `DEFAULT_SPIDER` | const | Default `SpiderConfig` matching Sokpop-scale side-view spider. Coordinated gait, 4 legs per side, three-segment geometry, tuned step params, 8 eye definitions, 2 chelicerae, per-leg rest positions | `src/animation/spider/constants.ts` |
 
 - _decision: `docs/design/procedural-spider-locomotion-decision.md`_
 - _proposal: `docs/design/procedural-spider-locomotion-proposal.md`_
 - _research: `docs/research/procedural-spider-locomotion.md`_
 - _benchmark: `benchmarks/spider/sample-sheet.png`_
-- _composes with: `src/animation/ik/limb.ts` (`solveLimb`), `src/animation/spring-rod.ts` (`createSpringRod`, `advanceSpringRod`), `src/animation/squash-stretch.ts` (`breathe`), `src/collision/types.ts` (`TileSolidityQuery`), `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/rng/mulberry32.ts` (seeded body jitter)_
+- _composes with: `src/animation/spider/geometry.ts` (`solveThreeSegmentLeg`, `computeHipPosition`, `computeCoxaEndpoint`, `computeFemurTibiaAnnuli`, `projectTargetIntoWorkspace`, `projectGroundedTargetIntoWorkspace`, `computeLegStepRequest`), `src/animation/spring-rod.ts` (`createSpringRod`, `advanceSpringRod`), `src/animation/squash-stretch.ts` (`breathe`), `src/collision/types.ts` (`TileSolidityQuery`), `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/rng/mulberry32.ts` (seeded body jitter)_
 
 ### `src/collision/`
 
@@ -1052,14 +1071,15 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 |---|---|---|---|
 | `LevelRect` | type | `{x, y, width, height}` — serializable AABB (world-space, top-left origin) | `src/level/types.ts` |
 | `EntityId` | type | `number` — stable monotonic entity identifier | `src/level/types.ts` |
-| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform'` — shipped entity kinds (non-breaking union expansion for future kinds). CANDIDATE: `'enemy'` (added by `src/platformer/enemy/`) | `src/level/types.ts` |
+| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform' \| 'enemy'` — shipped entity kinds (non-breaking union expansion for future kinds) | `src/level/types.ts` |
 | `ExitProps` | type | `{isTrap: boolean, locked: boolean}` — exit props; `isTrap` marks decoy/failure exits | `src/level/types.ts` |
 | `PlatformProps` | type | `{visual?: 'normal' \| 'cracked' \| 'dark'}` — platform visual variant hint | `src/level/types.ts` |
 | `TrapProps` | type | `{type: string, params: Record<string, unknown>}` — trap dispatch key + untyped params bag | `src/level/types.ts` |
 | `DecorationProps` | type | `{sprite: string, flipX?: boolean}` — decoration sprite key + flip | `src/level/types.ts` |
 | `TriggerProps` | type | `{action: string, params: Record<string, unknown>}` — rectangular event zone | `src/level/types.ts` |
 | `MovingPlatformProps` | type | `{speed, path, loopMode?}` — kinematic platform motion (path is `readonly {x, y}[]`) | `src/level/types.ts` |
-| `LevelEntity` | type | Discriminated union on `kind` with kind-specific `props` — 9 variants | `src/level/types.ts` |
+| `EnemyProps` | type | `{archetype: string, params: Record<string, unknown>}` — archetyped dispatch key + untyped params bag. Canonical definition lives here; re-exported from `src/platformer/enemy/types.ts` | `src/level/types.ts` |
+| `LevelEntity` | type | Discriminated union on `kind` with kind-specific `props` — 10 variants (`'enemy'` kind carries `EnemyProps`) | `src/level/types.ts` |
 | `TileGrid` | type | `{data, cols, rows, tileSize}` — flat row-major tile-value integer array | `src/level/types.ts` |
 | `LevelFlags` | type | `{lookahead?, foreground?, background?}` — optional renderer flags | `src/level/types.ts` |
 | `LevelData` | type | Complete level schema: version, id, name, dimensions, spawn, tiles, entities, nextEntityId, bottomLava?, hints?, flags? | `src/level/types.ts` |
@@ -1089,7 +1109,7 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `validateLevel(raw)` | function | Defensive structural validation: version, dimensions, bounds, entity IDs/uniqueness, tile grid shape, per-kind prop shape. Returns `ValidationResult`. Never throws | `src/level/validate.ts` |
+| `validateLevel(raw)` | function | Defensive structural validation: version, dimensions, bounds, entity IDs/uniqueness, tile grid shape, per-kind prop shape. Returns `ValidationResult`. Never throws. Turret archetype validation accepts optional `params.shootTo` (`{x, y}` with finite numbers) per `docs/design/turret-shoot-to-decision.md` | `src/level/validate.ts` |
 
 #### `src/level/tiles.ts`
 
@@ -1224,40 +1244,53 @@ Barrel re-export of all public editor APIs. Uses `export type` for type-only re-
 - _research: `docs/research/editor-core.md`_
 - _composes with: `src/level/types.ts` (`LevelData`, `LevelEntity`, `EntityId`, `EntityKind`, `LevelRect`), `src/level/validate.ts` (`validateLevel`, `ValidationResult`), `src/level/entity-id.ts` (`allocateEntityId`)_
 
+### `src/primitives/vector.ts` — NOT SHIPPED
+
+> Proposal: `docs/design/turret-shoot-to-proposal.md`.
+> Decision: **REJECTED** — turret-only scope, no new vector module. See `docs/design/turret-shoot-to-decision.md`.
+
+The original proposal (Approach B) included a reusable vector module. The orchestrator decision rejected this: the turret is the only ranged entity; premature abstraction adds surface area without demand. Vector math lives inline in the turret behavior. Extract to `src/primitives/vector.ts` only when a second consumer arrives.
+
 ### `src/platformer/enemy/` (Pillar 4)
 
 > Proposal: `docs/design/platformer-enemy-archetypes-proposal.md` (Approach A: Extend EntityKind + Behavior Registry).
 > Research: `docs/research/platformer-enemy-archetypes.md`.
 > Status: **SHIPPED** — compile, step, renderer, behavior registry all implemented.
+> ShootTo extension: **SHIPPED** — `docs/design/turret-shoot-to-decision.md`.
 
-Deterministic reusable platformer enemy archetypes. Ships two MVP archetypes (spinny contact-patrol, turret ranged-shooter) with a behavior-handler registry for consumer extensibility. Enemies serialize into `LevelData` as a new `'enemy'` entity kind and compile to a flat runtime state for the game loop.
+Deterministic reusable platformer enemy archetypes. Ships three built-in archetypes (spinny contact-patrol, turret ranged-shooter, spider procedural-locomotion) with a behavior-handler registry for consumer extensibility. Enemies serialize into `LevelData` as a new `'enemy'` entity kind and compile to a flat runtime state for the game loop.
 
 #### `src/platformer/enemy/types.ts`
 
+Runtime types for the enemy archetype system. `EnemyProps` is re-exported from `src/level/types.ts` (canonical definition lives there).
+
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `EnemyArchetype` | type | `'spinny' \| 'turret' \| string` — behavior dispatch key (free string for extensibility) | `src/platformer/enemy/types.ts` |
-| `EnemyProps` | type | Serialized enemy config: `archetype`, `speed`, `patrolPath`, `patrolLoopMode`, `ledgeTurnAround`, `fireRate`, `projectileSpeed`, `projectileSize`, `projectileType`, `aimDirection`, `detectionRadius`, `color` — all optional with documented defaults | `src/platformer/enemy/types.ts` |
-| `EnemyState` | type | Runtime enemy state: `id`, `x`, `y`, `vx`, `vy`, `facing`, `behavior`, `timers`, `alive`, `data?` — immutable per tick | `src/platformer/enemy/types.ts` |
-| `EnemyStepResult` | type | Per-tick result: `state`, `spawnedProjectiles`, `events` | `src/platformer/enemy/types.ts` |
-| `EnemyBehaviorHandler` | type | `(state, props, ctx) → EnemyStepResult` — pure, deterministic, never throws | `src/platformer/enemy/types.ts` |
-| `EnemyUpdateContext` | type | Read-only tick context: `playerX/Y/Width/Height`, `solids`, `tileSize`, `tick`, `dt` | `src/platformer/enemy/types.ts` |
-| `EnemyBehaviorRegistry` | type | `{ handlers: Readonly<Record<string, EnemyBehaviorHandler>> }` | `src/platformer/enemy/types.ts` |
+| `EnemyArchetype` | type | `'spinny' \| 'turret' \| 'spider'` — built-in archetype identifiers. Consumers register additional archetypes via `createEnemyBehaviorRegistry`; `EnemyBehaviorRegistry.get()` accepts any `string` | `src/platformer/enemy/types.ts` |
+| `EnemyProps` | type | Re-export of `src/level/types.ts` `EnemyProps` — `{archetype: string, params: Record<string, unknown>}`. The `archetype` field dispatches to a behavior handler; `params` is an untyped bag whose shape depends on the archetype | `src/platformer/enemy/types.ts` (re-export from `src/level/types.ts`) |
+| `EnemyState` | type | `{x, y, vx, vy, facing, alive, data}` — runtime enemy state. All fields `readonly`; handlers return a fresh object via spread | `src/platformer/enemy/types.ts` |
+| `EnemyStepResult` | type | `{x, y, vx, vy, facing, alive, data, projectile?}` — flat per-tick result mirroring `EnemyState` fields plus optional `ProjectileState` spawn | `src/platformer/enemy/types.ts` |
+| `EnemyBehaviorHandler` | interface | `{step(state, ctx, params): EnemyStepResult}` — behavior handler contract. Pure, deterministic, never throws. `state` is current `EnemyState` (immutable), `ctx` is per-tick context, `params` is `EnemyProps.params` | `src/platformer/enemy/types.ts` |
+| `EnemyUpdateContext` | type | `{dt, solids, tileQuery, tileSize, playerRect}` — read-only tick context. `tileQuery` is `((tileX, tileY) => string) \| null` for ledge/wall detection. `playerRect` is `{x, y, width, height} \| null` for aimed behaviors | `src/platformer/enemy/types.ts` |
+| `CompiledEnemy` | type | `{id, archetype, state, entity, params}` — runtime representation of a level enemy entity. `entity` is the source `LevelEntity` (read-only back-reference for rendering); `params` is `EnemyProps.params` | `src/platformer/enemy/types.ts` |
+| `EnemyBehaviorRegistry` | type | `{get(archetype: string): EnemyBehaviorHandler \| undefined}` — registry lookup contract. Internal map is an implementation detail; public API is the `get` method | `src/platformer/enemy/types.ts` |
+| `ProjectileState` | type | `{x, y, vx, vy, width, height, alive}` — kinematic AABB for enemy-spawned projectiles. Optional `maxRange?: number` — max travel distance in px; `undefined` or `0` = no range limit (legacy). Optional `distanceTraveled?: number` — accumulated distance in px; `undefined` when `maxRange` is absent or `0`; starts at `0` on spawn when `maxRange > 0`. Preserved (not zeroed) on every deactivation path (range exceeded, solid hit, player hit). Set by fixed-mode turrets with a finite `shootTo` vector; aimed-mode turrets always produce projectiles with no `maxRange`. See `docs/design/turret-shoot-to-decision.md` | `src/platformer/enemy/types.ts` |
+| `ProjectileStepResult` | interface | Extends `ProjectileState` with `hitPlayer: boolean` — result of `stepProjectile`. Carries through `maxRange`/`distanceTraveled` when present | `src/platformer/enemy/types.ts` |
 
 #### `src/platformer/enemy/registry.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `createEnemyBehaviorRegistry(custom?)` | function | Factory: creates registry with `spinnyBehavior` + `turretBehavior` pre-registered, plus any custom handlers | `src/platformer/enemy/registry.ts` |
-| `spinnyBehavior` | const | Built-in spinny patrol behavior handler (contact hazard, ledge-detection, path patrol) | `src/platformer/enemy/registry.ts` |
-| `turretBehavior` | const | Built-in turret shooting behavior handler (cooldown-gated, aimed or fixed projectiles) | `src/platformer/enemy/registry.ts` |
+| `createEnemyBehaviorRegistry(customHandlers?)` | function | Factory: creates registry with `spinnyBehavior`, `turretBehavior`, and `spiderBehavior` pre-registered, plus any custom handlers. Custom handlers merge on top of built-ins (same-name overrides) | `src/platformer/enemy/registry.ts` |
+| `spinnyBehavior` | const | Built-in spinny patrol behavior handler (contact hazard, ledge-detection, path patrol). Patrol path location: `props.params.patrolPath` — `{x, y}[]` waypoints in world-space pixels (minimum 2 waypoints). Also reads `params.speed` (px/s, default 60), `params.ledgeTurnAround` (boolean, default false). **Displacement-coupled deterministic rolling:** accumulates `data.spinAngle` (radians) from actual horizontal displacement each tick: `nextAngle = wrap(prevAngle + dx / RADIUS, 0, 2π)` where `RADIUS = 8` (half the 16px body width). Direction reversal on wall/ledge detection preserves the angle (dx=0). Wraps into `[0, 2π)` to prevent unbounded floating-point growth. Safe legacy fallback: defaults to `0` when `data.spinAngle` is absent or non-finite | `src/platformer/enemy/registry.ts` |
+| `turretBehavior` | const | Built-in turret shooting behavior handler (cooldown-gated, aimed or fixed projectiles). Params: `fireRate` (default 1), `projectileSpeed` (default 120), `projectileSize` (default 6), `aimMode` (`'fixed'` or `'aimed'`, default `'fixed'`), `aimDirection` (`{x,y}`, default `{x:1,y:0}`), `shootTo` (`{x,y}`, optional), `detectionRadius` (default 200), `enemyWidth`/`enemyHeight` (default 16). **Fixed mode:** `shootTo` present + finite → normalized direction + `maxRange = magnitude`; `shootTo` missing/zero-length/malformed → falls back to legacy `aimDirection`, `maxRange = 0` (no limit). Zero components preserved via `Number.isFinite` (not `\|\| 0`). **Aimed mode:** `shootTo` is completely ignored; fires toward player within `detectionRadius`, always unbounded (`maxRange = 0`). Spawned projectile carries `maxRange`/`distanceTraveled` when present. Default catalog vector: 128px right. See `docs/design/turret-shoot-to-decision.md` | `src/platformer/enemy/registry.ts` |
+| `spiderBehavior` | const | Built-in spider patrol behavior handler. Movement mirrors spinny: x-axis patrol at `speed`, wall collision against `ctx.solids`, optional ledge-turnaround via `ctx.tileQuery`, optional `patrolPath` waypoints. On first tick (when `state.data.spider` is absent), initialises spider state via `createSpiderState`; subsequent ticks advance via `stepSpider`. Params: `speed` (px/s, default 50), `ledgeTurnAround` (boolean, default false), `patrolPath` (`{x,y}[]`, optional), `gaitMode` (`'coordinated' \| 'frantic'`, default `'coordinated'`), `jitterSeed` (number, optional — deterministic from `state.x` via Knuth hash when absent), `palette` (`Partial<SpiderPalette>`, optional). Adapts `ctx.tileQuery` (returns `string \| null`) to `TileSolidityQuery` (returns `'empty'\|'solid'\|'passthrough'`). All tileQuery calls wrapped in try/catch — never throws | `src/platformer/enemy/registry.ts` |
 
 #### `src/platformer/enemy/projectile.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `ProjectileState` | type | Kinematic AABB: `id`, `x`, `y`, `vx`, `vy`, `width`, `height`, `alive` | `src/platformer/enemy/projectile.ts` |
-| `stepProjectile(p, solids, playerRect, dt)` | function | Pure: move, check solid collision, check player overlap. Returns `{ projectile, hitPlayer }` | `src/platformer/enemy/projectile.ts` |
+| `stepProjectile(projectile, dt, solids, playerRect?)` | function | Pure: advance projectile by `velocity * dt`, check solid collision, check player overlap. Returns `ProjectileStepResult` (`ProjectileState` + `hitPlayer` flag). Dead projectiles pass through unchanged. When `maxRange > 0`: accumulates `distanceTraveled` each tick; on range exceeded, clamps final position to the exact range boundary (`prevPos + dirUnit * remaining`) and deactivates with zero overshoot. Player hit deactivates projectile (prevents death-by-same-projectile on respawn). Precedence: solid hit > player hit > range exceeded. `maxRange`/`distanceTraveled` preserved on every deactivation path. Never throws | `src/platformer/enemy/projectile.ts` |
 
 #### `src/platformer/enemy/compile.ts`
 
@@ -1272,12 +1305,21 @@ Deterministic reusable platformer enemy archetypes. Ships two MVP archetypes (sp
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `EnemyPalette` | type | Optional per-archetype color overrides: `spinny`, `turret`, `default`, `indicator`, `projectile` | `src/platformer/enemy/renderer.ts` |
-| `drawEnemies(ctx, enemies, tick, palette?)` | function | Renderer-adjacent: spinny enemies rotate by `tick * angularSpeed`, turret enemies show direction indicator. Uses `outlineRect`. Dead enemies skipped. Never throws | `src/platformer/enemy/renderer.ts` |
+| `drawEnemies(ctx, enemies, tick, palette?)` | function | Renderer-adjacent: per-archetype visual treatment. Spinny enemies rotate by `enemy.state.data.spinAngle` (deterministic, displacement-coupled). Turret enemies draw a direction indicator line from center: uses `shootTo` direction when present and finite, otherwise falls back to `aimDirection`; zero-component preserved via `Number.isFinite`. Spider enemies draw procedural legs and body segments via `evaluateSpiderPose` + `drawSpider` (reads `state.data.spider`; lazily initialises on first render if missing). Unknown archetypes: static outlined rect. Uses `outlineRect`. Dead enemies skipped. Never throws | `src/platformer/enemy/renderer.ts` |
 | `drawProjectiles(ctx, projectiles, palette?)` | function | Renderer-adjacent: draw active projectiles as small outlined rects. Dead projectiles skipped. Never throws | `src/platformer/enemy/renderer.ts` |
 
 - _proposed in: `docs/design/platformer-enemy-archetypes-proposal.md`_
 - _research: `docs/research/platformer-enemy-archetypes.md`_
 - _composes with: `src/collision/types.ts` (`Solid`, `Rect`), `src/collision/aabb.ts` (`aabbOverlap`), `src/collision/tiles.ts` (`worldToTile`), `src/primitives/outline-rect.ts` (`outlineRect`)_
+
+### `src/primitives/death-feedback.ts` — NOT SHIPPED (showcase-local composition recipe)
+
+> Proposal: `docs/design/minimalist-death-feedback-proposal.md`.
+> Decision: **REJECTED as public module** — showcase-local composition, no library exports. See `docs/design/minimalist-death-feedback-decision.md`.
+
+The original proposal (Approach A) included a `DeathFeedbackConfig` type, `DeathEffectDescriptors`, and pure lifecycle helpers. The orchestrator decision rejected this: the consumer already owns `GameState.status` and `deathTimer`; the "6-7 lines per tick" wiring is trivial and game-specific; shipping a config type now locks in parameters before any game has shipped the death feel. The consumer composes death feedback locally using existing engine primitives (`hit-stop`, `particles`, `oscillators`, `audio`). Extract to library only when a second consumer arrives.
+
+**Shipped recipe (Stack A — Vlambeer-style, implemented in `showcase/sections/playground-death.ts`):** 15-tick dying phase, 6-tick hit-stop, 16 deterministic particles, shake amplitude 6 / 10 ticks, 3-tick white flash, player hidden while dying, delayed reset, 8-tick respawn pop, one-shot audio/FX, projectile hit deactivates source. Reduced motion preserves total timing/hit-stop/pop, halves particles, disables shake/flash. See `docs/design/minimalist-death-feedback-decision.md` §Locked values for the complete parameter table. The showcase-local helpers (`beginDeath`, `advanceDeath`, `shouldRespawn`, `isDying`, `isOneShotTick`, `shouldFlash`, `flashAlpha`, `respawnPopScale`) and locked constants are documented in `showcase/sections/playground-death.ts` and tested in `showcase/tests/playground-death.test.ts`.
 
 ---
 

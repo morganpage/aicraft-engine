@@ -384,10 +384,23 @@ drawTiledParallax(ctx, (c, x) => c.drawImage(ruinsImg, x, 0, W, H), cam.x, 0.50,
                 value="1"
               />
             </label>
+
+            <label class="spider-speed-label" for="spider-legs">
+              Legs: <span class="spider-legs-value">8</span>
+              <input
+                id="spider-legs"
+                class="spider-speed spider-legs"
+                type="range"
+                min="2"
+                max="8"
+                step="2"
+                value="8"
+              />
+            </label>
           </div>
 
           <p class="spider-hint">
-            <span class="kbd">🕷</span> toggles gait mode · slider scales movement speed
+            <span class="kbd">🕷</span> toggles gait mode · sliders adjust speed and visible leg count
           </p>
 
           <pre class="spider-snippet"><code>// Deterministic spider simulation (fixed dt, tile query)
@@ -403,8 +416,8 @@ drawSpider(ctx, pose, config);</code></pre>
         <div class="spider-stage">
           <canvas
             class="spider-canvas"
-            width="560"
-            height="320"
+            width="960"
+            height="360"
             aria-label="Animated procedural spiders with IK gait, breathing, and pedipalps"
           ></canvas>
         </div>

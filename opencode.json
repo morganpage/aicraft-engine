@@ -66,7 +66,7 @@
     "architect": {
       "description": "Adversarial READ-ONLY critic of API and architecture changes. Reviews proposals and implementations against docs/architecture.md and docs/conventions.md. Catches determinism violations, layering leaks, adapter indiscipline, magic numbers/colors, missing JSDoc, convention drift. Never proposes changes — only critiques.",
       "mode": "subagent",
-      "model": "openrouter/deepseek/deepseek-v4-pro",
+      "model": "xiaomi-token-plan-ams/mimo-v2.5-pro",
       "temperature": 0.5,
       "steps": 30,
       "color": "#5D6D7E",
@@ -88,7 +88,7 @@
     "coder": {
       "description": "TDD implementer for the library. Writes failing tests first for deterministic helpers (color math, RNG, particles, entitlements). Implements the smallest correct change. May prototype rendering approaches in src/_prototype/ during exploration.",
       "mode": "subagent",
-      "model": "xiaomi-token-plan-ams/mimo-v2.5-pro",
+      "model": "zai-coding-plan/glm-5.2",
       "temperature": 0.2,
       "steps": 60,
       "color": "#2ECC71",

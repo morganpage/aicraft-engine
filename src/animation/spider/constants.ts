@@ -9,6 +9,7 @@
 
 import type { SpiderConfig } from './types';
 import type { SpiderPalette } from './spider-state';
+import type { SpiderLegGeometryConfig } from './geometry';
 
 /**
  * Default spider body palette. Dark purple theme.
@@ -25,6 +26,25 @@ export const DEFAULT_SPIDER_PALETTE: Readonly<SpiderPalette> = {
   cheliceraeFill: '#2a1a3d',
   palpFill: '#5c3d8a',
   outline: '#1d1128',
+};
+
+/**
+ * Default leg geometry configuration. Three-segment coxa/femur/tibia model.
+ *
+ * Consumers spread and override for their specific creature.
+ */
+export const DEFAULT_SPIDER_GEOMETRY: Readonly<SpiderLegGeometryConfig> = {
+  hipRadius: 8,
+  coxaLength: 8,
+  // Short femur, long tibia (~1:2). The long distal segment reaches down-and-out
+  // to the ground while the knee stays high, giving the real-spider up-and-out
+  // arch instead of a stubby folded leg.
+  femurLength: 22,
+  tibiaLength: 44,
+  minExtensionRatio: 0.35,
+  maxExtensionRatio: 0.94,
+  jointSafetyMargin: 0.5,
+  minDistalAdvanceRatio: 0.1,
 };
 
 /**
@@ -48,7 +68,7 @@ export const DEFAULT_SPIDER: Readonly<SpiderConfig> = {
   overshootFactor: 0.3,
   stepHeight: 14,
   stepDuration: 0.18,
-  phaseAdvanceRate: 0.08,
+  phaseAdvanceRate: 0.16,
   // Visual — body
   cephRadius: 10,
   abdRx: 16,
@@ -58,13 +78,17 @@ export const DEFAULT_SPIDER: Readonly<SpiderConfig> = {
   breathAmplitude: 0.05,
   jointRadius: 2.5,
   bodyJitterAmplitude: 1.5,
+  // Neutral render offset: the body height is controlled entirely by the
+  // caller's `bodyY` parameter, NOT by this field. Keeping it at 0 keeps the
+  // gait and the renderer consistent — the body must clear the floor by ~28px
+  // (caller-supplied) so each leg reaches the ground at mid-extension
+  // (ratio 0.49–0.71) instead of dragging/compressing or deadlocking.
   bodyYOffset: 0,
   bodyOutlineWidth: 1.5,
-  // Visual — legs
-  thighLength: 18,
-  shinLength: 30,
-  thighWidth: 3.5,
-  shinWidth: 2,
+  // Visual — legs (three-segment: coxa/femur/tibia widths)
+  coxaWidth: 4,
+  femurWidth: 3.5,
+  tibiaWidth: 2,
   legOutlineWidth: 5,
   kneeKnobScale: 1,
   hipKnobScale: 0.8,
@@ -100,15 +124,22 @@ export const DEFAULT_SPIDER: Readonly<SpiderConfig> = {
   palpTipWidth: 1,
   palpTwitchFreq: 0.8,
   palpTwitchAmp: 0.5,
-  // Visual — per-leg rest positions
+  // Visual — per-leg rest positions.
+  // Derived from sector-valid foot X offsets (±55 front, ±32 inner) at the
+  // 28px body clearance: front/rear feet plant far out, inner feet stay outside
+  // the fold threshold, so every default grounded foot is anatomically valid
+  // (outward tibia) without renderer correction. See docs/design/
+  // procedural-spider-anatomical-sector-plan.md.
   legRestPositions: [
-    { angle: 30, distance: 38 },
-    { angle: 60, distance: 35 },
-    { angle: 120, distance: 35 },
-    { angle: 150, distance: 38 },
+    { angle: 27, distance: 61.7 },
+    { angle: 41.2, distance: 42.5 },
+    { angle: 138.8, distance: 42.5 },
+    { angle: 153, distance: 61.7 },
   ],
   // Shared (gait + visual)
   groundSampleSteps: 3,
   motionScale: 1,
   palette: DEFAULT_SPIDER_PALETTE,
+  // Shared geometry (three-segment leg model)
+  geometry: DEFAULT_SPIDER_GEOMETRY,
 };

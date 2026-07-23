@@ -217,6 +217,35 @@ function coerceMovingPath(
 }
 
 /**
+ * Coerce a raw `patrolPath` array (as stored on `EnemyProps.params`) into
+ * the mutable `{x,y}[]` shape used by the reducer. Returns `null` if the
+ * supplied `params` bag has no array `patrolPath`. Mirrors
+ * {@link coerceMovingPath} for the enemy archetype contract — a built-in
+ * Spinny ships with `params.patrolPath` and the runtime spinny behavior
+ * targets those waypoints from its body rect, so moving the body must
+ * translate every waypoint by the same rect delta or the enemy snaps back
+ * to its old patrol box on play.
+ */
+function coerceEnemyPatrolPath(
+  params: Record<string, unknown>,
+): { x: number; y: number }[] | null {
+  if (!params || !Array.isArray((params as { patrolPath?: unknown }).patrolPath)) return null;
+  const raw = (params as { patrolPath: unknown[] }).patrolPath;
+  const out: { x: number; y: number }[] = [];
+  for (const p of raw) {
+    if (p === null || typeof p !== 'object') {
+      out.push({ x: 0, y: 0 });
+      continue;
+    }
+    const r = p as { x?: unknown; y?: unknown };
+    const x = typeof r.x === 'number' && Number.isFinite(r.x) ? r.x : 0;
+    const y = typeof r.y === 'number' && Number.isFinite(r.y) ? r.y : 0;
+    out.push({ x, y });
+  }
+  return out;
+}
+
+/**
  * Apply a single mutation to a working {@link WritableLevel} (already cloned).
  *
  * Returns `true` iff the level was actually changed. The caller uses the
@@ -283,6 +312,27 @@ function applyMutation(level: WritableLevel, op: EditorOperation): boolean {
           } as unknown as LevelEntity;
           return updated;
         }
+        // For enemy entities with a valid `params.patrolPath`, translate
+        // every waypoint by the same rect delta so the runtime spinny
+        // behavior (which targets patrolPath waypoints from its body
+        // rect) does not drag the enemy back to its old patrol box on
+        // play. Turrets / enemies without a valid patrolPath fall through
+        // to the plain rect-only move; malformed params never throw.
+        if (e.kind === 'enemy') {
+          const paramsBag = (e.props as unknown as { params?: Record<string, unknown> }).params ?? {};
+          const patrol = coerceEnemyPatrolPath(paramsBag);
+          if (patrol !== null) {
+            const newPatrol = patrol.map((p) => translatePoint(p, op.dx, op.dy));
+            return {
+              ...e,
+              rect: translatedRect,
+              props: {
+                ...(e.props as unknown as object),
+                params: { ...paramsBag, patrolPath: newPatrol },
+              },
+            } as unknown as LevelEntity;
+          }
+        }
         // For spawn entities, record the delta so we can propagate it to
         // level.spawn below. (Spawn rect changes must update level.spawn
         // or compileLevel() reads a stale spawn and the player spawns at
@@ -312,7 +362,10 @@ function applyMutation(level: WritableLevel, op: EditorOperation): boolean {
         movingPlatformUpdate:
           | { entityId: EntityId; oldRect: LevelRect; newRect: LevelRect }
           | null;
-      } = { spawnFromEntity: null, movingPlatformUpdate: null };
+        enemyUpdate:
+          | { entityId: EntityId; oldRect: LevelRect; newRect: LevelRect }
+          | null;
+      } = { spawnFromEntity: null, movingPlatformUpdate: null, enemyUpdate: null };
       const next = level.entities.map((e): LevelEntity => {
         if (e.id !== op.id) return e;
         changed = true;
@@ -325,6 +378,17 @@ function applyMutation(level: WritableLevel, op: EditorOperation): boolean {
           // match the body. Subsequent waypoints preserve their relative
           // offset from path[0].
           acc.movingPlatformUpdate = {
+            entityId: e.id,
+            oldRect: e.rect,
+            newRect: op.rect,
+          };
+        }
+        if (e.kind === 'enemy') {
+          // Record old + new top-left so every valid patrolPath waypoint
+          // can be translated by the rect delta (analogous to movingPlatform
+          // path translation). Turrets / enemies without a valid patrolPath
+          // fall through to the plain rect-only update.
+          acc.enemyUpdate = {
             entityId: e.id,
             oldRect: e.rect,
             newRect: op.rect,
@@ -358,6 +422,30 @@ function applyMutation(level: WritableLevel, op: EditorOperation): boolean {
           return {
             ...e,
             props: { ...props, path: newPath },
+          } as unknown as LevelEntity;
+        });
+      }
+      if (acc.enemyUpdate !== null) {
+        // Translate every valid patrolPath waypoint by the rect delta so
+        // the patrol shape is preserved. Malformed / absent patrolPath is
+        // left untouched (no throw, no coercion).
+        const update = acc.enemyUpdate;
+        const dx = update.newRect.x - update.oldRect.x;
+        const dy = update.newRect.y - update.oldRect.y;
+        const targetId = update.entityId;
+        level.entities = level.entities.map((e): LevelEntity => {
+          if (e.id !== targetId) return e;
+          if (e.kind !== 'enemy') return e;
+          const propsBag = (e.props as unknown as { params?: Record<string, unknown> }).params ?? {};
+          const patrol = coerceEnemyPatrolPath(propsBag);
+          if (patrol === null || patrol.length === 0) return e;
+          const newPatrol = patrol.map((p) => translatePoint(p, dx, dy));
+          return {
+            ...e,
+            props: {
+              ...(e.props as unknown as object),
+              params: { ...propsBag, patrolPath: newPatrol },
+            },
           } as unknown as LevelEntity;
         });
       }

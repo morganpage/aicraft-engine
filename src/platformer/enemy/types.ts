@@ -156,6 +156,17 @@ export interface ProjectileState {
   readonly height: number;
   /** `false` when the projectile has hit a solid or been deactivated. */
   readonly alive: boolean;
+  /**
+   * Maximum travel distance in px. When `> 0`, the projectile deactivates
+   * after traveling this distance. `undefined` or `0` means no range limit
+   * (legacy behavior). Set by fixed-mode turrets with a finite `shootTo`.
+   */
+  readonly maxRange?: number;
+  /**
+   * Accumulated travel distance in px. Starts at `0` when `maxRange > 0`.
+   * `undefined` when `maxRange` is absent or `0`.
+   */
+  readonly distanceTraveled?: number;
 }
 
 /**

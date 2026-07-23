@@ -171,6 +171,7 @@ import {
   startSession,
   stopSession,
   resetToInitialState,
+  addEntityAndSelect,
 } from './playground-session';
 import {
   boundingRect,
@@ -178,8 +179,17 @@ import {
   canvasMouseToWorld,
   computePlayerVisuals,
   hitTestWaypoint,
+  instantiateEnemyAt,
   instantiateMovingPlatformAt,
+  isEnemyToolbarButtonActive,
   mouseToWaypointTopLeft,
+  resolveEnemyCatalogEntry,
+  shouldRenderEntityInPlay,
+  computeShootToWidgetGeometry,
+  hitTestShootToEndpoint,
+  computeShootToFromEndpoint,
+  shouldShowShootToWidget,
+  SHOOT_TO_WIDGET_CONFIG,
 } from './playground-helpers';
 import {
   createKeyboardAdapter,
@@ -220,7 +230,31 @@ import { drawSimpleFeet, IK_PARITY_FEET } from '../../src/animation/simple-feet'
 import { createFootPlantState, advanceFootPlant } from '../../src/animation';
 import { createAudioAdapter, type AudioAdapter } from '../../src/audio';
 import { DEFAULT_JUMP } from '../../src/animation/jump';
+import { mulberry32 } from '../../src/rng/mulberry32';
 import { shouldAnimate } from '../helpers/motion-gate';
+import {
+  beginDeath,
+  advanceDeath,
+  shouldRespawn,
+  isDying,
+  shouldFlash,
+  flashAlpha,
+  respawnPopScale,
+  DEATH_ANIM_TICKS,
+  DEATH_HIT_STOP_TICKS,
+  DEATH_PARTICLE_COUNT,
+  DEATH_PARTICLE_COUNT_REDUCED,
+  DEATH_SHAKE_AMPLITUDE,
+  DEATH_SHAKE_DURATION,
+  DEATH_RESPAWN_POP_TICKS,
+  DEATH_PARTICLE_SPEED,
+  DEATH_PARTICLE_SIZE,
+  DEATH_PARTICLE_LIFE,
+  DEATH_PARTICLE_DRAG,
+  DEATH_RNG_SEED,
+  DEATH_PARTICLE_COLOR,
+  type DeathState,
+} from './playground-death';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
 
@@ -642,6 +676,8 @@ export function initPlayground(
   } | null = null;
   /** Active waypoint drag (selected movingPlatform), or null. */
   let draggingWaypoint: { readonly entityId: EntityId; readonly index: number } | null = null;
+  /** Active shootTo endpoint drag (selected turret), or null. */
+  let draggingShootTo: { readonly entityId: EntityId } | null = null;
 
   // --- Play-mode runtime state ---
   /** Playtest snapshot — the deep-clone of the level taken on enterPlaytest.
@@ -660,8 +696,12 @@ export function initPlayground(
   let runtimeProjectiles: readonly ProjectileState[] = [];
   /** Enemy behavior registry. */
   let enemyRegistry: EnemyBehaviorRegistry | null = null;
-  /** How the player died (for status display). */
-  let deathReason: string | null = null;
+  /** Death lifecycle state — null when alive. Drives the 15-tick dying phase. */
+  let deathState: DeathState | null = null;
+  /** Ticks since respawn (for the 8-tick pop-scale spring). -1 = not in pop. */
+  let respawnPopTick = -1;
+  /** Death-burst particles (radial ring, spawned once on death tick 0). */
+  let deathParticles: Particle[] = [];
 
   // --- Play-mode FX state ---
   let hitStop: HitStopState = createHitStop();
@@ -745,7 +785,7 @@ export function initPlayground(
   // a drag's transaction is open would undo under the in-flight state.
   const onKeyDownEditor = (e: KeyboardEvent): void => {
     if (mode !== 'edit' || !onscreen) return;
-    if (draggingEntityId !== null || drawingRect !== null || draggingWaypoint !== null) return;
+    if (draggingEntityId !== null || drawingRect !== null || draggingWaypoint !== null || draggingShootTo !== null) return;
     const mod = e.ctrlKey || e.metaKey;
     if (e.code === 'Delete' || e.code === 'Backspace') {
       if (editorState.selection.ids.size > 0) {
@@ -903,6 +943,130 @@ export function initPlayground(
     }
   };
 
+  /**
+   * Draw the shootTo widget overlay for a selected turret (Treatment C):
+   * - Faint amber range disk with subtle fill
+   * - Solid amber vector line from turret center to endpoint
+   * - Target reticle handle at endpoint (10px outer, 4px inner, crosshair ticks)
+   * - Dark-blue-on-amber distance pill
+   */
+  const renderShootToWidget = (entity: LevelEntity): void => {
+    const params = (entity.props as { params?: Record<string, unknown> }).params;
+    if (!params) return;
+    const geom = computeShootToWidgetGeometry(
+      entity.rect.x, entity.rect.y, entity.rect.width, entity.rect.height,
+      params.shootTo,
+    );
+    if (!geom) return;
+
+    const cfg = SHOOT_TO_WIDGET_CONFIG;
+
+    // Faint amber range disk
+    if (geom.maxRange > 0) {
+      ctx.beginPath();
+      ctx.arc(geom.centerX, geom.centerY, geom.maxRange, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.03)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Solid amber vector line
+    ctx.beginPath();
+    ctx.moveTo(geom.centerX, geom.centerY);
+    ctx.lineTo(geom.endX, geom.endY);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Arrowhead at endpoint
+    const tipX = geom.endX;
+    const tipY = geom.endY;
+    const baseX = tipX - geom.dirX * cfg.arrowLength;
+    const baseY = tipY - geom.dirY * cfg.arrowLength;
+    const perpX = -geom.dirY;
+    const perpY = geom.dirX;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(baseX + perpX * cfg.arrowHalfWidth, baseY + perpY * cfg.arrowHalfWidth);
+    ctx.lineTo(baseX - perpX * cfg.arrowHalfWidth, baseY - perpY * cfg.arrowHalfWidth);
+    ctx.closePath();
+    ctx.fillStyle = '#fbbf24';
+    ctx.fill();
+
+    // Reticle handle — outer ring
+    ctx.beginPath();
+    ctx.arc(geom.endX, geom.endY, cfg.reticleOuterRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Reticle handle — inner dot
+    ctx.beginPath();
+    ctx.arc(geom.endX, geom.endY, cfg.reticleInnerRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fill();
+
+    // Reticle crosshair ticks
+    const tickLen = cfg.reticleOuterRadius + cfg.reticleTickLength;
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(geom.endX, geom.endY - cfg.reticleOuterRadius);
+    ctx.lineTo(geom.endX, geom.endY - tickLen);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(geom.endX, geom.endY + cfg.reticleOuterRadius);
+    ctx.lineTo(geom.endX, geom.endY + tickLen);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(geom.endX - cfg.reticleOuterRadius, geom.endY);
+    ctx.lineTo(geom.endX - tickLen, geom.endY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(geom.endX + cfg.reticleOuterRadius, geom.endY);
+    ctx.lineTo(geom.endX + tickLen, geom.endY);
+    ctx.stroke();
+
+    // Distance pill (dark-blue text on amber background)
+    const midX = (geom.centerX + geom.endX) / 2;
+    const midY = (geom.centerY + geom.endY) / 2;
+    const pillX = midX + perpX * cfg.pillOffset;
+    const pillY = midY + perpY * cfg.pillOffset;
+
+    ctx.font = 'bold 10px monospace';
+    const textWidth = ctx.measureText(geom.labelText).width;
+    const pillW = textWidth + 12;
+    const pillH = 18;
+    const px = pillX - pillW / 2;
+    const py = pillY - pillH / 2;
+
+    // Pill background
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    const r = 4;
+    ctx.moveTo(px + r, py);
+    ctx.lineTo(px + pillW - r, py);
+    ctx.quadraticCurveTo(px + pillW, py, px + pillW, py + r);
+    ctx.lineTo(px + pillW, py + pillH - r);
+    ctx.quadraticCurveTo(px + pillW, py + pillH, px + pillW - r, py + pillH);
+    ctx.lineTo(px + r, py + pillH);
+    ctx.quadraticCurveTo(px, py + pillH, px, py + pillH - r);
+    ctx.lineTo(px, py + r);
+    ctx.quadraticCurveTo(px, py, px + r, py);
+    ctx.closePath();
+    ctx.fill();
+
+    // Pill text
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(geom.labelText, pillX, pillY);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  };
+
   /** Editor view: grid + entities + selection + ghost + path widget. */
   const renderEdit = (): void => {
     ctx.fillStyle = COLOR_BG;
@@ -918,6 +1082,14 @@ export function initPlayground(
     const selectedPath = selectedPathEntity();
     if (selectedPath !== null) {
       renderPathWidget(selectedPath);
+    }
+
+    // ShootTo widget for the selected turret (Treatment C).
+    for (const id of editorState.selection.ids) {
+      const e = editorState.level.entities.find((en) => en.id === id);
+      if (e && shouldShowShootToWidget(e)) {
+        renderShootToWidget(e);
+      }
     }
 
     // Selection highlight (drawn after entities + path widget so it reads on top).
@@ -940,7 +1112,13 @@ export function initPlayground(
     } else if (editMode === 'place' && mouseOverCanvas) {
       // Click-to-place ghost preview at the snapped cursor — uses the
       // catalog entry's default width/height so the user sees what will spawn.
-      const entry = findCatalogEntry(DEFAULT_CATALOG, selectedKind);
+      // For enemy, resolve the dedicated spinny/turret prefab so the ghost
+      // matches the actual placement rect (16×16 either way, but this is
+      // future-proof against a prefab with a non-default size).
+      const entry =
+        selectedKind === 'enemy'
+          ? resolveEnemyCatalogEntry(DEFAULT_CATALOG, selectedEnemyArchetype)
+          : findCatalogEntry(DEFAULT_CATALOG, selectedKind);
       if (entry) {
         ctx.strokeStyle = COLOR_GHOST;
         ctx.lineWidth = 1;
@@ -998,15 +1176,24 @@ export function initPlayground(
     dustParticles = [...dustParticles, ...dust];
   };
 
-  /** Play view: level entities + dust + player + HUD. */
+  /** Play view: level entities + dust + death particles + player + HUD. */
   const renderPlay = (): void => {
+    const rm = shouldAnimate();
+    const dying = deathState !== null && isDying(deathState);
+
     ctx.fillStyle = COLOR_BG;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
     // Screen-shake offset (visual-only; never feeds back into state).
+    // Death shake takes priority over landing shake when dying.
     let shakeX = 0;
     let shakeY = 0;
-    if (shakeMagnitude > 0) {
+    if (dying && deathState !== null && !rm) {
+      const envelope = shakeEnvelope(deathState.tick, DEATH_SHAKE_DURATION, DEATH_SHAKE_AMPLITUDE);
+      const s = sineShake(deathState.tick, envelope, 0.8, 1.2);
+      shakeX = s.x;
+      shakeY = s.y;
+    } else if (shakeMagnitude > 0) {
       const envelope = shakeEnvelope(shakeTick, SHAKE_DURATION, shakeMagnitude);
       const s = sineShake(shakeTick, envelope, SHAKE_FREQ_X, SHAKE_FREQ_Y);
       shakeX = s.x;
@@ -1023,12 +1210,17 @@ export function initPlayground(
     // Level entities — drawn from the playtest snapshot (the authoritative
     // shape of the level being played). Spawn is skipped — the player IS
     // at the spawn position; drawing the marker would duplicate it.
-    // Moving platforms render at their advanced runtime position so the
-    // user sees them move; other kinds render at their authored rect.
+    // Authored enemy entities are skipped here because runtime
+    // `drawEnemies` (called below) is the sole enemy renderer: it draws
+    // per-archetype treatments (spinny sawblade, turret indicator) at the
+    // RUNTIME position, whereas `drawLevelEntity` would draw a static
+    // rectangle at the authored position. Moving platforms render at their
+    // advanced runtime position so the user sees them move; other kinds
+    // render at their authored rect.
     const level = playtestSnapshot;
     if (level !== null) {
       for (const entity of level.entities) {
-        if (entity.kind === 'spawn') continue;
+        if (!shouldRenderEntityInPlay(entity)) continue;
         const mp = runtimePlatforms.find((p) => p.entity.id === entity.id);
         if (mp !== undefined) {
           drawLevelEntity(
@@ -1053,18 +1245,61 @@ export function initPlayground(
     // Dust (behind the player).
     drawDust(ctx, dustParticles);
 
+    // Death particles — drawn during dying phase with fade + size curve.
+    if (deathParticles.length > 0) {
+      for (const p of deathParticles) {
+        const age = p.maxLife > 0 ? 1 - p.life / p.maxLife : 1;
+        const alpha = Math.max(0, 1 - age);
+        const radius = p.size * (1 - age * 0.5);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color ?? DEATH_PARTICLE_COLOR;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1, radius), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
     // Enemies.
     drawEnemies(ctx, runtimeEnemies, renderTick, ENEMY_PALETTE);
 
     // Projectiles.
     drawProjectiles(ctx, runtimeProjectiles, ENEMY_PALETTE);
 
-    // Player (with all FX). Rendered only if runtime state is live.
+    // Player — hidden during dying, rendered with pop-scale during respawn.
     if (runtimeState !== null) {
-      drawPlayer();
+      if (dying) {
+        // Player hidden during dying phase.
+      } else if (respawnPopTick >= 0 && respawnPopTick < DEATH_RESPAWN_POP_TICKS) {
+        // Respawn pop-scale: squash-stretch spring recovery.
+        const popScale = respawnPopScale(respawnPopTick);
+        const core = runtimeState.core;
+        ctx.save();
+        ctx.translate(core.x + core.width / 2, core.y + core.height);
+        ctx.scale(popScale.scaleX, popScale.scaleY);
+        ctx.translate(-(core.x + core.width / 2), -(core.y + core.height));
+        drawPlayer();
+        ctx.restore();
+        respawnPopTick += 1;
+        if (respawnPopTick >= DEATH_RESPAWN_POP_TICKS) {
+          respawnPopTick = -1;
+          updateStatus();
+        }
+      } else {
+        drawPlayer();
+      }
     }
 
     ctx.restore();
+
+    // Flash overlay — screen-space, first 3 ticks of dying (unless reduced motion).
+    if (dying && deathState !== null && shouldFlash(deathState, rm)) {
+      const alpha = flashAlpha(deathState);
+      if (alpha > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      }
+    }
 
     // HUD — screen-space.
     drawHUD();
@@ -1186,11 +1421,16 @@ export function initPlayground(
     ctx.font = '11px ui-monospace, "SF Mono", "Fira Code", monospace';
     ctx.fillStyle = COLOR_HUD;
     const frozen = isHitStopActive(hitStop) ? '  [FROZEN]' : '';
-    const death = deathReason ? `  [DEAD: ${deathReason}]  Press R` : '';
+    const dying = deathState !== null && isDying(deathState)
+      ? `  [DYING: ${deathState.reason}]`
+      : '';
+    const respawning = respawnPopTick >= 0 && respawnPopTick < DEATH_RESPAWN_POP_TICKS
+      ? '  [RESPAWNING]'
+      : '';
     const px = runtimeState !== null ? Math.round(runtimeState.core.x) : 0;
     const py = runtimeState !== null ? Math.round(runtimeState.core.y) : 0;
     const gd = runtimeState !== null && runtimeState.core.onGround ? 'grounded' : 'airborne';
-    ctx.fillText(`x:${px}  y:${py}  ${gd}${frozen}${death}  ·  playing`, 8, 16);
+    ctx.fillText(`x:${px}  y:${py}  ${gd}${frozen}${dying}${respawning}  ·  playing`, 8, 16);
   };
 
   /** Dispatch the active view. Called on demand from mouse/keyboard handlers
@@ -1207,8 +1447,11 @@ export function initPlayground(
   /** Refresh the validation + status panel. */
   const updateStatus = (): void => {
     if (mode === 'play') {
-      if (deathReason) {
-        statusPanel.textContent = `Dead (${deathReason}) — press R to reset, or click ✎ Edit.`;
+      if (deathState !== null && isDying(deathState)) {
+        statusPanel.textContent = `Dying (${deathState.reason}) — respawning in ${DEATH_ANIM_TICKS - deathState.tick} ticks.`;
+        statusPanel.classList.add('playground-status--invalid');
+      } else if (respawnPopTick >= 0 && respawnPopTick < DEATH_RESPAWN_POP_TICKS) {
+        statusPanel.textContent = 'Respawning…';
         statusPanel.classList.add('playground-status--invalid');
       } else {
         statusPanel.textContent = 'Playing — click ✎ Edit to modify the level.';
@@ -1235,7 +1478,13 @@ export function initPlayground(
   const updateToolbar = (): void => {
     for (const btn of kindBtns) {
       const kind = btn.dataset.kind as EntityKind;
-      const active = editMode === 'place' && kind === selectedKind;
+      const archetype = btn.dataset.archetype ?? null;
+      // Use the pure helper so enemy-kind buttons (Spinny / Turret) are
+      // distinguished by archetype — otherwise both light up at once
+      // whenever an enemy is selected (they share `data-kind="enemy"`).
+      const active =
+        editMode === 'place' &&
+        isEnemyToolbarButtonActive(selectedKind, selectedEnemyArchetype, kind, archetype);
       btn.classList.toggle('playground-btn--active', active);
       btn.setAttribute('aria-pressed', String(active));
     }
@@ -1263,7 +1512,28 @@ export function initPlayground(
     const mouse = canvasMouse(e);
     snappedMouse = snapToGrid(mouse.x, mouse.y, GRID_SIZE);
 
-    // 1. Waypoint hit-test for the currently selected entity with a path
+    // 1. ShootTo endpoint hit-test for the currently selected turret.
+    //    Takes priority so the reticle handle is grabbable even when
+    //    overlapping the entity body.
+    if (editMode === 'select' && editorState.selection.ids.size > 0) {
+      const selId = [...editorState.selection.ids][0];
+      const selEntity = editorState.level.entities.find((en) => en.id === selId);
+      if (selEntity && shouldShowShootToWidget(selEntity)) {
+        const params = (selEntity.props as { params?: Record<string, unknown> }).params;
+        if (params) {
+          const cx = selEntity.rect.x + selEntity.rect.width / 2;
+          const cy = selEntity.rect.y + selEntity.rect.height / 2;
+          if (hitTestShootToEndpoint(mouse, cx, cy, params.shootTo, SHOOT_TO_WIDGET_CONFIG.hitRadius)) {
+            draggingShootTo = { entityId: selId };
+            editorState = beginTransaction(editorState);
+            inTransaction = true;
+            return;
+          }
+        }
+      }
+    }
+
+    // 2. Waypoint hit-test for the currently selected entity with a path
     //    (movingPlatform or enemy with patrolPath). Takes priority over
     //    entity hit-test so a waypoint sitting on top of the entity body
     //    is grabbable.
@@ -1313,8 +1583,17 @@ export function initPlayground(
       // default path is translated to the placement point (otherwise
       // path[0] stays at the catalog default and the platform snaps to
       // (0, 0) on play because the kernel compiles path[0] as its home).
-      // For enemy, merge the selected archetype into the props.
+      // For enemy, resolve the dedicated spinny/turret prefab by archetype
+      // key (so the default `params.patrolPath` is honored) and translate
+      // the patrol so point[0] = placement.
+      //
+      // For path-bearing entities (movingPlatform and Spinny), use
+      // addEntityAndSelect to immediately select the new entity and switch
+      // to select mode so the path widget is interactive. For other kinds
+      // (including Turret and ordinary paint tools), stay in sticky place
+      // mode.
       let op: EditorOperation;
+      let isPathBearing = false;
       if (selectedKind === 'movingPlatform') {
         const placed = instantiateMovingPlatformAt(entry, snappedMouse);
         op = {
@@ -1323,36 +1602,34 @@ export function initPlayground(
           rect: placed.rect,
           props: placed.props,
         };
+        isPathBearing = true;
       } else if (selectedKind === 'enemy') {
-        if (entry) {
-          // Translate patrolPath waypoints to the placement position (same
-          // pattern as movingPlatform path translation). patrolPath is stored
-          // in params.patrolPath as relative offsets from the catalog origin.
-          const entryParams = (entry.defaultProps as { params?: Record<string, unknown> }).params ?? {};
-          let translatedParams = entryParams;
-          if (Array.isArray(entryParams.patrolPath) && entryParams.patrolPath.length >= 2) {
-            const pp = entryParams.patrolPath as { x: number; y: number }[];
-            const origin = pp[0];
-            const dx = snappedMouse.x - origin.x;
-            const dy = snappedMouse.y - origin.y;
-            translatedParams = {
-              ...entryParams,
-              patrolPath: pp.map((p) => ({ x: p.x + dx, y: p.y + dy })),
-            };
-          }
-          op = {
-            type: 'addEntity',
-            kind: 'enemy',
-            rect: { x: snappedMouse.x, y: snappedMouse.y, width: entry.defaultRect.width, height: entry.defaultRect.height },
-            props: { ...entry.defaultProps, archetype: selectedEnemyArchetype, params: translatedParams },
-          };
-        } else {
-          return;
-        }
+        // Resolve the dedicated enemy prefab (entries.spinny / entries.turret)
+        // via the pure helper — falling back to the generic enemy entry for
+        // unknown archetypes. `instantiateEnemyAt` translates the default
+        // patrol so a freshly placed Spinny's path[0] matches the placement.
+        const enemyEntry = resolveEnemyCatalogEntry(DEFAULT_CATALOG, selectedEnemyArchetype);
+        const placed = instantiateEnemyAt(enemyEntry, snappedMouse, selectedEnemyArchetype);
+        op = {
+          type: 'addEntity',
+          kind: 'enemy',
+          rect: placed.rect,
+          props: placed.props,
+        };
+        // Spinny (with patrolPath) is path-bearing; Turret is widget-bearing
+        // (shootTo endpoint widget). Both use addEntityAndSelect + Select mode.
+        isPathBearing = selectedEnemyArchetype === 'spinny' || selectedEnemyArchetype === 'turret';
       } else {
         op = instantiateCatalogEntry(entry, snappedMouse).op;
       }
-      editorState = applyOp(editorState, op);
+      if (isPathBearing) {
+        // addEntityAndSelect applies the op and selects the new entity so
+        // the path widget is immediately visible and interactive.
+        editorState = addEntityAndSelect(editorState, op);
+        editMode = 'select';
+      } else {
+        editorState = applyOp(editorState, op);
+      }
       afterEdit();
     }
   };
@@ -1362,7 +1639,28 @@ export function initPlayground(
     const mouse = canvasMouse(e);
     snappedMouse = snapToGrid(mouse.x, mouse.y, GRID_SIZE);
 
-    // 1. Waypoint drag — apply an updateEntityProps op for the new path.
+    // 1. ShootTo endpoint drag — update the relative shootTo vector.
+    if (draggingShootTo !== null) {
+      const stId = draggingShootTo.entityId;
+      const entity = editorState.level.entities.find((en) => en.id === stId);
+      if (entity !== undefined) {
+        const cx = entity.rect.x + entity.rect.width / 2;
+        const cy = entity.rect.y + entity.rect.height / 2;
+        // Snap endpoint to grid for consistency with existing UX
+        const snapped = snapToGrid(mouse.x, mouse.y, GRID_SIZE);
+        const raw = computeShootToFromEndpoint(snapped.x, snapped.y, cx, cy);
+        const oldParams = (entity.props as { params?: Record<string, unknown> }).params ?? {};
+        editorState = applyOp(editorState, {
+          type: 'updateEntityProps',
+          id: stId,
+          propsPatch: { params: { ...oldParams, shootTo: raw } },
+        });
+        render();
+      }
+      return;
+    }
+
+    // 2. Waypoint drag — apply an updateEntityProps op for the new path.
     //    The waypoint handles render at the platform's CENTER (top-left +
     //    half rect), so offset the mouse by half the rect to keep the
     //    handle under the cursor (otherwise the waypoint jumps by
@@ -1386,15 +1684,13 @@ export function initPlayground(
 
         if (entity.kind === 'movingPlatform') {
           const props = entity.props as MovingPlatformProps;
-          const newPath = props.path.map((p, i) =>
-            i === wp.index ? { x: wpTopLeft.x, y: wpTopLeft.y } : p,
-          );
-          editorState = applyOp(editorState, {
-            type: 'updateEntityProps',
-            id: wp.entityId,
-            propsPatch: { path: newPath },
-          });
           if (wp.index === 0) {
+            // Waypoint 0 = body home position. Use ONLY setEntityRect which
+            // translates path[0] to the new body top-left and preserves the
+            // relative offsets of other waypoints. Using updateEntityProps
+            // BEFORE setEntityRect would double-translate waypoint 0 (the
+            // setEntityRect patrolPath coherence code translates ALL
+            // waypoints by the body delta, including the one we just set).
             editorState = applyOp(editorState, {
               type: 'setEntityRect',
               id: wp.entityId,
@@ -1405,19 +1701,24 @@ export function initPlayground(
                 height: entity.rect.height,
               },
             });
+          } else {
+            // Non-zero waypoint: update only the path via updateEntityProps.
+            const newPath = props.path.map((p, i) =>
+              i === wp.index ? { x: wpTopLeft.x, y: wpTopLeft.y } : p,
+            );
+            editorState = applyOp(editorState, {
+              type: 'updateEntityProps',
+              id: wp.entityId,
+              propsPatch: { path: newPath },
+            });
           }
         } else if (entity.kind === 'enemy') {
           const params = (entity.props as { params?: Record<string, unknown> }).params ?? {};
-          const oldPath = Array.isArray(params.patrolPath) ? params.patrolPath as { x: number; y: number }[] : [];
-          const newPath = oldPath.map((p, i) =>
-            i === wp.index ? { x: wpTopLeft.x, y: wpTopLeft.y } : p,
-          );
-          editorState = applyOp(editorState, {
-            type: 'updateEntityProps',
-            id: wp.entityId,
-            propsPatch: { params: { ...params, patrolPath: newPath } },
-          });
           if (wp.index === 0) {
+            // Waypoint 0 = body home position. Use ONLY setEntityRect which
+            // translates every patrolPath waypoint by the body delta. Using
+            // updateEntityProps BEFORE setEntityRect would double-translate
+            // waypoint 0.
             editorState = applyOp(editorState, {
               type: 'setEntityRect',
               id: wp.entityId,
@@ -1427,6 +1728,17 @@ export function initPlayground(
                 width: entity.rect.width,
                 height: entity.rect.height,
               },
+            });
+          } else {
+            // Non-zero waypoint: update only the patrolPath.
+            const oldPath = Array.isArray(params.patrolPath) ? params.patrolPath as { x: number; y: number }[] : [];
+            const newPath = oldPath.map((p, i) =>
+              i === wp.index ? { x: wpTopLeft.x, y: wpTopLeft.y } : p,
+            );
+            editorState = applyOp(editorState, {
+              type: 'updateEntityProps',
+              id: wp.entityId,
+              propsPatch: { params: { ...params, patrolPath: newPath } },
             });
           }
         }
@@ -1472,6 +1784,17 @@ export function initPlayground(
 
   const onMouseUp = (): void => {
     if (mode !== 'edit') return;
+
+    // ShootTo endpoint drag — commit the transaction.
+    if (draggingShootTo !== null) {
+      if (inTransaction) {
+        editorState = commitTransaction(editorState, 'Move shootTo endpoint');
+        inTransaction = false;
+      }
+      draggingShootTo = null;
+      afterEdit();
+      return;
+    }
 
     // Waypoint drag — commit the transaction.
     if (draggingWaypoint !== null) {
@@ -1535,7 +1858,7 @@ export function initPlayground(
   // mouseleave via window blur in some edge cases).
   const cancelDrag = (): void => {
     if (mode !== 'edit') return;
-    if (drawingRect !== null || draggingEntityId !== null || draggingWaypoint !== null) {
+    if (drawingRect !== null || draggingEntityId !== null || draggingWaypoint !== null || draggingShootTo !== null) {
       // Roll back the in-flight transaction by re-creating editorState from
       // the last committed level (the pre-transaction level is preserved on
       // the EditorState as `transactionStartSnapshot` while in a transaction;
@@ -1553,6 +1876,7 @@ export function initPlayground(
       draggingEntityId = null;
       dragLastSnapped = null;
       draggingWaypoint = null;
+      draggingShootTo = null;
       afterEdit();
     }
   };
@@ -1642,7 +1966,9 @@ export function initPlayground(
     runtimeEnemies = compileEnemies(session.snapshot);
     runtimeProjectiles = [];
     enemyRegistry = createEnemyBehaviorRegistry();
-    deathReason = null;
+    deathState = null;
+    respawnPopTick = -1;
+    deathParticles = [];
     // Reset FX.
     hitStop = createHitStop();
     squashOffset = 0;
@@ -1688,7 +2014,9 @@ export function initPlayground(
     runtimeEnemies = [];
     runtimeProjectiles = [];
     enemyRegistry = null;
-    deathReason = null;
+    deathState = null;
+    respawnPopTick = -1;
+    deathParticles = [];
     updateModeChrome();
     afterEdit();
   };
@@ -1702,7 +2030,43 @@ export function initPlayground(
     step: () => {
       if (mode !== 'play' || runtimeState === null || compiled === null) return;
 
-      // 1. Poll input — drain edge latches once per fixed tick. Keyboard +
+      const rm = shouldAnimate();
+
+      // 1. Advance hit-stop timer regardless of the freeze so the freeze
+      //    actually ends. When active, skip gameplay but still advance death
+      //    state so the death animation progresses during hit-stop freeze.
+      hitStop = stepHitStop(hitStop, 1);
+      if (isHitStopActive(hitStop)) {
+        // Death timer and particles advance during hit-stop (visual freeze
+        // is the point — effects keep running while gameplay is frozen).
+        if (deathState !== null && isDying(deathState)) {
+          deathState = advanceDeath(deathState);
+          deathParticles = stepParticles(deathParticles, 1, { drag: DEATH_PARTICLE_DRAG });
+          if (shouldRespawn(deathState)) {
+            resetPlayer();
+            deathState = null;
+            respawnPopTick = 0;
+            updateStatus();
+          }
+        }
+        return;
+      }
+
+      // 2. Death progression — advance death timer, step death particles.
+      //    Gameplay remains frozen during the dying phase.
+      if (deathState !== null && isDying(deathState)) {
+        deathState = advanceDeath(deathState);
+        deathParticles = stepParticles(deathParticles, 1, { drag: DEATH_PARTICLE_DRAG });
+        if (shouldRespawn(deathState)) {
+          resetPlayer();
+          deathState = null;
+          respawnPopTick = 0;
+          updateStatus();
+        }
+        return;
+      }
+
+      // 3. Poll input — drain edge latches once per fixed tick. Keyboard +
       //    touch are OR-merged per action. Onscreen gate: only respond to
       //    movement input while this section is visible (both this section
       //    + the hero listen on window; without this gate pressing arrows
@@ -1713,18 +2077,17 @@ export function initPlayground(
       const rightEdge = orEdges(kb['right'] ?? IDLE_EDGE, t[1] ?? IDLE_EDGE);
       const jumpEdge = orEdges(kb['jump'] ?? IDLE_EDGE, t[2] ?? IDLE_EDGE);
 
-      // 2. Advance hit-stop timer regardless of the freeze so the freeze
-      //    actually ends. When active, skip the rest of the step.
-      hitStop = stepHitStop(hitStop, 1);
-      if (isHitStopActive(hitStop)) return;
-
-      // 3. Reset (R-key) — instant teleport back to spawn. Edge-triggered.
+      // 4. Reset (R-key) — instant teleport back to spawn. Edge-triggered.
+      //    Works even during respawn pop (manual reset always wins).
       if (kb['reset']?.pressed) {
-        deathReason = null;
+        deathState = null;
+        respawnPopTick = -1;
+        deathParticles = [];
         resetPlayer();
+        updateStatus();
       }
 
-      // 4. Compose PlatformerInput from polled edges.
+      // 5. Compose PlatformerInput from polled edges.
       const moveX: -1 | 0 | 1 = !onscreen
         ? 0
         : leftEdge.held === rightEdge.held
@@ -1735,10 +2098,10 @@ export function initPlayground(
       const jumpInput: PolledEdge = onscreen ? jumpEdge : IDLE_EDGE;
       const input: PlatformerInput = { moveX, jump: jumpInput, dash: null };
 
-      // 5. Capture pre-step vy for impact-velocity reconstruction.
+      // 6. Capture pre-step vy for impact-velocity reconstruction.
       const preVy = runtimeState.core.vy;
 
-      // 6. Advance moving platforms BEFORE composing per-tick solids so the
+      // 7. Advance moving platforms BEFORE composing per-tick solids so the
       //    platforms are at their new positions when collision resolution
       //    runs. The carry provider compares `advanced` (this tick's new
       //    positions) against `runtimePlatforms` (the pre-advance positions
@@ -1754,10 +2117,10 @@ export function initPlayground(
       const platformSolids = advanced.map(movingPlatformToSolid);
       runtimePlatforms = advanced;
 
-      // 7. Compose per-tick solids: static geometry + current platform rects.
+      // 8. Compose per-tick solids: static geometry + current platform rects.
       const tickSolids: Solid[] = [...compiled.staticSolids, ...platformSolids];
 
-      // 8. Step the platformer kernel — the single authoritative call.
+      // 9. Step the platformer kernel — the single authoritative call.
       const result = stepPlatformer(
         runtimeState,
         input,
@@ -1768,7 +2131,7 @@ export function initPlayground(
       );
       runtimeState = result.state;
 
-      // 8b. Step enemies — advances behaviors, collects spawned projectiles.
+      // 9b. Step enemies — advances behaviors, collects spawned projectiles.
       if (enemyRegistry !== null) {
         const enemyCtx = {
           dt: 1 / 60,
@@ -1785,7 +2148,10 @@ export function initPlayground(
         runtimeProjectiles = [...runtimeProjectiles, ...enemyResult.projectiles];
       }
 
-      // 8c. Step projectiles — move, check solid collision, check player overlap.
+      // 9c. Step projectiles — move, check solid collision, check player overlap.
+      //     The hitting projectile is already deactivated by stepProjectile
+      //     (hitPlayer flag set, alive=false), so it's naturally filtered from
+      //     the alive pool. We still track the hit for death entry.
       const playerRect = runtimeState !== null
         ? { x: runtimeState.core.x, y: runtimeState.core.y, width: runtimeState.core.width, height: runtimeState.core.height }
         : undefined;
@@ -1802,7 +2168,7 @@ export function initPlayground(
       }
       runtimeProjectiles = steppedProjectiles;
 
-      // 8d. Check player overlap with enemies (AABB test).
+      // 9d. Check player overlap with enemies (AABB test).
       let enemyHitPlayer = false;
       if (runtimeState !== null) {
         const pr = { x: runtimeState.core.x, y: runtimeState.core.y, width: runtimeState.core.width, height: runtimeState.core.height };
@@ -1816,22 +2182,70 @@ export function initPlayground(
         }
       }
 
-      // 8e. Handle player death from enemy/projectile contact.
+      // 9e. Handle player death from enemy/projectile contact — enters the
+      //     death pipeline instead of immediate reset. Guard: only trigger
+      //     if not already dying (repeated hits must not retrigger).
       if (enemyHitPlayer || projectileHitPlayer) {
-        deathReason = enemyHitPlayer ? 'enemy' : 'projectile';
-        resetPlayer();
-        updateStatus();
+        if (deathState === null || !isDying(deathState)) {
+          const reason = enemyHitPlayer ? 'enemy' as const : 'projectile' as const;
+          const pcx = runtimeState.core.x + runtimeState.core.width / 2;
+          const pcy = runtimeState.core.y + runtimeState.core.height / 2;
+          const impactDirX = enemyHitPlayer ? 0 : -1;
+          deathState = beginDeath(reason, pcx, pcy, impactDirX, 0);
+
+          // One-shot: hit-stop freeze.
+          hitStop = triggerHitStop(hitStop, DEATH_HIT_STOP_TICKS);
+
+          // One-shot: deterministic radial burst at pre-death player center.
+          const particleCount = rm ? DEATH_PARTICLE_COUNT_REDUCED : DEATH_PARTICLE_COUNT;
+          const rng = mulberry32(DEATH_RNG_SEED);
+          deathParticles = spawn(pcx, pcy, {
+            count: particleCount,
+            speed: DEATH_PARTICLE_SPEED,
+            speedJitter: 0.2,
+            life: DEATH_PARTICLE_LIFE,
+            size: DEATH_PARTICLE_SIZE,
+            color: DEATH_PARTICLE_COLOR,
+            rng,
+          });
+
+          // One-shot: descending tone.
+          audio.playTone('sawtooth', 300, 100, 120, 0.25);
+
+          updateStatus();
+        }
         return;
       }
 
-      // 9. Fall-off-world respawn.
+      // 10. Fall-off-world — enters the same death pipeline.
       if (runtimeState.core.y > VIEW_H + RESPAWN_FALL_MARGIN) {
-        deathReason = null;
-        resetPlayer();
+        if (deathState === null || !isDying(deathState)) {
+          const pcx = runtimeState.core.x + runtimeState.core.width / 2;
+          const pcy = runtimeState.core.y + runtimeState.core.height / 2;
+          deathState = beginDeath('fall', pcx, pcy, 0, 1);
+
+          hitStop = triggerHitStop(hitStop, DEATH_HIT_STOP_TICKS);
+
+          const particleCount = rm ? DEATH_PARTICLE_COUNT_REDUCED : DEATH_PARTICLE_COUNT;
+          const rng = mulberry32(DEATH_RNG_SEED);
+          deathParticles = spawn(pcx, pcy, {
+            count: particleCount,
+            speed: DEATH_PARTICLE_SPEED,
+            speedJitter: 0.2,
+            life: DEATH_PARTICLE_LIFE,
+            size: DEATH_PARTICLE_SIZE,
+            color: DEATH_PARTICLE_COLOR,
+            rng,
+          });
+
+          audio.playTone('sawtooth', 300, 100, 120, 0.25);
+
+          updateStatus();
+        }
         return;
       }
 
-      // 10. Drive effects from kernel events.
+      // 11. Drive effects from kernel events.
       if (runtimeState.events.justLaunched) {
         squashOffset = LAUNCH_STRETCH;
         audio.playTone('sine', 200, 400, 80, 0.2);
@@ -1873,7 +2287,7 @@ export function initPlayground(
         }
       }
 
-      // 11. Idle feet blend — ease toward neutral standing stance when still.
+      // 12. Idle feet blend — ease toward neutral standing stance when still.
       if (
         runtimeState.core.onGround &&
         Math.abs(runtimeState.core.vx) < FOOTSTEP_MIN_SPEED_TICKS * 60
@@ -1937,7 +2351,7 @@ export function initPlayground(
 
   /**
    * Reset the runtime state to spawn + clear all transient FX. Shared by
-   * the R-key manual reset and the fall-off-world respawn.
+   * the R-key manual reset and the delayed respawn after the death anim.
    */
   const resetPlayer = (): void => {
     if (compiled === null) return;

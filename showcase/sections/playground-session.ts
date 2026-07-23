@@ -22,6 +22,7 @@
 import {
   enterPlaytest,
   exitPlaytest,
+  select,
   type EditorState,
 } from '../../src/editor';
 import type { LevelData } from '../../src/level/types';
@@ -30,6 +31,9 @@ import {
   type CompiledLevel,
 } from '../../src/platformer';
 import type { PlatformerConfig } from '../../src/platformer';
+import type { EditorOperation } from '../../src/editor/types';
+import { allocateEntityId } from '../../src/level/entity-id';
+import { applyOp } from '../../src/editor/operations';
 
 /**
  * Tuning bundle handed to {@link createPlaygroundSession}. The runtime
@@ -131,6 +135,45 @@ export function stopSession(
  * @param compiled - The compiled level (from {@link InitialPlayState}.compiled).
  * @returns Fresh `{ runtimeState, movingPlatforms }` records.
  */
+/**
+ * Apply an `addEntity` operation and immediately select the newly allocated
+ * entity. **Pure.**
+ *
+ * Uses `allocateEntityId` to predict the exact ID the `applyOp` reducer
+ * will assign, applies the op, then selects that ID with mode `'replace'`.
+ * This gives the caller the interactive widget (path editor, resize handles)
+ * for the entity that was just placed, without altering core `applyOp`
+ * selection semantics.
+ *
+ * The function does not switch `editMode` — the caller decides whether to
+ * remain in place mode (for sticky placement) or switch to select mode
+ * (for path-bearing entities where the widget should be immediately visible).
+ *
+ * @example
+ * ```ts
+ * let state = createEditorState(level);
+ * state = addEntityAndSelect(state, {
+ *   type: 'addEntity',
+ *   kind: 'movingPlatform',
+ *   rect: { x: 100, y: 160, width: 48, height: 16 },
+ *   props: { speed: 60, path: [...], loopMode: 'loop' },
+ * });
+ * // state.selection.ids contains exactly the new entity's id.
+ * ```
+ *
+ * @param state - Current editor state (never mutated).
+ * @param op    - An `addEntity` operation to apply.
+ * @returns A fresh editor state with the entity added and selected.
+ */
+export function addEntityAndSelect(
+  state: EditorState,
+  op: EditorOperation,
+): EditorState {
+  const { id } = allocateEntityId(state.level);
+  const next = applyOp(state, op);
+  return select(next, id, 'replace');
+}
+
 export function resetToInitialState(compiled: CompiledLevel): {
   readonly runtimeState: InitialPlayState['runtimeState'];
   readonly movingPlatforms: CompiledLevel['movingPlatforms'];

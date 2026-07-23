@@ -515,6 +515,287 @@ describe('applyOp — setEntityRect coherence (integration hardening)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Regression: enemy patrolPath coherence under moveEntities / setEntityRect.
+//
+// A built-in Spinny stores its patrol as `params.patrolPath`. Moving the
+// enemy body must translate every waypoint by the same rect delta —
+// otherwise the runtime spinny behavior (which targets patrolPath waypoints
+// from its body rect) drags the enemy back to the original patrol box the
+// moment play begins. Mirrors the movingPlatform path-translation contract.
+// ---------------------------------------------------------------------------
+
+/** Build a level with several enemy entities for the patrolPath tests. */
+function levelWithEnemies(): LevelData {
+  return {
+    version: 1,
+    id: 'enemy-level',
+    name: 'EN',
+    width: 400,
+    height: 240,
+    tileSize: 16,
+    spawn: { x: 32, y: 32 },
+    tiles: { data: new Array(15 * 15).fill(0), cols: 15, rows: 15, tileSize: 16 },
+    entities: [
+      {
+        id: 1,
+        kind: 'spawn',
+        rect: { x: 32, y: 32, width: 16, height: 16 },
+        props: {},
+      },
+      // Spinny with the default two-point patrol: body at (100,100), patrol
+      // [(100,100), (148,100)] — point 0 equals body top-left.
+      {
+        id: 10,
+        kind: 'enemy',
+        rect: { x: 100, y: 100, width: 16, height: 16 },
+        props: {
+          archetype: 'spinny',
+          params: {
+            speed: 60,
+            ledgeTurnAround: true,
+            patrolPath: [
+              { x: 100, y: 100 },
+              { x: 148, y: 100 },
+            ],
+          },
+        },
+      },
+      // Spinny with a three-point patrol (non-trivial shape to translate).
+      {
+        id: 11,
+        kind: 'enemy',
+        rect: { x: 200, y: 100, width: 16, height: 16 },
+        props: {
+          archetype: 'spinny',
+          params: {
+            patrolPath: [
+              { x: 200, y: 100 },
+              { x: 300, y: 100 },
+              { x: 250, y: 200 },
+            ],
+          },
+        },
+      },
+      // Turret — no patrolPath. Must remain untouched by patrol translation.
+      {
+        id: 12,
+        kind: 'enemy',
+        rect: { x: 50, y: 50, width: 16, height: 16 },
+        props: {
+          archetype: 'turret',
+          params: { fireRate: 1, projectileSpeed: 120, projectileSize: 6 },
+        },
+      },
+      // Spinny with malformed params (no patrolPath). Must remain untouched.
+      {
+        id: 13,
+        kind: 'enemy',
+        rect: { x: 80, y: 80, width: 16, height: 16 },
+        props: { archetype: 'spinny', params: {} },
+      },
+      // Spinny with malformed patrolPath (wrong type). Must not throw.
+      {
+        id: 14,
+        kind: 'enemy',
+        rect: { x: 60, y: 60, width: 16, height: 16 },
+        props: {
+          archetype: 'spinny',
+          params: { patrolPath: 'not-an-array' },
+        },
+      },
+    ],
+    nextEntityId: 20,
+  };
+}
+
+describe('applyOp — moveEntities on enemy patrolPath coherence', () => {
+  it('translates every patrolPath waypoint by the rect delta (spinny, two-point)', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [10],
+      dx: 50,
+      dy: 30,
+    });
+    const enemy = next.level.entities.find((e) => e.id === 10);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    expect(enemy.rect.x).toBe(150);
+    expect(enemy.rect.y).toBe(130);
+    const params = enemy.props.params as { patrolPath: { x: number; y: number }[] };
+    expect(params.patrolPath).toEqual([
+      { x: 150, y: 130 },
+      { x: 198, y: 130 },
+    ]);
+  });
+
+  it('translates every patrolPath waypoint by the rect delta (spinny, three-point)', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [11],
+      dx: 10,
+      dy: -20,
+    });
+    const enemy = next.level.entities.find((e) => e.id === 11);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    const params = enemy.props.params as { patrolPath: { x: number; y: number }[] };
+    expect(params.patrolPath).toEqual([
+      { x: 210, y: 80 },
+      { x: 310, y: 80 },
+      { x: 260, y: 180 },
+    ]);
+  });
+
+  it('preserves the relative patrol shape (delta between consecutive waypoints unchanged)', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [11],
+      dx: 73,
+      dy: 41,
+    });
+    const enemy = next.level.entities.find((e) => e.id === 11);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    const beforeEnemy = state.level.entities.find((e) => e.id === 11);
+    if (!beforeEnemy || beforeEnemy.kind !== 'enemy') throw new Error('missing enemy (before)');
+    const before = (beforeEnemy.props.params as { patrolPath: { x: number; y: number }[] }).patrolPath;
+    const after = (enemy.props.params as { patrolPath: { x: number; y: number }[] }).patrolPath;
+    expect(after.length).toBe(before.length);
+    for (let i = 0; i < before.length; i++) {
+      const dxb = before[(i + 1) % before.length].x - before[i].x;
+      const dyb = before[(i + 1) % before.length].y - before[i].y;
+      const dxa = after[(i + 1) % after.length].x - after[i].x;
+      const dya = after[(i + 1) % after.length].y - after[i].y;
+      expect(dxa).toBe(dxb);
+      expect(dya).toBe(dyb);
+    }
+  });
+
+  it('does not modify turret params (no patrolPath)', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [12],
+      dx: 25,
+      dy: 5,
+    });
+    const enemy = next.level.entities.find((e) => e.id === 12);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing turret');
+    expect(enemy.rect.x).toBe(75);
+    expect(enemy.rect.y).toBe(55);
+    expect(enemy.props.params).toEqual({
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+    });
+  });
+
+  it('does not modify spinny params when patrolPath is absent', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'moveEntities',
+      ids: [13],
+      dx: 5,
+      dy: 5,
+    });
+    const enemy = next.level.entities.find((e) => e.id === 13);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    expect(enemy.rect.x).toBe(85);
+    expect(enemy.rect.y).toBe(85);
+    expect(enemy.props.params).toEqual({});
+  });
+
+  it('does not throw on malformed patrolPath (non-array)', () => {
+    const state = createEditorState(levelWithEnemies());
+    expect(() =>
+      applyOp(state, { type: 'moveEntities', ids: [14], dx: 5, dy: 5 }),
+    ).not.toThrow();
+    const next = applyOp(state, { type: 'moveEntities', ids: [14], dx: 5, dy: 5 });
+    const enemy = next.level.entities.find((e) => e.id === 14);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    // Body moved; the malformed patrolPath is preserved verbatim (no throw,
+    // no coercion — the consumer's data is left alone).
+    expect(enemy.rect.x).toBe(65);
+    expect(enemy.rect.y).toBe(65);
+    expect((enemy.props.params as { patrolPath: unknown }).patrolPath).toBe('not-an-array');
+  });
+
+  it('is pure: input state is not mutated', () => {
+    const state = createEditorState(levelWithEnemies());
+    const before = snapshot(state);
+    applyOp(state, { type: 'moveEntities', ids: [10], dx: 50, dy: 30 });
+    expect(snapshot(state)).toEqual(before);
+  });
+});
+
+describe('applyOp — setEntityRect on enemy patrolPath coherence', () => {
+  it('translates every patrolPath waypoint by the rect delta (body move)', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'setEntityRect',
+      id: 10,
+      rect: { x: 150, y: 130, width: 16, height: 16 },
+    });
+    const enemy = next.level.entities.find((e) => e.id === 10);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    expect(enemy.rect.x).toBe(150);
+    expect(enemy.rect.y).toBe(130);
+    const params = enemy.props.params as { patrolPath: { x: number; y: number }[] };
+    // delta = (50, 30) — every waypoint translated by the same delta.
+    expect(params.patrolPath).toEqual([
+      { x: 150, y: 130 },
+      { x: 198, y: 130 },
+    ]);
+  });
+
+  it('preserves the relative patrol shape across body resize + move', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'setEntityRect',
+      id: 11,
+      rect: { x: 250, y: 150, width: 32, height: 32 },
+    });
+    const enemy = next.level.entities.find((e) => e.id === 11);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing enemy');
+    expect(enemy.rect).toEqual({ x: 250, y: 150, width: 32, height: 32 });
+    // delta vs old (200, 100) = (50, 50) — every waypoint shifts by that.
+    const params = enemy.props.params as { patrolPath: { x: number; y: number }[] };
+    expect(params.patrolPath).toEqual([
+      { x: 250, y: 150 },
+      { x: 350, y: 150 },
+      { x: 300, y: 250 },
+    ]);
+  });
+
+  it('does not modify turret params under setEntityRect (no patrolPath)', () => {
+    const state = createEditorState(levelWithEnemies());
+    const next = applyOp(state, {
+      type: 'setEntityRect',
+      id: 12,
+      rect: { x: 100, y: 100, width: 16, height: 16 },
+    });
+    const enemy = next.level.entities.find((e) => e.id === 12);
+    if (!enemy || enemy.kind !== 'enemy') throw new Error('missing turret');
+    expect(enemy.props.params).toEqual({
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+    });
+  });
+
+  it('does not throw on malformed patrolPath under setEntityRect', () => {
+    const state = createEditorState(levelWithEnemies());
+    expect(() =>
+      applyOp(state, {
+        type: 'setEntityRect',
+        id: 14,
+        rect: { x: 100, y: 100, width: 16, height: 16 },
+      }),
+    ).not.toThrow();
+  });
+});
+
 // Compile-time assertion that LevelEntity is reachable for the type import.
 // (noUnusedLocals gate would flag an unused import otherwise)
 const _typeOnlyLevelEntity: LevelEntity | null = null;

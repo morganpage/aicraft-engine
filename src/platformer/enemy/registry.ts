@@ -35,6 +35,13 @@ import { DEFAULT_SPIDER, DEFAULT_SPIDER_PALETTE } from '../../animation/spider/c
 const DEFAULT_SPINNY_SPEED = 60;
 /** Arrival threshold in pixels for patrol waypoints. */
 const WAYPOINT_ARRIVAL_THRESHOLD = 2;
+/**
+ * Spinny roll radius (px) — the effective radius used to convert horizontal
+ * displacement into visual rotation. Matches the default 16px enemy body
+ * width (radius = body-width / 2 = 8px). No magic: this is the half-width
+ * of the standard spinny hitbox.
+ */
+const SPINNY_ROLL_RADIUS = 8;
 
 /**
  * Spinny behavior: a simple patrol enemy that walks along the x-axis,
@@ -61,6 +68,7 @@ export const spinnyBehavior: EnemyBehaviorHandler = {
     let y = state.y;
     let facing = state.facing;
     const data: Record<string, unknown> = { ...state.data };
+    const startX = x;
 
     // Patrol path mode
     if (patrolPath && patrolPath.length >= 2) {
@@ -144,6 +152,18 @@ export const spinnyBehavior: EnemyBehaviorHandler = {
       }
     }
 
+    // Accumulate spinAngle from actual horizontal displacement.
+    // nextAngle = previousAngle + (newX - startX) / RADIUS.
+    // Stationary ticks (wall/ledge reversal) have dx=0 → angle preserved.
+    // Wrap into [0, 2π) to prevent unbounded floating-point growth.
+    const TWO_PI = Math.PI * 2;
+    const prevAngle = typeof data.spinAngle === 'number' && Number.isFinite(data.spinAngle)
+      ? data.spinAngle
+      : 0;
+    const dx = x - startX;
+    const rawAngle = prevAngle + dx / SPINNY_ROLL_RADIUS;
+    data.spinAngle = ((rawAngle % TWO_PI) + TWO_PI) % TWO_PI;
+
     return {
       x,
       y,
@@ -163,17 +183,83 @@ const ENEMY_WIDTH = 16;
 /** Default enemy height for turret projectile spawn offset. */
 const ENEMY_HEIGHT = 16;
 
+/** Resolved direction + range from a shootTo param. */
+interface ResolvedShootTo {
+  readonly dirX: number;
+  readonly dirY: number;
+  readonly maxRange: number;
+}
+
+/**
+ * Parse aimDirection from params, using Number.isFinite (not `|| 0`)
+ * so zero components are preserved.
+ */
+function parseAimDirection(raw: unknown): { readonly x: number; readonly y: number } {
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    const rx = Number(obj.x);
+    const ry = Number(obj.y);
+    if (Number.isFinite(rx) && Number.isFinite(ry)) {
+      return { x: rx, y: ry };
+    }
+  }
+  return { x: 1, y: 0 };
+}
+
+/**
+ * Resolve a relative shootTo vector into direction + range.
+ *
+ * Resolution order (from decision doc):
+ *   1. Must be a plain object with Number.isFinite(x) AND Number.isFinite(y).
+ *   2. If missing/non-object/non-finite → fallback direction, maxRange = 0.
+ *   3. If magnitude === 0 → fallback direction, maxRange = 0.
+ *   4. If magnitude > 0 → normalized dir + maxRange = magnitude.
+ *
+ * Zero-component preservation: {x:0, y:120} → dirX=0, dirY=1, maxRange=120.
+ */
+function resolveShootTo(
+  shootTo: unknown,
+  fallbackDirX: number,
+  fallbackDirY: number,
+): ResolvedShootTo {
+  if (!shootTo || typeof shootTo !== 'object') {
+    return { dirX: fallbackDirX, dirY: fallbackDirY, maxRange: 0 };
+  }
+
+  const st = shootTo as Record<string, unknown>;
+  const rawX = Number(st.x);
+  const rawY = Number(st.y);
+
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
+    return { dirX: fallbackDirX, dirY: fallbackDirY, maxRange: 0 };
+  }
+
+  const magnitude = Math.hypot(rawX, rawY);
+  if (magnitude === 0) {
+    return { dirX: fallbackDirX, dirY: fallbackDirY, maxRange: 0 };
+  }
+
+  return {
+    dirX: rawX / magnitude,
+    dirY: rawY / magnitude,
+    maxRange: magnitude,
+  };
+}
+
 /**
  * Turret behavior: a stationary enemy that fires projectiles at a fixed
- * rate. Supports `'fixed'` mode (fires in `aimDirection`) and `'aimed'`
- * mode (fires toward the player when within `detectionRadius`).
+ * rate. Supports `'fixed'` mode (fires in `aimDirection` or `shootTo`)
+ * and `'aimed'` mode (fires toward the player when within `detectionRadius`).
  *
  * Params:
  * - `fireRate` (number, default 1): shots per second
  * - `projectileSpeed` (number, default 120): projectile speed in px/s
  * - `projectileSize` (number, default 6): projectile hitbox size
  * - `aimMode` ('fixed' | 'aimed', default 'fixed'): aiming mode
- * - `aimDirection` ({x,y}, default {x:1,y:0}): direction for fixed mode
+ * - `aimDirection` ({x,y}, default {x:1,y:0}): direction for fixed mode (legacy)
+ * - `shootTo` ({x,y}, optional): relative vector for fixed mode; direction +
+ *   range. Zero-component preserved via Number.isFinite. Missing/malformed/
+ *   zero-length falls back to aimDirection with no range limit.
  * - `detectionRadius` (number, default 200): range for aimed mode
  * - `enemyWidth` (number, default 16): enemy body width for spawn offset
  * - `enemyHeight` (number, default 16): enemy body height for spawn offset
@@ -194,9 +280,7 @@ export const turretBehavior: EnemyBehaviorHandler = {
       ? params.projectileSize
       : 6;
     const aimMode = params.aimMode === 'aimed' ? 'aimed' : 'fixed';
-    const aimDirection = params.aimDirection && typeof params.aimDirection === 'object'
-      ? { x: Number((params.aimDirection as Record<string, unknown>).x) || 1, y: Number((params.aimDirection as Record<string, unknown>).y) || 0 }
-      : { x: 1, y: 0 };
+    const aimDirection = parseAimDirection(params.aimDirection);
     const detectionRadius = typeof params.detectionRadius === 'number' && Number.isFinite(params.detectionRadius)
       ? params.detectionRadius
       : 200;
@@ -216,6 +300,7 @@ export const turretBehavior: EnemyBehaviorHandler = {
     if (newCooldown <= 0) {
       let dirX = aimDirection.x;
       let dirY = aimDirection.y;
+      let maxRange = 0;
 
       if (aimMode === 'aimed') {
         if (!ctx.playerRect) {
@@ -255,6 +340,13 @@ export const turretBehavior: EnemyBehaviorHandler = {
 
         dirX = dx / dist;
         dirY = dy / dist;
+        // Aimed mode: always unbounded (maxRange stays 0)
+      } else {
+        // Fixed mode: resolve shootTo if present
+        const resolved = resolveShootTo(params.shootTo, aimDirection.x, aimDirection.y);
+        dirX = resolved.dirX;
+        dirY = resolved.dirY;
+        maxRange = resolved.maxRange;
       }
 
       // Normalize direction
@@ -276,6 +368,7 @@ export const turretBehavior: EnemyBehaviorHandler = {
         width: projectileSize,
         height: projectileSize,
         alive: true,
+        ...(maxRange > 0 ? { maxRange, distanceTraveled: 0 } : {}),
       };
     }
 
@@ -528,7 +621,7 @@ function buildSpiderResult(
       nextTick,
     );
   } else {
-    nextSpider = createSpiderState(config, jitterSeed, bodyX, bodyY);
+    nextSpider = createSpiderState(config, jitterSeed, bodyX, bodyY, facing);
   }
 
   return {

@@ -10,6 +10,7 @@
 
 import type { SpiderGaitConfig, SpiderGaitMode } from './gait';
 import type { SpiderVisualConfig, SpiderPalette, EyeDefinition, CheliceraDefinition } from './spider-state';
+import type { SpiderLegGeometryConfig } from './geometry';
 
 export type { SpiderGaitMode };
 export type { SpiderGaitConfig };
@@ -17,6 +18,7 @@ export type { SpiderVisualConfig };
 export type { SpiderPalette };
 export type { EyeDefinition };
 export type { CheliceraDefinition };
+export type { SpiderLegGeometryConfig };
 
 export { DEFAULT_SPIDER, DEFAULT_SPIDER_PALETTE } from './constants';
 
@@ -28,9 +30,15 @@ export { DEFAULT_SPIDER, DEFAULT_SPIDER_PALETTE } from './constants';
  * - {@link SpiderGaitConfig} — deterministic core (gait solver).
  * - {@link SpiderVisualConfig} — renderer-adjacent (body drawing, IK, springs).
  *
+ * The `geometry` field is shared between both sub-configs and defines the
+ * three-segment leg geometry (coxa/femur/tibia lengths and workspace bounds).
+ *
  * Every tunable value is a field — no magic numbers in the implementation.
  */
-export interface SpiderConfig extends SpiderGaitConfig, SpiderVisualConfig {}
+export interface SpiderConfig extends SpiderGaitConfig, SpiderVisualConfig {
+  /** Shared leg geometry config (three-segment coxa/femur/tibia). */
+  readonly geometry: SpiderLegGeometryConfig;
+}
 
 /**
  * Split a combined {@link SpiderConfig} into its deterministic-core
@@ -57,8 +65,7 @@ export function splitSpiderConfig(config: SpiderConfig): {
     jointRadius, bodyJitterAmplitude,
     bodyYOffset, bodyOutlineWidth,
     // Visual — legs
-    thighLength, shinLength,
-    thighWidth, shinWidth, legOutlineWidth,
+    coxaWidth, femurWidth, tibiaWidth, legOutlineWidth,
     kneeKnobScale, hipKnobScale,
     kneeSpikeLength, kneeSpikeWidth,
     bgLegOffsetX, bgLegOffsetY,
@@ -72,7 +79,7 @@ export function splitSpiderConfig(config: SpiderConfig): {
     palpWidth, palpTipWidth,
     palpTwitchFreq, palpTwitchAmp,
     // Shared
-    palette,
+    palette, geometry,
     groundSampleSteps, motionScale,
     legRestPositions,
   } = config as SpiderConfig & Record<string, unknown>;
@@ -89,6 +96,7 @@ export function splitSpiderConfig(config: SpiderConfig): {
       legRestPositions: legRestPositions as SpiderVisualConfig['legRestPositions'],
       groundSampleSteps: groundSampleSteps as number,
       motionScale: motionScale as number,
+      geometry: geometry as SpiderLegGeometryConfig,
     },
     visual: {
       cephRadius: cephRadius as number,
@@ -101,10 +109,9 @@ export function splitSpiderConfig(config: SpiderConfig): {
       bodyJitterAmplitude: bodyJitterAmplitude as number,
       bodyYOffset: bodyYOffset as number,
       bodyOutlineWidth: bodyOutlineWidth as number,
-      thighLength: thighLength as number,
-      shinLength: shinLength as number,
-      thighWidth: thighWidth as number,
-      shinWidth: shinWidth as number,
+      coxaWidth: coxaWidth as number,
+      femurWidth: femurWidth as number,
+      tibiaWidth: tibiaWidth as number,
       legOutlineWidth: legOutlineWidth as number,
       kneeKnobScale: kneeKnobScale as number,
       hipKnobScale: hipKnobScale as number,
@@ -128,6 +135,7 @@ export function splitSpiderConfig(config: SpiderConfig): {
       legRestPositions: legRestPositions as SpiderVisualConfig['legRestPositions'],
       groundSampleSteps: groundSampleSteps as number,
       motionScale: motionScale as number,
+      geometry: geometry as SpiderLegGeometryConfig,
     },
   };
 }

@@ -73,6 +73,14 @@ describe('DEFAULT_CATALOG', () => {
     expect(typeof mp.defaultProps.speed).toBe('number');
   });
 
+  it('turret default props include params.shootTo {x:128, y:0}', () => {
+    const turret = DEFAULT_CATALOG.entries['turret'];
+    if (!turret) throw new Error('missing turret');
+    const params = turret.defaultProps.params as Record<string, unknown>;
+    expect(params).toBeDefined();
+    expect(params.shootTo).toEqual({ x: 128, y: 0 });
+  });
+
   it('catalog keys match EntityKind verbatim (no surprise lowercase-kebab)', () => {
     // Every EntityKind must work as a direct key. Regression test for the
     // earlier 'moving-platform' key inconsistency.

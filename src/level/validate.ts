@@ -341,19 +341,103 @@ function validatePropsByKind(
       if (typeof props.archetype !== 'string') {
         errors.push(err(`${base}.archetype`, 'enemy.archetype must be a string'));
       }
-      if (props.speed !== undefined && !isFiniteNumber(props.speed)) {
-        errors.push(err(`${base}.speed`, 'enemy.speed must be a finite number or undefined'));
+      const params = props.params;
+      const paramsBase = `${base}.params`;
+      if (!isPlainObject(params)) {
+        errors.push(err(paramsBase, 'enemy.params must be a plain object'));
+        break;
       }
-      if (props.fireRate !== undefined && !isFiniteNumber(props.fireRate)) {
-        errors.push(err(`${base}.fireRate`, 'enemy.fireRate must be a finite number or undefined'));
-      }
-      if (props.projectileSpeed !== undefined && !isFiniteNumber(props.projectileSpeed)) {
-        errors.push(err(`${base}.projectileSpeed`, 'enemy.projectileSpeed must be a finite number or undefined'));
+      // Built-in archetype contracts. Custom archetypes keep arbitrary params.
+      if (props.archetype === 'spinny') {
+        validateSpinnyParams(params, paramsBase, errors);
+      } else if (props.archetype === 'turret') {
+        validateTurretParams(params, paramsBase, errors);
       }
       break;
     }
     default:
       errors.push(err(entityBase, `unknown entity kind "${kind}"`));
       break;
+  }
+}
+
+/**
+ * Validate the built-in `'spinny'` archetype's optional params.
+ * Unknown keys are forward-compat (ignored).
+ */
+function validateSpinnyParams(
+  params: Record<string, unknown>,
+  base: string,
+  errors: ValidationError[],
+): void {
+  if (params.speed !== undefined && !isFiniteNumber(params.speed)) {
+    errors.push(err(`${base}.speed`, 'spinny.params.speed must be a finite number or undefined'));
+  }
+  if (params.ledgeTurnAround !== undefined && typeof params.ledgeTurnAround !== 'boolean') {
+    errors.push(
+      err(`${base}.ledgeTurnAround`, 'spinny.params.ledgeTurnAround must be a boolean or undefined'),
+    );
+  }
+  if (params.patrolPath !== undefined) {
+    if (!Array.isArray(params.patrolPath)) {
+      errors.push(
+        err(`${base}.patrolPath`, 'spinny.params.patrolPath must be an array of {x,y} or undefined'),
+      );
+    } else {
+      (params.patrolPath as unknown[]).forEach((p, i) => {
+        if (
+          !isPlainObject(p) ||
+          !isFiniteNumber((p as Record<string, unknown>).x) ||
+          !isFiniteNumber((p as Record<string, unknown>).y)
+        ) {
+          errors.push(
+            err(`${base}.patrolPath[${i}]`, 'spinny.params.patrolPath items must have numeric x and y'),
+          );
+        }
+      });
+    }
+  }
+}
+
+/**
+ * Validate the built-in `'turret'` archetype's optional params.
+ * Unknown keys are forward-compat (ignored).
+ */
+function validateTurretParams(
+  params: Record<string, unknown>,
+  base: string,
+  errors: ValidationError[],
+): void {
+  const finiteKeys = ['fireRate', 'projectileSpeed', 'projectileSize', 'detectionRadius'] as const;
+  for (const key of finiteKeys) {
+    if (params[key] !== undefined && !isFiniteNumber(params[key])) {
+      errors.push(
+        err(`${base}.${key}`, `turret.params.${key} must be a finite number or undefined`),
+      );
+    }
+  }
+  if (params.aimDirection !== undefined) {
+    const aim = params.aimDirection;
+    if (
+      !isPlainObject(aim) ||
+      !isFiniteNumber((aim as Record<string, unknown>).x) ||
+      !isFiniteNumber((aim as Record<string, unknown>).y)
+    ) {
+      errors.push(
+        err(`${base}.aimDirection`, 'turret.params.aimDirection must be {x,y} with finite numbers or undefined'),
+      );
+    }
+  }
+  if (params.shootTo !== undefined) {
+    const st = params.shootTo;
+    if (
+      !isPlainObject(st) ||
+      !isFiniteNumber((st as Record<string, unknown>).x) ||
+      !isFiniteNumber((st as Record<string, unknown>).y)
+    ) {
+      errors.push(
+        err(`${base}.shootTo`, 'turret.params.shootTo must be {x,y} with finite numbers or undefined'),
+      );
+    }
   }
 }

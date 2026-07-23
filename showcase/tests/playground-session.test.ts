@@ -268,3 +268,154 @@ describe('compileLevel / editor reducer agreement on spawn', () => {
 // type-only assertion in `satisfies` form above).
 const _entityTypeOnly: LevelEntity | null = null;
 void _entityTypeOnly;
+
+// ---------------------------------------------------------------------------
+// addEntityAndSelect — immediate selection of newly placed entities.
+//
+// The helper applies an addEntity op, then selects the exact newly allocated
+// entity ID using allocateEntityId + applyOp + select(..., 'replace').
+// It does not alter core applyOp selection semantics.
+// ---------------------------------------------------------------------------
+
+import { allocateEntityId } from '../../src/level/entity-id';
+import { addEntityAndSelect } from '../sections/playground-session';
+import { select } from '../../src/editor';
+
+describe('addEntityAndSelect — immediate selection after placement', () => {
+  it('applies the addEntity op and selects the newly allocated entity', () => {
+    const state = createEditorState(playgroundLevel());
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'platform',
+      rect: { x: 100, y: 50, width: 32, height: 16 },
+      props: {},
+    });
+    // The new entity should be selected.
+    expect(result.selection.ids.size).toBe(1);
+    const selectedId = [...result.selection.ids][0];
+    // The selected entity should exist in the level.
+    const entity = result.level.entities.find((e) => e.id === selectedId);
+    expect(entity).toBeDefined();
+    expect(entity?.kind).toBe('platform');
+    expect(entity?.rect).toEqual({ x: 100, y: 50, width: 32, height: 16 });
+  });
+
+  it('selects the exact ID that allocateEntityId would produce', () => {
+    const state = createEditorState(playgroundLevel());
+    // Predict what allocateEntityId will produce.
+    const { id: predictedId } = allocateEntityId(state.level);
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'platform',
+      rect: { x: 100, y: 50, width: 32, height: 16 },
+      props: {},
+    });
+    const selectedId = [...result.selection.ids][0];
+    expect(selectedId).toBe(predictedId);
+  });
+
+  it('creates exactly one history entry', () => {
+    const state = createEditorState(playgroundLevel());
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'platform',
+      rect: { x: 100, y: 50, width: 32, height: 16 },
+      props: {},
+    });
+    expect(result.undoStack.length).toBe(1);
+    expect(result.undoStack[0].op.type).toBe('addEntity');
+  });
+
+  it('is pure: the input state is not mutated', () => {
+    const state = createEditorState(playgroundLevel());
+    const beforeLevel = JSON.parse(JSON.stringify(state.level));
+    const beforeSelection = state.selection.ids.size;
+    addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'platform',
+      rect: { x: 100, y: 50, width: 32, height: 16 },
+      props: {},
+    });
+    expect(JSON.parse(JSON.stringify(state.level))).toEqual(beforeLevel);
+    expect(state.selection.ids.size).toBe(beforeSelection);
+  });
+
+  it('returns a fresh state (not the input reference)', () => {
+    const state = createEditorState(playgroundLevel());
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'platform',
+      rect: { x: 100, y: 50, width: 32, height: 16 },
+      props: {},
+    });
+    expect(result).not.toBe(state);
+  });
+
+  it('works for Spinny enemy with patrolPath — selects entity with path widget discoverable', () => {
+    const state = createEditorState(playgroundLevel());
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'enemy',
+      rect: { x: 200, y: 100, width: 16, height: 16 },
+      props: {
+        archetype: 'spinny',
+        params: {
+          speed: 60,
+          patrolPath: [
+            { x: 200, y: 100 },
+            { x: 248, y: 100 },
+          ],
+        },
+      },
+    });
+    const selectedId = [...result.selection.ids][0];
+    const entity = result.level.entities.find((e) => e.id === selectedId);
+    expect(entity).toBeDefined();
+    expect(entity?.kind).toBe('enemy');
+    // Path data should be discoverable through the entity's props.
+    const params = (entity?.props as { params: { patrolPath: { x: number; y: number }[] } }).params;
+    expect(params.patrolPath.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('works for movingPlatform — selects entity with path widget discoverable', () => {
+    const state = createEditorState(playgroundLevel());
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'movingPlatform',
+      rect: { x: 100, y: 160, width: 48, height: 16 },
+      props: {
+        speed: 60,
+        path: [
+          { x: 100, y: 160 },
+          { x: 200, y: 160 },
+        ],
+        loopMode: 'loop',
+      },
+    });
+    const selectedId = [...result.selection.ids][0];
+    const entity = result.level.entities.find((e) => e.id === selectedId);
+    expect(entity).toBeDefined();
+    expect(entity?.kind).toBe('movingPlatform');
+    // Path data should be discoverable.
+    const props = entity?.props as { path: { x: number; y: number }[] };
+    expect(props.path.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('replaces any existing selection', () => {
+    let state = createEditorState(playgroundLevel());
+    // Select entity 1 first.
+    state = select(state, 1, 'replace');
+    expect(state.selection.ids.size).toBe(1);
+    expect([...state.selection.ids][0]).toBe(1);
+    // addEntityAndSelect should replace the selection with the new entity.
+    const result = addEntityAndSelect(state, {
+      type: 'addEntity',
+      kind: 'platform',
+      rect: { x: 100, y: 50, width: 32, height: 16 },
+      props: {},
+    });
+    expect(result.selection.ids.size).toBe(1);
+    const selectedId = [...result.selection.ids][0];
+    expect(selectedId).not.toBe(1);
+  });
+});

@@ -19,6 +19,8 @@
 import type { Vec2 } from '../types';
 import type { TileSolidityQuery } from '../../collision/types';
 import { sampleGround } from './ground-sample';
+import type { SpiderLegGeometryConfig } from './geometry';
+import { computeLegStepRequest, computeHipPosition, computeCoxaEndpoint, projectGroundedTargetIntoWorkspace, type LegStepRequest } from './geometry';
 
 /**
  * Spider gait mode.
@@ -73,10 +75,10 @@ export interface GaitLegState {
   /** Index in the legs array (for neighbour lookups). */
   readonly index: number;
   /**
-   * Rest position X offset from body center (local space, facing=1).
+   * Rest position X offset from body center (local space).
    * Computed at creation: `footX - bodyX`. Used by `advanceGait` to
    * recompute the world-space rest position when the body moves.
-   * When `facing=-1`, the world rest X = `bodyX + restLocalX * facing`.
+   * It remains stable when facing changes so planted feet do not swap sides.
    */
   readonly restLocalX: number;
   /**
@@ -99,6 +101,12 @@ export interface GaitState {
   readonly legs: readonly GaitLegState[];
   /** Global gait phase in radians, `[0, 2π)`. */
   readonly phase: number;
+  /** Facing used for the current leg-to-foot pairing. Missing legacy values imply +1. */
+  readonly facing?: 1 | -1;
+  /** Coordinated set currently being serviced. Missing legacy values derive from phase. */
+  readonly activeSet?: 'A' | 'B';
+  /** Leg indices already serviced during the current coordinated set activation. */
+  readonly servicedLegs?: readonly number[];
 }
 
 /**
@@ -119,12 +127,14 @@ export interface SpiderGaitConfig {
   readonly stepDuration: number;
   /** Phase advance rate for coordinated mode (radians per unit speed per tick). */
   readonly phaseAdvanceRate: number;
-  /** Per-leg rest positions (angle + distance). Length must match total legs. */
+  /** Per-side leg rest positions (angle + distance). */
   readonly legRestPositions: readonly LegRestPosition[];
   /** Number of sub-sample steps when sampling ground downward (1 = simple, 3+ = thorough). */
   readonly groundSampleSteps: number;
   /** Scale factor for reduced-motion accessibility (0 = no animation, 1 = full). */
   readonly motionScale: number;
+  /** Shared leg geometry config (three-segment coxa/femur/tibia). */
+  readonly geometry: SpiderLegGeometryConfig;
 }
 
 /**
@@ -134,22 +144,11 @@ export interface SpiderGaitConfig {
 const DEFAULT_GROUND_SAMPLE_MAX_DISTANCE = 60;
 
 /**
- * Stagger fraction for coordinated mode's within-set rolling wave.
- * Each leg in a set activates at a different phase, with windows spaced
- * by `stagger * (setEnd - setStart)`. The window width is tuned so at
- * most 2 legs of the same set are swinging simultaneously.
+ * Epsilon for anatomical sector-error detection (a folded tibia). Matches the
+ * threshold used in {@link computeLegStepRequest} so a leg is classified as
+ * critical here for exactly the error magnitude that marks it invalid there.
  */
-const COORDINATED_STAGGER_FRACTION = 0.4;
-
-/**
- * Activation window width as a fraction of the set phase range.
- * Each leg's activation window is `[activationPhase, activationPhase + width]`.
- * The width is narrow enough that with the stagger, at most 2 legs overlap.
- * Width of 0.16 → ~0.5 rad at set range π. Stagger of 0.4 → ~1.26 rad spacing.
- * At overlap check: gap (0.4-0.16=0.24 of range ≈ 0.75 rad) > 0, so triple
- * overlap is avoided when the third leg activates after the first finishes.
- */
-const COORDINATED_WINDOW_WIDTH = 0.16;
+const SECTOR_EPSILON = 1e-8;
 
 /**
  * Create initial gait state for N legs per side.
@@ -157,41 +156,52 @@ const COORDINATED_WINDOW_WIDTH = 0.16;
  * Legs are arranged symmetrically. Each leg's rest position is set to the
  * provided world-space position. Rest offsets are computed from the initial
  * body position so `advanceGait` can recompute rest positions when the body
- * moves. Sets are assigned alternately: even indices → 'A', odd → 'B'.
+ * moves. Each side alternates sets, with the mirrored side using the opposite
+ * pattern to form a stable tetrapod gait.
  *
  * @param config - gait configuration (used for leg count validation)
  * @param legRestPositions - world-space initial rest positions for each leg
  * @param bodyX - initial body center X (used to compute rest offsets)
  * @param bodyY - initial body center Y (used to compute rest offsets)
+ * @param initialFacing - facing used to canonicalize mirrored rest offsets
  * @returns fresh {@link GaitState}
  */
 export function createGaitState(
-  _config: SpiderGaitConfig,
+  config: SpiderGaitConfig,
   legRestPositions: readonly Vec2[],
   bodyX: number = 0,
   bodyY: number = 0,
+  initialFacing: 1 | -1 = 1,
 ): GaitState {
   const safeBodyX = Number.isFinite(bodyX) ? bodyX : 0;
   const safeBodyY = Number.isFinite(bodyY) ? bodyY : 0;
+  const safeFacing: 1 | -1 = initialFacing === -1 ? -1 : 1;
+  const legsPerSide = Number.isFinite(config.legCount) && config.legCount > 0
+    ? Math.max(1, Math.floor(config.legCount))
+    : Math.max(1, Math.ceil(legRestPositions.length / 2));
 
-  const legs: GaitLegState[] = legRestPositions.map((pos, i) => ({
-    id: `L${i + 1}`,
-    set: (i % 2 === 0 ? 'A' : 'B') as 'A' | 'B',
-    footX: pos.x,
-    footY: pos.y,
-    stepPhase: 0,
-    startX: pos.x,
-    startY: pos.y,
-    endX: pos.x,
-    endY: pos.y,
-    midX: pos.x,
-    midY: pos.y,
-    isSwinging: false,
-    index: i,
-    restLocalX: pos.x - safeBodyX,
-    restLocalY: pos.y - safeBodyY,
-  }));
-  return { legs, phase: 0 };
+  const legs: GaitLegState[] = legRestPositions.map((pos, i) => {
+    const sideIndex = Math.floor(i / legsPerSide);
+    const indexWithinSide = i % legsPerSide;
+    return {
+      id: `L${i + 1}`,
+      set: ((sideIndex + indexWithinSide) % 2 === 0 ? 'A' : 'B') as 'A' | 'B',
+      footX: pos.x,
+      footY: pos.y,
+      stepPhase: 0,
+      startX: pos.x,
+      startY: pos.y,
+      endX: pos.x,
+      endY: pos.y,
+      midX: pos.x,
+      midY: pos.y,
+      isSwinging: false,
+      index: i,
+      restLocalX: (pos.x - safeBodyX) * safeFacing,
+      restLocalY: pos.y - safeBodyY,
+    };
+  });
+  return { legs, phase: 0, facing: safeFacing, activeSet: 'A', servicedLegs: [] };
 }
 
 /**
@@ -220,22 +230,23 @@ export function sampleStepArc(start: Vec2, mid: Vec2, end: Vec2, t: number): Vec
 /**
  * Get the current foot world position for a leg.
  *
- * Pure reader. If the leg is planted, returns `footX`/`footY`. If swinging,
- * samples the quadratic Bezier arc at `stepPhase`.
+ * Pure reader. Returns the authoritative stored `footX`/`footY`. For a
+ * planted leg this is its world-locked plant point; for a swinging leg it is
+ * the sector-projected Bezier sample stored each tick by {@link advanceGait}
+ * (see swing progression). Because that stored swing position is placed on the
+ * soft femur+tibia annulus via {@link projectGroundedTargetIntoWorkspace}, it
+ * is already at or outside the hard annulus, so a renderer that re-projects it
+ * through {@link solveThreeSegmentLeg} applies a near-identity correction —
+ * keeping gait/render geometry in agreement without renderer feedback.
+ *
+ * Callers that need the raw (pre-projection) Bezier sample for an in-flight
+ * swing can call {@link sampleStepArc} directly with the leg's arc fields.
  *
  * @param leg - leg state
- * @returns world-space foot position
+ * @returns world-space foot position (stored authoritative foot)
  */
 export function getGaitFootPosition(leg: GaitLegState): Vec2 {
-  if (!leg.isSwinging || leg.stepPhase <= 0) {
-    return { x: leg.footX, y: leg.footY };
-  }
-  return sampleStepArc(
-    { x: leg.startX, y: leg.startY },
-    { x: leg.midX, y: leg.midY },
-    { x: leg.endX, y: leg.endY },
-    leg.stepPhase,
-  );
+  return { x: leg.footX, y: leg.footY };
 }
 
 /**
@@ -259,7 +270,11 @@ export function getGaitFootPosition(leg: GaitLegState): Vec2 {
  * now.
  *
  * **Fail-safe:** if `sampleGround` returns `hasGround: false`, the foot
- * tucks toward the body (doesn't stretch infinitely).
+ * stays planted at its current position (non-collapsing deterministic behavior).
+ *
+ * **Idle recovery:** workspace violations are detected at all times (including
+ * idle) using the same geometry, allowing feet to replant when the body moves
+ * without requiring speed > 1.
  *
  * @param state - current gait state (fresh copy returned; input not mutated)
  * @param bodyX - body center X in world space
@@ -295,24 +310,226 @@ export function advanceGait(
   if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 60;
   if (!Number.isFinite(tileSize) || tileSize <= 0) tileSize = 16;
 
-  const safeFacing: 1 | -1 = facing === 1 || facing === -1 ? facing : 1;
+  const safeFacing: 1 | -1 = facing === -1 ? -1 : 1;
+  const previousFacing: 1 | -1 = state.facing === -1 ? -1 : 1;
+  const facingChanged = safeFacing !== previousFacing;
+  const sideCount = Math.floor(state.legs.length / 2);
+  // Facing reversal: remap legs to their anatomical partners (front↔rear within
+  // each side) and REBASE every mapped leg as planted. Old-facing swing arc
+  // fields (start/mid/end/stepPhase/isSwinging) are never copied through — the
+  // next tick's critical recovery builds a fresh new-facing arc from the
+  // rebased planted foot. A swinging partner's stored Y is a lifted arc height,
+  // not the floor, so such rebases are re-grounded; planted partners keep their
+  // world Y (world-lock). The rebased foot is projected into the NEW-facing
+  // sector so it does not fold immediately on the turn.
+  const sourceLegs = !facingChanged || sideCount === 0
+    ? state.legs
+    : state.legs.map((leg, index) => {
+        const groundAt = (x: number, fallbackY: number): number => {
+          const g = sampleGround(
+            x, bodyY, 0, 1, DEFAULT_GROUND_SAMPLE_MAX_DISTANCE, tileSize, tileQuery,
+          );
+          return g.hasGround ? g.point.y : fallbackY;
+        };
+        if (sideCount === 1) {
+          // One-leg-per-side: no anatomical partner, so mirror each foot's X
+          // across the body and rebase planted. X stays an exact mirror (no
+          // sector projection) so the one-leg-per-side mirror contract holds.
+          // Re-ground only if this leg was mid-swing (lifted Y); planted legs
+          // keep their world Y. Deterministic mirror.
+          const cur = getGaitFootPosition(leg);
+          const mx = bodyX - (cur.x - bodyX);
+          const my = leg.isSwinging ? groundAt(mx, cur.y) : cur.y;
+          return {
+            ...leg,
+            footX: mx,
+            footY: my,
+            startX: mx,
+            startY: my,
+            endX: mx,
+            endY: my,
+            midX: mx,
+            midY: my,
+            stepPhase: 0,
+            isSwinging: false,
+          };
+        }
+        const sideStart = index < sideCount ? 0 : sideCount;
+        const ordinal = index - sideStart;
+        const partner = state.legs[sideStart + sideCount - 1 - ordinal];
+        // The partner's current authoritative position becomes this leg's
+        // rebased planted foot. A PLANTED partner whose position stays
+        // sector-valid under the new facing keeps its exact world point
+        // (world-lock through the anatomical remap). A SWINGING partner (stored
+        // position is an old-facing arc sample with a lifted Y) or a planted
+        // partner whose position would fold/hard-violate under the new facing
+        // is re-grounded to the floor and projected into the new-facing sector
+        // (gait geometry) so critical recovery can build a fresh new-facing arc
+        // from a valid start. The leg's partner pairing is unchanged; only an
+        // invalid/swinging foot is relocated.
+        const cur = getGaitFootPosition(partner);
+        let rx = cur.x;
+        let ry = cur.y;
+        const newFacingReq = computeLegStepRequest(
+          bodyX, bodyY, safeFacing,
+          { x: leg.restLocalX, y: leg.restLocalY },
+          cur, config.geometry, config.comfortRadius,
+        );
+        const partnerInvalid = partner.isSwinging
+          || newFacingReq.sectorError > SECTOR_EPSILON
+          || newFacingReq.hardViolation;
+        if (partnerInvalid) {
+          const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
+          const hip = computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, config.geometry);
+          const coxa = computeCoxaEndpoint(hip, safeFacing, restLocalVec, config.geometry);
+          const floorY = partner.isSwinging ? groundAt(cur.x, cur.y) : cur.y;
+          const authoredRestX = bodyX + leg.restLocalX * safeFacing;
+          const rebased = projectGroundedTargetIntoWorkspace(
+            coxa, { x: authoredRestX, y: floorY }, config.geometry, safeFacing, leg.restLocalX,
+          );
+          rx = rebased.x;
+          ry = rebased.y;
+        }
+        return {
+          ...leg,
+          footX: rx,
+          footY: ry,
+          startX: rx,
+          startY: ry,
+          endX: rx,
+          endY: ry,
+          midX: rx,
+          midY: ry,
+          stepPhase: 0,
+          isSwinging: false,
+        };
+      });
 
   const speed = Math.sqrt(vx * vx + vy * vy);
-  const newPhase = speed > 1
+  const newPhase = speed > 0.01
     ? (state.phase + speed * config.phaseAdvanceRate * dt) % (Math.PI * 2)
     : state.phase;
+  const desiredSet: 'A' | 'B' = newPhase < Math.PI ? 'A' : 'B';
+
+  // Unified per-leg step request: compute structured result for each planted
+  // leg using the exact renderer geometry (coxa endpoint, annuli).
+  const geometry = config.geometry;
+
+  // Predict one swing duration ahead for both urgency and landing placement.
+  // Critical-set scheduling below handles service latency; looking farther
+  // ahead here over-prioritizes distant targets and can starve nearer plants.
+  const safeStepDuration = Number.isFinite(config.stepDuration) ? config.stepDuration : 0.18;
+  const predictedBodyX = bodyX + vx * safeStepDuration;
+  const predictedBodyY = bodyY + vy * safeStepDuration;
+
+  // Cache each leg's predicted step request once (predicted = where the body
+  // will sit at step completion, so urgency reflects the post-step comfort
+  // state). The cache drives the global urgency ranking, the critical-violation
+  // scan below, the active-set service check, and the coordinated fallback —
+  // eliminating the previous O(n^2) per-candidate recomputation.
+  const predictedReqs: LegStepRequest[] = new Array(sourceLegs.length);
+  let highestUrgencyIndex = -1;
+  let highestUrgency = -1;
+  let anyNeedsStep = false;
+  // Critical candidate: a PLANTED leg with a hard radial violation OR an
+  // anatomical sector fold (tibia reversing toward the body). Selected across
+  // BOTH gait sets so a folded leg is never starved by minor drift in the
+  // currently-active set. Highest urgency wins; stable lowest-index tie-break.
+  let criticalIndex = -1;
+  let criticalUrgency = -1;
+  for (let ci = 0; ci < sourceLegs.length; ci++) {
+    const candidate = sourceLegs[ci];
+    const footPos = { x: candidate.footX, y: candidate.footY };
+    const restLocal = { x: candidate.restLocalX, y: candidate.restLocalY };
+    const req = computeLegStepRequest(
+      predictedBodyX, predictedBodyY, safeFacing, restLocal, footPos, geometry, config.comfortRadius,
+    );
+    predictedReqs[ci] = req;
+    if (candidate.isSwinging) continue;
+    if (req.needsStep) anyNeedsStep = true;
+    if (req.urgency > highestUrgency) {
+      highestUrgency = req.urgency;
+      highestUrgencyIndex = ci;
+    }
+    if (req.hardViolation || req.sectorError > SECTOR_EPSILON) {
+      if (req.urgency > criticalUrgency) {
+        criticalUrgency = req.urgency;
+        criticalIndex = ci;
+      }
+    }
+  }
+
+  const previousActiveSet: 'A' | 'B' = state.activeSet ??
+    (state.phase < Math.PI ? 'A' : 'B');
+  // A facing reversal invalidates the old set-activation bookkeeping: the
+  // rebased legs no longer correspond to the previously-serviced indices, and
+  // any rebased sector-invalid leg must be reachable by critical recovery this
+  // tick. Clear stale servicedLegs so the active-set handoff starts clean and
+  // the active set can route to critical recovery.
+  const storedServiced = facingChanged ? [] : (state.servicedLegs ?? []);
+  const previousServiced = config.mode === 'coordinated'
+    ? storedServiced.filter((index) => sourceLegs[index]?.set === previousActiveSet)
+    : storedServiced;
+  const previousSetNeedsService = sourceLegs.some((candidate) => {
+    if (candidate.set !== previousActiveSet) return false;
+    if (candidate.isSwinging) return true;
+    if (previousServiced.includes(candidate.index)) return false;
+    return predictedReqs[candidate.index].needsStep;
+  });
+  const previousSetWasServiced = previousServiced.some((index) =>
+    sourceLegs[index]?.set === previousActiveSet,
+  );
+  const phaseActiveSet = previousSetNeedsService
+    ? previousActiveSet
+    : previousSetWasServiced
+      ? (previousActiveSet === 'A' ? 'B' : 'A')
+      : desiredSet;
+  const anySwinging = sourceLegs.some((candidate) => candidate.isSwinging);
+  const totalSwingingCount = sourceLegs.filter((candidate) => candidate.isSwinging).length;
+  const maxSwingingCap = Math.max(1, Math.floor(sourceLegs.length / 4));
+  // Critical eligibility — the support locks a critical leg may NOT bypass:
+  // its corresponding pair must be planted, no leg in the critical's opposite
+  // set may be swinging (tetrapod support), and a maxSwinging slot must be
+  // free. These are evaluated once per tick so both the active-set override
+  // and the per-leg step gate agree.
+  let criticalEligible = false;
+  if (criticalIndex >= 0) {
+    const cLeg = sourceLegs[criticalIndex];
+    const cPairIndex = sideCount > 0
+      ? (criticalIndex < sideCount ? criticalIndex + sideCount : criticalIndex - sideCount)
+      : -1;
+    const cPairSwinging = cPairIndex >= 0 && sourceLegs[cPairIndex]?.isSwinging === true;
+    const cOppositeSwinging = sourceLegs.some(
+      (candidate) => candidate.set !== cLeg.set && candidate.isSwinging,
+    );
+    criticalEligible = !cPairSwinging && !cOppositeSwinging && totalSwingingCount < maxSwingingCap;
+  }
+  // When a critical leg can step, route the active set to it so servicing
+  // proceeds as a proper rolling wave within its own set (avoiding the
+  // single-leg cross-set disruption). This overrides ordinary active-set
+  // continuation even when the previous set still carries ordinary drift.
+  const criticalOverrideSet = criticalEligible ? sourceLegs[criticalIndex].set : null;
+  // Highest-urgency leg gets priority regardless of set
+  const coordinatedActiveSet = criticalOverrideSet
+    ?? (anyNeedsStep && !anySwinging && !previousSetNeedsService
+      ? sourceLegs[highestUrgencyIndex].set
+      : phaseActiveSet);
+  const nextServiced = config.mode === 'frantic'
+    ? previousServiced.length >= sourceLegs.length ? [] : [...previousServiced]
+    : coordinatedActiveSet === previousActiveSet
+      ? [...previousServiced]
+      : [];
 
   const motionScale = Number.isFinite(config.motionScale) ? config.motionScale : 1;
   const effectiveStepHeight = config.stepHeight * motionScale;
 
   const newLegs: GaitLegState[] = [];
-  const legCount = state.legs.length;
+  const legCount = sourceLegs.length;
+  let startedThisTick = false;
 
   for (let i = 0; i < legCount; i++) {
-    const leg = state.legs[i];
+    const leg = sourceLegs[i];
 
-    // Compute world-space rest position from stored local offsets.
-    // restLocalX is relative to body at facing=1; multiply by facing for mirror.
     const restWorldX = bodyX + leg.restLocalX * safeFacing;
     const restWorldY = bodyY + leg.restLocalY;
 
@@ -320,7 +537,7 @@ export function advanceGait(
       // Advance swing phase
       const newStepPhase = Math.min(1, leg.stepPhase + dt / config.stepDuration);
       if (newStepPhase >= 1) {
-        // Plant the foot
+        // Plant the foot at the sector-valid, floor-grounded landing target.
         newLegs.push({
           ...leg,
           footX: leg.endX,
@@ -329,64 +546,152 @@ export function advanceGait(
           isSwinging: false,
         });
       } else {
-        // Interpolate along the step arc
-        const pos = sampleStepArc(
+        // Interpolate along the step arc, then project the sample into the
+        // anatomical sector at its Y using the CURRENT body/facing/coxa. This
+        // is gait geometry (same shared helper as the renderer), not renderer
+        // feedback: it keeps the authoritative footX/footY sector-valid so the
+        // stored planted position after landing — and any immediate reversal
+        // rebase — starts from a feasible point. Fixed segment lengths are
+        // never altered; only the foot target X is moved outward to the nearest
+        // sector-valid position at the sample's (preserved) Y.
+        const raw = sampleStepArc(
           { x: leg.startX, y: leg.startY },
           { x: leg.midX, y: leg.midY },
           { x: leg.endX, y: leg.endY },
           newStepPhase,
         );
+        const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
+        const hip = computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry);
+        const coxa = computeCoxaEndpoint(hip, safeFacing, restLocalVec, geometry);
+        const projected = projectGroundedTargetIntoWorkspace(
+          coxa, raw, geometry, safeFacing, leg.restLocalX,
+        );
         newLegs.push({
           ...leg,
-          footX: pos.x,
-          footY: pos.y,
+          footX: projected.x,
+          footY: projected.y,
           stepPhase: newStepPhase,
         });
       }
     } else {
       // Check if this leg should start stepping
       let shouldStep = false;
+      const totalSwinging = sourceLegs.filter((candidate) => candidate.isSwinging).length;
+      const maxSwinging = Math.max(1, Math.floor(legCount / 4));
+      const pairIndex = i < sideCount ? i + sideCount : i - sideCount;
+      const pairSwinging = sideCount > 0 && sourceLegs[pairIndex]?.isSwinging === true;
 
       if (config.mode === 'coordinated') {
-        // Coordinated mode: alternating tetrapod with within-set rolling wave.
-        // Set A phase: [0, π), Set B phase: [π, 2π).
-        // Each leg has a narrow activation WINDOW (not open-ended range)
-        // so that at most 2 legs of the same set are swinging simultaneously.
-        const setStart = leg.set === 'A' ? 0 : Math.PI;
-        const setEnd = leg.set === 'A' ? Math.PI : Math.PI * 2;
-        const setRange = setEnd - setStart;
-
-        // Find this leg's position within its set
-        const setLegIndices: number[] = [];
-        for (let j = 0; j < legCount; j++) {
-          if (state.legs[j].set === leg.set) {
-            setLegIndices.push(j);
+        // Start the most overdue planted leg in the active set. A stable index
+        // tie-break keeps the rolling wave deterministic without phase-window
+        // starvation at high speed.
+        //
+        // Critical bypass: the single highest-urgency critical candidate (hard
+        // radial or anatomical sector violation) is allowed past the active-set
+        // and servicedLegs filters so a folded leg is recovered within a
+        // bounded window even when the opposite set perpetually carries minor
+        // drift. The bypass never skips the corresponding-pair lock, the
+        // opposite-set swing exclusion, the maxSwinging cap, or one-start-per-
+        // tick; ordinary candidates keep their normal alternating/fair behavior.
+        const activeSet = coordinatedActiveSet;
+        const oppositeSetSwinging = sourceLegs.some(
+          (candidate) => candidate.set !== activeSet && candidate.isSwinging,
+        );
+        let overdueIndex = -1;
+        let overdueUrgency = -1;
+        let selectedUrgent = false;
+        for (const candidate of sourceLegs) {
+          if (candidate.isSwinging) continue;
+          const isCriticalBypass = candidate.index === criticalIndex && criticalEligible;
+          if (!isCriticalBypass) {
+            if (candidate.set !== activeSet) continue;
+            if (nextServiced.includes(candidate.index)) continue;
+          }
+          const candidatePair = candidate.index < sideCount
+            ? candidate.index + sideCount
+            : candidate.index - sideCount;
+          if (sideCount > 0 && sourceLegs[candidatePair]?.isSwinging) continue;
+          // Highest urgency leg gets priority
+          if (candidate.index === highestUrgencyIndex && anyNeedsStep) {
+            overdueIndex = candidate.index;
+            selectedUrgent = true;
+            continue;
+          }
+          if (selectedUrgent) continue;
+          // Fallback: most overdue by cached predicted step request
+          const req = predictedReqs[candidate.index];
+          if (req.urgency > overdueUrgency) {
+            overdueUrgency = req.urgency;
+            overdueIndex = candidate.index;
           }
         }
-        const withinSetIndex = setLegIndices.indexOf(leg.index);
-
-        const activationPhase = setStart + withinSetIndex * COORDINATED_STAGGER_FRACTION * setRange;
-        const windowEnd = activationPhase + COORDINATED_WINDOW_WIDTH * setRange;
-        const inWindow = newPhase >= activationPhase && newPhase < windowEnd;
-        const inSet = newPhase >= setStart && newPhase < setEnd;
-        shouldStep = inWindow && inSet && speed > 1;
+        // The critical candidate preempts ordinary selection so the folded leg
+        // is serviced this tick (or as soon as its support locks clear). It can
+        // be reselected on later ticks if it remains invalid after a completed
+        // or failed attempt; the no-ground fail-safe keeps the foot planted so
+        // there is no spin or mutation.
+        if (criticalIndex >= 0 && criticalEligible) {
+          overdueIndex = criticalIndex;
+        }
+        const selectedIsCritical = criticalEligible &&
+          leg.index === criticalIndex && leg.index === overdueIndex;
+        // No speed>1 gate — idle recovery is allowed
+        shouldStep = leg.index === overdueIndex &&
+          !pairSwinging && totalSwinging < maxSwinging && !startedThisTick &&
+          (selectedIsCritical || (leg.set === activeSet && !oppositeSetSwinging));
       } else {
-        // Frantic mode: free-stepping with neighbour-lock.
-        // A leg does not start if an adjacent leg is already swinging.
-        const prevIdx = (i - 1 + legCount) % legCount;
-        const nextIdx = (i + 1) % legCount;
-        const prevSwinging = state.legs[prevIdx].isSwinging;
-        const nextSwinging = state.legs[nextIdx].isSwinging;
-        shouldStep = !prevSwinging && !nextSwinging;
+        // Frantic mode remains independent but respects side-neighbour,
+        // corresponding-pair, and total support locks.
+        let overdueIndex = -1;
+        let overdueUrgency = -1;
+        let selectedUrgent = false;
+        for (const candidate of sourceLegs) {
+          if (candidate.isSwinging) continue;
+          if (nextServiced.includes(candidate.index)) continue;
+          const candidateSideStart = candidate.index < sideCount ? 0 : sideCount;
+          const ordinal = candidate.index - candidateSideStart;
+          const prevIndex = ordinal > 0 ? candidate.index - 1 : -1;
+          const nextIndex = ordinal + 1 < sideCount ? candidate.index + 1 : -1;
+          const candidatePair = candidate.index < sideCount
+            ? candidate.index + sideCount
+            : candidate.index - sideCount;
+          if ((prevIndex >= 0 && sourceLegs[prevIndex].isSwinging) ||
+              (nextIndex >= 0 && sourceLegs[nextIndex].isSwinging) ||
+              (sideCount > 0 && sourceLegs[candidatePair]?.isSwinging)) {
+            continue;
+          }
+          // Highest urgency leg gets priority
+          if (candidate.index === highestUrgencyIndex && anyNeedsStep) {
+            overdueIndex = candidate.index;
+            selectedUrgent = true;
+            continue;
+          }
+          if (selectedUrgent) continue;
+          // Fallback: most overdue by step request
+          const footPos = { x: candidate.footX, y: candidate.footY };
+          const restLocal = { x: candidate.restLocalX, y: candidate.restLocalY };
+          const req = computeLegStepRequest(
+            bodyX, bodyY, safeFacing, restLocal, footPos, geometry, config.comfortRadius,
+          );
+          if (req.urgency > overdueUrgency) {
+            overdueUrgency = req.urgency;
+            overdueIndex = candidate.index;
+          }
+        }
+        // No speed>1 gate — idle recovery is allowed
+        shouldStep = leg.index === overdueIndex && !pairSwinging &&
+          totalSwinging < maxSwinging && !startedThisTick;
       }
 
       if (shouldStep) {
-        // Check comfort radius
-        const dx = restWorldX - leg.footX;
-        const dy = restWorldY - leg.footY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        // Check if this leg actually needs to step using structured request
+        const footPos = { x: leg.footX, y: leg.footY };
+        const restLocal = { x: leg.restLocalX, y: leg.restLocalY };
+        const req = computeLegStepRequest(
+          bodyX, bodyY, safeFacing, restLocal, footPos, geometry, config.comfortRadius,
+        );
 
-        if (dist > config.comfortRadius) {
+        if (req.needsStep) {
           // Compute overshoot target
           const targetX = restWorldX + vx * config.overshootFactor;
           const targetY = restWorldY + vy * config.overshootFactor;
@@ -403,11 +708,39 @@ export function advanceGait(
           );
 
           if (ground.hasGround) {
-            // Start a step arc
-            const startX = leg.footX;
-            const startY = leg.footY;
-            const endX = ground.point.x;
-            const endY = ground.point.y;
+            const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
+            // Landing target: floor-grounded (preserves ground.point.y) and
+            // sector-valid at the predicted landing-time coxa (stepDuration
+            // ahead), so the swing end is anatomically reachable on plant.
+            const landingCoxa = computeCoxaEndpoint(
+              computeHipPosition(predictedBodyX, predictedBodyY, safeFacing, restLocalVec, geometry),
+              safeFacing, restLocalVec, geometry,
+            );
+            const projectedEnd = projectGroundedTargetIntoWorkspace(
+              landingCoxa, ground.point, geometry, safeFacing, leg.restLocalX,
+            );
+
+            // Current-time coxa, used to project the arc's start and apex into
+            // the sector so the first swing samples do not retain a large
+            // renderer correction (the worst swing state was an inner leg
+            // stepping from a currently sector-invalid planted point).
+            const currentCoxa = computeCoxaEndpoint(
+              computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry),
+              safeFacing, restLocalVec, geometry,
+            );
+            const projectedStart = projectGroundedTargetIntoWorkspace(
+              currentCoxa, { x: leg.footX, y: leg.footY }, geometry, safeFacing, leg.restLocalX,
+            );
+            const startX = projectedStart.x;
+            const startY = projectedStart.y;
+            const endX = projectedEnd.x;
+            const endY = projectedEnd.y;
+
+            // Outward-aware arc: lift the apex by stepHeight. (mid projection
+            // temporarily disabled for diagnosis.)
+            const liftY = Math.min(startY, endY) - effectiveStepHeight;
+            const midX = (startX + endX) / 2;
+            const midY = liftY;
 
             newLegs.push({
               ...leg,
@@ -416,28 +749,95 @@ export function advanceGait(
               startY,
               endX,
               endY,
-              midX: (startX + endX) / 2,
-              midY: Math.min(startY, endY) - effectiveStepHeight,
+              midX,
+              midY,
               isSwinging: true,
               footX: startX,
               footY: startY,
             });
+            if (!nextServiced.includes(leg.index)) {
+              nextServiced.push(leg.index);
+            }
+            startedThisTick = true;
             continue;
           } else {
-            // Fail-safe: tuck foot toward body (don't stretch infinitely).
-            // Move foot 30% toward body center, with a small downward offset.
-            const tuckX = bodyX + (restWorldX - bodyX) * 0.3;
-            const tuckY = bodyY + 5;
-            newLegs.push({ ...leg, footX: tuckX, footY: tuckY });
+            // Fail-safe: keep foot planted at its current position
+            // (non-collapsing deterministic behavior — no dangerous teleport)
+            newLegs.push(leg);
+            if (!nextServiced.includes(leg.index)) {
+              nextServiced.push(leg.index);
+            }
+            startedThisTick = true;
             continue;
           }
         }
       }
 
-      // No step triggered — keep leg as-is
-      newLegs.push(leg);
+      // If support locks prevent an immediate swing, do not retain a planted
+      // target that fixed-length IK cannot represent. Rebase that impossible
+      // plant using deterministic gait geometry so the renderer's
+      // `solveThreeSegmentLeg` — which always projects the target into the soft
+      // annulus via `sectorFeasibleX` — draws the exact point stored here,
+      // preventing hidden gait/render divergence. Valid planted feet remain
+      // world-locked.
+      //
+      // Two rebase modes, by violation class:
+      //  - Hard radial or anatomical sector fold: the foot is in a broken pose
+      //    the renderer cannot represent at all. Rebase to the authored rest X
+      //    (`restWorldX`) projected through the workspace.
+      //  - Soft workspace error only (foot inside hard annulus but outside the
+      //    soft annulus): the renderer silently pushes this foot into the soft
+      //    annulus. Rebase from the CURRENT foot position so the stored point
+      //    matches the renderer with a minimal correction — no teleport to rest,
+      //    preserving the fan separation between adjacent ordinals.
+      const currentReq = computeLegStepRequest(
+        bodyX,
+        bodyY,
+        safeFacing,
+        { x: leg.restLocalX, y: leg.restLocalY },
+        { x: leg.footX, y: leg.footY },
+        geometry,
+        config.comfortRadius,
+      );
+      const isBrokenPose =
+        currentReq.hardViolation || currentReq.sectorError > SECTOR_EPSILON;
+      if (
+        isBrokenPose
+        || currentReq.workspaceError > SECTOR_EPSILON
+      ) {
+        const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
+        const hip = computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry);
+        const coxa = computeCoxaEndpoint(hip, safeFacing, restLocalVec, geometry);
+        const targetX = isBrokenPose ? restWorldX : leg.footX;
+        const recovered = projectGroundedTargetIntoWorkspace(
+          coxa,
+          { x: targetX, y: leg.footY },
+          geometry,
+          safeFacing,
+          leg.restLocalX,
+        );
+        newLegs.push({
+          ...leg,
+          footX: recovered.x,
+          footY: recovered.y,
+          startX: recovered.x,
+          startY: recovered.y,
+          endX: recovered.x,
+          endY: recovered.y,
+          midX: recovered.x,
+          midY: recovered.y,
+        });
+      } else {
+        newLegs.push(leg);
+      }
     }
   }
 
-  return { legs: newLegs, phase: newPhase };
+  return {
+    legs: newLegs,
+    phase: newPhase,
+    facing: safeFacing,
+    activeSet: config.mode === 'coordinated' ? coordinatedActiveSet : desiredSet,
+    servicedLegs: nextServiced,
+  };
 }

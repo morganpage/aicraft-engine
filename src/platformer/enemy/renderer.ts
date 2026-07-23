@@ -123,12 +123,21 @@ export function drawEnemies(
     const fill = pal[enemy.archetype as keyof EnemyPalette] ?? pal.default ?? '#ff3a3a';
 
     if (enemy.archetype === 'spinny') {
-      // Sawblade: circle body + triangular spikes, rotated by tick.
+      // Sawblade: circle body + triangular spikes, rotated by spinAngle.
+      // Prefer the deterministic spinAngle stored by spinnyBehavior; fall
+      // back to a direction-aware formula for legacy/external states that
+      // lack it. The fallback multiplies by `facing` so left-facing spinners
+      // rotate in the opposite visual direction (the old formula was
+      // always-positive regardless of movement direction).
       const cx = x + HALF_SIZE;
       const cy = y + HALF_SIZE;
+      const storedAngle = enemy.state.data.spinAngle;
+      const rotation = typeof storedAngle === 'number' && Number.isFinite(storedAngle)
+        ? storedAngle
+        : tick * SPINNY_ANGULAR_SPEED * enemy.state.facing;
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(tick * SPINNY_ANGULAR_SPEED);
+      ctx.rotate(rotation);
 
       // Draw sawblade path: alternating spike tips and valley arcs.
       ctx.beginPath();
@@ -171,22 +180,46 @@ export function drawEnemies(
       // Draw the body.
       outlineRect(ctx, x, y, w, h, fill, DEFAULT_OUTLINE_COLOR);
       // Draw a direction indicator line from center.
+      // Use shootTo direction when present; fall back to aimDirection.
+      // Uses Number.isFinite (not || 0) to preserve zero components.
       const params = enemy.params;
-      const aimDir = params.aimDirection && typeof params.aimDirection === 'object'
-        ? params.aimDirection as { x?: number; y?: number }
-        : { x: 1, y: 0 };
-      const dirX = Number(aimDir.x) || 1;
-      const dirY = Number(aimDir.y) || 0;
-      const len = Math.hypot(dirX, dirY) || 1;
-      const nx = dirX / len;
-      const ny = dirY / len;
+      let indDirX = 1;
+      let indDirY = 0;
+      const shootTo = params.shootTo;
+      if (shootTo && typeof shootTo === 'object') {
+        const stx = Number((shootTo as Record<string, unknown>).x);
+        const sty = Number((shootTo as Record<string, unknown>).y);
+        if (Number.isFinite(stx) && Number.isFinite(sty)) {
+          const mag = Math.hypot(stx, sty);
+          if (mag > 0) {
+            indDirX = stx / mag;
+            indDirY = sty / mag;
+          }
+        }
+      }
+      if (!shootTo || (typeof shootTo === 'object' && Math.hypot(
+        Number((shootTo as Record<string, unknown>).x) || 0,
+        Number((shootTo as Record<string, unknown>).y) || 0,
+      ) === 0)) {
+        // No shootTo or zero-length shootTo — use aimDirection
+        const aimDir = params.aimDirection && typeof params.aimDirection === 'object'
+          ? params.aimDirection as { x?: number; y?: number }
+          : { x: 1, y: 0 };
+        const rawX = Number(aimDir.x);
+        const rawY = Number(aimDir.y);
+        const dirX = Number.isFinite(rawX) ? rawX : 1;
+        const dirY = Number.isFinite(rawY) ? rawY : 0;
+        const len = Math.hypot(dirX, dirY) || 1;
+        indDirX = dirX / len;
+        indDirY = dirY / len;
+      }
       const cx = x + HALF_SIZE;
       const cy = y + HALF_SIZE;
       ctx.strokeStyle = pal.indicator ?? '#ffffff';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + nx * TURRET_INDICATOR_LENGTH, cy + ny * TURRET_INDICATOR_LENGTH);
+      ctx.lineTo(cx + indDirX * TURRET_INDICATOR_LENGTH, cy + indDirY * TURRET_INDICATOR_LENGTH);
       ctx.stroke();
     } else if (enemy.archetype === 'spider') {
       try {
@@ -198,7 +231,7 @@ export function drawEnemies(
           const bodyCX = enemy.state.x + HALF_SIZE;
           const bodyCY = enemy.state.y + HALF_SIZE;
           const cfg = buildSpiderVisualConfigFromParams(enemy.params);
-          spiderState = createSpiderState(cfg, jitterSeed, bodyCX, bodyCY);
+          spiderState = createSpiderState(cfg, jitterSeed, bodyCX, bodyCY, enemy.state.facing);
         }
 
         const cfg = buildSpiderVisualConfigFromParams(enemy.params);

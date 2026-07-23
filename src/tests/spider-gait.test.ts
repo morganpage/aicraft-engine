@@ -8,6 +8,8 @@ import {
   type GaitLegState,
   type SpiderGaitConfig,
 } from '../animation/spider/gait';
+import { DEFAULT_SPIDER_GEOMETRY } from '../animation/spider/constants';
+import { computeLegStepRequest } from '../animation/spider/geometry';
 import type { TileSolidityQuery } from '../collision/types';
 import type { Vec2 } from '../animation/types';
 
@@ -32,10 +34,11 @@ const TEST_GAIT: SpiderGaitConfig = {
   overshootFactor: 0.3,
   stepHeight: 14,
   stepDuration: 0.18,
-  phaseAdvanceRate: 0.08,
+  phaseAdvanceRate: 0.16,
   legRestPositions: [],
   groundSampleSteps: 3,
   motionScale: 1,
+  geometry: DEFAULT_SPIDER_GEOMETRY,
 };
 
 /** Frantic mode variant. */
@@ -48,23 +51,32 @@ const FRANTIC_GAIT: SpiderGaitConfig = {
  * Create a simple 8-leg rest layout: 4 pairs spread symmetrically.
  * Legs at y=100 (above a floor at tile row 7, i.e. y=112 for tileSize=16).
  * Body center assumed at (130, 100) — middle of the leg spread.
+ *
+ * Distances chosen so every foot is within the soft annulus from its coxa
+ * endpoint. With hipRadius+coxaLength = 16 from body centre, footDist from
+ * coxa = ||local| - 16|. The soft annulus is [18, 37.6], so |local| must be
+ * in [34, 53.6]. We use 35, 40, 45, 50 → footDist 19, 24, 29, 34.
  */
+// Feet rest on the floor (y = 112) spread wide to each side of the body, so
+// every foot is anatomically sector-valid (outward tibia) at the 28px clearance
+// the three-segment geometry needs. Offsets are a symmetric palindrome
+// (58/46/36/32 px) so inner-to-outer urgency ordering is preserved.
 function eightRestPositions(): Vec2[] {
   return [
-    { x: 80, y: 100 },   // L1 (set A, index 0)
-    { x: 60, y: 100 },   // R1 (set B, index 1)
-    { x: 100, y: 100 },  // L2 (set B, index 2)
-    { x: 120, y: 100 },  // R2 (set A, index 3)
-    { x: 140, y: 100 },  // L3 (set A, index 4)
-    { x: 160, y: 100 },  // R3 (set B, index 5)
-    { x: 180, y: 100 },  // L4 (set B, index 6)
-    { x: 200, y: 100 },  // R4 (set A, index 7)
+    { x: 72, y: 112 },   // L1 (set A, index 0) — 58px back-outward
+    { x: 84, y: 112 },   // R1 (set B, index 1) — 46px back-outward
+    { x: 94, y: 112 },   // L2 (set A, index 2) — 36px back-outward
+    { x: 98, y: 112 },   // R2 (set B, index 3) — 32px back-outward
+    { x: 162, y: 112 },  // L3 (set B, index 4) — 32px fore-outward
+    { x: 166, y: 112 },  // R3 (set A, index 5) — 36px fore-outward
+    { x: 176, y: 112 },  // L4 (set B, index 6) — 46px fore-outward
+    { x: 188, y: 112 },  // R4 (set A, index 7) — 58px fore-outward
   ];
 }
 
-/** Body center for eightRestPositions. */
+/** Body center for eightRestPositions (28px above the row-7 floor at y=112). */
 const BODY_X = 130;
-const BODY_Y = 100;
+const BODY_Y = 84;
 
 /** All legs are planted (not swinging). */
 function allPlanted(state: GaitState): boolean {
@@ -150,12 +162,14 @@ describe('createGaitState', () => {
     expect(state.phase).toBe(0);
   });
 
-  it('assigns sets alternately: even indices A, odd indices B', () => {
+  it('assigns opposing alternating sets across the two sides', () => {
     const positions = eightRestPositions();
     const state = createGaitState(TEST_GAIT, positions, BODY_X, BODY_Y);
-    for (let i = 0; i < state.legs.length; i++) {
-      expect(state.legs[i].set).toBe(i % 2 === 0 ? 'A' : 'B');
-    }
+
+    expect(state.legs.map((leg) => leg.set)).toEqual([
+      'A', 'B', 'A', 'B',
+      'B', 'A', 'B', 'A',
+    ]);
   });
 
   it('initializes all legs as planted (not swinging)', () => {
@@ -220,7 +234,7 @@ describe('getGaitFootPosition', () => {
     expect(pos.y).toBe(88);
   });
 
-  it('returns arc-interpolated position for a swinging leg', () => {
+  it('returns the stored sector-projected position for a swinging leg', () => {
     const leg: GaitLegState = {
       id: 'L1',
       set: 'A',
@@ -239,10 +253,14 @@ describe('getGaitFootPosition', () => {
       restLocalY: 0,
     };
     const pos = getGaitFootPosition(leg);
-    // At t=0.5: 0.25*10 + 0.5*50 + 0.25*90 = 50 (x)
-    // At t=0.5: 0.25*100 + 0.5*60 + 0.25*100 = 80 (y)
-    expect(pos.x).toBeCloseTo(50);
-    expect(pos.y).toBeCloseTo(80);
+    expect(pos.x).toBe(42);
+    expect(pos.y).toBe(88);
+    expect(sampleStepArc(
+      { x: leg.startX, y: leg.startY },
+      { x: leg.midX, y: leg.midY },
+      { x: leg.endX, y: leg.endY },
+      leg.stepPhase,
+    )).toEqual({ x: 50, y: 80 });
   });
 });
 
@@ -312,6 +330,60 @@ describe('advanceGait — coordinated mode', () => {
       expect(aSwinging).toBeLessThanOrEqual(2);
       expect(bSwinging).toBeLessThanOrEqual(2);
     }
+  });
+
+  it('gives every leg a step opportunity instead of leaving trailing feet planted', () => {
+    const positions = eightRestPositions();
+    let state = createGaitState(TEST_GAIT, positions, BODY_X, BODY_Y);
+    const floor = floorAtRow(7);
+    const dt = 1 / 60;
+    const started = new Set<number>();
+
+    for (let t = 0; t < 300; t++) {
+      const previous = state;
+      state = advanceGait(
+        state, BODY_X + t, BODY_Y, 60, 0, 1, dt,
+        TEST_GAIT, floor, 16, t,
+      );
+
+      for (let i = 0; i < state.legs.length; i++) {
+        if (!previous.legs[i].isSwinging && state.legs[i].isSwinging) {
+          started.add(i);
+        }
+      }
+    }
+
+    expect([...started].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('keeps planted feet within the default 48px leg reach during startup', () => {
+    const positions = eightRestPositions();
+    let state = createGaitState(TEST_GAIT, positions, BODY_X, BODY_Y);
+    const floor = floorAtRow(7);
+    const dt = 1 / 60;
+    const speed = 50;
+    let maxDrift = 0;
+
+    for (let t = 1; t <= 90; t++) {
+      const bodyX = BODY_X + speed * t * dt;
+      state = advanceGait(
+        state, bodyX, BODY_Y, speed, 0, 1, dt,
+        TEST_GAIT, floor, 16, t,
+      );
+
+      for (const leg of state.legs) {
+        const foot = getGaitFootPosition(leg);
+        maxDrift = Math.max(maxDrift, Math.hypot(
+          bodyX + leg.restLocalX - foot.x,
+          BODY_Y + leg.restLocalY - foot.y,
+        ));
+      }
+    }
+
+    // Total leg reach: hipRadius + coxaLength + femurLength + tibiaLength
+    const totalReach = DEFAULT_SPIDER_GEOMETRY.hipRadius + DEFAULT_SPIDER_GEOMETRY.coxaLength
+      + DEFAULT_SPIDER_GEOMETRY.femurLength + DEFAULT_SPIDER_GEOMETRY.tibiaLength;
+    expect(maxDrift).toBeLessThanOrEqual(totalReach + 30); // slack for step timing and wide rest positions
   });
 
   it('plants foot when stepPhase crosses 1', () => {
@@ -422,13 +494,39 @@ describe('advanceGait — frantic mode', () => {
 // ---------------------------------------------------------------------------
 
 describe('advanceGait — comfort radius', () => {
-  it('a leg with foot drift < comfortRadius does NOT step', () => {
-    // Legs at (100, 100), body at (100, 100) → rest offset (0, 0).
-    // Move body to (102, 90) → rest at (102, 100), foot at (100, 100).
-    // Drift = 2 < comfortRadius 20 → no step.
+  it('does not swap planted leg targets across the body when facing reverses', () => {
+    // Valid symmetric rest positions on the floor (y=112, 28px below the body
+    // at y=84). Distances ±50/±40 from body so every foot is sector-valid
+    // (outward tibia) for the 22/44 femur/tibia geometry at 28px clearance.
     const positions: Vec2[] = [
-      { x: 100, y: 100 },
-      { x: 100, y: 100 },
+      { x: 80, y: 112 },
+      { x: 90, y: 112 },
+      { x: 170, y: 112 },
+      { x: 180, y: 112 },
+      { x: 180, y: 112 },
+      { x: 170, y: 112 },
+      { x: 90, y: 112 },
+      { x: 80, y: 112 },
+    ];
+    const state = createGaitState(FRANTIC_GAIT, positions, BODY_X, BODY_Y);
+    const floor = floorAtRow(7);
+
+    const next = advanceGait(
+      state, BODY_X - 1, BODY_Y, 0, 0, -1, 1 / 60,
+      FRANTIC_GAIT, floor, 16, 1,
+    );
+
+    expect(allPlanted(next)).toBe(true);
+  });
+
+  it('a leg with foot drift < comfortRadius does NOT step', () => {
+    // Valid rest positions on the floor (y=112, 12px below body at y=100):
+    // feet ±55px from body so localX=55 is sector-valid for the 22/44
+    // femur/tibia geometry. Small body move keeps drift < comfortRadius
+    // AND keeps the foot inside the workspace → no step.
+    const positions: Vec2[] = [
+      { x: 45, y: 112 },
+      { x: 155, y: 112 },
     ];
     const cfg: SpiderGaitConfig = {
       mode: 'frantic',
@@ -441,10 +539,12 @@ describe('advanceGait — comfort radius', () => {
       legRestPositions: [],
       groundSampleSteps: 3,
       motionScale: 1,
+      geometry: DEFAULT_SPIDER_GEOMETRY,
     };
     let state = createGaitState(cfg, positions, 100, 100);
     const floor = floorAtRow(7);
 
+    // Body moves to (102, 90): restError ≈ 10.2 < 20, footDist ≈ 27.9 (valid).
     state = advanceGait(
       state, 102, 90, 10, 0, 1, 1 / 60,
       cfg, floor, 16, 0,
@@ -469,6 +569,7 @@ describe('advanceGait — comfort radius', () => {
       legRestPositions: [],
       groundSampleSteps: 3,
       motionScale: 1,
+      geometry: DEFAULT_SPIDER_GEOMETRY,
     };
     let state = createGaitState(cfg, positions, 100, 100);
     const floor = floorAtRow(7);
@@ -484,11 +585,11 @@ describe('advanceGait — comfort radius', () => {
 });
 
 // ---------------------------------------------------------------------------
-// advanceGait — fail-safe tuck
+// advanceGait — fail-safe (non-collapsing)
 // ---------------------------------------------------------------------------
 
-describe('advanceGait — fail-safe tuck', () => {
-  it('when tileQuery returns no ground, foot tucks toward body (does not stretch)', () => {
+describe('advanceGait — fail-safe', () => {
+  it('when tileQuery returns no ground, foot stays planted (non-collapsing)', () => {
     const positions: Vec2[] = [
       { x: 200, y: 100 },
     ];
@@ -503,6 +604,7 @@ describe('advanceGait — fail-safe tuck', () => {
       legRestPositions: [],
       groundSampleSteps: 3,
       motionScale: 1,
+      geometry: DEFAULT_SPIDER_GEOMETRY,
     };
     let state = createGaitState(cfg, positions, 200, 100);
 
@@ -512,18 +614,112 @@ describe('advanceGait — fail-safe tuck', () => {
       cfg, emptyQuery, 16, 0,
     );
 
-    // The foot should have been tucked (position closer to body, not at
-    // some distant ground point). It should still be finite.
+    // The foot should stay planted at its original position (non-collapsing)
     for (const leg of state.legs) {
       expect(Number.isFinite(leg.footX)).toBe(true);
       expect(Number.isFinite(leg.footY)).toBe(true);
+      // Foot should not have teleported toward body
+      expect(leg.footX).toBeCloseTo(200, 0);
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// advanceGait — determinism
+// advanceGait — idle recovery (no speed>1 gate)
 // ---------------------------------------------------------------------------
+
+describe('advanceGait — idle recovery', () => {
+  it('allows foot recovery at idle (speed near zero) when workspace is violated', () => {
+    const positions: Vec2[] = [
+      { x: 100, y: 100 },
+    ];
+    const cfg: SpiderGaitConfig = {
+      mode: 'frantic',
+      legCount: 1,
+      comfortRadius: 5,
+      overshootFactor: 0.3,
+      stepHeight: 10,
+      stepDuration: 0.2,
+      phaseAdvanceRate: 0.08,
+      legRestPositions: [],
+      groundSampleSteps: 3,
+      motionScale: 1,
+      geometry: DEFAULT_SPIDER_GEOMETRY,
+    };
+    const state = createGaitState(cfg, positions, 100, 100);
+    const floor = floorAtRow(7);
+
+    // Body moved but speed is zero (idle) — workspace violation should still trigger
+    const next = advanceGait(
+      state, 200, 90, 0, 0, 1, 1 / 60,
+      cfg, floor, 16, 0,
+    );
+
+    // The leg should have started stepping due to workspace violation
+    // even though speed is 0
+    expect(swingingCount(next)).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// advanceGait — sector-violation recovery (no set starvation)
+// ---------------------------------------------------------------------------
+
+describe('advanceGait — sector-violation recovery', () => {
+  /**
+   * Reproduces the large-purple scheduling livelock at the gait layer: a
+   * planted leg whose tibia folds (sector violation) must be serviced within
+   * a bounded number of ticks even when its set is not the currently-active
+   * coordinated set. Without cross-set recovery, the active set perpetually
+   * has its own minor needs and the folded leg starves, producing the
+   * 50-75px gait/render disagreement.
+   */
+  it('recovers a sector-folded planted leg within a bounded window regardless of set', () => {
+    const positions = eightRestPositions();
+    let s = createGaitState(TEST_GAIT, positions, BODY_X, BODY_Y);
+    const floor = floorAtRow(7);
+    // A critical leg may first need to wait for the opposite tetrapod's
+    // current swing to land. Bound recovery by one complete swing plus two
+    // ticks for active-set handoff rather than an arbitrary sub-swing window.
+    const RECOVERY_WINDOW = Math.ceil(TEST_GAIT.stepDuration * 60) + 2;
+    const tibiaLen = TEST_GAIT.geometry.tibiaLength;
+
+    let bodyX = BODY_X;
+    const foldFirstTick = new Map<number, number>();
+    let maxStarvation = 0;
+
+    for (let tick = 1; tick <= 200; tick++) {
+      bodyX += 90 / 60;
+      const prev = s;
+      s = advanceGait(s, bodyX, BODY_Y, 90, 0, 1, 1 / 60, TEST_GAIT, floor, 16, tick);
+      for (let i = 0; i < s.legs.length; i++) {
+        const leg = s.legs[i];
+        const wasSwinging = prev.legs[i].isSwinging;
+        if (leg.isSwinging) {
+          foldFirstTick.delete(i);
+          continue;
+        }
+        const req = computeLegStepRequest(
+          bodyX, BODY_Y, 1,
+          { x: leg.restLocalX, y: leg.restLocalY },
+          { x: leg.footX, y: leg.footY },
+          TEST_GAIT.geometry, TEST_GAIT.comfortRadius,
+        );
+        const folded = req.sectorError > tibiaLen * 0.25;
+        if (folded && !wasSwinging) {
+          if (!foldFirstTick.has(i)) foldFirstTick.set(i, tick);
+          const starved = tick - (foldFirstTick.get(i) as number);
+          if (starved > maxStarvation) maxStarvation = starved;
+        } else if (!folded) {
+          foldFirstTick.delete(i);
+        }
+      }
+    }
+    expect(maxStarvation).toBeLessThanOrEqual(RECOVERY_WINDOW);
+  });
+});
+
+
 
 describe('advanceGait — determinism', () => {
   it('same inputs produce deep-equal results', () => {

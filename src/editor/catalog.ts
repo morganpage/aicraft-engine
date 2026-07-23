@@ -148,7 +148,7 @@ export const DEFAULT_CATALOG: EntityCatalog = {
       kind: 'enemy',
       label: 'Turret Enemy',
       defaultRect: { x: 0, y: 0, width: 16, height: 16 },
-      defaultProps: { archetype: 'turret', params: { fireRate: 1, projectileSpeed: 120, projectileSize: 6 } },
+      defaultProps: { archetype: 'turret', params: { fireRate: 1, projectileSpeed: 120, projectileSize: 6, shootTo: { x: 128, y: 0 } } },
     },
     spider: {
       kind: 'enemy',

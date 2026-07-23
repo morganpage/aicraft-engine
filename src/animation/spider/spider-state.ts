@@ -29,6 +29,12 @@ import type { GaitState, LegRestPosition } from './gait';
 import { createGaitState, advanceGait } from './gait';
 import type { SpiderConfig } from './types';
 import { splitSpiderConfig } from './types';
+import type { SpiderLegGeometryConfig } from './geometry';
+import {
+  computeCoxaEndpoint,
+  computeHipPosition,
+  projectGroundedTargetIntoWorkspace,
+} from './geometry';
 
 /**
  * Spider body palette. All hex strings — no magic colors in the renderer.
@@ -105,10 +111,6 @@ export interface SpiderVisualConfig {
   readonly palpSegmentLength: number;
   /** Pedipalp stiffness in `[0, 1]`. */
   readonly palpStiffness: number;
-  /** Thigh length in px (upper leg segment). */
-  readonly thighLength: number;
-  /** Shin length in px (lower leg segment). */
-  readonly shinLength: number;
   /** Body palette. */
   readonly palette: SpiderPalette;
   /** Per-leg rest positions (angle + distance). */
@@ -117,8 +119,10 @@ export interface SpiderVisualConfig {
   readonly groundSampleSteps: number;
   /** Scale factor for reduced-motion accessibility (0 = no animation, 1 = full). */
   readonly motionScale: number;
+  /** Shared leg geometry config (three-segment coxa/femur/tibia). */
+  readonly geometry: SpiderLegGeometryConfig;
 
-  // --- Renderer-adjacent fields (Task 2) ---
+  // --- Renderer-adjacent fields ---
 
   /** Per-eye definitions (offsets from cephalothorax center + radius). */
   readonly eyeDefinitions: readonly EyeDefinition[];
@@ -132,10 +136,12 @@ export interface SpiderVisualConfig {
   readonly cheliceraeTipRadius: number;
   /** Number of jitter vertices for body outline shapes. */
   readonly jitterVertexCount: number;
-  /** Leg thickness at hip (thigh segment) in px. */
-  readonly thighWidth: number;
-  /** Leg thickness at foot (shin segment) in px. */
-  readonly shinWidth: number;
+  /** Leg thickness at coxa (first segment, closest to body) in px. */
+  readonly coxaWidth: number;
+  /** Leg thickness at femur (second segment) in px. */
+  readonly femurWidth: number;
+  /** Leg thickness at tibia (third segment, foot end) in px. */
+  readonly tibiaWidth: number;
   /** Leg outline stroke width in px. */
   readonly legOutlineWidth: number;
   /** Knee knob radius as multiplier of `jointRadius`. */
@@ -208,14 +214,41 @@ export interface SpiderState {
  */
 function computeRestPositions(
   legRestPositions: readonly LegRestPosition[],
+  legCount: number,
   bodyX: number,
   bodyY: number,
   facing: 1 | -1,
 ): Vec2[] {
   const positions: Vec2[] = [];
+  const count = Math.max(0, Math.min(
+    legRestPositions.length,
+    Number.isFinite(legCount) ? Math.floor(legCount) : legRestPositions.length,
+  ));
+  // Odd counts interpolate a leg onto exactly 90° (straight down), giving it a
+  // zero fore/aft offset and thus no anatomical outward direction — the leg
+  // then over-reaches instead of stepping. Nudge any leg out of a small band
+  // around vertical so every leg keeps a definite forward/backward side.
+  const VERTICAL_GAP_DEG = 12;
+  const avoidVertical = (angle: number): number => {
+    if (angle > 90 - VERTICAL_GAP_DEG && angle <= 90) return 90 - VERTICAL_GAP_DEG;
+    if (angle > 90 && angle < 90 + VERTICAL_GAP_DEG) return 90 + VERTICAL_GAP_DEG;
+    return angle;
+  };
+  const selected = count === 1
+    ? [legRestPositions[Math.ceil((legRestPositions.length - 1) / 2)]]
+    : count === legRestPositions.length
+      ? [...legRestPositions]
+      : Array.from({ length: count }, (_, i) => {
+          const idx = Math.round((i / Math.max(1, count - 1)) * (legRestPositions.length - 1));
+          const pos = legRestPositions[idx];
+          return {
+            angle: avoidVertical(pos.angle),
+            distance: pos.distance,
+          };
+        });
 
   // Right side (facing=1)
-  for (const lp of legRestPositions) {
+  for (const lp of selected) {
     const rad = (lp.angle * Math.PI) / 180;
     positions.push({
       x: bodyX + Math.cos(rad) * lp.distance * facing,
@@ -223,11 +256,14 @@ function computeRestPositions(
     });
   }
 
-  // Left side (facing=-1, mirrored X)
-  for (const lp of legRestPositions) {
-    const rad = (lp.angle * Math.PI) / 180;
+  // Far side uses the same fore-aft topology and advances independently.
+  for (const lp of selected) {
+    // With one leg per side, expose a useful support pair: near trails while
+    // far reaches forward. Higher counts use matching anatomical ordinals.
+    const farAngle = count === 1 ? 180 - lp.angle : lp.angle;
+    const rad = (farAngle * Math.PI) / 180;
     positions.push({
-      x: bodyX + Math.cos(rad) * lp.distance * (-facing),
+      x: bodyX + Math.cos(rad) * lp.distance * facing,
       y: bodyY + Math.sin(rad) * lp.distance,
     });
   }
@@ -276,6 +312,7 @@ function palpAnchor(
  * @param jitterSeed - seed for per-spider body jitter
  * @param initialBodyX - initial body center X in world space
  * @param initialBodyY - initial body center Y in world space
+ * @param initialFacing - initial body facing for turn-safe leg pairing
  * @returns fresh {@link SpiderState}
  */
 export function createSpiderState(
@@ -283,26 +320,29 @@ export function createSpiderState(
   jitterSeed: number,
   initialBodyX: number,
   initialBodyY: number,
+  initialFacing: 1 | -1 = 1,
 ): SpiderState {
   const safeX = Number.isFinite(initialBodyX) ? initialBodyX : 0;
   const safeY = Number.isFinite(initialBodyY) ? initialBodyY : 0;
   const safeSeed = Number.isFinite(jitterSeed) ? jitterSeed : 0;
+  const safeFacing: 1 | -1 = initialFacing === -1 ? -1 : 1;
 
   const { gait: gaitCfg, visual } = splitSpiderConfig(config);
 
   // Compute rest positions for all legs
   const restPositions = computeRestPositions(
     visual.legRestPositions,
+    gaitCfg.legCount,
     safeX,
     safeY,
-    1, // initial facing right
+    safeFacing,
   );
 
-  const gait = createGaitState(gaitCfg, restPositions, safeX, safeY);
+  const gait = createGaitState(gaitCfg, restPositions, safeX, safeY, safeFacing);
 
   // Create pedipalp spring-rods
-  const anchor = palpAnchor(safeX, safeY, visual.cephRadius, 1);
-  const palpConfig = buildPalpConfig(visual, 1);
+  const anchor = palpAnchor(safeX, safeY, visual.cephRadius, safeFacing);
+  const palpConfig = buildPalpConfig(visual, safeFacing);
 
   const palpL = createSpringRod(
     4,
@@ -320,6 +360,64 @@ export function createSpiderState(
   );
 
   return { gait, palpL, palpR, jitterSeed: safeSeed };
+}
+
+function restoreSpiderLegFan(
+  gait: GaitState,
+  bodyX: number,
+  bodyY: number,
+  facing: 1 | -1,
+  geometry: SpiderLegGeometryConfig,
+): GaitState {
+  const sideCount = Math.floor(gait.legs.length / 2);
+  const totalReach = geometry.hipRadius + geometry.coxaLength +
+    geometry.femurLength + geometry.tibiaLength;
+  const minSeparation = Math.max(0, geometry.minDistalAdvanceRatio) * totalReach;
+  const collapsed = new Set<number>();
+
+  for (const sideStart of [0, sideCount]) {
+    for (let ordinal = 0; ordinal + 1 < sideCount; ordinal++) {
+      const firstIndex = sideStart + ordinal;
+      const secondIndex = firstIndex + 1;
+      const first = gait.legs[firstIndex];
+      const second = gait.legs[secondIndex];
+      if (first.isSwinging || second.isSwinging) continue;
+      if (Math.abs(first.footX - second.footX) < minSeparation) {
+        collapsed.add(firstIndex);
+        collapsed.add(secondIndex);
+      }
+    }
+  }
+
+  if (collapsed.size === 0) return gait;
+
+  return {
+    ...gait,
+    legs: gait.legs.map((leg, index) => {
+      if (!collapsed.has(index)) return leg;
+      const restLocal = { x: leg.restLocalX, y: leg.restLocalY };
+      const hip = computeHipPosition(bodyX, bodyY, facing, restLocal, geometry);
+      const coxa = computeCoxaEndpoint(hip, facing, restLocal, geometry);
+      const recovered = projectGroundedTargetIntoWorkspace(
+        coxa,
+        { x: bodyX + leg.restLocalX * facing, y: leg.footY },
+        geometry,
+        facing,
+        leg.restLocalX,
+      );
+      return {
+        ...leg,
+        footX: recovered.x,
+        footY: recovered.y,
+        startX: recovered.x,
+        startY: recovered.y,
+        endX: recovered.x,
+        endY: recovered.y,
+        midX: recovered.x,
+        midY: recovered.y,
+      };
+    }),
+  };
 }
 
 /**
@@ -360,7 +458,7 @@ export function stepSpider(
   const { gait: gaitCfg, visual } = splitSpiderConfig(config);
 
   // Advance gait
-  const newGait = advanceGait(
+  const advancedGait = advanceGait(
     state.gait,
     bodyX, bodyY,
     vx, vy,
@@ -370,6 +468,13 @@ export function stepSpider(
     tileQuery,
     tileSize,
     tick,
+  );
+  const newGait = restoreSpiderLegFan(
+    advancedGait,
+    bodyX,
+    bodyY,
+    safeFacing,
+    gaitCfg.geometry,
   );
 
   // Advance pedipalps

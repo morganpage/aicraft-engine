@@ -1,7 +1,8 @@
 /**
  * Procedural spider locomotion module.
  *
- * Deterministic core: gait solver, ground sampling, and state facade.
+ * Deterministic core: gait solver, ground sampling, state facade, and
+ * three-segment leg geometry.
  * Renderer-adjacent: pose evaluation and body/leg drawing.
  *
  * @module
@@ -36,12 +37,14 @@ export {
 
 export {
   type SpiderConfig,
+  type SpiderLegGeometryConfig,
   splitSpiderConfig,
 } from './types';
 
 export {
   DEFAULT_SPIDER,
   DEFAULT_SPIDER_PALETTE,
+  DEFAULT_SPIDER_GEOMETRY,
 } from './constants';
 
 export {
@@ -50,3 +53,15 @@ export {
   evaluateSpiderPose,
   drawSpider,
 } from './spider';
+
+export {
+  type FemurTibiaAnnuli,
+  type LegStepRequest,
+  computeHipPosition,
+  computeCoxaEndpoint,
+  computeFemurTibiaAnnuli,
+  projectTargetIntoWorkspace,
+  projectGroundedTargetIntoWorkspace,
+  solveThreeSegmentLeg,
+  computeLegStepRequest,
+} from './geometry';

@@ -21,6 +21,11 @@ import {
   type SpiderPose,
 } from '../../src/animation/spider';
 import type { TileSolidityQuery } from '../../src/collision/types';
+import {
+  groundShowcaseSpiderState,
+  scaleShowcaseSpiderConfig,
+  tuneShowcaseSpiderSpeed,
+} from '../../showcase/sections/spider-config';
 
 const OUTPUT_DIR = 'benchmarks/spider';
 
@@ -52,7 +57,7 @@ interface SimSnapshot {
   bodyX: number;
   bodyY: number;
   tick: number;
-  footPlants?: readonly { x: number; y: number }[];
+  footPlants?: readonly { x: number; y: number; isFar: boolean }[];
 }
 
 function simulateSpider(
@@ -66,28 +71,45 @@ function simulateSpider(
   totalTicks: number,
   snapshotInterval: number,
   floorY: number,
+  reverseAfterTick?: number,
 ): SimSnapshot[] {
   const tileQuery = makeFloorQuery(floorY);
-  let state = createSpiderState(config, jitterSeed, startX, startY);
+  let state = groundShowcaseSpiderState(
+    createSpiderState(config, jitterSeed, startX, startY, facing),
+    startX,
+    startY,
+    facing,
+    floorY,
+    config,
+  );
   const snapshots: SimSnapshot[] = [];
   const dt = 1 / 60;
+  let bodyX = startX;
 
   for (let tick = 1; tick <= totalTicks; tick++) {
-    const bodyX = startX + vx * tick * dt;
+    const reversed = reverseAfterTick !== undefined && tick > reverseAfterTick;
+    const tickVx = reversed ? -vx : vx;
+    const tickFacing: 1 | -1 = reversed ? (facing === 1 ? -1 : 1) : facing;
+    bodyX += tickVx * dt;
     const bodyY = startY;
 
     state = stepSpider(
-      state, bodyX, bodyY, vx, vy, facing, dt,
+      state, bodyX, bodyY, tickVx, vy, tickFacing, dt,
       config, tileQuery, TILE_SIZE, tick,
     );
 
     if (tick % snapshotInterval === 0 || tick === totalTicks) {
       const pose = evaluateSpiderPose(
-        state, bodyX, bodyY, facing, vx, vy, tick,
+        state, bodyX, bodyY, tickFacing, tickVx, vy, tick,
         config,
       );
 
-      const footPlants = state.gait.legs.map((leg) => ({ x: leg.footX, y: leg.footY }));
+      const sideCount = state.gait.legs.length / 2;
+      const footPlants = state.gait.legs.map((leg, index) => ({
+        x: leg.footX,
+        y: leg.footY,
+        isFar: index >= sideCount,
+      }));
 
       snapshots.push({ pose, bodyX, bodyY, tick, footPlants });
     }
@@ -123,13 +145,18 @@ function drawFloor(ctx: CanvasRenderingContext2D, floorY: number, width: number)
   }
 }
 
-function drawFootDots(ctx: CanvasRenderingContext2D, snapshots: readonly SimSnapshot[], color: string) {
+function drawFootDots(
+  ctx: CanvasRenderingContext2D,
+  snapshots: readonly SimSnapshot[],
+  nearColor: string,
+  farColor: string = nearColor,
+) {
   for (const snap of snapshots) {
     if (!snap.footPlants) continue;
     for (const foot of snap.footPlants) {
       ctx.beginPath();
       ctx.arc(foot.x, foot.y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = color;
+      ctx.fillStyle = foot.isFar ? farColor : nearColor;
       ctx.fill();
     }
   }
@@ -159,8 +186,7 @@ function logSimSummary(
   snapshots: readonly SimSnapshot[],
   floorY: number,
   panelW: number,
-  thighLength: number,
-  shinLength: number,
+  config: SpiderConfig,
 ): void {
   if (snapshots.length === 0) {
     console.log(`  ${name}: NO SNAPSHOTS`);
@@ -181,8 +207,12 @@ function logSimSummary(
   }
 
   const onPanel = minX >= -10 && maxX <= panelW + 10;
-  const maxReach = thighLength + shinLength;
-  console.log(`  ${name}: on-panel=${onPanel}, max-reach=${maxReach}`);
+  const reach =
+    config.geometry.hipRadius +
+    config.geometry.coxaLength +
+    config.geometry.femurLength +
+    config.geometry.tibiaLength;
+  console.log(`  ${name}: on-panel=${onPanel}, max-reach=${reach}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,9 +255,9 @@ function renderSpiderBenchmarks() {
     ...DEFAULT_SPIDER,
     mode: 'coordinated',
     stepDuration: 0.18,
-    phaseAdvanceRate: 0.08,
+    phaseAdvanceRate: 0.16,
   };
-  const p1Snapshots = simulateSpider(p1Config, 42, 80, floorY - 18, 50, 0, 1, 180, 20, floorY);
+  const p1Snapshots = simulateSpider(p1Config, 42, 80, floorY - 28, 50, 0, 1, 180, 20, floorY);
 
   // -----------------------------------------------------------------------
   // Panel 2: Frantic gait scuttle
@@ -239,68 +269,84 @@ function renderSpiderBenchmarks() {
     stepDuration: 0.1,
     comfortRadius: 8,
   };
-  const p2Snapshots = simulateSpider(p2Config, 42, 80, floorY - 18, 70, 0, 1, 120, 15, floorY);
+  const p2Snapshots = simulateSpider(p2Config, 42, 80, floorY - 28, 70, 0, 1, 120, 15, floorY);
 
   // -----------------------------------------------------------------------
-  // Panel 3: Body showcase (stationary, breathing)
+  // Panel 3: Proportional size and leg-count isolation
   // -----------------------------------------------------------------------
   console.log('Simulating Panel 3: Body showcase...');
   const palettes = [
     { name: 'Dark Purple', cephFill: '#4a2d6b', abdFill: '#3d2458', legFg: '#5c3d8a', legBg: '#382455', eyeFill: '#ff2222', cheliceraeFill: '#2a1a3d', palpFill: '#5c3d8a', outline: '#1d1128' },
     { name: 'Sickly Green', cephFill: '#2d5a2d', abdFill: '#1e4a1e', legFg: '#3d7a3d', legBg: '#264226', eyeFill: '#ffff22', cheliceraeFill: '#1a3d1a', palpFill: '#3d7a3d', outline: '#0d1f0d' },
     { name: 'Blood Red', cephFill: '#6b2d2d', abdFill: '#582424', legFg: '#8a3d3d', legBg: '#552424', eyeFill: '#ffaa00', cheliceraeFill: '#3d1a1a', palpFill: '#8a3d3d', outline: '#280d0d' },
+    { name: 'Dark Purple', cephFill: '#4a2d6b', abdFill: '#3d2458', legFg: '#5c3d8a', legBg: '#382455', eyeFill: '#ff2222', cheliceraeFill: '#2a1a3d', palpFill: '#5c3d8a', outline: '#1d1128' },
+    { name: 'Sickly Green', cephFill: '#2d5a2d', abdFill: '#1e4a1e', legFg: '#3d7a3d', legBg: '#264226', eyeFill: '#ffff22', cheliceraeFill: '#1a3d1a', palpFill: '#3d7a3d', outline: '#0d1f0d' },
   ];
+  const p3Sizes = [0.55, 0.55, 0.65, 0.75, 0.8];
+  const p3LegCounts = [1, 1, 2, 3, 4];
+  const p3Facings: (1 | -1)[] = [1, -1, 1, 1, 1];
 
-  const p3States: { state: SpiderState; config: SpiderConfig; bodyX: number; bodyY: number }[] = [];
-  const p3Spacing = panelW / 3;
+  const p3States: {
+    state: SpiderState;
+    config: SpiderConfig;
+    bodyX: number;
+    bodyY: number;
+    facing: 1 | -1;
+  }[] = [];
+  const p3Spacing = panelW / palettes.length;
   for (let i = 0; i < palettes.length; i++) {
     const pal = palettes[i];
-    const cfg: SpiderConfig = { ...DEFAULT_SPIDER, palette: pal };
+    const size = p3Sizes[i];
+    const cfg = scaleShowcaseSpiderConfig({
+      ...DEFAULT_SPIDER,
+      legCount: p3LegCounts[i],
+      palette: pal,
+    }, size);
     const cx = p3Spacing * i + p3Spacing / 2;
-    const bodyY = floorY - 18;
-    let state = createSpiderState(cfg, 99, cx, bodyY);
+    const bodyY = floorY - 28 * size;
+    const facing = p3Facings[i];
+    let state = groundShowcaseSpiderState(
+      createSpiderState(cfg, 99, cx, bodyY, facing),
+      cx,
+      bodyY,
+      facing,
+      floorY,
+      cfg,
+    );
     const tileQuery = makeFloorQuery(floorY);
     for (let t = 1; t <= 180; t++) {
-      state = stepSpider(state, cx, bodyY, 0, 0, 1, 1 / 60, cfg, tileQuery, TILE_SIZE, t);
+      state = stepSpider(state, cx, bodyY, 0, 0, facing, 1 / 60, cfg, tileQuery, TILE_SIZE, t);
     }
-    p3States.push({ state, config: cfg, bodyX: cx, bodyY });
+    p3States.push({ state, config: cfg, bodyX: cx, bodyY, facing });
   }
 
   // -----------------------------------------------------------------------
-  // Panel 4: Multi-spider scuttle
+  // Panel 4: Facing reversal stress
   // -----------------------------------------------------------------------
-  console.log('Simulating Panel 4: Multi-spider...');
-  const spiderSeeds = [101, 202, 303];
-  const spiderSizes = [0.8, 1.0, 1.2];
-  const p4Configs: SpiderConfig[] = spiderSeeds.map((_, i) => ({
+  console.log('Simulating Panel 4: Facing reversal...');
+  const p4Config = tuneShowcaseSpiderSpeed(scaleShowcaseSpiderConfig({
     ...DEFAULT_SPIDER,
-    mode: 'frantic' as const,
+    mode: 'frantic',
     stepDuration: 0.1,
     comfortRadius: 8,
-    cephRadius: DEFAULT_SPIDER.cephRadius * spiderSizes[i],
-    abdRx: DEFAULT_SPIDER.abdRx * spiderSizes[i],
-    abdRy: DEFAULT_SPIDER.abdRy * spiderSizes[i],
-    thighLength: DEFAULT_SPIDER.thighLength * spiderSizes[i],
-    shinLength: DEFAULT_SPIDER.shinLength * spiderSizes[i],
-    abdOffsetX: DEFAULT_SPIDER.abdOffsetX * spiderSizes[i],
-  }));
-  const p4SnapshotsList: SimSnapshot[][] = p4Configs.map((cfg, i) =>
-    simulateSpider(cfg, spiderSeeds[i], 60 + i * 120, floorY - 18 * spiderSizes[i], 50 + i * 5, 0, 1, 120, 120, floorY),
+  }, 0.7), 50);
+  // Capture four frames after reversal, when mirrored hip/rest transforms used
+  // to produce the crossed, fully stretched legs seen in enemy patrols.
+  const p4Snapshots = simulateSpider(
+    p4Config, 101, 120, floorY - 28 * 0.7, 50, 0, 1, 64, 16, floorY, 60,
   );
 
   // -----------------------------------------------------------------------
   // Sanity-check instrumentation
   // -----------------------------------------------------------------------
   console.log('\n--- Sanity checks ---');
-  logSimSummary('Panel 1', p1Snapshots, floorY, panelW, DEFAULT_SPIDER.thighLength, DEFAULT_SPIDER.shinLength);
-  logSimSummary('Panel 2', p2Snapshots, floorY, panelW, DEFAULT_SPIDER.thighLength, DEFAULT_SPIDER.shinLength);
+  logSimSummary('Panel 1', p1Snapshots, floorY, panelW, p1Config);
+  logSimSummary('Panel 2', p2Snapshots, floorY, panelW, p2Config);
   for (let i = 0; i < p3States.length; i++) {
     const { bodyX, bodyY } = p3States[i];
     console.log(`  Panel 3 spider ${i}: bodyX=${bodyX.toFixed(1)}, bodyY=${bodyY.toFixed(1)} (floor ${floorY})`);
   }
-  for (let i = 0; i < p4SnapshotsList.length; i++) {
-    logSimSummary(`Panel 4 spider ${i}`, p4SnapshotsList[i], floorY, panelW, p4Configs[i].thighLength, p4Configs[i].shinLength);
-  }
+  logSimSummary('Panel 4', p4Snapshots, floorY, panelW, p4Config);
   console.log('--- End sanity checks ---\n');
 
   // -----------------------------------------------------------------------
@@ -311,52 +357,45 @@ function renderSpiderBenchmarks() {
   const panels = [
     {
       title: '1. Coordinated Gait Walk',
-      desc: 'Alternating tetrapod: Set A/B legs step in alternation. Faded = history, bold = current.',
+      desc: 'Strict A/B support. Purple = near feet, cyan = independent far feet.',
       x: 0, y: headerHeight,
       draw: () => {
         drawFloor(ctx, floorY, panelW);
-        drawFootDots(ctx, p1Snapshots, '#5c3d8a44');
+        drawFootDots(ctx, p1Snapshots, '#a66cff66', '#3dd6d066');
         drawSnapshotOverlays(ctx, p1Snapshots, p1Config, 1.0);
       },
     },
     {
       title: '2. Frantic Gait Scuttle',
-      desc: 'Free-stepping with neighbor-lock. Higher speed, chaotic scuttling.',
+      desc: 'Independent free-step with neighbour, pair, and total-support locks.',
       x: panelW, y: headerHeight,
       draw: () => {
         drawFloor(ctx, floorY, panelW);
-        drawFootDots(ctx, p2Snapshots, '#5c3d8a44');
+        drawFootDots(ctx, p2Snapshots, '#a66cff66', '#3dd6d066');
         drawSnapshotOverlays(ctx, p2Snapshots, p2Config, 1.0);
       },
     },
     {
-      title: '3. Body Showcase (3 palettes)',
-      desc: 'Idle breathing. L-R: Dark Purple, Sickly Green, Blood Red.',
+      title: '3. Direction + Leg Isolation',
+      desc: 'Idle 2R / 2L / 4 / 6 / 8 legs. The single foreground foot trails both ways.',
       x: 0, y: headerHeight + panelH,
       draw: () => {
         drawFloor(ctx, floorY, panelW);
         for (let i = 0; i < p3States.length; i++) {
-          const { state, config, bodyX, bodyY } = p3States[i];
-          const pose = evaluateSpiderPose(state, bodyX, bodyY, 1, 0, 0, 180, config);
+          const { state, config, bodyX, bodyY, facing } = p3States[i];
+          const pose = evaluateSpiderPose(state, bodyX, bodyY, facing, 0, 0, 180, config);
           drawSpider(ctx, pose, config);
         }
       },
     },
     {
-      title: '4. Multi-Spider Scuttle',
-      desc: '3 spiders at different seeds/sizes. Swarm check.',
+      title: '4. Facing Reversal Stress',
+      desc: '0.7x spider turns left. Bold = 4 frames after turn; legs must not cross or trail.',
       x: panelW, y: headerHeight + panelH,
       draw: () => {
         drawFloor(ctx, floorY, panelW);
-        for (let i = 0; i < p4SnapshotsList.length; i++) {
-          const snapshots = p4SnapshotsList[i];
-          const lastSnap = snapshots[snapshots.length - 1];
-          if (lastSnap) {
-            ctx.globalAlpha = 0.7;
-            drawSpider(ctx, lastSnap.pose, p4Configs[i]);
-            ctx.globalAlpha = 1.0;
-          }
-        }
+        drawFootDots(ctx, p4Snapshots, '#a66cff66', '#3dd6d066');
+        drawSnapshotOverlays(ctx, p4Snapshots, p4Config, 1.0);
       },
     },
   ];

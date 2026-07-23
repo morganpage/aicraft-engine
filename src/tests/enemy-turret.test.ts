@@ -181,3 +181,164 @@ describe('turretBehavior', () => {
     expect(result1).toEqual(result2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// shootTo resolution tests — direction + range from params.shootTo
+// ---------------------------------------------------------------------------
+
+describe('turretBehavior — shootTo resolution (fixed mode)', () => {
+  it('uses shootTo for direction and attaches maxRange + distanceTraveled', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      shootTo: { x: 128, y: 0 },
+    });
+    expect(result.projectile).toBeDefined();
+    // shootTo magnitude = 128, direction = (1, 0)
+    expect(result.projectile!.vx).toBeCloseTo(120, 5);
+    expect(result.projectile!.vy).toBeCloseTo(0, 5);
+    expect(result.projectile!.maxRange).toBeCloseTo(128, 5);
+    expect(result.projectile!.distanceTraveled).toBe(0);
+  });
+
+  it('normalizes diagonal shootTo and sets correct maxRange', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 100,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      shootTo: { x: 100, y: 100 },
+    });
+    expect(result.projectile).toBeDefined();
+    const mag = Math.hypot(100, 100);
+    expect(result.projectile!.vx).toBeCloseTo((100 / mag) * 100, 5);
+    expect(result.projectile!.vy).toBeCloseTo((100 / mag) * 100, 5);
+    expect(result.projectile!.maxRange).toBeCloseTo(mag, 5);
+  });
+
+  it('preserves zero x-component in shootTo {x:0, y:120}', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 60,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      shootTo: { x: 0, y: 120 },
+    });
+    expect(result.projectile).toBeDefined();
+    // Direction should be (0, 1), not (1, 0) — zero x preserved
+    expect(result.projectile!.vx).toBeCloseTo(0, 5);
+    expect(result.projectile!.vy).toBeCloseTo(60, 5);
+    expect(result.projectile!.maxRange).toBeCloseTo(120, 5);
+  });
+
+  it('falls back to aimDirection when shootTo is missing', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      aimDirection: { x: -1, y: 0 },
+    });
+    expect(result.projectile).toBeDefined();
+    expect(result.projectile!.vx).toBeCloseTo(-120, 5);
+    expect(result.projectile!.vy).toBeCloseTo(0, 5);
+    expect(result.projectile!.maxRange).toBeUndefined();
+    expect(result.projectile!.distanceTraveled).toBeUndefined();
+  });
+
+  it('falls back to aimDirection when shootTo is zero-length {x:0, y:0}', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      aimDirection: { x: 0, y: -1 },
+      shootTo: { x: 0, y: 0 },
+    });
+    expect(result.projectile).toBeDefined();
+    expect(result.projectile!.vx).toBeCloseTo(0, 5);
+    expect(result.projectile!.vy).toBeCloseTo(-120, 5);
+    expect(result.projectile!.maxRange).toBeUndefined();
+  });
+
+  it('falls back to aimDirection when shootTo has NaN component', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      aimDirection: { x: 1, y: 0 },
+      shootTo: { x: NaN, y: 50 },
+    });
+    expect(result.projectile).toBeDefined();
+    expect(result.projectile!.vx).toBeCloseTo(120, 5);
+    expect(result.projectile!.maxRange).toBeUndefined();
+  });
+
+  it('falls back to aimDirection when shootTo is not an object', () => {
+    const state = makeDefaultState({ data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext();
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'fixed',
+      aimDirection: { x: 1, y: 0 },
+      shootTo: 'invalid',
+    });
+    expect(result.projectile).toBeDefined();
+    expect(result.projectile!.vx).toBeCloseTo(120, 5);
+    expect(result.projectile!.maxRange).toBeUndefined();
+  });
+
+  it('aimed mode ignores shootTo completely', () => {
+    const state = makeDefaultState({ x: 100, y: 100, data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext({
+      playerRect: { x: 200, y: 100, width: 16, height: 16 },
+    });
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'aimed',
+      detectionRadius: 200,
+      shootTo: { x: 0, y: 128 },
+    });
+    expect(result.projectile).toBeDefined();
+    // Should fire toward player (right), NOT downward per shootTo
+    expect(result.projectile!.vx).toBeGreaterThan(0);
+    // Aimed mode: maxRange always 0 (unbounded)
+    expect(result.projectile!.maxRange).toBeUndefined();
+  });
+
+  it('aimed mode: projectile has no maxRange (always unbounded)', () => {
+    const state = makeDefaultState({ x: 100, y: 100, data: { fireCooldown: 0 } });
+    const ctx = makeDefaultContext({
+      playerRect: { x: 200, y: 100, width: 16, height: 16 },
+    });
+    const result = turretBehavior.step(state, ctx, {
+      fireRate: 1,
+      projectileSpeed: 120,
+      projectileSize: 6,
+      aimMode: 'aimed',
+      detectionRadius: 200,
+    });
+    expect(result.projectile).toBeDefined();
+    expect(result.projectile!.maxRange).toBeUndefined();
+    expect(result.projectile!.distanceTraveled).toBeUndefined();
+  });
+});
