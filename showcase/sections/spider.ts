@@ -149,8 +149,8 @@ function createInstanceDefs(): readonly {
     scaleShowcaseSpiderConfig({
       ...DEFAULT_SPIDER,
       mode: 'frantic',
-      stepDuration: 0.1,
-      comfortRadius: 8,
+      stepDuration: 0.14,
+      comfortRadius: 14,
     }, 0.7),
     scaleShowcaseSpiderConfig({
       ...DEFAULT_SPIDER,
