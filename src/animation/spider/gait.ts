@@ -546,30 +546,21 @@ export function advanceGait(
           isSwinging: false,
         });
       } else {
-        // Interpolate along the step arc, then project the sample into the
-        // anatomical sector at its Y using the CURRENT body/facing/coxa. This
-        // is gait geometry (same shared helper as the renderer), not renderer
-        // feedback: it keeps the authoritative footX/footY sector-valid so the
-        // stored planted position after landing — and any immediate reversal
-        // rebase — starts from a feasible point. Fixed segment lengths are
-        // never altered; only the foot target X is moved outward to the nearest
-        // sector-valid position at the sample's (preserved) Y.
+        // Store the raw Bezier position. The renderer's solveThreeSegmentLeg
+        // already projects into the valid workspace; projecting here through
+        // projectGroundedTargetIntoWorkspace distorts the arc by up to 6px on
+        // small steps, producing the visual "skating" effect where feet slide
+        // sideways instead of following a natural lift-and-plant trajectory.
         const raw = sampleStepArc(
           { x: leg.startX, y: leg.startY },
           { x: leg.midX, y: leg.midY },
           { x: leg.endX, y: leg.endY },
           newStepPhase,
         );
-        const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
-        const hip = computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry);
-        const coxa = computeCoxaEndpoint(hip, safeFacing, restLocalVec, geometry);
-        const projected = projectGroundedTargetIntoWorkspace(
-          coxa, raw, geometry, safeFacing, leg.restLocalX,
-        );
         newLegs.push({
           ...leg,
-          footX: projected.x,
-          footY: projected.y,
+          footX: raw.x,
+          footY: raw.y,
           stepPhase: newStepPhase,
         });
       }
@@ -707,10 +698,19 @@ export function advanceGait(
           const currentRatio = totalFemurTibia > 0 ? coxaToFoot / totalFemurTibia : 0;
           const midRatio = (geometry.minExtensionRatio + geometry.maxExtensionRatio) / 2;
           const deficit = midRatio - currentRatio;
-          const extensionCorrection = deficit * totalFemurTibia * safeFacing;
+          const velocityOvershoot = vx * config.overshootFactor;
+          // Clamp correction: compressed legs get extra forward push, but
+          // extended legs can't push the target behind rest (no backward
+          // steps). This prevents the "lift and come down without stepping
+          // forward" defect.
+          const maxNegativeCorrection = Math.min(0, velocityOvershoot);
+          const rawCorrection = deficit * totalFemurTibia * safeFacing;
+          const extensionCorrection = rawCorrection < maxNegativeCorrection
+            ? maxNegativeCorrection
+            : rawCorrection;
 
           // Compute overshoot target with extension correction
-          const targetX = restWorldX + vx * config.overshootFactor + extensionCorrection;
+          const targetX = restWorldX + velocityOvershoot + extensionCorrection;
           const targetY = restWorldY + vy * config.overshootFactor;
 
           // Lazy ground sampling (downward only, v1)
