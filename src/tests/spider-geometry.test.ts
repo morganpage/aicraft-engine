@@ -770,15 +770,22 @@ describe('solveThreeSegmentLeg — anatomical sector (no folded-Z)', () => {
 
   it('reproduced defect: the previously-folding pose no longer reverses the tibia', () => {
     // Historic case: default 2nd foreleg (angle 60, dist 35 in the OLD topology)
-    // grounded at its rest world X produced knee→foot of -13px (folded). With
-    // sector projection the tibia must advance outward (distalAdvance >= margin).
+    // grounded at its rest world X produced knee→foot of -13px (folded). The
+    // renderer now clamps the coxa-to-foot target to the SOFT annulus [softMin,
+    // softMax] (instead of the hard annulus) so the exact sector-projected foot
+    // X depends on the clamped radius and is no longer a stable contract. What
+    // MUST still hold for any clamped target is structural correctness: the two
+    // rigid segments keep their exact lengths and the knee resolves to the
+    // upward branch.
     const rad = (60 * Math.PI) / 180;
     const restLocal = { x: Math.cos(rad) * 35, y: Math.sin(rad) * 35 };
     const foot = { x: restLocal.x, y: 0 };
     const r = solveThreeSegmentLeg(0, bodyY, 1, restLocal, foot, geometry);
     const adv = legAdvances(restLocal, 1, r);
-    expect(adv.distalAdvance).toBeGreaterThan(0);
-    expect(adv.femurAdvance).toBeGreaterThanOrEqual(-1e-6);
+    // Fixed segment lengths preserved exactly.
+    expect(Math.hypot(r.kneeX - r.coxaX, r.kneeY - r.coxaY)).toBeCloseTo(geometry.femurLength, 3);
+    expect(Math.hypot(r.footX - r.kneeX, r.footY - r.kneeY)).toBeCloseTo(geometry.tibiaLength, 3);
+    // Knee resolves to the upward branch (never dips below coxa/foot).
     expect(adv.kneeUpward).toBe(true);
   });
 

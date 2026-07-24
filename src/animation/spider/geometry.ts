@@ -498,11 +498,12 @@ export function computeFemurTibiaAnnuli(
 // ---------------------------------------------------------------------------
 
 /**
- * Project a foot target into the feasible femur+tibia workspace (hard annulus).
+ * Project a foot target into the feasible femur+tibia workspace (soft annulus).
  *
- * If the target is already within the hard annulus, it passes through unchanged.
- * If too close, it's pushed out to the hard minimum. If too far, it's pulled
- * in to the hard maximum. The direction from coxa to target is preserved.
+ * Clamps the coxa-to-foot distance to [softMin, softMax] so every rendered
+ * leg stays within the comfortable extension range [minExtensionRatio,
+ * maxExtensionRatio]. This prevents trailing legs from stretching to near-
+ * full extension while planted. The direction from coxa to target is preserved.
  *
  * Pure, deterministic, never throws.
  */
@@ -521,12 +522,12 @@ export function projectTargetIntoWorkspace(
   const annuli = computeFemurTibiaAnnuli(geometry);
 
   if (dist < 1e-8) {
-    return { x: c.x, y: c.y + annuli.hardMin };
+    return { x: c.x, y: c.y + annuli.softMin };
   }
 
   const nx = dx / dist;
   const ny = dy / dist;
-  const clampedDist = Math.max(annuli.hardMin, Math.min(annuli.hardMax, dist));
+  const clampedDist = Math.max(annuli.softMin, Math.min(annuli.softMax, dist));
 
   return {
     x: c.x + nx * clampedDist,
