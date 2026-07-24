@@ -785,63 +785,12 @@ export function advanceGait(
         }
       }
 
-      // If support locks prevent an immediate swing, do not retain a planted
-      // target that fixed-length IK cannot represent. Rebase that impossible
-      // plant using deterministic gait geometry so the renderer's
-      // `solveThreeSegmentLeg` — which always projects the target into the soft
-      // annulus via `sectorFeasibleX` — draws the exact point stored here,
-      // preventing hidden gait/render divergence. Valid planted feet remain
-      // world-locked.
-      //
-      // Two rebase modes, by violation class:
-      //  - Hard radial or anatomical sector fold: the foot is in a broken pose
-      //    the renderer cannot represent at all. Rebase to the authored rest X
-      //    (`restWorldX`) projected through the workspace.
-      //  - Soft workspace error only (foot inside hard annulus but outside the
-      //    soft annulus): the renderer silently pushes this foot into the soft
-      //    annulus. Rebase from the CURRENT foot position so the stored point
-      //    matches the renderer with a minimal correction — no teleport to rest,
-      //    preserving the fan separation between adjacent ordinals.
-      const currentReq = computeLegStepRequest(
-        bodyX,
-        bodyY,
-        safeFacing,
-        { x: leg.restLocalX, y: leg.restLocalY },
-        { x: leg.footX, y: leg.footY },
-        geometry,
-        config.comfortRadius,
-      );
-      const isBrokenPose =
-        currentReq.hardViolation || currentReq.sectorError > SECTOR_EPSILON;
-      if (
-        isBrokenPose
-        || currentReq.workspaceError > SECTOR_EPSILON
-      ) {
-        const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
-        const hip = computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry);
-        const coxa = computeCoxaEndpoint(hip, safeFacing, restLocalVec, geometry);
-        const targetX = isBrokenPose ? restWorldX : leg.footX;
-        const recovered = projectGroundedTargetIntoWorkspace(
-          coxa,
-          { x: targetX, y: leg.footY },
-          geometry,
-          safeFacing,
-          leg.restLocalX,
-        );
-        newLegs.push({
-          ...leg,
-          footX: recovered.x,
-          footY: recovered.y,
-          startX: recovered.x,
-          startY: recovered.y,
-          endX: recovered.x,
-          endY: recovered.y,
-          midX: recovered.x,
-          midY: recovered.y,
-        });
-      } else {
-        newLegs.push(leg);
-      }
+      // Planted feet are world-locked. Do not rebase them — sliding a
+      // planted foot every tick to chase a sector-valid position looks
+      // visually worse than letting the renderer's radial clamping handle
+      // a brief over-extension. The step scheduler will eventually service
+      // the foot through a proper swing.
+      newLegs.push(leg);
     }
   }
 

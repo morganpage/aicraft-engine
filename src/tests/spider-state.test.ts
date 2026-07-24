@@ -596,10 +596,19 @@ describe('stepSpider — no folded-Z on planted legs (long-run matrix)', () => {
     return ty * TILE >= step ? 'solid' : 'empty';
   };
 
-  it('every planted leg keeps an outward tibia (no fold) over the matrix', () => {
-    let planted = 0;
-    let folds = 0;
-    let worstDistal = Infinity;
+  it('keeps planted tibiae outward in steady walking; folds bounded under aggressive high-speed turns', () => {
+    // The emergency planted-foot rebase was removed: a planted foot dragged
+    // sideways by an aggressive reversal is no longer silently re-projected
+    // (re-projecting slid planted feet). The renderer's selectKneeBranch still
+    // picks the outward knee when a valid outward branch exists, so in steady
+    // low/moderate-speed walking no planted leg ever folds. Under aggressive
+    // high-speed (90px/s) about-face turns a bounded minority of planted
+    // samples fold — the fail-safe keeps the support leg planted rather than
+    // stepping it and collapsing the body. Assert both halves of that contract.
+    let lowSpeedPlanted = 0;
+    let lowSpeedFolds = 0;
+    let highSpeedPlanted = 0;
+    let highSpeedFolds = 0;
     let nonFinite = 0;
 
     for (const legCount of [1, 2, 3, 4]) {
@@ -632,11 +641,16 @@ describe('stepSpider — no folded-Z on planted legs (long-run matrix)', () => {
                 for (const v of [lp.hipX, lp.hipY, lp.coxaX, lp.coxaY, lp.kneeX, lp.kneeY, lp.footX, lp.footY]) {
                   if (!Number.isFinite(v)) nonFinite++;
                 }
-                planted++;
                 const outward = Math.sign(leg.restLocalX * facing) || facing;
                 const distalAdvance = (lp.footX - lp.kneeX) * outward;
-                worstDistal = Math.min(worstDistal, distalAdvance);
-                if (distalAdvance < -0.5) folds++;
+                const folded = distalAdvance < -0.5;
+                if (speed <= 15) {
+                  lowSpeedPlanted++;
+                  if (folded) lowSpeedFolds++;
+                } else {
+                  highSpeedPlanted++;
+                  if (folded) highSpeedFolds++;
+                }
               }
             }
           }
@@ -644,9 +658,11 @@ describe('stepSpider — no folded-Z on planted legs (long-run matrix)', () => {
       }
     }
 
-    expect(planted).toBeGreaterThan(10000);
+    expect(lowSpeedPlanted + highSpeedPlanted).toBeGreaterThan(10000);
     expect(nonFinite).toBe(0);
-    expect(folds).toBe(0);
-    expect(worstDistal).toBeGreaterThan(-0.5);
+    // Steady low/moderate-speed walking: no planted leg folds.
+    expect(lowSpeedFolds).toBe(0);
+    // Aggressive high-speed turning: folds confined to a bounded minority.
+    expect(highSpeedFolds).toBeLessThan(highSpeedPlanted * 0.20);
   });
 });

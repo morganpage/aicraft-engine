@@ -732,30 +732,14 @@ export function solveThreeSegmentLeg(
 } {
   const hip = computeHipPosition(bodyX, bodyY, facing, restLocal, geometry);
   const coxa = computeCoxaEndpoint(hip, facing, restLocal, geometry);
-  const radial = projectTargetIntoWorkspace(coxa, target, geometry);
+  const foot = projectTargetIntoWorkspace(coxa, target, geometry);
 
   const femurLen = safePositive(geometry.femurLength, 19);
   const tibiaLen = safePositive(geometry.tibiaLength, 21);
   const minRatio = safeNum(geometry.minDistalAdvanceRatio, DEFAULT_MIN_DISTAL_ADVANCE_RATIO);
-
   const safeFacing: 1 | -1 = facing === -1 ? -1 : 1;
   const local = safeVec2(restLocal, 0, 0);
   const outwardSign = getLegOutwardSign(local.x, safeFacing);
-  const annuli = computeFemurTibiaAnnuli(geometry);
-  const radialIsSectorValid = sectorValidAt(
-    coxa, radial, outwardSign, femurLen, tibiaLen, minRatio,
-  );
-  const authoredRestX = safeNum(bodyX, 0) + local.x * safeFacing;
-  const desiredSectorX = radialIsSectorValid ? radial.x : authoredRestX;
-
-  // Project into the anatomical sector at the (radially-clamped) target Y,
-  // preferring the soft annulus. Invalid targets recover toward this ordinal's
-  // authored rest X rather than the nearest shared sector boundary; that keeps
-  // adjacent legs fanned apart instead of stacking their knees and feet.
-  const sectorX =
-    sectorFeasibleX(coxa, desiredSectorX, radial.y, femurLen, tibiaLen, outwardSign, minRatio, annuli.softMin, annuli.softMax)
-    ?? sectorFeasibleX(coxa, desiredSectorX, radial.y, femurLen, tibiaLen, outwardSign, minRatio, annuli.hardMin, annuli.hardMax);
-  const foot = sectorX !== null ? { x: sectorX, y: radial.y } : radial;
 
   // Anatomical pole: UPWARD (negative Y) plus an outward component along the
   // mirrored rest-local X, so knees arch above the body regardless of rest

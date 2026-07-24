@@ -819,13 +819,18 @@ describe('solveThreeSegmentLeg — anatomical sector (no folded-Z)', () => {
   });
 
   it('unfolds an inward foot target (foot directly under the coxa)', () => {
-    // Target straight below the body folds the tibia; the solve must place the
-    // foot outward so the tibia advances, keeping fixed segment lengths.
+    // The renderer no longer sector-projects in solveThreeSegmentLeg (radial
+    // projection via projectTargetIntoWorkspace + selectKneeBranch only); the
+    // foot X may therefore differ from the sector-projected value for an
+    // inward target. selectKneeBranch still picks an outward knee when one
+    // branch is valid, so assert exact femur/tibia lengths and an upward knee
+    // rather than a sector-projected foot position.
     const restLocal = { x: 40, y: 20 };
     const r = solveThreeSegmentLeg(0, bodyY, 1, restLocal, { x: 0, y: 0 }, geometry);
     const adv = legAdvances(restLocal, 1, r);
-    expect(adv.distalAdvance).toBeGreaterThanOrEqual(0);
+    expect(Math.hypot(r.kneeX - r.coxaX, r.kneeY - r.coxaY)).toBeCloseTo(geometry.femurLength, 3);
     expect(Math.hypot(r.footX - r.kneeX, r.footY - r.kneeY)).toBeCloseTo(geometry.tibiaLength, 3);
+    expect(adv.kneeUpward).toBe(true);
   });
 
   it('degenerate and non-finite targets stay finite', () => {

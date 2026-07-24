@@ -30,11 +30,6 @@ import { createGaitState, advanceGait } from './gait';
 import type { SpiderConfig } from './types';
 import { splitSpiderConfig } from './types';
 import type { SpiderLegGeometryConfig } from './geometry';
-import {
-  computeCoxaEndpoint,
-  computeHipPosition,
-  projectGroundedTargetIntoWorkspace,
-} from './geometry';
 
 /**
  * Spider body palette. All hex strings — no magic colors in the renderer.
@@ -362,64 +357,6 @@ export function createSpiderState(
   return { gait, palpL, palpR, jitterSeed: safeSeed };
 }
 
-function restoreSpiderLegFan(
-  gait: GaitState,
-  bodyX: number,
-  bodyY: number,
-  facing: 1 | -1,
-  geometry: SpiderLegGeometryConfig,
-): GaitState {
-  const sideCount = Math.floor(gait.legs.length / 2);
-  const totalReach = geometry.hipRadius + geometry.coxaLength +
-    geometry.femurLength + geometry.tibiaLength;
-  const minSeparation = Math.max(0, geometry.minDistalAdvanceRatio) * totalReach;
-  const collapsed = new Set<number>();
-
-  for (const sideStart of [0, sideCount]) {
-    for (let ordinal = 0; ordinal + 1 < sideCount; ordinal++) {
-      const firstIndex = sideStart + ordinal;
-      const secondIndex = firstIndex + 1;
-      const first = gait.legs[firstIndex];
-      const second = gait.legs[secondIndex];
-      if (first.isSwinging || second.isSwinging) continue;
-      if (Math.abs(first.footX - second.footX) < minSeparation) {
-        collapsed.add(firstIndex);
-        collapsed.add(secondIndex);
-      }
-    }
-  }
-
-  if (collapsed.size === 0) return gait;
-
-  return {
-    ...gait,
-    legs: gait.legs.map((leg, index) => {
-      if (!collapsed.has(index)) return leg;
-      const restLocal = { x: leg.restLocalX, y: leg.restLocalY };
-      const hip = computeHipPosition(bodyX, bodyY, facing, restLocal, geometry);
-      const coxa = computeCoxaEndpoint(hip, facing, restLocal, geometry);
-      const recovered = projectGroundedTargetIntoWorkspace(
-        coxa,
-        { x: bodyX + leg.restLocalX * facing, y: leg.footY },
-        geometry,
-        facing,
-        leg.restLocalX,
-      );
-      return {
-        ...leg,
-        footX: recovered.x,
-        footY: recovered.y,
-        startX: recovered.x,
-        startY: recovered.y,
-        endX: recovered.x,
-        endY: recovered.y,
-        midX: recovered.x,
-        midY: recovered.y,
-      };
-    }),
-  };
-}
-
 /**
  * Advance the whole spider one tick: {@link advanceGait} +
  * {@link advanceSpringRod} (both palps).
@@ -458,7 +395,7 @@ export function stepSpider(
   const { gait: gaitCfg, visual } = splitSpiderConfig(config);
 
   // Advance gait
-  const advancedGait = advanceGait(
+  const newGait = advanceGait(
     state.gait,
     bodyX, bodyY,
     vx, vy,
@@ -468,13 +405,6 @@ export function stepSpider(
     tileQuery,
     tileSize,
     tick,
-  );
-  const newGait = restoreSpiderLegFan(
-    advancedGait,
-    bodyX,
-    bodyY,
-    safeFacing,
-    gaitCfg.geometry,
   );
 
   // Advance pedipalps

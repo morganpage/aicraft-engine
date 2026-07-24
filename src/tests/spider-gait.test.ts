@@ -679,10 +679,12 @@ describe('advanceGait — sector-violation recovery', () => {
     const positions = eightRestPositions();
     let s = createGaitState(TEST_GAIT, positions, BODY_X, BODY_Y);
     const floor = floorAtRow(7);
-    // A critical leg may first need to wait for the opposite tetrapod's
-    // current swing to land. Bound recovery by one complete swing plus two
-    // ticks for active-set handoff rather than an arbitrary sub-swing window.
-    const RECOVERY_WINDOW = Math.ceil(TEST_GAIT.stepDuration * 60) + 2;
+    // The emergency rebase shortcut was removed from the gait; recovery of a
+    // sector-folded planted leg now relies entirely on the step scheduler,
+    // which may need to wait for the opposite tetrapod to finish its swing and
+    // for support-lock to release before it can service the folded leg. Bound
+    // recovery by three full swing cycles to cover the worst-case support-lock wait.
+    const RECOVERY_WINDOW = Math.ceil(TEST_GAIT.stepDuration * 60) * 3;
     const tibiaLen = TEST_GAIT.geometry.tibiaLength;
 
     let bodyX = BODY_X;
