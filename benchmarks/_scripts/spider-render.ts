@@ -257,7 +257,7 @@ function renderSpiderBenchmarks() {
     stepDuration: 0.18,
     phaseAdvanceRate: 0.16,
   };
-  const p1Snapshots = simulateSpider(p1Config, 42, 80, floorY - 28, 50, 0, 1, 180, 20, floorY);
+  const p1Snapshots = simulateSpider(p1Config, 42, 80, floorY - 30, 50, 0, 1, 180, 20, floorY);
 
   // -----------------------------------------------------------------------
   // Panel 2: Frantic gait scuttle
@@ -269,7 +269,7 @@ function renderSpiderBenchmarks() {
     stepDuration: 0.1,
     comfortRadius: 8,
   };
-  const p2Snapshots = simulateSpider(p2Config, 42, 80, floorY - 28, 70, 0, 1, 120, 15, floorY);
+  const p2Snapshots = simulateSpider(p2Config, 42, 80, floorY - 30, 70, 0, 1, 120, 15, floorY);
 
   // -----------------------------------------------------------------------
   // Panel 3: Proportional size and leg-count isolation
@@ -303,7 +303,7 @@ function renderSpiderBenchmarks() {
       palette: pal,
     }, size);
     const cx = p3Spacing * i + p3Spacing / 2;
-    const bodyY = floorY - 28 * size;
+    const bodyY = floorY - 30 * size;
     const facing = p3Facings[i];
     let state = groundShowcaseSpiderState(
       createSpiderState(cfg, 99, cx, bodyY, facing),
@@ -333,7 +333,7 @@ function renderSpiderBenchmarks() {
   // Capture four frames after reversal, when mirrored hip/rest transforms used
   // to produce the crossed, fully stretched legs seen in enemy patrols.
   const p4Snapshots = simulateSpider(
-    p4Config, 101, 120, floorY - 28 * 0.7, 50, 0, 1, 64, 16, floorY, 60,
+    p4Config, 101, 120, floorY - 30 * 0.7, 50, 0, 1, 64, 16, floorY, 60,
   );
 
   // -----------------------------------------------------------------------

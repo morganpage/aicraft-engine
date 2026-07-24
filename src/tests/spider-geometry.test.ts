@@ -711,7 +711,7 @@ describe('default-spider body clearance — feet on floor', () => {
     const floorY = 100;
     // Mimic the benchmark: body sits 28px above the floor; with the neutral
     // bodyYOffset (0), cephY === bodyY so the gait and renderer agree.
-    const bodyY = floorY - 28;
+    const bodyY = floorY - 30;
     const bodyX = 100;
     const facing: 1 | -1 = 1;
     const cephY = bodyY + DEFAULT_SPIDER.bodyYOffset;
@@ -766,7 +766,7 @@ function legAdvances(
 
 describe('solveThreeSegmentLeg — anatomical sector (no folded-Z)', () => {
   const geometry = DEFAULT_SPIDER.geometry;
-  const bodyY = -28; // 28px above a floor at y=0
+  const bodyY = -30; // 30px above a floor at y=0
 
   it('reproduced defect: the previously-folding pose no longer reverses the tibia', () => {
     // Historic case: default 2nd foreleg (angle 60, dist 35 in the OLD topology)

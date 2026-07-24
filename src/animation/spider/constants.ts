@@ -41,8 +41,8 @@ export const DEFAULT_SPIDER_GEOMETRY: Readonly<SpiderLegGeometryConfig> = {
   // arch instead of a stubby folded leg.
   femurLength: 22,
   tibiaLength: 44,
-  minExtensionRatio: 0.35,
-  maxExtensionRatio: 0.94,
+  minExtensionRatio: 0.50,
+  maxExtensionRatio: 0.82,
   jointSafetyMargin: 0.5,
   minDistalAdvanceRatio: 0.1,
 };
@@ -125,16 +125,14 @@ export const DEFAULT_SPIDER: Readonly<SpiderConfig> = {
   palpTwitchFreq: 0.8,
   palpTwitchAmp: 0.5,
   // Visual — per-leg rest positions.
-  // Derived from sector-valid foot X offsets (±55 front, ±32 inner) at the
-  // 28px body clearance: front/rear feet plant far out, inner feet stay outside
-  // the fold threshold, so every default grounded foot is anatomically valid
-  // (outward tibia) without renderer correction. See docs/design/
-  // procedural-spider-anatomical-sector-plan.md.
+  // Narrowed extension range [0.50, 0.82] keeps every leg at a moderate arch.
+  // Rest positions widened so grounded coxa-to-foot distances fall at ~0.55
+  // (inner) and ~0.70 (outer) at the 30px body clearance.
   legRestPositions: [
-    { angle: 27, distance: 61.7 },
-    { angle: 41.2, distance: 42.5 },
-    { angle: 138.8, distance: 42.5 },
-    { angle: 153, distance: 61.7 },
+    { angle: 29, distance: 62 },
+    { angle: 37, distance: 50 },
+    { angle: 143, distance: 50 },
+    { angle: 151, distance: 62 },
   ],
   // Shared (gait + visual)
   groundSampleSteps: 3,

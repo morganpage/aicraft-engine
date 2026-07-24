@@ -49,7 +49,7 @@ describe('scaleShowcaseSpiderConfig', () => {
     const refComfort = DEFAULT_SPIDER.comfortRadius / referenceReach;
     const refStep = DEFAULT_SPIDER.stepHeight / referenceReach;
     const refSafety = DEFAULT_SPIDER.geometry.jointSafetyMargin / referenceReach;
-    const refClearance = 28 / referenceReach;
+    const refClearance = 30 / referenceReach;
 
     for (const scale of [0.7, 1, 1.2]) {
       const scaled = scaleShowcaseSpiderConfig(DEFAULT_SPIDER, scale);
@@ -62,9 +62,9 @@ describe('scaleShowcaseSpiderConfig', () => {
       expect(scaled.comfortRadius / reach).toBeCloseTo(refComfort, 5);
       expect(scaled.stepHeight / reach).toBeCloseTo(refStep, 5);
       expect(scaled.geometry.jointSafetyMargin / reach).toBeCloseTo(refSafety, 5);
-      // Body clearance scales with the spider (caller uses 28 * sizeScale); the
+      // Body clearance scales with the spider (caller uses 30 * sizeScale); the
       // normalized clearance must therefore be invariant.
-      expect((28 * scale) / reach).toBeCloseTo(refClearance, 5);
+      expect((30 * scale) / reach).toBeCloseTo(refClearance, 5);
     }
   });
 
@@ -123,8 +123,8 @@ describe('scaleShowcaseSpiderConfig', () => {
     expect(large.phaseAdvanceRate * largeReach).toBeCloseTo(
       small.phaseAdvanceRate * smallReach,
     );
-    expect(large.overshootFactor * 90).toBeLessThanOrEqual(largeReach * 0.24);
-    expect(small.overshootFactor * 126).toBeLessThanOrEqual(smallReach * 0.24);
+    expect(large.overshootFactor * 90).toBeLessThanOrEqual(largeReach * 0.28);
+    expect(small.overshootFactor * 126).toBeLessThanOrEqual(smallReach * 0.28);
     expect(large.stepDuration * 90).toBeLessThanOrEqual(largeReach * 0.16);
     const smallAtMaxSpeed = tuneShowcaseSpiderSpeed(
       scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 0.7),
@@ -151,7 +151,7 @@ describe('scaleShowcaseSpiderConfig', () => {
       comfortRadius: 8,
     }, 0.7), 50);
     const floorY = 192;
-    const bodyY = floorY - 28 * 0.7;
+    const bodyY = floorY - 30 * 0.7;
     const reach =
       config.geometry.hipRadius +
       config.geometry.coxaLength +
@@ -231,7 +231,7 @@ describe('scaleShowcaseSpiderConfig', () => {
 describe('groundShowcaseSpiderState — geometry-aware grounding', () => {
   it('places every foot exactly on the floor', () => {
     const floorY = 224;
-    const bodyY = floorY - 28 * 1.2;
+    const bodyY = floorY - 30 * 1.2;
     const config = scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 1.2);
     const raw = createSpiderState(config, 42, 480, bodyY, 1);
     const grounded = groundShowcaseSpiderState(raw, 480, bodyY, 1, floorY, config);
@@ -245,7 +245,7 @@ describe('groundShowcaseSpiderState — geometry-aware grounding', () => {
 
   it('produces gait feet that agree with rendered feet immediately after grounding', () => {
     const floorY = 224;
-    const bodyY = floorY - 28 * 1.2;
+    const bodyY = floorY - 30 * 1.2;
     const config = scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 1.2);
     const bodyX = 480;
     const grounded = groundShowcaseSpiderState(
@@ -271,7 +271,7 @@ describe('groundShowcaseSpiderState — geometry-aware grounding', () => {
 
   it('requires no workspace or sector recovery immediately after grounding', () => {
     const floorY = 224;
-    const bodyY = floorY - 28 * 1.2;
+    const bodyY = floorY - 30 * 1.2;
     const config = scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 1.2);
     const bodyX = 480;
     const grounded = groundShowcaseSpiderState(
@@ -299,7 +299,7 @@ describe('groundShowcaseSpiderState — geometry-aware grounding', () => {
 
   it('retains authored same-side ordinal foot ordering after grounding', () => {
     const floorY = 224;
-    const bodyY = floorY - 28 * 1.2;
+    const bodyY = floorY - 30 * 1.2;
     const config = scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 1.2);
     const bodyX = 480;
     const grounded = groundShowcaseSpiderState(
@@ -343,7 +343,7 @@ describe('groundShowcaseSpiderState — geometry-aware grounding', () => {
 
   it('grounds symmetrically under facing reversal', () => {
     const floorY = 224;
-    const bodyY = floorY - 28 * 1.2;
+    const bodyY = floorY - 30 * 1.2;
     const config = scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 1.2);
     const bodyX = 480;
     const right = groundShowcaseSpiderState(

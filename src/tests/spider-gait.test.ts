@@ -58,25 +58,25 @@ const FRANTIC_GAIT: SpiderGaitConfig = {
  * in [34, 53.6]. We use 35, 40, 45, 50 → footDist 19, 24, 29, 34.
  */
 // Feet rest on the floor (y = 112) spread wide to each side of the body, so
-// every foot is anatomically sector-valid (outward tibia) at the 28px clearance
-// the three-segment geometry needs. Offsets are a symmetric palindrome
-// (58/46/36/32 px) so inner-to-outer urgency ordering is preserved.
+// every foot is anatomically sector-valid (outward tibia) at the 30px clearance
+// the narrowed extension range [0.50, 0.82] needs. Offsets are a symmetric
+// spread (55/40 px) matching the widened DEFAULT_SPIDER rest positions.
 function eightRestPositions(): Vec2[] {
   return [
-    { x: 72, y: 112 },   // L1 (set A, index 0) — 58px back-outward
-    { x: 84, y: 112 },   // R1 (set B, index 1) — 46px back-outward
-    { x: 94, y: 112 },   // L2 (set A, index 2) — 36px back-outward
-    { x: 98, y: 112 },   // R2 (set B, index 3) — 32px back-outward
-    { x: 162, y: 112 },  // L3 (set B, index 4) — 32px fore-outward
-    { x: 166, y: 112 },  // R3 (set A, index 5) — 36px fore-outward
-    { x: 176, y: 112 },  // L4 (set B, index 6) — 46px fore-outward
-    { x: 188, y: 112 },  // R4 (set A, index 7) — 58px fore-outward
+    { x: 75, y: 112 },   // L1 (set A, index 0) — 55px rear-outward
+    { x: 90, y: 112 },   // R1 (set B, index 1) — 40px rear-outward
+    { x: 170, y: 112 },  // L2 (set A, index 2) — 40px fore-outward
+    { x: 185, y: 112 },  // R2 (set B, index 3) — 55px fore-outward
+    { x: 75, y: 112 },   // L3 (set B, index 4) — 55px rear-outward (far)
+    { x: 90, y: 112 },   // R3 (set A, index 5) — 40px rear-outward (far)
+    { x: 170, y: 112 },  // L4 (set B, index 6) — 40px fore-outward (far)
+    { x: 185, y: 112 },  // R4 (set A, index 7) — 55px fore-outward (far)
   ];
 }
 
-/** Body center for eightRestPositions (28px above the row-7 floor at y=112). */
+/** Body center for eightRestPositions (30px above the row-7 floor at y=112). */
 const BODY_X = 130;
-const BODY_Y = 84;
+const BODY_Y = 82;
 
 /** All legs are planted (not swinging). */
 function allPlanted(state: GaitState): boolean {
@@ -495,18 +495,19 @@ describe('advanceGait — frantic mode', () => {
 
 describe('advanceGait — comfort radius', () => {
   it('does not swap planted leg targets across the body when facing reverses', () => {
-    // Valid symmetric rest positions on the floor (y=112, 28px below the body
-    // at y=84). Distances ±50/±40 from body so every foot is sector-valid
-    // (outward tibia) for the 22/44 femur/tibia geometry at 28px clearance.
+    // Valid symmetric rest positions on the floor (y=112, 30px below the body
+    // at y=82). Distances ±50/±40 from body so every foot is sector-valid
+    // (outward tibia) for the 22/44 femur/tibia geometry at 30px clearance
+    // with the narrowed [0.50, 0.82] extension range.
     const positions: Vec2[] = [
-      { x: 80, y: 112 },
+      { x: 75, y: 112 },
       { x: 90, y: 112 },
       { x: 170, y: 112 },
-      { x: 180, y: 112 },
-      { x: 180, y: 112 },
+      { x: 185, y: 112 },
+      { x: 185, y: 112 },
       { x: 170, y: 112 },
       { x: 90, y: 112 },
-      { x: 80, y: 112 },
+      { x: 75, y: 112 },
     ];
     const state = createGaitState(FRANTIC_GAIT, positions, BODY_X, BODY_Y);
     const floor = floorAtRow(7);
@@ -520,10 +521,10 @@ describe('advanceGait — comfort radius', () => {
   });
 
   it('a leg with foot drift < comfortRadius does NOT step', () => {
-    // Valid rest positions on the floor (y=112, 12px below body at y=100):
-    // feet ±55px from body so localX=55 is sector-valid for the 22/44
-    // femur/tibia geometry. Small body move keeps drift < comfortRadius
-    // AND keeps the foot inside the workspace → no step.
+    // Valid rest positions on the floor (y=112): feet ±55px from body at
+    // x=100, localX=55 is sector-valid for the 22/44 femur/tibia geometry
+    // with the narrowed [0.50, 0.82] extension range at 22px clearance
+    // (body at y=90, floor at y=112). Small body move keeps drift < 20.
     const positions: Vec2[] = [
       { x: 45, y: 112 },
       { x: 155, y: 112 },

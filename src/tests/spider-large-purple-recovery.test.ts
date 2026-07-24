@@ -2,7 +2,7 @@
  * Large Purple Spider Recovery — reproduction and agreement tests.
  *
  * Locks the deterministic live showcase large-purple instance
- * (scale 1.2, 90px/s, coordinated, canvas 960, floorY 224, BODY_CLEARANCE 28
+ * (scale 1.2, 90px/s, coordinated, canvas 960, floorY 224, BODY_CLEARANCE 30
  * scaled, generated lane, 1200 ticks) and asserts the gait/render agreement
  * and same-side fan separation contracts from
  * `docs/design/procedural-spider-large-purple-recovery-plan.md`.
@@ -35,7 +35,7 @@ import {
 const CANVAS_W = 960;
 const FLOOR_Y = 224;
 const TILE_SIZE = 16;
-const BODY_CLEARANCE_BASE = 28;
+const BODY_CLEARANCE_BASE = 30;
 const WALK_SPEED = 90;
 const DT = 1 / 60;
 

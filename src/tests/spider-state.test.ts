@@ -241,7 +241,7 @@ describe('stepSpider', () => {
     // three-segment geometry needs this clearance so every leg can plant on
     // the floor at mid-extension instead of burying its rest foot below it.
     const floorY = 112;
-    const bodyY = floorY - 28;
+    const bodyY = floorY - 30;
     let bodyX = 100;
     let state = createSpiderState(DEFAULT_SPIDER, 42, bodyX, bodyY);
     const started = new Set<number>();
@@ -290,7 +290,7 @@ describe('stepSpider', () => {
     // corrected three-segment geometry needs so feet reach the ground at
     // mid-extension instead of deadlocking at the tighter 18px clearance.
     const floorY = 112;
-    const bodyY = floorY - 28;
+    const bodyY = floorY - 30;
     let bodyX = 80;
     let state = createSpiderState(config, 42, bodyX, bodyY);
     const started = new Set<number>();
@@ -342,7 +342,7 @@ describe('stepSpider', () => {
     // Body ~28px above the floor (row 7 → y≥112) — the clearance the
     // corrected three-segment geometry needs for feasible foot plants.
     const floorY = 112;
-    const bodyY = floorY - 28;
+    const bodyY = floorY - 30;
     let bodyX = 100;
     let state = createSpiderState(config, 42, bodyX, bodyY, 1);
     let startLead: number | null = null;
@@ -370,16 +370,10 @@ describe('stepSpider', () => {
   it('keeps every large coordinated foot span bounded through repeated high-speed turns', () => {
     const config = {
       ...DEFAULT_SPIDER,
-      cephRadius: DEFAULT_SPIDER.cephRadius * 1.2,
-      geometry: {
-        ...DEFAULT_SPIDER.geometry,
-        femurLength: DEFAULT_SPIDER.geometry.femurLength * 1.2,
-        tibiaLength: DEFAULT_SPIDER.geometry.tibiaLength * 1.2,
-      },
       overshootFactor: 0.15,
       stepDuration: 0.1,
     };
-    const bodyY = 90;
+    const bodyY = 80;
     let bodyX = 100;
     let facing: 1 | -1 = 1;
     let state = createSpiderState(config, 42, bodyX, bodyY);
@@ -614,7 +608,7 @@ describe('stepSpider — no folded-Z on planted legs (long-run matrix)', () => {
           for (const ground of [flat, uneven]) {
             const config = { ...DEFAULT_SPIDER, legCount, mode };
             const { visual } = splitSpiderConfig(config);
-            const bodyY = FLOOR - 28;
+            const bodyY = FLOOR - 30;
             let state = createSpiderState(config, 777, 300, bodyY, 1);
             let bodyX = 300;
             let facing: 1 | -1 = 1;

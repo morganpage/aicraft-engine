@@ -55,12 +55,12 @@ const FLOOR_Y = 224;
 
 /** Body clearance above the floor (px, scaled per spider). Matches the
  *  validated benchmark — must be less than the full leg reach
- *  (hipRadius + coxaLength + femurLength + tibiaLength = 56) so legs
+ *  (hipRadius + coxaLength + femurLength + tibiaLength = 82) so legs
  *  bend and feet reach the floor at mid-extension. The gait and the
  *  renderer both read this clearance via the caller's `bodyY`, so the
  *  two stay consistent (previously the renderer was lifted by an extra
  *  `bodyYOffset`, leaving the gait to deadlock). */
-const BODY_CLEARANCE = 28;
+const BODY_CLEARANCE = 30;
 
 const WALK_SPEED = 90;
 

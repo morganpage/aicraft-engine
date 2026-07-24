@@ -692,8 +692,25 @@ export function advanceGait(
         );
 
         if (req.needsStep) {
-          // Compute overshoot target
-          const targetX = restWorldX + vx * config.overshootFactor;
+          // Extension-aware overshoot: legs that are currently compressed
+          // (low coxa-to-foot ratio) get a larger forward correction so they
+          // decompress; extended legs get less so they recompress. This
+          // equalizes step sizes and prevents the shuffling cycle where a
+          // compressed leg takes tiny steps and never reaches mid-extension.
+          const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
+          const stepCoxa = computeCoxaEndpoint(
+            computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry),
+            safeFacing, restLocalVec, geometry,
+          );
+          const coxaToFoot = Math.hypot(leg.footX - stepCoxa.x, leg.footY - stepCoxa.y);
+          const totalFemurTibia = geometry.femurLength + geometry.tibiaLength;
+          const currentRatio = totalFemurTibia > 0 ? coxaToFoot / totalFemurTibia : 0;
+          const midRatio = (geometry.minExtensionRatio + geometry.maxExtensionRatio) / 2;
+          const deficit = midRatio - currentRatio;
+          const extensionCorrection = deficit * totalFemurTibia * safeFacing;
+
+          // Compute overshoot target with extension correction
+          const targetX = restWorldX + vx * config.overshootFactor + extensionCorrection;
           const targetY = restWorldY + vy * config.overshootFactor;
 
           // Lazy ground sampling (downward only, v1)
@@ -708,7 +725,6 @@ export function advanceGait(
           );
 
           if (ground.hasGround) {
-            const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
             // Landing target: floor-grounded (preserves ground.point.y) and
             // sector-valid at the predicted landing-time coxa (stepDuration
             // ahead), so the swing end is anatomically reachable on plant.
@@ -720,16 +736,12 @@ export function advanceGait(
               landingCoxa, ground.point, geometry, safeFacing, leg.restLocalX,
             );
 
-            // Current-time coxa, used to project the arc's start and apex into
-            // the sector so the first swing samples do not retain a large
-            // renderer correction (the worst swing state was an inner leg
-            // stepping from a currently sector-invalid planted point).
-            const currentCoxa = computeCoxaEndpoint(
-              computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry),
-              safeFacing, restLocalVec, geometry,
-            );
+            // Current-time coxa (stepCoxa already computed above for the
+            // extension-aware overshoot), used to project the arc's start
+            // into the sector so first swing samples do not retain a large
+            // renderer correction.
             const projectedStart = projectGroundedTargetIntoWorkspace(
-              currentCoxa, { x: leg.footX, y: leg.footY }, geometry, safeFacing, leg.restLocalX,
+              stepCoxa, { x: leg.footX, y: leg.footY }, geometry, safeFacing, leg.restLocalX,
             );
             const startX = projectedStart.x;
             const startY = projectedStart.y;
