@@ -451,7 +451,7 @@ export function advanceGait(
       highestUrgency = req.urgency;
       highestUrgencyIndex = ci;
     }
-    if (req.hardViolation || req.sectorError > SECTOR_EPSILON) {
+    if (req.hardViolation || req.sectorError > SECTOR_EPSILON || req.workspaceError > SECTOR_EPSILON) {
       if (req.urgency > criticalUrgency) {
         criticalUrgency = req.urgency;
         criticalIndex = ci;
@@ -484,25 +484,17 @@ export function advanceGait(
     : previousSetWasServiced
       ? (previousActiveSet === 'A' ? 'B' : 'A')
       : desiredSet;
-  const anySwinging = sourceLegs.some((candidate) => candidate.isSwinging);
-  const totalSwingingCount = sourceLegs.filter((candidate) => candidate.isSwinging).length;
-  const maxSwingingCap = Math.max(2, Math.floor(sourceLegs.length / 3));
-  // Critical eligibility — the support locks a critical leg may NOT bypass:
-  // its corresponding pair must be planted, no leg in the critical's opposite
-  // set may be swinging (tetrapod support), and a maxSwinging slot must be
-  // free. These are evaluated once per tick so both the active-set override
-  // and the per-leg step gate agree.
+  const currentSwingingCount = sourceLegs.filter((c) => c.isSwinging).length;
+  // Critical eligibility — a critical leg (over-extended or folded) may step
+  // bypassing active-set and maxSwinging, but still respects pair-lock (its
+  // corresponding near/far partner must be planted) and a 5/8 support ceiling.
   let criticalEligible = false;
   if (criticalIndex >= 0) {
-    const cLeg = sourceLegs[criticalIndex];
     const cPairIndex = sideCount > 0
       ? (criticalIndex < sideCount ? criticalIndex + sideCount : criticalIndex - sideCount)
       : -1;
     const cPairSwinging = cPairIndex >= 0 && sourceLegs[cPairIndex]?.isSwinging === true;
-    const cOppositeSwinging = sourceLegs.some(
-      (candidate) => candidate.set !== cLeg.set && candidate.isSwinging,
-    );
-    criticalEligible = !cPairSwinging && !cOppositeSwinging && totalSwingingCount < maxSwingingCap;
+    criticalEligible = !cPairSwinging && currentSwingingCount < Math.floor(sourceLegs.length * 0.625);
   }
   // When a critical leg can step, route the active set to it so servicing
   // proceeds as a proper rolling wave within its own set (avoiding the
@@ -511,7 +503,7 @@ export function advanceGait(
   const criticalOverrideSet = criticalEligible ? sourceLegs[criticalIndex].set : null;
   // Highest-urgency leg gets priority regardless of set
   const coordinatedActiveSet = criticalOverrideSet
-    ?? (anyNeedsStep && !anySwinging && !previousSetNeedsService
+    ?? (anyNeedsStep && currentSwingingCount === 0 && !previousSetNeedsService
       ? sourceLegs[highestUrgencyIndex].set
       : phaseActiveSet);
   const nextServiced = config.mode === 'frantic'
@@ -568,7 +560,7 @@ export function advanceGait(
       // Check if this leg should start stepping
       let shouldStep = false;
       const totalSwinging = sourceLegs.filter((candidate) => candidate.isSwinging).length;
-      const maxSwinging = Math.max(2, Math.floor(legCount / 3));
+      const maxSwinging = Math.max(3, Math.floor(legCount / 3));
       const pairIndex = i < sideCount ? i + sideCount : i - sideCount;
       const pairSwinging = sideCount > 0 && sourceLegs[pairIndex]?.isSwinging === true;
 
@@ -628,8 +620,8 @@ export function advanceGait(
           leg.index === criticalIndex && leg.index === overdueIndex;
         // No speed>1 gate — idle recovery is allowed
         shouldStep = leg.index === overdueIndex &&
-          !pairSwinging && totalSwinging < maxSwinging && !startedThisTick &&
-          (selectedIsCritical || (leg.set === activeSet && !oppositeSetSwinging));
+          (selectedIsCritical || !startedThisTick) &&
+          (selectedIsCritical || (!pairSwinging && totalSwinging < maxSwinging && leg.set === activeSet && !oppositeSetSwinging));
       } else {
         // Frantic mode remains independent but respects side-neighbour,
         // corresponding-pair, and total support locks.
@@ -638,18 +630,28 @@ export function advanceGait(
         let selectedUrgent = false;
         for (const candidate of sourceLegs) {
           if (candidate.isSwinging) continue;
-          if (nextServiced.includes(candidate.index)) continue;
-          const candidateSideStart = candidate.index < sideCount ? 0 : sideCount;
-          const ordinal = candidate.index - candidateSideStart;
-          const prevIndex = ordinal > 0 ? candidate.index - 1 : -1;
-          const nextIndex = ordinal + 1 < sideCount ? candidate.index + 1 : -1;
-          const candidatePair = candidate.index < sideCount
-            ? candidate.index + sideCount
-            : candidate.index - sideCount;
-          if ((prevIndex >= 0 && sourceLegs[prevIndex].isSwinging) ||
-              (nextIndex >= 0 && sourceLegs[nextIndex].isSwinging) ||
-              (sideCount > 0 && sourceLegs[candidatePair]?.isSwinging)) {
+          // Critical bypass: over-extended/folded legs skip neighbour, pair,
+          // AND serviced filters so they step immediately.
+          const isCriticalCandidate = candidate.index === criticalIndex && criticalEligible;
+          if (!isCriticalCandidate && nextServiced.includes(candidate.index)) continue;
+          if (isCriticalCandidate) {
+            overdueIndex = candidate.index;
+            selectedUrgent = true;
             continue;
+          }
+          if (!isCriticalCandidate) {
+            const candidateSideStart = candidate.index < sideCount ? 0 : sideCount;
+            const ordinal = candidate.index - candidateSideStart;
+            const prevIndex = ordinal > 0 ? candidate.index - 1 : -1;
+            const nextIndex = ordinal + 1 < sideCount ? candidate.index + 1 : -1;
+            const candidatePair = candidate.index < sideCount
+              ? candidate.index + sideCount
+              : candidate.index - sideCount;
+            if ((prevIndex >= 0 && sourceLegs[prevIndex].isSwinging) ||
+                (nextIndex >= 0 && sourceLegs[nextIndex].isSwinging) ||
+                (sideCount > 0 && sourceLegs[candidatePair]?.isSwinging)) {
+              continue;
+            }
           }
           // Highest urgency leg gets priority
           if (candidate.index === highestUrgencyIndex && anyNeedsStep) {
@@ -670,8 +672,10 @@ export function advanceGait(
           }
         }
         // No speed>1 gate — idle recovery is allowed
-        shouldStep = leg.index === overdueIndex && !pairSwinging &&
-          totalSwinging < maxSwinging && !startedThisTick;
+        const franticIsCritical = criticalEligible &&
+          leg.index === criticalIndex && leg.index === overdueIndex;
+        shouldStep = leg.index === overdueIndex &&
+          (franticIsCritical || (!pairSwinging && totalSwinging < maxSwinging && !startedThisTick));
       }
 
       if (shouldStep) {
