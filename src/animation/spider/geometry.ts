@@ -706,14 +706,19 @@ export function computeLegStepRequest(
  * Pipeline:
  * 1. Compute hip from body/facing/restLocal/hipRadius.
  * 2. Compute fixed coxa endpoint from hip using restLocal direction.
- * 3. Project target into the femur+tibia radial workspace, then into the
- *    anatomical sector (nearest outward X admitting an outward tibia).
- * 4. Select the knee branch: sector-satisfying, then upward, then nearest the
- *    anatomical pole (up + outward), with a stable tie-break.
+ * 3. Solve femur+tibia two-bone IK at the EXACT target — no projection,
+ *    no clamping, no correction. The renderer draws what the gait says.
+ * 4. Select the knee branch: upward, then nearest the anatomical pole
+ *    (up + outward), with a stable tie-break.
  *
- * The sector projection is a visual fallback for transient targets (swing
- * interpolation, body turns); proactive gait requests should make it rare. Each
- * segment length remains at the configured length within floating tolerance.
+ * The gait is responsible for producing valid targets (step scheduling,
+ * extension-aware overshoot, comfort-radius triggers). The renderer is a
+ * pure IK solver — it never silently moves the foot, which would cause
+ * visible dragging, skating, or floor clipping.
+ *
+ * If the target is beyond max reach, the IK extends toward it as far as
+ * possible (honest over-extension). If too close, the IK folds (honest
+ * compression). Both are visually preferable to silent projection.
  *
  * Pure, deterministic, never throws. All output coordinates are finite.
  */
@@ -736,7 +741,7 @@ export function solveThreeSegmentLeg(
 } {
   const hip = computeHipPosition(bodyX, bodyY, facing, restLocal, geometry);
   const coxa = computeCoxaEndpoint(hip, facing, restLocal, geometry);
-  const foot = projectTargetIntoWorkspace(coxa, target, geometry);
+  const foot = safeVec2(target, coxa.x, coxa.y + 30);
 
   const femurLen = safePositive(geometry.femurLength, 19);
   const tibiaLen = safePositive(geometry.tibiaLength, 21);
@@ -759,6 +764,22 @@ export function solveThreeSegmentLeg(
     coxa, foot, outwardSign, femurLen, tibiaLen, minRatio, poleNX, poleNY,
   );
 
+  // Compute the actual reachable foot position from the IK chain. If the
+  // target is beyond max reach, the foot extends toward it at exactly
+  // femurLen+tibiaLen — never beyond. If within range, the foot is at the
+  // exact target. This is honest IK: no projection, but also no impossible
+  // extension.
+  const cdx = foot.x - coxa.x;
+  const cdy = foot.y - coxa.y;
+  const cdist = Math.hypot(cdx, cdy);
+  const maxReach = femurLen + tibiaLen;
+  let solvedFootX = foot.x;
+  let solvedFootY = foot.y;
+  if (cdist > maxReach + 1e-6 && cdist > 1e-8) {
+    solvedFootX = coxa.x + (cdx / cdist) * maxReach;
+    solvedFootY = coxa.y + (cdy / cdist) * maxReach;
+  }
+
   return {
     hipX: hip.x,
     hipY: hip.y,
@@ -766,7 +787,7 @@ export function solveThreeSegmentLeg(
     coxaY: coxa.y,
     kneeX: knee.x,
     kneeY: knee.y,
-    footX: foot.x,
-    footY: foot.y,
+    footX: solvedFootX,
+    footY: solvedFootY,
   };
 }

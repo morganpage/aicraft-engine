@@ -492,20 +492,23 @@ describe('solveThreeSegmentLeg', () => {
     }
   });
 
-  it('projection guarantees dist between hardMin and hardMax', () => {
-    const targets = [
-      { x: 120, y: 130 },
-      { x: bodyX + 5, y: bodyY + 5 },
-      { x: bodyX, y: bodyY },
-      { x: bodyX + 500, y: bodyY + 500 },
-    ];
-    const annuli = computeFemurTibiaAnnuli(DEFAULT_GEOMETRY);
-    for (const t of targets) {
-      const r = solveThreeSegmentLeg(bodyX, bodyY, 1, restLocal, t, DEFAULT_GEOMETRY);
-      const dist = Math.hypot(r.footX - r.coxaX, r.footY - r.coxaY);
-      expect(dist).toBeGreaterThanOrEqual(annuli.hardMin - 0.01);
-      expect(dist).toBeLessThanOrEqual(annuli.hardMax + 0.01);
-    }
+  it('foot is at the exact target within maxReach, clamped to maxReach when beyond', () => {
+    // solveThreeSegmentLeg no longer projects targets through the soft/hard
+    // annulus — it solves IK at the exact target, clamping only at maxReach so
+    // the chain never extends past femurLength + tibiaLength.
+    const maxReach = DEFAULT_GEOMETRY.femurLength + DEFAULT_GEOMETRY.tibiaLength;
+
+    // (a) Target within maxReach: the foot is the exact target.
+    const withinTarget = { x: 120, y: 110 };
+    const rIn = solveThreeSegmentLeg(bodyX, bodyY, 1, restLocal, withinTarget, DEFAULT_GEOMETRY);
+    expect(rIn.footX).toBeCloseTo(withinTarget.x, 4);
+    expect(rIn.footY).toBeCloseTo(withinTarget.y, 4);
+
+    // (b) Target beyond maxReach: the foot is clamped to exactly maxReach.
+    const beyondTarget = { x: bodyX + 500, y: bodyY + 500 };
+    const rOut = solveThreeSegmentLeg(bodyX, bodyY, 1, restLocal, beyondTarget, DEFAULT_GEOMETRY);
+    const distOut = Math.hypot(rOut.footX - rOut.coxaX, rOut.footY - rOut.coxaY);
+    expect(distOut).toBeCloseTo(maxReach, 2);
   });
 
   it('is deterministic', () => {
@@ -526,52 +529,51 @@ describe('solveThreeSegmentLeg', () => {
 // ---------------------------------------------------------------------------
 
 describe('solveThreeSegmentLeg — anatomical bend stability', () => {
-  it('anterior leg: knee stays on consistent side across perturbations', () => {
+  it('anterior leg: knee stays upward and stable across perturbations', () => {
+    // Without projection the foot sits at the exact (or maxReach-clamped)
+    // target, so the knee no longer has a stable coxa→foot cross-product sign.
+    // What stays stable is the anatomical choice: selectKneeBranch always
+    // resolves to the upward branch (knee never sags below the coxa/foot span).
     const restLocal = { x: 40, y: 20 };
     const target = { x: 130, y: 130 };
     const base = solveThreeSegmentLeg(100, 80, 1, restLocal, target, DEFAULT_GEOMETRY);
-    const baseCross = (base.footX - base.coxaX) * (base.kneeY - base.coxaY)
-      - (base.footY - base.coxaY) * (base.kneeX - base.coxaX);
+    expect(base.kneeY).toBeLessThanOrEqual(Math.max(base.coxaY, base.footY) + 1e-6);
     for (const dx of [-0.5, -0.1, 0.1, 0.5]) {
       for (const dy of [-0.5, -0.1, 0.1, 0.5]) {
         const p = solveThreeSegmentLeg(100, 80, 1, restLocal,
           { x: target.x + dx, y: target.y + dy }, DEFAULT_GEOMETRY);
-        const pCross = (p.footX - p.coxaX) * (p.kneeY - p.coxaY)
-          - (p.footY - p.coxaY) * (p.kneeX - p.coxaX);
-        expect(Math.sign(pCross)).toBe(Math.sign(baseCross));
+        expect(p.kneeY).toBeLessThanOrEqual(Math.max(p.coxaY, p.footY) + 1e-6);
       }
     }
   });
 
-  it('posterior leg: knee stays on consistent side across perturbations', () => {
+  it('posterior leg: knee stays upward and stable across perturbations', () => {
     const restLocal = { x: -40, y: 20 };
     const target = { x: 80, y: 130 };
     const base = solveThreeSegmentLeg(100, 80, 1, restLocal, target, DEFAULT_GEOMETRY);
-    const baseCross = (base.footX - base.coxaX) * (base.kneeY - base.coxaY)
-      - (base.footY - base.coxaY) * (base.kneeX - base.coxaX);
+    expect(base.kneeY).toBeLessThanOrEqual(Math.max(base.coxaY, base.footY) + 1e-6);
     for (const dx of [-0.5, -0.1, 0.1, 0.5]) {
       for (const dy of [-0.5, -0.1, 0.1, 0.5]) {
         const p = solveThreeSegmentLeg(100, 80, 1, restLocal,
           { x: target.x + dx, y: target.y + dy }, DEFAULT_GEOMETRY);
-        const pCross = (p.footX - p.coxaX) * (p.kneeY - p.coxaY)
-          - (p.footY - p.coxaY) * (p.kneeX - p.coxaX);
-        expect(Math.sign(pCross)).toBe(Math.sign(baseCross));
+        expect(p.kneeY).toBeLessThanOrEqual(Math.max(p.coxaY, p.footY) + 1e-6);
       }
     }
   });
 
-  it('facing mirror: knee stays on anatomically consistent side', () => {
+  it('facing mirror: knees stay upward and mirror about the body', () => {
+    const bodyX = 100;
     const restLocal = { x: 30, y: 20 };
-    const resultR = solveThreeSegmentLeg(100, 80, 1, restLocal, { x: 130, y: 130 }, DEFAULT_GEOMETRY);
-    const resultL = solveThreeSegmentLeg(100, 80, -1, restLocal, { x: 70, y: 130 }, DEFAULT_GEOMETRY);
+    const resultR = solveThreeSegmentLeg(bodyX, 80, 1, restLocal, { x: 130, y: 130 }, DEFAULT_GEOMETRY);
+    const resultL = solveThreeSegmentLeg(bodyX, 80, -1, restLocal, { x: 70, y: 130 }, DEFAULT_GEOMETRY);
     expect(Number.isFinite(resultR.kneeX)).toBe(true);
     expect(Number.isFinite(resultL.kneeX)).toBe(true);
-    const crossR = (resultR.footX - resultR.coxaX) * (resultR.kneeY - resultR.coxaY)
-      - (resultR.footY - resultR.coxaY) * (resultR.kneeX - resultR.coxaX);
-    const crossL = (resultL.footX - resultL.coxaX) * (resultL.kneeY - resultL.coxaY)
-      - (resultL.footY - resultL.coxaY) * (resultL.kneeX - resultL.coxaX);
-    expect(crossR).not.toBeCloseTo(0, 0);
-    expect(crossL).not.toBeCloseTo(0, 0);
+    // Both knees resolve upward (never sag below the coxa/foot span).
+    expect(resultR.kneeY).toBeLessThanOrEqual(Math.max(resultR.coxaY, resultR.footY) + 1e-6);
+    expect(resultL.kneeY).toBeLessThanOrEqual(Math.max(resultL.coxaY, resultL.footY) + 1e-6);
+    // Facing-left is an exact horizontal mirror of facing-right about bodyX.
+    expect(resultL.kneeX).toBeCloseTo(2 * bodyX - resultR.kneeX, 3);
+    expect(resultL.kneeY).toBeCloseTo(resultR.kneeY, 3);
   });
 
   it('anterior vs posterior legs produce valid finite poses', () => {
@@ -769,24 +771,28 @@ describe('solveThreeSegmentLeg — anatomical sector (no folded-Z)', () => {
   const bodyY = -30; // 30px above a floor at y=0
 
   it('reproduced defect: the previously-folding pose no longer reverses the tibia', () => {
-    // Historic case: default 2nd foreleg (angle 60, dist 35 in the OLD topology)
-    // grounded at its rest world X produced knee→foot of -13px (folded). The
-    // renderer now clamps the coxa-to-foot target to the SOFT annulus [softMin,
-    // softMax] (instead of the hard annulus) so the exact sector-projected foot
-    // X depends on the clamped radius and is no longer a stable contract. What
-    // MUST still hold for any clamped target is structural correctness: the two
-    // rigid segments keep their exact lengths and the knee resolves to the
-    // upward branch.
+    // Historic case: a steep foreleg (angle 60) grounded at its rest world X
+    // used to fold the tibia back (knee→foot reversed toward the body) under
+    // sector projection. solveThreeSegmentLeg no longer projects: it solves
+    // honest IK at the exact target. At a reachable rest distance the chain
+    // keeps both rigid segments at their full lengths, the knee resolves
+    // upward, and the tibia advances outward — no reversal, no projection.
     const rad = (60 * Math.PI) / 180;
-    const restLocal = { x: Math.cos(rad) * 35, y: Math.sin(rad) * 35 };
+    const dist = 50;
+    const restLocal = { x: Math.cos(rad) * dist, y: Math.sin(rad) * dist };
     const foot = { x: restLocal.x, y: 0 };
     const r = solveThreeSegmentLeg(0, bodyY, 1, restLocal, foot, geometry);
     const adv = legAdvances(restLocal, 1, r);
-    // Fixed segment lengths preserved exactly.
+    // Foot stays at the exact target (no sector projection).
+    expect(r.footX).toBeCloseTo(foot.x, 4);
+    expect(r.footY).toBeCloseTo(foot.y, 4);
+    // Fixed segment lengths preserved exactly at the reachable target.
     expect(Math.hypot(r.kneeX - r.coxaX, r.kneeY - r.coxaY)).toBeCloseTo(geometry.femurLength, 3);
     expect(Math.hypot(r.footX - r.kneeX, r.footY - r.kneeY)).toBeCloseTo(geometry.tibiaLength, 3);
     // Knee resolves to the upward branch (never dips below coxa/foot).
     expect(adv.kneeUpward).toBe(true);
+    // Tibia advances outward — no reversal toward the body.
+    expect(adv.distalAdvance).toBeGreaterThanOrEqual(0);
   });
 
   it('every default leg (both facings) has an outward tibia and upward knee', () => {

@@ -3,6 +3,7 @@ import {
   createSpiderState,
   stepSpider,
   evaluateSpiderPose,
+  getGaitFootPosition,
   sampleStepArc,
   DEFAULT_SPIDER,
   type SpiderConfig,
@@ -34,6 +35,7 @@ interface QualityReport {
   readonly minForwardStep: number;
   readonly maxExtensionRatio: number;
   readonly maxFootY: number;
+  readonly maxRenderGaitDivergence: number;
   readonly samples: number;
 }
 
@@ -88,6 +90,7 @@ function runSpider(
   let samples = 0;
   let maxExtensionRatio = 0;
   let maxFootY = -Infinity;
+  let maxRenderGaitDivergence = 0;
   const femurTibia = config.geometry.femurLength + config.geometry.tibiaLength;
 
   for (let tick = 1; tick <= ticks; tick++) {
@@ -176,6 +179,17 @@ function runSpider(
 
       // Floor clipping: rendered foot must never go below the floor
       if (lp.footY > maxFootY) maxFootY = lp.footY;
+
+      // Rendered foot must match gait foot when the target is reachable
+      // (no hidden projection). When the target is beyond max reach, some
+      // divergence is expected from the honest maxReach clamp.
+      const gaitFoot = getGaitFootPosition(leg);
+      const gaitCoxaDist = Math.hypot(gaitFoot.x - lp.coxaX, gaitFoot.y - lp.coxaY);
+      const maxReach = femurTibia;
+      if (gaitCoxaDist <= maxReach) {
+        const divergence = Math.hypot(lp.footX - gaitFoot.x, lp.footY - gaitFoot.y);
+        if (divergence > maxRenderGaitDivergence) maxRenderGaitDivergence = divergence;
+      }
     }
   }
 
@@ -189,6 +203,7 @@ function runSpider(
     samples,
     maxExtensionRatio,
     maxFootY,
+    maxRenderGaitDivergence,
   };
 }
 
@@ -258,12 +273,16 @@ describe('spider swing quality — large purple (1.2x coordinated 90px/s)', () =
     expect(report.plantedSlides).toBe(0);
   });
 
-  it('rendered extension ratio stays within comfortable range (<= 0.85)', () => {
-    expect(report.maxExtensionRatio).toBeLessThanOrEqual(0.85);
+  it('rendered extension ratio stays within physical reach (<= 1.0)', () => {
+    expect(report.maxExtensionRatio).toBeLessThanOrEqual(1.001);
   });
 
   it('rendered feet do not clip below the floor', () => {
     expect(report.maxFootY).toBeLessThanOrEqual(FLOOR_Y + 0.5);
+  });
+
+  it('rendered foot matches gait foot when target is reachable', () => {
+    expect(report.maxRenderGaitDivergence).toBeLessThanOrEqual(0.5);
   });
 
   it('reports metrics', () => {
@@ -282,7 +301,7 @@ describe('spider swing quality — small purple (0.7x frantic 72px/s)', () => {
     expect(report.skatingSteps).toBe(0);
   });
 
-  it('rendered swing arc matches raw Bezier within 1px', () => {
+  it('rendered swing arc matches raw Bezier within 3px', () => {
     expect(report.maxArcDistortion).toBeLessThanOrEqual(3);
   });
 
@@ -290,12 +309,16 @@ describe('spider swing quality — small purple (0.7x frantic 72px/s)', () => {
     expect(report.plantedSlides).toBe(0);
   });
 
-  it('rendered extension ratio stays within comfortable range (<= 0.85)', () => {
-    expect(report.maxExtensionRatio).toBeLessThanOrEqual(0.85);
+  it('rendered extension ratio stays within physical reach (<= 1.0)', () => {
+    expect(report.maxExtensionRatio).toBeLessThanOrEqual(1.001);
   });
 
   it('rendered feet do not clip below the floor', () => {
     expect(report.maxFootY).toBeLessThanOrEqual(FLOOR_Y + 0.5);
+  });
+
+  it('rendered foot matches gait foot when target is reachable', () => {
+    expect(report.maxRenderGaitDivergence).toBeLessThanOrEqual(0.5);
   });
 
   it('reports metrics', () => {
@@ -314,7 +337,7 @@ describe('spider swing quality — green (1.0x coordinated 15px/s)', () => {
     expect(report.skatingSteps).toBeLessThanOrEqual(1);
   });
 
-  it('rendered swing arc matches raw Bezier within 1px', () => {
+  it('rendered swing arc matches raw Bezier within 3px', () => {
     expect(report.maxArcDistortion).toBeLessThanOrEqual(3);
   });
 
@@ -322,12 +345,16 @@ describe('spider swing quality — green (1.0x coordinated 15px/s)', () => {
     expect(report.plantedSlides).toBe(0);
   });
 
-  it('rendered extension ratio stays within comfortable range (<= 0.85)', () => {
-    expect(report.maxExtensionRatio).toBeLessThanOrEqual(0.85);
+  it('rendered extension ratio stays within physical reach (<= 1.0)', () => {
+    expect(report.maxExtensionRatio).toBeLessThanOrEqual(1.001);
   });
 
   it('rendered feet do not clip below the floor', () => {
     expect(report.maxFootY).toBeLessThanOrEqual(FLOOR_Y + 0.5);
+  });
+
+  it('rendered foot matches gait foot when target is reachable', () => {
+    expect(report.maxRenderGaitDivergence).toBeLessThanOrEqual(0.5);
   });
 
   it('reports metrics', () => {

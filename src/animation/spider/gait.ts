@@ -486,7 +486,7 @@ export function advanceGait(
       : desiredSet;
   const anySwinging = sourceLegs.some((candidate) => candidate.isSwinging);
   const totalSwingingCount = sourceLegs.filter((candidate) => candidate.isSwinging).length;
-  const maxSwingingCap = Math.max(1, Math.floor(sourceLegs.length / 4));
+  const maxSwingingCap = Math.max(2, Math.floor(sourceLegs.length / 3));
   // Critical eligibility — the support locks a critical leg may NOT bypass:
   // its corresponding pair must be planted, no leg in the critical's opposite
   // set may be swinging (tetrapod support), and a maxSwinging slot must be
@@ -568,7 +568,7 @@ export function advanceGait(
       // Check if this leg should start stepping
       let shouldStep = false;
       const totalSwinging = sourceLegs.filter((candidate) => candidate.isSwinging).length;
-      const maxSwinging = Math.max(1, Math.floor(legCount / 4));
+      const maxSwinging = Math.max(2, Math.floor(legCount / 3));
       const pairIndex = i < sideCount ? i + sideCount : i - sideCount;
       const pairSwinging = sideCount > 0 && sourceLegs[pairIndex]?.isSwinging === true;
 
