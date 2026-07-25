@@ -703,15 +703,18 @@ export function advanceGait(
           const midRatio = (geometry.minExtensionRatio + geometry.maxExtensionRatio) / 2;
           const deficit = midRatio - currentRatio;
           const velocityOvershoot = vx * config.overshootFactor;
-          // Clamp correction: compressed legs get extra forward push, but
-          // extended legs can't push the target behind rest (no backward
-          // steps). This prevents the "lift and come down without stepping
-          // forward" defect.
-          const maxNegativeCorrection = Math.min(0, velocityOvershoot);
           const rawCorrection = deficit * totalFemurTibia * safeFacing;
-          const extensionCorrection = rawCorrection < maxNegativeCorrection
-            ? maxNegativeCorrection
-            : rawCorrection;
+          // Symmetric clamp: the net forward displacement (velocityOvershoot +
+          // correction) must always have the same sign as vx, or be zero. This
+          // prevents backward steps regardless of facing direction. The old
+          // clamp only worked for facing=1; when facing=-1 the correction sign
+          // flipped and the clamp let extended legs cancel the overshoot,
+          // producing tiny steps that dragged.
+          const netForward = velocityOvershoot + rawCorrection;
+          const extensionCorrection =
+            netForward !== 0 && Math.sign(netForward) !== Math.sign(vx)
+              ? -velocityOvershoot
+              : rawCorrection;
 
           // Compute overshoot target with extension correction
           const targetX = restWorldX + velocityOvershoot + extensionCorrection;
