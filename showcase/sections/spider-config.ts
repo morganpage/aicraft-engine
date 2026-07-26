@@ -18,7 +18,7 @@ import {
  * never affects gait targets or IK geometry.
  */
 export const SHOWCASE_SPIDER_REFERENCE_SCALE = 1.2;
-const MAX_OVERSHOOT_REACH_FRACTION = 0.28;
+const MAX_OVERSHOOT_REACH_FRACTION = 0.50;
 const MAX_SWING_TRAVEL_REACH_FRACTION = 0.16;
 const MIN_VISIBLE_STEP_DURATION = 0.1;
 

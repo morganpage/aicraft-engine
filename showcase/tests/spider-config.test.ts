@@ -123,8 +123,8 @@ describe('scaleShowcaseSpiderConfig', () => {
     expect(large.phaseAdvanceRate * largeReach).toBeCloseTo(
       small.phaseAdvanceRate * smallReach,
     );
-    expect(large.overshootFactor * 90).toBeLessThanOrEqual(largeReach * 0.28);
-    expect(small.overshootFactor * 126).toBeLessThanOrEqual(smallReach * 0.28);
+    expect(large.overshootFactor * 90).toBeLessThanOrEqual(largeReach * 0.50);
+    expect(small.overshootFactor * 126).toBeLessThanOrEqual(smallReach * 0.50);
     expect(large.stepDuration * 90).toBeLessThanOrEqual(largeReach * 0.16);
     const smallAtMaxSpeed = tuneShowcaseSpiderSpeed(
       scaleShowcaseSpiderConfig(DEFAULT_SPIDER, 0.7),

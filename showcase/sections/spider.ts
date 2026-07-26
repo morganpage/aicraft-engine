@@ -53,15 +53,6 @@ const CANVAS_H = 360;
 const TILE_SIZE = 16;
 const FLOOR_Y = 224;
 
-/** Body clearance above the floor (px, scaled per spider). Matches the
- *  validated benchmark — must be less than the full leg reach
- *  (hipRadius + coxaLength + femurLength + tibiaLength = 82) so legs
- *  bend and feet reach the floor at mid-extension. The gait and the
- *  renderer both read this clearance via the caller's `bodyY`, so the
- *  two stay consistent (previously the renderer was lifted by an extra
- *  `bodyYOffset`, leaving the gait to deadlock). */
-const BODY_CLEARANCE = 30;
-
 const WALK_SPEED = 90;
 
 interface SpiderInstance {
@@ -126,7 +117,12 @@ function tintPalette(base: SpiderPalette, factor: number): SpiderPalette {
   };
 }
 
-function createInstanceDefs(): readonly {
+function createInstanceDefs(
+  overshoot: number,
+  comfort: number,
+  stepDur: number,
+  stepHeight: number,
+): readonly {
   readonly baseConfig: SpiderConfig;
   readonly config: SpiderConfig;
   readonly startX: number;
@@ -142,24 +138,35 @@ function createInstanceDefs(): readonly {
     scaleShowcaseSpiderConfig({
       ...DEFAULT_SPIDER,
       mode: 'coordinated',
-      stepDuration: 0.18,
+      stepDuration: stepDur,
       phaseAdvanceRate: 0.16,
+      overshootFactor: overshoot,
+      comfortRadius: comfort,
+      stepHeight,
       palette: tintPalette(DEFAULT_SPIDER_PALETTE, 1.15),
     }, 1.2),
     scaleShowcaseSpiderConfig({
       ...DEFAULT_SPIDER,
       mode: 'frantic',
-      stepDuration: 0.14,
-      comfortRadius: 14,
+      stepDuration: Math.max(0.1, stepDur * 0.78),
+      comfortRadius: Math.max(6, comfort * 1.4),
+      overshootFactor: overshoot,
+      stepHeight,
     }, 0.7),
     scaleShowcaseSpiderConfig({
       ...DEFAULT_SPIDER,
       mode: 'coordinated',
+      overshootFactor: overshoot,
+      comfortRadius: comfort,
+      stepHeight,
       palette: green,
     }, 1),
     scaleShowcaseSpiderConfig({
       ...DEFAULT_SPIDER,
       mode: 'coordinated',
+      overshootFactor: overshoot,
+      comfortRadius: comfort,
+      stepHeight,
       palette: red,
     }, 1),
   ];
@@ -195,39 +202,60 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
   const speedValue = container.querySelector<HTMLElement>('.spider-speed-value')!;
   const legsSlider = container.querySelector<HTMLInputElement>('.spider-legs')!;
   const legsValue = container.querySelector<HTMLElement>('.spider-legs-value')!;
+  const overshootSlider = container.querySelector<HTMLInputElement>('.spider-overshoot')!;
+  const overshootValue = container.querySelector<HTMLElement>('.spider-overshoot-value')!;
+  const comfortSlider = container.querySelector<HTMLInputElement>('.spider-comfort')!;
+  const comfortValue = container.querySelector<HTMLElement>('.spider-comfort-value')!;
+  const stepDurSlider = container.querySelector<HTMLInputElement>('.spider-stepdur')!;
+  const stepDurValue = container.querySelector<HTMLElement>('.spider-stepdur-value')!;
+  const stepHeightSlider = container.querySelector<HTMLInputElement>('.spider-stepheight')!;
+  const stepHeightValue = container.querySelector<HTMLElement>('.spider-stepheight-value')!;
+  const clearanceSlider = container.querySelector<HTMLInputElement>('.spider-clearance')!;
+  const clearanceValue = container.querySelector<HTMLElement>('.spider-clearance-value')!;
 
   let speedMultiplier = 1;
   let totalLegs = 8;
   let gaitMode: 'coordinated' | 'frantic' = 'coordinated';
+  let baseOvershoot = 0.30;
+  let baseComfort = 10;
+  let baseStepDur = 0.18;
+  let baseStepHeight = 14;
+  let baseClearance = 30;
   let tick = 0;
 
   const tileQuery = makeFloorQuery(FLOOR_Y);
 
-  const defs = createInstanceDefs();
-  const instances: SpiderInstance[] = defs.map((d) => {
-    const sizeScale = d.config.cephRadius / DEFAULT_SPIDER.cephRadius;
-    const bodyY = FLOOR_Y - sizeScale * BODY_CLEARANCE;
-    return {
-      baseConfig: d.baseConfig,
-      config: d.config,
-      state: groundShowcaseSpiderState(
-        createSpiderState(d.config, d.jitterSeed, d.startX, bodyY, 1),
-        d.startX,
+  let instances: SpiderInstance[] = [];
+
+  const rebuildInstances = (): void => {
+    const defs = createInstanceDefs(baseOvershoot, baseComfort, baseStepDur, baseStepHeight);
+    instances = defs.map((d) => {
+      const sizeScale = d.config.cephRadius / DEFAULT_SPIDER.cephRadius;
+      const bodyY = FLOOR_Y - sizeScale * baseClearance;
+      return {
+        baseConfig: d.baseConfig,
+        config: d.config,
+        state: groundShowcaseSpiderState(
+          createSpiderState(d.config, d.jitterSeed, d.startX, bodyY, 1),
+          d.startX,
+          bodyY,
+          1,
+          FLOOR_Y,
+          d.config,
+        ),
+        bodyX: d.startX,
         bodyY,
-        1,
-        FLOOR_Y,
-        d.config,
-      ),
-      bodyX: d.startX,
-      bodyY,
-      vx: d.vx,
-      facing: 1 as 1 | -1,
-      baseVx: d.vx,
-      jitterSeed: d.jitterSeed,
-      laneMin: d.laneMin,
-      laneMax: d.laneMax,
-    };
-  });
+        vx: d.vx,
+        facing: 1 as 1 | -1,
+        baseVx: d.vx,
+        jitterSeed: d.jitterSeed,
+        laneMin: d.laneMin,
+        laneMax: d.laneMax,
+      };
+    });
+    tick = 0;
+  };
+  rebuildInstances();
 
   const applyGaitLabel = (): void => {
     const label = gaitBtn.querySelector('span');
@@ -292,6 +320,53 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
         inst.config,
       );
     }
+  });
+
+  const rebuildFromSliders = (): void => {
+    rebuildInstances();
+    applySpeed(speedMultiplier);
+    applyGaitLabel();
+    if (gaitMode === 'frantic') {
+      for (const inst of instances) {
+        if (inst.baseVx !== 0) {
+          inst.config = tuneShowcaseSpiderSpeed({
+            ...inst.baseConfig,
+            mode: 'frantic',
+            legCount: totalLegs / 2,
+          }, Math.abs(inst.baseVx * speedMultiplier));
+        }
+      }
+    }
+  };
+
+  overshootSlider.addEventListener('input', () => {
+    baseOvershoot = Number(overshootSlider.value);
+    overshootValue.textContent = baseOvershoot.toFixed(2);
+    rebuildFromSliders();
+  });
+
+  comfortSlider.addEventListener('input', () => {
+    baseComfort = Number(comfortSlider.value);
+    comfortValue.textContent = String(baseComfort);
+    rebuildFromSliders();
+  });
+
+  stepDurSlider.addEventListener('input', () => {
+    baseStepDur = Number(stepDurSlider.value);
+    stepDurValue.textContent = baseStepDur.toFixed(2);
+    rebuildFromSliders();
+  });
+
+  stepHeightSlider.addEventListener('input', () => {
+    baseStepHeight = Number(stepHeightSlider.value);
+    stepHeightValue.textContent = String(baseStepHeight);
+    rebuildFromSliders();
+  });
+
+  clearanceSlider.addEventListener('input', () => {
+    baseClearance = Number(clearanceSlider.value);
+    clearanceValue.textContent = String(baseClearance);
+    rebuildFromSliders();
   });
 
   const step = (dt: number): void => {
