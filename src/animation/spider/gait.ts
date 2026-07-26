@@ -485,16 +485,12 @@ export function advanceGait(
       ? (previousActiveSet === 'A' ? 'B' : 'A')
       : desiredSet;
   const currentSwingingCount = sourceLegs.filter((c) => c.isSwinging).length;
-  // Critical eligibility — a critical leg (over-extended or folded) may step
-  // bypassing active-set and maxSwinging, but still respects pair-lock (its
-  // corresponding near/far partner must be planted) and a 5/8 support ceiling.
+  // Critical eligibility — a critical leg (over-extended or folded) steps
+  // immediately, bypassing pair-lock, active-set, and maxSwinging — but not
+  // a hard ceiling of 5 swinging out of 8 (at least 3 planted for support).
   let criticalEligible = false;
-  if (criticalIndex >= 0) {
-    const cPairIndex = sideCount > 0
-      ? (criticalIndex < sideCount ? criticalIndex + sideCount : criticalIndex - sideCount)
-      : -1;
-    const cPairSwinging = cPairIndex >= 0 && sourceLegs[cPairIndex]?.isSwinging === true;
-    criticalEligible = !cPairSwinging && currentSwingingCount < Math.floor(sourceLegs.length * 0.625);
+  if (criticalIndex >= 0 && currentSwingingCount < 5) {
+    criticalEligible = true;
   }
   // When a critical leg can step, route the active set to it so servicing
   // proceeds as a proper rolling wave within its own set (avoiding the
@@ -687,37 +683,11 @@ export function advanceGait(
         );
 
         if (req.needsStep) {
-          // Extension-aware overshoot: legs that are currently compressed
-          // (low coxa-to-foot ratio) get a larger forward correction so they
-          // decompress; extended legs get less so they recompress. This
-          // equalizes step sizes and prevents the shuffling cycle where a
-          // compressed leg takes tiny steps and never reaches mid-extension.
-          const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
-          const stepCoxa = computeCoxaEndpoint(
-            computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry),
-            safeFacing, restLocalVec, geometry,
-          );
-          const coxaToFoot = Math.hypot(leg.footX - stepCoxa.x, leg.footY - stepCoxa.y);
-          const totalFemurTibia = geometry.femurLength + geometry.tibiaLength;
-          const currentRatio = totalFemurTibia > 0 ? coxaToFoot / totalFemurTibia : 0;
-          const midRatio = (geometry.minExtensionRatio + geometry.maxExtensionRatio) / 2;
-          const deficit = midRatio - currentRatio;
-          const velocityOvershoot = vx * config.overshootFactor;
-          const rawCorrection = deficit * totalFemurTibia * safeFacing;
-          // Symmetric clamp: the net forward displacement (velocityOvershoot +
-          // correction) must always have the same sign as vx, or be zero. This
-          // prevents backward steps regardless of facing direction. The old
-          // clamp only worked for facing=1; when facing=-1 the correction sign
-          // flipped and the clamp let extended legs cancel the overshoot,
-          // producing tiny steps that dragged.
-          const netForward = velocityOvershoot + rawCorrection;
-          const extensionCorrection =
-            netForward !== 0 && Math.sign(netForward) !== Math.sign(vx)
-              ? -velocityOvershoot
-              : rawCorrection;
-
-          // Compute overshoot target with extension correction
-          const targetX = restWorldX + velocityOvershoot + extensionCorrection;
+          // Simple velocity-proportional overshoot: every leg steps the same
+          // forward distance regardless of current extension. The extension-
+          // aware correction that was here previously cancelled the overshoot
+          // for extended legs, producing tiny steps that dragged.
+          const targetX = restWorldX + vx * config.overshootFactor;
           const targetY = restWorldY + vy * config.overshootFactor;
 
           // Lazy ground sampling (downward only, v1)
@@ -732,6 +702,7 @@ export function advanceGait(
           );
 
           if (ground.hasGround) {
+            const restLocalVec = { x: leg.restLocalX, y: leg.restLocalY };
             // Landing target: floor-grounded (preserves ground.point.y) and
             // sector-valid at the predicted landing-time coxa (stepDuration
             // ahead), so the swing end is anatomically reachable on plant.
@@ -743,12 +714,15 @@ export function advanceGait(
               landingCoxa, ground.point, geometry, safeFacing, leg.restLocalX,
             );
 
-            // Current-time coxa (stepCoxa already computed above for the
-            // extension-aware overshoot), used to project the arc's start
+            // Current-time coxa, used to project the arc's start
             // into the sector so first swing samples do not retain a large
             // renderer correction.
+            const currentCoxa = computeCoxaEndpoint(
+              computeHipPosition(bodyX, bodyY, safeFacing, restLocalVec, geometry),
+              safeFacing, restLocalVec, geometry,
+            );
             const projectedStart = projectGroundedTargetIntoWorkspace(
-              stepCoxa, { x: leg.footX, y: leg.footY }, geometry, safeFacing, leg.restLocalX,
+              currentCoxa, { x: leg.footX, y: leg.footY }, geometry, safeFacing, leg.restLocalX,
             );
             const startX = projectedStart.x;
             const startY = projectedStart.y;

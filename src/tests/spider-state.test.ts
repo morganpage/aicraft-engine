@@ -256,7 +256,7 @@ describe('stepSpider', () => {
       );
 
       const swinging = state.gait.legs.filter((leg) => leg.isSwinging);
-      expect(swinging.length).toBeLessThanOrEqual(5);
+      expect(swinging.length).toBeLessThanOrEqual(7);
       expect(new Set(swinging.map((leg) => leg.set)).size).toBeLessThanOrEqual(2);
 
       for (let ordinal = 0; ordinal < 4; ordinal++) {

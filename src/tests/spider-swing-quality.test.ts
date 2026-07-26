@@ -301,8 +301,8 @@ describe('spider swing quality — large purple (1.2x coordinated 90px/s)', () =
     expect(report.plantedSlides).toBe(0);
   });
 
-  it('rendered extension ratio stays within physical reach (<= 1.0)', () => {
-    expect(report.maxExtensionRatio).toBeLessThanOrEqual(1.001);
+  it('rendered extension ratio stays within physical reach (<= 0.95)', () => {
+    expect(report.maxExtensionRatio).toBeLessThanOrEqual(0.95);
   });
 
   it('rendered feet do not clip below the floor', () => {
@@ -348,8 +348,8 @@ describe('spider swing quality — small purple (0.7x frantic 72px/s)', () => {
     expect(report.plantedSlides).toBe(0);
   });
 
-  it('rendered extension ratio stays within physical reach (<= 1.0)', () => {
-    expect(report.maxExtensionRatio).toBeLessThanOrEqual(1.001);
+  it('rendered extension ratio stays within physical reach (<= 0.95)', () => {
+    expect(report.maxExtensionRatio).toBeLessThanOrEqual(0.95);
   });
 
   it('rendered feet do not clip below the floor', () => {
@@ -395,8 +395,8 @@ describe('spider swing quality — green (1.0x coordinated 15px/s)', () => {
     expect(report.plantedSlides).toBe(0);
   });
 
-  it('rendered extension ratio stays within physical reach (<= 1.0)', () => {
-    expect(report.maxExtensionRatio).toBeLessThanOrEqual(1.001);
+  it('rendered extension ratio stays within physical reach (<= 0.95)', () => {
+    expect(report.maxExtensionRatio).toBeLessThanOrEqual(0.95);
   });
 
   it('rendered feet do not clip below the floor', () => {
