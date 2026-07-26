@@ -216,9 +216,9 @@ export function initSpider(container: HTMLElement, store: Store<GlobalState>): v
   let speedMultiplier = 1;
   let totalLegs = 8;
   let gaitMode: 'coordinated' | 'frantic' = 'coordinated';
-  let baseOvershoot = 0.80;
+  let baseOvershoot = 1.50;
   let baseComfort = 30;
-  let baseStepDur = 0.30;
+  let baseStepDur = 0.50;
   let baseStepHeight = 30;
   let baseClearance = 30;
   let tick = 0;
