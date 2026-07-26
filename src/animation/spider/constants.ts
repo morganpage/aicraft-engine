@@ -64,10 +64,10 @@ export const DEFAULT_SPIDER: Readonly<SpiderConfig> = {
   // Gait
   mode: 'coordinated',
   legCount: 4,
-  comfortRadius: 10,
-  overshootFactor: 0.3,
-  stepHeight: 14,
-  stepDuration: 0.18,
+  comfortRadius: 30,
+  overshootFactor: 0.8,
+  stepHeight: 30,
+  stepDuration: 0.3,
   phaseAdvanceRate: 0.16,
   // Visual — body
   cephRadius: 10,
