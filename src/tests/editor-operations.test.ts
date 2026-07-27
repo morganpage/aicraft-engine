@@ -800,3 +800,51 @@ describe('applyOp — setEntityRect on enemy patrolPath coherence', () => {
 // (noUnusedLocals gate would flag an unused import otherwise)
 const _typeOnlyLevelEntity: LevelEntity | null = null;
 void _typeOnlyLevelEntity;
+
+describe('applyOp — addEntity for collectible (makeEntity dispatch)', () => {
+  it('constructs a valid LevelEntity with kind: collectible and the supplied props', () => {
+    const state = createEditorState(baseLevel());
+    const next = applyOp(state, {
+      type: 'addEntity',
+      kind: 'collectible',
+      rect: { x: 48, y: 48, width: 16, height: 16 },
+      props: { kind: 'coin', value: 10 },
+    });
+    const added = next.level.entities[next.level.entities.length - 1];
+    expect(added.kind).toBe('collectible');
+    if (added.kind === 'collectible') {
+      expect(added.props.kind).toBe('coin');
+      expect(added.props.value).toBe(10);
+    }
+    // The added entity must pass validation (the validation cache reflects it).
+    expect(next.validation.valid).toBe(true);
+  });
+
+  it('constructs a gem and a key via makeEntity dispatch', () => {
+    const state = createEditorState(baseLevel());
+    const withGem = applyOp(state, {
+      type: 'addEntity',
+      kind: 'collectible',
+      rect: { x: 0, y: 0, width: 16, height: 16 },
+      props: { kind: 'gem' },
+    });
+    const gemEntity = withGem.level.entities[withGem.level.entities.length - 1];
+    expect(gemEntity.kind).toBe('collectible');
+    if (gemEntity.kind === 'collectible') {
+      expect(gemEntity.props.kind).toBe('gem');
+    }
+
+    const withKey = applyOp(withGem, {
+      type: 'addEntity',
+      kind: 'collectible',
+      rect: { x: 16, y: 0, width: 16, height: 16 },
+      props: { kind: 'key', persists: true },
+    });
+    const keyEntity = withKey.level.entities[withKey.level.entities.length - 1];
+    expect(keyEntity.kind).toBe('collectible');
+    if (keyEntity.kind === 'collectible') {
+      expect(keyEntity.props.kind).toBe('key');
+      expect(keyEntity.props.persists).toBe(true);
+    }
+  });
+});

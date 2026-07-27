@@ -22,7 +22,7 @@
     "researcher": {
       "description": "Prior-art researcher for procedural rendering, generative art, deterministic simulation, and algorithmic cosmetics. Investigates papers, repositories, JS13k winners, demoscene, Sokpop catalog, p5.js patterns. Writes structured notes to docs/research/. READ-only on src/ — never implements.",
       "mode": "subagent",
-      "model": "google/gemini-3.5-flash",
+      "model": "opencode/minimax-m3",
       "temperature": 0.5,
       "steps": 40,
       "color": "#3B82F6",

@@ -44,6 +44,12 @@ export interface EntityPalette {
   readonly movingPlatform?: string;
   /** Enemy color. */
   readonly enemy?: string;
+  /** Coin collectible color (gold). */
+  readonly collectibleCoin?: string;
+  /** Gem collectible color (blue). */
+  readonly collectibleGem?: string;
+  /** Key collectible color (silver). */
+  readonly collectibleKey?: string;
   /** Default player body color. */
   readonly player?: string;
 }
@@ -75,6 +81,16 @@ export const DEFAULT_ENTITY_PALETTE: Readonly<EntityPalette> = {
   movingPlatform: '#5a7a9a',
   enemy: '#ff3a3a',
   player: '#fe5701',
+  // Collectible sub-kind palette — all values WCAG AA against
+  // `DEFAULT_OUTLINE_COLOR` (`#1d1128`, the library background):
+  //   coin (#ffd700) → 12.5:1 contrast (gold)
+  //   gem  (#4a9eff) → 5.2:1  contrast (blue)
+  //   key  (#c0c0c0) → 9.8:1  contrast (silver)
+  // All three ≥ 4.5:1 AA. Verified by `@architect` in
+  // `docs/design/collectibles-proposal.md` (open question 4).
+  collectibleCoin: '#ffd700',
+  collectibleGem: '#4a9eff',
+  collectibleKey: '#c0c0c0',
 };
 
 /**
@@ -103,6 +119,8 @@ export interface DrawLevelEntityOverrideMap {
   readonly movingPlatform?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
   /** Override for `enemy` entities. */
   readonly enemy?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
+  /** Override for `collectible` entities. */
+  readonly collectible?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
 }
 
 /**
@@ -177,6 +195,27 @@ export function drawLevelEntity(
     } catch {
       // Swallow; fall through to the default rendering.
     }
+  }
+
+  // Collectibles dispatch on the sub-kind via dedicated palette keys
+  // (`collectibleCoin` / `collectibleGem` / `collectibleKey`). TS's
+  // discriminated-union narrowing on `entity.kind === 'collectible'`
+  // resolves `props` to `CollectibleProps` here so the `props.kind`
+  // access is type-safe. Draws a single flat fillRect (NO outline) so
+  // collectibles render as pickable markers, not architectural solids.
+  if (entity.kind === 'collectible') {
+    const sub = entity.props.kind;
+    const colorKey =
+      sub === 'coin' ? 'collectibleCoin' :
+      sub === 'gem'  ? 'collectibleGem'  :
+      sub === 'key'  ? 'collectibleKey'  :
+      null;
+    if (colorKey === null) return;
+    const color = palette[colorKey];
+    if (color === undefined) return;
+    ctx.fillStyle = color;
+    ctx.fillRect(entity.rect.x, entity.rect.y, entity.rect.width, entity.rect.height);
+    return;
   }
 
   const color = palette[entity.kind];

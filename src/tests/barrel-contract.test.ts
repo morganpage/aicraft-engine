@@ -22,6 +22,13 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.DEFAULT_OUTLINE_COLOR).toBe('string');
   });
 
+  it('primitives: bitmap-font — measureText, drawText are functions, DEFAULT_FONT is an object', () => {
+    expect(typeof aicraft.measureText).toBe('function');
+    expect(typeof aicraft.drawText).toBe('function');
+    expect(typeof aicraft.DEFAULT_FONT).toBe('object');
+    expect(aicraft.DEFAULT_FONT).not.toBeNull();
+  });
+
   it('rng: mulberry32 is a function', () => {
     expect(typeof aicraft.mulberry32).toBe('function');
   });
@@ -66,9 +73,22 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.orEdges).toBe('function');
   });
 
+  it('input: createGamepadAdapter is a function, DEFAULT_GAMEPAD_DEADZONE is a number', () => {
+    expect(typeof aicraft.createGamepadAdapter).toBe('function');
+    expect(typeof aicraft.DEFAULT_GAMEPAD_DEADZONE).toBe('number');
+  });
+
   it('game-loop: createGameLoop is a function, DEFAULT_FIXED_DT is a number', () => {
     expect(typeof aicraft.createGameLoop).toBe('function');
     expect(typeof aicraft.DEFAULT_FIXED_DT).toBe('number');
+  });
+
+  it('game-state: createGameState, reduceGameState, isLegalTransition are functions, DEFAULT_GAME_STATE_ADJACENCY is an object', () => {
+    expect(typeof aicraft.createGameState).toBe('function');
+    expect(typeof aicraft.reduceGameState).toBe('function');
+    expect(typeof aicraft.isLegalTransition).toBe('function');
+    expect(typeof aicraft.DEFAULT_GAME_STATE_ADJACENCY).toBe('object');
+    expect(aicraft.DEFAULT_GAME_STATE_ADJACENCY).not.toBeNull();
   });
 
   it('audio: createAudioAdapter is a function', () => {
@@ -82,6 +102,13 @@ describe('root barrel re-exports every module', () => {
   it('blend: blendPose and blendPoses are functions', () => {
     expect(typeof aicraft.blendPose).toBe('function');
     expect(typeof aicraft.blendPoses).toBe('function');
+  });
+
+  it('easing: advanceTween and createTweenState are functions, easeOutCubic is a function, powOut is a function', () => {
+    expect(typeof aicraft.advanceTween).toBe('function');
+    expect(typeof aicraft.createTweenState).toBe('function');
+    expect(typeof aicraft.easeOutCubic).toBe('function');
+    expect(typeof aicraft.powOut).toBe('function');
   });
 
   it('level: validateLevel and createTileQuery are functions, LEVEL_VERSION is a number', () => {
@@ -111,6 +138,15 @@ describe('root barrel re-exports every module', () => {
     expect(aicraft.DEFAULT_CATALOG).not.toBeNull();
   });
 
+  it('collectibles: collect, hasCollected, derivePickups are functions; DEFAULT_COLLECTIBLE_VALUE is a number', () => {
+    expect(typeof aicraft.collect).toBe('function');
+    expect(typeof aicraft.hasCollected).toBe('function');
+    expect(typeof aicraft.derivePickups).toBe('function');
+    expect(typeof aicraft.DEFAULT_COLLECTIBLE_RECT).toBe('object');
+    expect(aicraft.DEFAULT_COLLECTIBLE_RECT).not.toBeNull();
+    expect(typeof aicraft.DEFAULT_COLLECTIBLE_VALUE).toBe('number');
+  });
+
   it('enemy: createEnemyBehaviorRegistry, stepProjectile, compileEnemies, drawEnemies, drawProjectiles are functions, spinnyBehavior is an object', () => {
     expect(typeof aicraft.createEnemyBehaviorRegistry).toBe('function');
     expect(typeof aicraft.stepProjectile).toBe('function');
@@ -122,5 +158,24 @@ describe('root barrel re-exports every module', () => {
     expect(aicraft.spinnyBehavior).not.toBeNull();
     expect(typeof aicraft.turretBehavior).toBe('object');
     expect(aicraft.turretBehavior).not.toBeNull();
+  });
+
+  it('music: noteToFrequency, generatePattern, advanceSequencer, createSequencer are functions, SCALES is an object, A4_FREQ is a number', () => {
+    expect(typeof aicraft.noteToFrequency).toBe('function');
+    expect(typeof aicraft.frequencyToNote).toBe('function');
+    expect(typeof aicraft.buildScale).toBe('function');
+    expect(typeof aicraft.scaleDegree).toBe('function');
+    expect(typeof aicraft.secondsPerBeat).toBe('function');
+    expect(typeof aicraft.secondsPerStep).toBe('function');
+    expect(typeof aicraft.swingLongDuration).toBe('function');
+    expect(typeof aicraft.generatePattern).toBe('function');
+    expect(typeof aicraft.advanceSequencer).toBe('function');
+    expect(typeof aicraft.createSequencer).toBe('function');
+    expect(typeof aicraft.SCALES).toBe('object');
+    expect(aicraft.SCALES).not.toBeNull();
+    expect(typeof aicraft.A4_FREQ).toBe('number');
+    expect(typeof aicraft.A4_MIDI).toBe('number');
+    expect(typeof aicraft.LOOKAHEAD_MS).toBe('number');
+    expect(typeof aicraft.SCHEDULE_AHEAD_S).toBe('number');
   });
 });

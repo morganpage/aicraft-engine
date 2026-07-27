@@ -355,6 +355,40 @@ function validatePropsByKind(
       }
       break;
     }
+    case 'collectible': {
+      // Closed `CollectibleKind` sub-union (coin/gem/key) — rejects unknown
+      // sub-kinds defensively at the schema boundary. Mirrors the approach
+      // used by `EnemyProps.archetype` but with a closed set (not free-string)
+      // so the renderer can dispatch by sub-kind without runtime fallbacks.
+      const validKinds = new Set<string>(['coin', 'gem', 'key']);
+      if (typeof props.kind !== 'string' || !validKinds.has(props.kind)) {
+        errors.push(
+          err(`${base}.kind`, 'collectible.kind must be one of "coin" | "gem" | "key"'),
+        );
+      }
+      // `value` is optional; when present, must be a finite non-negative
+      // number (coins can be worth 0 for tutorial/badge use-cases).
+      if (
+        props.value !== undefined &&
+        !(typeof props.value === 'number' && Number.isFinite(props.value) && props.value >= 0)
+      ) {
+        errors.push(
+          err(
+            `${base}.value`,
+            'collectible.value must be a finite non-negative number or undefined',
+          ),
+        );
+      }
+      // `persists` is optional; when present, must be a boolean. Absent
+      // means `false` (per-run respawn, Mario-style default).
+      if (props.persists !== undefined && typeof props.persists !== 'boolean') {
+        errors.push(
+          err(`${base}.persists`, 'collectible.persists must be a boolean or undefined'),
+        );
+      }
+      // Forward-compat: unknown extra props are ignored (not rejected).
+      break;
+    }
     default:
       errors.push(err(entityBase, `unknown entity kind "${kind}"`));
       break;

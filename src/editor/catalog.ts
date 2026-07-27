@@ -32,6 +32,7 @@ const DEFAULT_RECT_BY_KIND: Readonly<Record<EntityKind, LevelRect>> = {
   trigger: { x: 0, y: 0, width: 16, height: 16 },
   movingPlatform: { x: 0, y: 0, width: 48, height: 16 },
   enemy: { x: 0, y: 0, width: 16, height: 16 },
+  collectible: { x: 0, y: 0, width: 16, height: 16 },
 };
 
 /**
@@ -50,6 +51,7 @@ const DEFAULT_PROPS_BY_KIND: Readonly<Record<EntityKind, Record<string, unknown>
   trigger: { action: 'showHint', params: {} },
   movingPlatform: { speed: 60, path: [{ x: 0, y: 0 }, { x: 48, y: 0 }], loopMode: 'loop' },
   enemy: { archetype: 'spinny', params: {} },
+  collectible: { kind: 'coin', value: 1 },
 };
 
 /**
@@ -66,6 +68,7 @@ const DEFAULT_LABEL_BY_KIND: Readonly<Record<EntityKind, string>> = {
   trigger: 'Trigger',
   movingPlatform: 'Moving Platform',
   enemy: 'Enemy',
+  collectible: 'Collectible',
 };
 
 /**
@@ -155,6 +158,31 @@ export const DEFAULT_CATALOG: EntityCatalog = {
       label: 'Spider Enemy',
       defaultRect: { x: 0, y: 0, width: 16, height: 16 },
       defaultProps: { archetype: 'spider', params: { speed: 50, gaitMode: 'coordinated', ledgeTurnAround: true } },
+    },
+    // Collectible sub-kind prefabs (all share `kind: 'collectible'`; the
+    // sub-kind lives on `defaultProps.kind` and is dispatched by the
+    // renderer). Matches the `spinny`/`turret`/`spider` enemy archetype
+    // pattern: one `CatalogEntry` per sub-kind, all pointing at the same
+    // `EntityKind`. Coin carries a default `value` (1); key opts out of
+    // per-run respawn via `persists: false` (consumer flips to `true` to
+    // make the key progress-meta, like Celeste's berry model).
+    coin: {
+      kind: 'collectible',
+      label: 'Coin',
+      defaultRect: { x: 0, y: 0, width: 16, height: 16 },
+      defaultProps: { kind: 'coin', value: 1 },
+    },
+    gem: {
+      kind: 'collectible',
+      label: 'Gem',
+      defaultRect: { x: 0, y: 0, width: 16, height: 16 },
+      defaultProps: { kind: 'gem' },
+    },
+    key: {
+      kind: 'collectible',
+      label: 'Key',
+      defaultRect: { x: 0, y: 0, width: 16, height: 16 },
+      defaultProps: { kind: 'key', persists: false },
     },
   },
 };

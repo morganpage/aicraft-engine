@@ -5,9 +5,9 @@
  *   - **Pure core** (`edges.ts`, `merge.ts`) — DOM-free, deterministic, fully
  *     unit-testable under Node. Ports Spitekeep's `src/input/edges.ts`.
  *   - **Defensive adapters** (`keyboard.ts`, `touch-button.ts`,
- *     `touch-button-set.ts`) — host-touching; lazy `window` / DOM resolution,
- *     swallow errors, never throw, no-op fallback in Node / SSR (see
- *     `src/primitives/motion.ts`).
+ *     `touch-button-set.ts`, `gamepad.ts`) — host-touching; lazy `window` /
+ *     `navigator` resolution, swallow errors, never throw, no-op fallback in
+ *     Node / SSR (see `src/primitives/motion.ts`).
  *
  * @module
  */
@@ -20,6 +20,9 @@ export type {
   TouchButtonAdapter,
   TouchButtonSetConfig,
   TouchButtonSetAdapter,
+  AxisBinding,
+  GamepadAdapter,
+  GamepadConfig,
 } from './types';
 
 export {
@@ -37,3 +40,5 @@ export { createKeyboardAdapter } from './keyboard';
 export { createTouchButton } from './touch-button';
 
 export { createTouchButtonSet } from './touch-button-set';
+
+export { createGamepadAdapter, DEFAULT_GAMEPAD_DEADZONE } from './gamepad';

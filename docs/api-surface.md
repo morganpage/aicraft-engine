@@ -40,6 +40,38 @@ Color math, pixel helpers, motion probe. (The animation helpers — `bob`, `puls
 | `resetDprCacheForTests()` | function | Reset cached DPR; tests only | `src/primitives/dpr.ts` |
 | `resizeCanvasToBackingStore(canvas, cssWidth, cssHeight)` | function | Resize canvas backing store to `round(cssWidth × dpr)` × `round(cssHeight × dpr)`; returns the fresh DPR for caller to `ctx.scale(dpr, dpr)`. Reads DPR fresh each call (NOT via the cache — DPR changes at runtime on monitor swap / browser zoom). Does NOT touch `canvas.style` | `src/primitives/dpr.ts` |
 
+#### `src/easing/` (shipped)
+
+> Decision: `docs/design/easing-tween-decision.md`.
+> Proposal: `docs/design/easing-tween-proposal.md` (Approach B: Curves + Stateless Tween Driver).
+> Research: `docs/research/easing-tween.md`.
+
+Pure-function easing curves and a stateless tween driver. Deterministic: same `(t)` → same output, same `(state, dt, config)` → same result forever. Composes with the fixed-step loop (`advanceAccumulator`) — `dt` MUST come from the fixed-step accumulator, never from `performance.now()`. Curves are `(t: number) => number` functions for direct composition with `particleAge` and other `[0,1] → [0,1]` remapping. The tween driver follows the pure-progression-ops pattern: consumer owns `TweenState`, engine provides `advanceTween`.
+
+**Tween loop convention:** `loops: N` plays the tween `N + 1` times total (one initial pass plus `N` repeats). `loops: 0` = single play. `loops: -1` = infinite. This matches Phaser repeat semantics.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `linear(t)` | function | Identity: returns `t` unchanged | `src/easing/curves.ts` |
+| `easeOutQuad(t)` | function | `1 - (1-t)²` — gentle deceleration | `src/easing/curves.ts` |
+| `easeOutCubic(t)` | function | `1 - (1-t)³` — fast start, soft settle (most common game easing) | `src/easing/curves.ts` |
+| `easeOutQuart(t)` | function | `1 - (1-t)⁴` — aggressive start, very soft landing | `src/easing/curves.ts` |
+| `easeOutQuint(t)` | function | `1 - (1-t)⁵` — maximum snap | `src/easing/curves.ts` |
+| `easeOutBack(t)` | function | Overshoots past 1.0 then settles (Penner back constant `s = 1.70158`) | `src/easing/curves.ts` |
+| `easeOutElastic(t)` | function | Oscillates with exponential decay — spring/bounce feel | `src/easing/curves.ts` |
+| `easeOutBounce(t)` | function | Piecewise quadratic floor-bounce simulation (4 segments) | `src/easing/curves.ts` |
+| `powOut(t, n)` | function | Generic power-out: `1 - (1-t)^n`. Covers quad/cubic/quart/quint by n | `src/easing/curves.ts` |
+| `easeIn(outFn)` | function | Derive In variant from any Out curve: `(t) => 1 - outFn(1 - t)` | `src/easing/curves.ts` |
+| `easeInOut(outFn)` | function | Derive InOut variant from any Out curve: symmetric around t=0.5 | `src/easing/curves.ts` |
+| `TweenState` | type | Consumer-owned tween state: `elapsed`, `direction`, `loopCount`, `delay` | `src/easing/tween.ts` |
+| `TweenConfig` | type | Immutable tween config: `duration`, `ease`, `yoyo?`, `loops?`, `delay?` | `src/easing/tween.ts` |
+| `TweenResult` | type | Advance result: `{ state, value, done }` | `src/easing/tween.ts` |
+| `createTweenState()` | function | Factory: fresh state with all fields zeroed (no delay, single forward pass) | `src/easing/tween.ts` |
+| `advanceTween(state, dt, config)` | function | Pure: advance tween by `dt` seconds; returns new state + eased value + done flag. Call inside `step(fixedDt)` for replay-deterministic animation | `src/easing/tween.ts` |
+
+- _particle lifetime integration: `particleAlphaCurve` / `particleSizeCurve` gain an optional `ease?` parameter (default linear) — see `src/particles/lifetime.ts`_
+- _replaces Spitekeep's local `easing(t, name)` in `src/core/traps/hidden-pit.ts:272` and inline `1 - Math.pow(1-t, 3)` in `src/death-cinematography/zoom.ts:75`_
+
 - _research note: See `docs/research/procedural-locomotion.md` for planned trigonometric locomotion, squash/stretch, and Verlet-based spring chains._
 
 #### `src/primitives/wave-line.ts`
@@ -88,6 +120,37 @@ Additive radial-gradient glow stamp. Draws a brightest-at-center, fade-to-transp
 |---|---|---|---|
 | `drawGlow(ctx, x, y, radius, color, intensity?)` | function | Additive radial-gradient glow; `intensity` is peak alpha [0,1], defaults to `DEFAULT_GLOW_INTENSITY` | `src/primitives/glow.ts` |
 | `DEFAULT_GLOW_INTENSITY` | const | `1` — default peak alpha at glow center | `src/primitives/glow.ts` |
+
+#### `src/primitives/bitmap-font.ts` (shipped)
+
+> Decision: `docs/design/bitmap-font-decision.md`.
+> Proposal: `docs/design/bitmap-font-proposal.md` (Approach A: Standalone Functions + Options Bag).
+> Research: `docs/research/bitmap-font.md`.
+
+Asset-less bitmap font renderer. Draws text as sequences of `fillRect` calls — no `ctx.fillText`, no webfont, no PNG atlas, no asset files. Ships a default 5×7 monospace font (Pascal Stang, MIT-licensed, 95 printable ASCII glyphs, 475 bytes). Consumers register custom fonts via `createFont()` and extend with custom glyphs via `addGlyph()`.
+
+**Layer split:** `measureText` is deterministic core (pure arithmetic, no ctx, SSR-safe). `drawText` / `drawTextOutlined` are renderer-adjacent (take `CanvasRenderingContext2D`).
+
+**Scale convention:** `scale` = pixels per glyph cell. `scale = 3` → 15×21px per glyph (comfortable HUD size per XAG 101). `scale = 1` → 5×7px (tiny, debug use only).
+
+**Outline technique:** `drawTextOutlined` uses the standard 4-offset technique — flat text stamped in outline color at `(±1,0)` + `(0,±1)`, then fill color on top. Reuses `DEFAULT_OUTLINE_COLOR` from `outline-rect.ts`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `BitmapFont` | type | Font definition: `name`, `cellWidth`, `cellHeight`, `lineGap`, `glyphs` (ReadonlyMap) | `src/primitives/bitmap-font-types.ts` |
+| `TextMetrics` | type | Measurement result: `width`, `height`, `lineCount` | `src/primitives/bitmap-font-types.ts` |
+| `TextAlign` | type | `'left' \| 'center' \| 'right'` — text alignment | `src/primitives/bitmap-font-types.ts` |
+| `TextDrawOptions` | type | Draw options: `font?`, `scale?`, `align?`, `color?`, `outline?`, `charGap?` | `src/primitives/bitmap-font-types.ts` |
+| `DEFAULT_TEXT_COLOR` | const | `'#ffffff'` — white text (high contrast on dark backgrounds) | `src/primitives/bitmap-font.ts` |
+| `DEFAULT_TEXT_SCALE` | const | `3` — 21px tall (comfortable HUD size per XAG 101) | `src/primitives/bitmap-font.ts` |
+| `DEFAULT_LINE_GAP` | const | `1` — default line gap in px (HD44780 convention; `DEFAULT_FONT` is constructed with this value) | `src/primitives/bitmap-font.ts` |
+| `DEFAULT_CHAR_GAP` | const | `1` — default uniform horizontal gap between adjacent glyphs in unscaled font pixels (letter-spacing, NOT kerning — uniform advance gap) | `src/primitives/bitmap-font.ts` |
+| `DEFAULT_FONT` | const | 5×7 monospace font (Pascal Stang, MIT-licensed, full printable ASCII) | `src/primitives/bitmap-font.ts` |
+| `createFont(name, cellWidth, cellHeight, lineGap, glyphs)` | function | Factory: create a custom bitmap font from glyph data | `src/primitives/bitmap-font.ts` |
+| `addGlyph(font, charCode, glyphData)` | function | Pure: return a new font with one additional glyph (input unchanged) | `src/primitives/bitmap-font.ts` |
+| `measureText(text, font?, scale?, charGap?)` | function | Pure measurement: `{width, height, lineCount}` — no ctx, no DOM, SSR-safe. Width excludes trailing `charGap` on last glyph per line: `(lineLength - 1) × (cellWidth + charGap) × scale + cellWidth × scale`. Height excludes trailing `lineGap` on last line | `src/primitives/bitmap-font.ts` |
+| `drawText(ctx, text, x, y, options?)` | function | Draw text using flat `fillRect` calls (one per lit pixel) | `src/primitives/bitmap-font.ts` |
+| `drawTextOutlined(ctx, text, x, y, options?)` | function | Draw text with 1px outline via 4-offset technique (outline color at ±1 offsets, fill on top). Reuses `DEFAULT_OUTLINE_COLOR` | `src/primitives/bitmap-font.ts` |
 
 #### `src/primitives/parallax.ts`
 
@@ -528,6 +591,101 @@ Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gai
 - _benchmark: `benchmarks/spider/sample-sheet.png`_
 - _composes with: `src/animation/spider/geometry.ts` (`solveThreeSegmentLeg`, `computeHipPosition`, `computeCoxaEndpoint`, `computeFemurTibiaAnnuli`, `projectTargetIntoWorkspace`, `projectGroundedTargetIntoWorkspace`, `computeLegStepRequest`), `src/animation/spring-rod.ts` (`createSpringRod`, `advanceSpringRod`), `src/animation/squash-stretch.ts` (`breathe`), `src/collision/types.ts` (`TileSolidityQuery`), `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/rng/mulberry32.ts` (seeded body jitter)_
 
+### `src/character/` (PROPOSED)
+
+> Proposal: `docs/design/character-body-plans-proposal.md` (Approach C: Registry Pattern).
+> Research: `docs/research/character-body-plans.md`.
+> Status: **PROPOSED** — awaiting `@architect` critique and benchmark.
+
+Character body-plan catalog. Provides the registry-based abstraction for seeding, stepping, and rendering distinct character archetypes (slime-knight, humanoid biped, floater/drone, serpentine/multi-segment). Mirrors the `createEnemyBehaviorRegistry` pattern: a `BodyPlanHandler` interface encapsulates per-plan state, step, and draw; consumers register custom plans via `createBodyPlanRegistry`.
+
+Each body plan lives in its own subdirectory under `src/character/` with dedicated `types.ts`, `config.ts`, `state.ts`, `draw.ts`, `constants.ts`, and `index.ts`. The registry layer is plan-agnostic — it never inspects config or state shapes.
+
+**Cosmetics composition:** each plan handler's `deriveConfig` accepts a `Palette` from `src/palette/generatePalette(seed)`. Plans may embed plan-specific palette extensions (e.g., humanoid weapon/helmet colors) in their own config type. The registry imposes no palette contract.
+
+#### `src/character/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `BodyPlanName` | type | `string` — free-string plan identifier for extensibility. Built-ins: `'slime'`, `'humanoid'`, `'floater'`, `'serpentine'` | `src/character/types.ts` |
+| `CharacterConfig` | type | `Readonly<Record<string, unknown>>` — opaque config produced by `deriveConfig`. Plan-specific shape; registry never inspects | `src/character/types.ts` |
+| `CharacterFrameState` | type | `Readonly<Record<string, unknown>>` — opaque per-frame state. Plan-specific shape; registry never inspects | `src/character/types.ts` |
+| `CharacterInputs` | type | `{ walkDx?, facing?, jumpPressed?, jumpHeld?, [key: string]: unknown }` — shared input base + plan-specific extensions via index signature | `src/character/types.ts` |
+| `BodyPlanHandler<TConfig, TState>` | interface | `{ deriveConfig(seed), createFrameState(config), step(state, dt, inputs?), draw(ctx, state, tick, look?) }` — plan handler contract. Generic over config and state types | `src/character/types.ts` |
+| `BodyPlanRegistry` | type | `{ get(plan: string): BodyPlanHandler \| undefined }` — registry lookup. Same shape as `EnemyBehaviorRegistry` | `src/character/types.ts` |
+
+#### `src/character/registry.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createBodyPlanRegistry(customPlans?)` | function | Factory: creates registry with `'slime'`, `'humanoid'`, `'floater'`, `'serpentine'` pre-registered, plus any custom handlers. Custom handlers merge on top of built-ins (same-name overrides). Mirrors `createEnemyBehaviorRegistry` | `src/character/registry.ts` |
+
+#### `src/character/slime/` (PROPOSED — migrated from showcase)
+
+Slime-knight body plan. Migrated from `showcase/helpers/slime-knight.ts`; showcase retains canvas-sizing, ground-line, blink, emotion, and leg-style toggle as showcase-local concerns.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SlimeConfig` | type | Seed-derived config: seed, palette, bodyWidth/Height, eyeRadius, boneLengths, antennaSegments/SegmentLength, gaitConfig, springConfig, breathConfig, speed | `src/character/slime/types.ts` |
+| `SlimeFrameState` | type | Per-frame state: config, locomotion, antenna (VerletNode[]), jump, x, facing, eyeCount, idleSettle | `src/character/slime/types.ts` |
+| `SlimeInputs` | type | `{ walkDx?, facing?, jumpPressed?, jumpHeld?, eyeCount? }` — slime-specific inputs | `src/character/slime/types.ts` |
+| `deriveSlimeConfig(seed)` | function | Deterministic config from 32-bit seed. Preserves the 16-draw RNG order from the showcase | `src/character/slime/config.ts` |
+| `createSlimeFrameState(config)` | function | Initial frame state at rest. Antenna chain along forward-tilted rest vector | `src/character/slime/state.ts` |
+| `stepSlime(state, dt, inputs?)` | function | Pure: advance jump, locomotion, antenna Verlet chain. Returns new SlimeFrameState | `src/character/slime/state.ts` |
+| `drawSlime(ctx, state, tick, look?)` | function | Renderer-adjacent: draw slime-knight body + legs + eye + antenna | `src/character/slime/draw.ts` |
+| `HERO_CANVAS_SIZE` | const | `320` — slime showcase canvas size. **Showcase-local, not re-exported from library** | `src/character/slime/constants.ts` |
+| `HERO_GROUND_Y` | const | `HERO_CANVAS_SIZE * 0.82` — foot-plant line. **Showcase-local** | `src/character/slime/constants.ts` |
+| `DEFAULT_SLIME` | const | Default SlimeConfig matching the showcase hero | `src/character/slime/constants.ts` |
+
+#### `src/character/humanoid/` (PROPOSED)
+
+Humanoid biped body plan. Head + torso + 2 arms + 2 legs, driven by existing `evaluateLocomotion` + `solveLimb` + skeletal rig.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `HumanoidConfig` | type | Seed-derived config: seed, palette, torsoWidth/Height, headRadius, arm/leg bone lengths, gaitConfig, breathConfig, speed | `src/character/humanoid/types.ts` |
+| `HumanoidFrameState` | type | Per-frame state: config, locomotion, jump, armSwingPhase, x, facing | `src/character/humanoid/types.ts` |
+| `HumanoidInputs` | type | `{ walkDx?, facing?, jumpPressed?, jumpHeld?, armTarget?: Vec2 }` — optional IK arm-target override | `src/character/humanoid/types.ts` |
+| `deriveHumanoidConfig(seed)` | function | Deterministic config from seed. Same mulberry32 + palette pattern as slime | `src/character/humanoid/config.ts` |
+| `createHumanoidFrameState(config)` | function | Initial frame state at rest | `src/character/humanoid/state.ts` |
+| `stepHumanoid(state, dt, inputs?)` | function | Pure: advance jump, locomotion, arm-swing phase. Returns new HumanoidFrameState | `src/character/humanoid/state.ts` |
+| `drawHumanoid(ctx, state, tick, look?)` | function | Renderer-adjacent: draw humanoid head + torso + arms + legs | `src/character/humanoid/draw.ts` |
+| `DEFAULT_HUMANOID` | const | Default HumanoidConfig | `src/character/humanoid/constants.ts` |
+
+#### `src/character/floater/` (PROPOSED)
+
+Floater/drone body plan. Hovering core + trailing tentacles, driven by `breathe` + `advanceSpringChain`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `FloaterConfig` | type | Seed-derived config: seed, palette, coreRadius, tentacleCount, tentacleSegments, hoverAmplitude/Frequency, springConfig, breathConfig | `src/character/floater/types.ts` |
+| `FloaterFrameState` | type | Per-frame state: config, tentacles (VerletNode[][]), hoverPhase, x, facing | `src/character/floater/types.ts` |
+| `FloaterInputs` | type | `{ walkDx?, facing?, tiltOverride?: number }` — optional tilt angle override | `src/character/floater/types.ts` |
+| `deriveFloaterConfig(seed)` | function | Deterministic config from seed | `src/character/floater/config.ts` |
+| `createFloaterFrameState(config)` | function | Initial frame state at rest. Tentacle chains hanging below core | `src/character/floater/state.ts` |
+| `stepFloater(state, dt, inputs?)` | function | Pure: advance hover oscillator + tentacle Verlet chains. Returns new FloaterFrameState | `src/character/floater/state.ts` |
+| `drawFloater(ctx, state, tick, look?)` | function | Renderer-adjacent: draw core + dome + tentacles + thruster | `src/character/floater/draw.ts` |
+| `DEFAULT_FLOATER` | const | Default FloaterConfig | `src/character/floater/constants.ts` |
+
+#### `src/character/serpentine/` (PROPOSED)
+
+Serpentine/multi-segment body plan. Head + N body segments + tail, driven by `advanceSpringChain`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SerpentineConfig` | type | Seed-derived config: seed, palette, segmentCount, headRadius, tailRadius, segmentSpacing, springConfig, breathConfig | `src/character/serpentine/types.ts` |
+| `SerpentineFrameState` | type | Per-frame state: config, segments (VerletNode[]), headAngle, x, facing | `src/character/serpentine/types.ts` |
+| `SerpentineInputs` | type | `{ walkDx?, facing?, targetAngle?: number }` — optional head-angle override | `src/character/serpentine/types.ts` |
+| `deriveSerpentineConfig(seed)` | function | Deterministic config from seed | `src/character/serpentine/config.ts` |
+| `createSerpentineFrameState(config)` | function | Initial frame state at rest. Segments in straight line | `src/character/serpentine/state.ts` |
+| `stepSerpentine(state, dt, inputs?)` | function | Pure: advance head kinematically + segment Verlet chain. Returns new SerpentineFrameState | `src/character/serpentine/state.ts` |
+| `drawSerpentine(ctx, state, tick, look?)` | function | Renderer-adjacent: draw head + body segments + tail + segment-aligned plates | `src/character/serpentine/draw.ts` |
+| `DEFAULT_SERPENTINE` | const | Default SerpentineConfig | `src/character/serpentine/constants.ts` |
+
+- _proposal: `docs/design/character-body-plans-proposal.md`_
+- _research: `docs/research/character-body-plans.md`_
+- _composes with: `src/animation/locomotion.ts` (`advanceLocomotion`, `evaluateLocomotion`), `src/animation/ik/limb.ts` (`solveLimb`), `src/animation/spring.ts` (`advanceSpringChain`), `src/animation/squash-stretch.ts` (`breathe`), `src/animation/jump.ts` (`advanceJump`), `src/palette/generate.ts` (`generatePalette`), `src/rng/mulberry32.ts` (seeded variant generation)_
+
 ### `src/collision/`
 
 AABB overlap test, per-axis move-and-resolve against static solids, and tile-grid collision. The foundational platformer collision layer. All exports are pure functions over plain data: no host access, no `Math.random`, no global state.
@@ -624,7 +782,7 @@ Follow-camera: pure world-space position that lerps toward a target, clamped to 
 
 ### `src/input/`
 
-Deterministic edge accumulator + defensive device adapters. Two layers: pure core (`edges.ts`, `merge.ts`) for DOM-free unit testing, and defensive adapters (`keyboard.ts`, `touch-button.ts`, `touch-button-set.ts`) with lazy host resolution, error swallowing, and never-throw public APIs.
+Deterministic edge accumulator + defensive device adapters. Two layers: pure core (`edges.ts`, `merge.ts`) for DOM-free unit testing, and defensive adapters (`keyboard.ts`, `touch-button.ts`, `touch-button-set.ts`, `gamepad.ts`) with lazy host resolution, error swallowing, and never-throw public APIs.
 
 - _research note: See `docs/research/mobile-directional-input.md` for multi-touch pointer-ID tracking, virtual D-pads, and analog thumbsticks._
 
@@ -639,6 +797,9 @@ Deterministic edge accumulator + defensive device adapters. Two layers: pure cor
 | `TouchButtonAdapter` | type | `{poll(), dispose()}` — tracks pointer events on a single DOM element | `src/input/types.ts` |
 | `TouchButtonSetConfig` | type | `{ elements: readonly (HTMLElement \| null)[] }` — DOM elements for each button; nulls produce idle slots but keep alignment | `src/input/types.ts` |
 | `TouchButtonSetAdapter` | type | `{poll(): PolledEdge[], dispose(): void}` — multi-touch-safe button group; array-aligned with input | `src/input/types.ts` |
+| `GamepadConfig` | type | `{ buttonToAction, axisToAction?, deadzone? }` — maps Standard Gamepad buttons/axes to action names. `buttonToAction` is required; `axisToAction` and `deadzone` are optional | `src/input/types.ts` |
+| `AxisBinding` | type | `{ positive?: string; negative?: string }` — bidirectional axis-to-action pair | `src/input/types.ts` |
+| `GamepadAdapter` | type | `{ poll(): Record<string, PolledEdge>, dispose(): void }` — mirrors `KeyboardAdapter` shape | `src/input/types.ts` |
 
 #### `src/input/edges.ts`
 
@@ -687,6 +848,30 @@ Generic multi-touch-safe button group adapter. Takes an array of DOM elements (o
 - _research note: `docs/research/mobile-directional-input.md` §Pattern 1, §Multi-Touch_
 - _existence proof: Spitekeep `src/input/touch.ts` (`TouchControls` class with identical pointer-ID tracking; ~120 lines of reusable core in a 414-line class that also includes CSS injection, capability detection, and DOM creation)_
 
+#### `src/input/gamepad.ts`
+
+> Decision: `docs/design/gamepad-adapter-decision.md` (Approach A: Full Parity — Keyboard-Mirror Pattern).
+> Proposal: `docs/design/gamepad-adapter-proposal.md`.
+> Research: `docs/research/gamepad-adapter.md`.
+
+Defensive gamepad input adapter. Polls `navigator.getGamepads()` once per tick, maps the W3C Standard Gamepad layout (button indices 0–16, axes 0–3) to logical actions, applies an **axial per-axis threshold** deadzone (default 0.25) to analog sticks, and latches threshold-crossings into per-action `EdgeAccumulator`s. OR-merges with keyboard/touch via the existing `orEdges` helper — gamepad becomes a third device feeding the same binary edge core.
+
+Single-player v1: binds to the first connected pad (`getGamepads()[0]`). Multi-player deferred to v2 (consumer creates a second adapter). Connect/disconnect lifecycle events reset accumulators (prevents stuck buttons on controller disconnect). `timestamp`-based change detection short-circuits when hardware hasn't reported new data. Requires `mapping === 'standard'` — warns once and no-ops for non-standard controllers. No rumble (deferred to v2, Chrome-only). Closure-scoped state (no module-level globals). `gamepad.timestamp` used ONLY for change-detection, never feeds simulation state.
+
+SSR guard: `typeof navigator === 'undefined' || typeof navigator.getGamepads !== 'function'` returns no-op adapter.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `GamepadConfig` | type | `{ buttonToAction, axisToAction?, deadzone? }` — maps Standard Gamepad buttons/axes to action names. `buttonToAction` is required; `axisToAction` and `deadzone` (default 0.25) are optional | `src/input/types.ts` |
+| `AxisBinding` | type | `{ positive?: string; negative?: string }` — bidirectional axis-to-action pair | `src/input/types.ts` |
+| `GamepadAdapter` | type | `{ poll(): Record<string, PolledEdge>, dispose(): void }` — mirrors `KeyboardAdapter` shape; returns `{}` when no standard pad is connected or in Node/SSR | `src/input/types.ts` |
+| `DEFAULT_GAMEPAD_DEADZONE` | const | `0.25` — default axial per-axis threshold deadzone (Sutphin recommendation, adequate for platformers per research Pattern 4) | `src/input/gamepad.ts` |
+| `createGamepadAdapter(config)` | function | Defensive gamepad adapter. Lazily resolves `navigator` at factory-call time. SSR guard: `typeof navigator === 'undefined' \|\| typeof navigator.getGamepads !== 'function'` → returns no-op adapter (`{ poll: () => ({}), dispose: () => {} }`). Installs `gamepadconnected`/`gamepaddisconnected` listeners with `resetEdge` on disconnect. `poll()` reads `navigator.getGamepads()[0]`, requires `mapping === 'standard'`, applies axial per-axis threshold deadzone, diffs button/axis state against previous, drains accumulators. `timestamp` change-detection: skips re-diff when `pad.timestamp` unchanged (Firefox fallback: always re-diff when `timestamp === 0`). Warns once on non-standard mapping (includes full gamepad `id`). `dispose()` guard: `if (disposed) return; disposed = true;`. Never throws | `src/input/gamepad.ts` |
+
+- _proposal: `docs/design/gamepad-adapter-proposal.md` (Approach A: Full Parity)_
+- _research: `docs/research/gamepad-adapter.md`_
+- _composes with: `src/input/edges.ts` (`createEdgeAccumulator`, `pressEdge`, `releaseEdge`, `resetEdge`, `pollEdge`), `src/input/merge.ts` (`orEdges`)_
+
 ### `src/game-loop/`
 
 Fixed-step game loop — the connective tissue that ties input → simulation → render into a running game. Two layers: pure accumulator math (`advanceAccumulator`, DOM-free, unit-testable under Node) and a defensive host-touching adapter (`createGameLoop`) that lazily resolves `requestAnimationFrame` / `performance.now()` / `document`, swallows all errors, never throws. Includes spiral-of-death guard (`maxFrameDelta` clamp) and `visibilitychange` pause/resume so a backgrounded tab doesn't produce a catch-up burst on regain.
@@ -707,6 +892,38 @@ Fixed-step game loop — the connective tissue that ties input → simulation �
 |---|---|---|---|
 | `GameLoopConfig` | type | `{fixedDt?, maxFrameDelta?, step, render}` — loop config; `step` receives `fixedDt` each call, `render` receives interpolation alpha | `src/game-loop/types.ts` |
 | `GameLoop` | interface | `{start(), stop(), isRunning(), dispose()}` — running loop handle; all methods idempotent and never-throw | `src/game-loop/types.ts` |
+
+### `src/game-state/` (shipped)
+
+> Decision: `docs/design/game-state-fsm-decision.md`.
+> Proposal: `docs/design/game-state-fsm-proposal.md` (Approach A: Pure Reducer + Flat Record, with type-only discriminated-union export).
+> Research: `docs/research/game-state-fsm.md`.
+
+Top-level game-mode FSM — declarative mode orchestration (menu / playing / paused / gameover / levelComplete). Pure deterministic reducer mirrors the `advanceJump` / `advanceTween` / `advanceEmitter` shape: consumer owns `GameState`, engine provides `reduceGameState`. The FSM sits inside the consumer's `step(fixedDt)` callback; the game-loop module is completely untouched (pause is a *state*, not a loop pause). Adjacency table is plain data (`DEFAULT_GAME_STATE_ADJACENCY`) consumers can spread-override — custom modes/events are added by extending the table with type assertions at the call site. Illegal transitions are silent no-ops (never throw); `timeInState` keeps advancing on illegal events. Consumer detects "just entered" via `state.timeInState === 0` after a legal transition. No enter/exit callbacks — the consumer's `switch` on `state.current` IS the lifecycle.
+
+**Terminal-event semantics:** both `die` and `win` write `finalScore` AND freeze `score` to the same value, so consumers reading `state.score` after a terminal event see the final score. This is symmetric — no special-casing between win and die.
+
+**Determinism contract:** `dt`-driven `timeInState` (never `Date.now()`), no `Math.random`, no DOM reads, no global mutable state. Same `(state, event, dt, table)` → byte-identical returned state forever.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `GameMode` | type | `'menu' \| 'playing' \| 'paused' \| 'gameover' \| 'levelComplete'` — canonical 5-state platformer modes | `src/game-state/types.ts` |
+| `GameEvent` | type | Discriminated union of 8 transition events, each carrying only its relevant payload: `start` (`level?: number`), `pause`, `resume`, `die` (`finalScore?: number`), `win` (`finalScore?: number`), `retry`, `next`, `quit` | `src/game-state/types.ts` |
+| `GameState` | type | Flat record: `{ readonly current, readonly timeInState, readonly level, readonly score, readonly finalScore }` — consumer-owned state; all fields `readonly` (reducer returns fresh shallow-spread). Shallow-spread is safe because `GameState` is a flat record of primitives — no nested objects to share by reference | `src/game-state/types.ts` |
+| `GameStateExact` | type | **Type-only** discriminated-union alias of `GameState` — each variant carries only valid fields per mode (e.g. `menu` omits `score`/`finalScore` as `?: never`; `gameover`/`levelComplete` carry both). Compile-time impossible-state prevention; no runtime shape change. Erases completely at compile time | `src/game-state/types.ts` |
+| `TransitionTable` | type | `Record<GameMode, Partial<Record<GameEvent['type'], GameMode>>>` — adjacency table as plain data. A missing `(from, event)` entry means the transition is illegal | `src/game-state/types.ts` |
+| `GameStateConfig` | type | `{ startingLevel? }` — config for `createGameState`. All fields optional | `src/game-state/types.ts` |
+| `DEFAULT_GAME_STATE_ADJACENCY` | const | Canonical adjacency table: `menu→playing` (start), `playing→paused` (pause), `playing→levelComplete` (win), `playing→gameover` (die), `paused→playing` (resume), `paused→menu` (quit), `gameover→playing` (retry), `gameover→menu` (quit), `levelComplete→playing` (next), `levelComplete→menu` (quit). Spread-override for custom states | `src/game-state/game-state.ts` |
+| `createGameState(config?)` | function | Factory: fresh `'menu'` state with all accumulators zeroed (`timeInState: 0`, `level: config?.startingLevel ?? 0`, `score: 0`, `finalScore: 0`). Matches `createJumpState` / `createTweenState` / `createEmitter` pattern | `src/game-state/game-state.ts` |
+| `reduceGameState(state, event, dt, table?)` | function | Pure: advance FSM one fixed timestep. Per-tick order: (1) clamp `dt` to `>= 0` (non-finite/≤0 → 0), (2) always advance `timeInState` by clamped `dt`, (3) if `event` is `null`/`undefined` return time-advanced state, (4) look up `(state.current, event.type)` in table, (5) if legal: spread advanced state, write event payload, set `current` to next mode, reset `timeInState` to `0`, (6) if illegal: return time-advanced state unchanged. Payload mapping: `start` → `level` (defaults to `0`); `die`/`win` → `finalScore` (defaults to `0`) AND `score` (frozen to match). `event` parameter accepts `null`/`undefined` to just advance time. Never throws | `src/game-state/game-state.ts` |
+| `isLegalTransition(from, event, table?)` | function | Pure reader: check whether a transition is legal without advancing state. Returns `true` iff `event.type` resolves to a defined next mode for `from` in `table`. Mirrors the reducer's transition decision exactly. No `dt`, no mutation | `src/game-state/game-state.ts` |
+
+**Note on `retry` vs `restart`:** the event that restarts from `gameover` back into `playing` is named `retry` (not `restart`). The event that advances from `levelComplete` back into `playing` is named `next`. These are the actual `GameEvent` variant names in source.
+
+- _decision: `docs/design/game-state-fsm-decision.md`_
+- _proposal: `docs/design/game-state-fsm-proposal.md`_
+- _research: `docs/research/game-state-fsm.md`_
+- _composes with: `src/game-loop/fixed-step.ts` (sits inside consumer's `step(fixedDt)` callback; loop module untouched)_
 
 ### `src/platformer/`
 
@@ -825,6 +1042,94 @@ WebAudio synthesized SFX defensive adapter. Zero audio assets — every sound is
 | `AudioAdapter` | interface | `{unlock(), isUnlocked(), playTone(...), playNoise(...), setMuted(...), isMuted(), setVolume(...), getVolume(), dispose()}` — WebAudio SFX adapter contract. All playback methods are no-op when muted, pre-unlock, or without WebAudio | `src/audio/types.ts` |
 | `DEFAULT_AUDIO_VOLUME` | const | `0.7` — default SFX volume | `src/audio/constants.ts` |
 | `createAudioAdapter()` | function | Defensive factory: independent adapter with private `AudioContext`, master gain, and noise buffer. Lazily resolves `AudioContext`/`webkitAudioContext` on first `unlock()`. Never throws | `src/audio/factory.ts` |
+
+### `src/music/` (shipped)
+
+> Decision: `docs/design/music-sequencer-decision.md`.
+> Proposal: `docs/design/music-sequencer-proposal.md`.
+> Research: `docs/research/music-sequencer.md`.
+
+Procedural music: pure music-theory primitives, seeded pattern generator, and a two-clock lookahead sequencer that reuses the existing `AudioAdapter`.
+
+**Four-layer architecture:**
+
+| Layer | Module | What it provides | Determinism |
+|---|---|---|---|
+| 1. Pure theory | `theory.ts` | note↔freq, scales, BPM, swing math | No host, no state, no `Math.random` |
+| 2. Seeded generator | `pattern.ts` | `generatePattern` using `mulberry32` + theory | Same `(seed, config)` → same `Pattern` forever |
+| 3. Advance (determinism seam) | `advance.ts` | `advanceSequencer` walks the pattern | No host, no `audio.currentTime`, no `Math.random`, no `setTimeout` |
+| 4. Host adapter | `sequencer.ts` | `createSequencer` — two-clock lookahead scheduler | Uses `audio.currentTime` + `setTimeout` (determinism carve-out for decorative audio) |
+
+Layers 1–3 are fully deterministic and Node-testable. Layer 4 reuses the consumer's `AudioAdapter` — does NOT create a second `AudioContext`.
+
+**`generatePattern` contract:** `generatePattern(seed)` produces a complete usable minor-pentatonic bass + melody loop with no config. Uses `scaleDegree` (not `pick`) for note selection — safe for any seed and any config, including empty arrays.
+
+**Determinism:** same seed → identical pattern; same `(state, dt, pattern)` → byte-identical `advanceSequencer` output.
+
+#### `src/music/theory.ts` — Pure music-theory primitives
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `A4_MIDI` | const | `69` — MIDI note number for A4 | `src/music/theory.ts` |
+| `A4_FREQ` | const | `440` — reference frequency in Hz | `src/music/theory.ts` |
+| `SCALES` | const | Named interval arrays (semitones from root): `major [0,2,4,5,7,9,11]`, `minor [0,2,3,5,7,8,10]`, `majorPentatonic [0,2,4,7,9]`, `minorPentatonic [0,3,5,7,10]`, `blues [0,3,5,6,7,10]`, `dorian [0,2,3,5,7,9,10]`. Pass these into `buildScale` — e.g. `buildScale(60, SCALES.majorPentatonic)` | `src/music/theory.ts` |
+| `noteToFrequency(midi, tuning?)` | function | MIDI note → frequency in Hz. Equal temperament. `tuning` defaults to `A4_FREQ` (440) | `src/music/theory.ts` |
+| `frequencyToNote(freq)` | function | Frequency in Hz → MIDI note number (float, full precision — consumers round if needed) | `src/music/theory.ts` |
+| `buildScale(rootMidi, intervals, octaves?)` | function | Build a scale as MIDI note numbers across `octaves` octaves (default 2). `intervals` is a readonly number array (one of `SCALES.*` or hand-authored). Returns `intervals.length × octaves` notes | `src/music/theory.ts` |
+| `scaleDegree(scale, degree)` | function | Pick a MIDI note from a scale by 0-based degree. Wraps gracefully across octaves via modular arithmetic. Negative degrees wrap to lower octaves. Never throws | `src/music/theory.ts` |
+| `secondsPerBeat(bpm)` | function | BPM → seconds per quarter-note beat | `src/music/theory.ts` |
+| `secondsPerStep(bpm, stepsPerBeat)` | function | BPM + subdivision → seconds per step | `src/music/theory.ts` |
+| `swingLongDuration(pairDuration, swingRatio)` | function | Duration of the LONG half of a swing pair. `swingRatio` clamped to `[0.5, 0.75]` — out-of-range values are clamped, never thrown. `0.5` = straight, `0.66` ≈ triplet, `0.75` = hard swing | `src/music/theory.ts` |
+
+#### `src/music/pattern.ts` — Seeded pattern generator
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `NoteEvent` | type | `{ midi, durationSteps?, peak?, waveform? }` — single note event (pure data, serializable). `midi: null` = rest. `durationSteps` is gate time in steps (BPM-independent); adapter converts to ms via `durationSteps × secondsPerStep(bpm, stepsPerBeat) × 1000`. `peak` defaults to track volume. `waveform` defaults to track waveform | `src/music/types.ts` |
+| `Track` | type | `{ name, waveform, volume, sequence, patterns }` — one voice in a pattern | `src/music/types.ts` |
+| `Pattern` | type | `{ bpm, stepsPerBeat, stepsPerPattern, scale?, tracks }` — complete song (JSON-serializable) | `src/music/types.ts` |
+| `PatternGenConfig` | type | Seeded generator config: `rootMidi?`, `scale?`, `bpm?`, `stepsPerBeat?`, `stepsPerPattern?`, `tracks?`. All fields optional with musical defaults | `src/music/types.ts` |
+| `TrackGenConfig` | type | Per-track generation config: `name`, `waveform`, `volume`, `rhythm` (hit/miss per step), `degreeMin`, `degreeMax`, `noteDurationSteps?` | `src/music/types.ts` |
+| `generatePattern(seed, config?)` | function | Deterministically generate a `Pattern` from a 32-bit seed. Uses `mulberry32`. Same `(seed, config)` → same `Pattern` forever. With no config, ships a complete usable minor-pentatonic bass + melody loop. **Constraint:** MUST NOT call `pick` on potentially-empty arrays — uses `scaleDegree` (wraps gracefully, never throws) for note selection | `src/music/pattern.ts` |
+
+#### `src/music/advance.ts` — Pure sequencer state + step walker
+
+The determinism seam. Pure sequencer advance — walks the pattern deterministically, advances elapsed time, fires notes whose step boundary is crossed. Applies swing to odd-indexed off-beat steps. No host access, no `Math.random`, no `Date.now()`, no `setTimeout`. Mirrors `advanceEmission` (`src/particles/emitter.ts`) and `advanceTween` (`src/easing/tween.ts`). Fully unit-testable in Node.
+
+**`AdvanceOptions` note:** The `AdvanceOptions` type is intentionally NOT re-exported from the `src/music/index.ts` barrel (name collision with `src/particles/advance.ts`'s `AdvanceOptions`). Consumers reach it via `import type { AdvanceOptions } from 'aicraft-engine/src/music/types'`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SequencerState` | type | `{ elapsedS, stepIndex, loopCount }` — pure playback state (all readonly). Consumer-owned; `advanceSequencer` returns a new state | `src/music/types.ts` |
+| `NoteFire` | type | `{ midi, waveform, peak, gateS, whenOffset }` — fired note event (pure data). `gateS` = `durationSteps × secondsPerStep(bpm, stepsPerBeat)` in seconds; host adapter passes `gateS × 1000` as `durMs` to `playTone`. `whenOffset` is seconds from window start | `src/music/types.ts` |
+| `AdvanceOptions` | type | `{ swing?: number }` — optional advance-time config. `swing` ratio `[0.5, 0.75]`. **Not re-exported from barrel** (name collision with particles); import from `src/music/types` directly | `src/music/types.ts` |
+| `advanceSequencer(state, dt, pattern, opts?)` | function | Pure: advance sequencer by `dt` seconds. Returns `{ next, events }` where `next` is new `SequencerState` and `events` is readonly array of `NoteFire`. Empty `events` = no notes crossed a step boundary. `opts.swing` sets swing ratio (default `DEFAULT_SWING` = 0.5). No host access, fully Node-testable | `src/music/advance.ts` |
+
+#### `src/music/sequencer.ts` — Two-clock lookahead sequencer
+
+Host-touching adapter. Implements Chris Wilson's "A Tale of Two Clocks" lookahead scheduler: `setTimeout` chain polls every `LOOKAHEAD_MS` (25 ms), pre-queues notes whose `nextNoteTime` falls within `SCHEDULE_AHEAD_S` (0.1 s) of `audio.currentTime`. Reuses the consumer's `AudioAdapter` — no second `AudioContext`. Defensive: every method is a no-op when audio is locked, disposed, or unavailable; every error swallowed; `stop()` and `dispose()` are idempotent.
+
+`setVolume(v)` scales the `peak` argument of every subsequent `playTone` call by the music-volume factor — pure multiplication, independent of the `AudioAdapter`'s own SFX volume. No extra gain nodes, no second context.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Sequencer` | interface | `{ play(), stop(), isPlaying(), setVolume(v), getVolume(), dispose() }` — playback controls (defensive, never-throw). `play()` resets to step 0 and starts the scheduler. `stop()` halts playback (idempotent). `isPlaying()` returns `playing && !disposed`. `setVolume(v)` clamps `[0, 1]` and scales `peak` on each `playTone` call. `dispose()` stops + clears the timer (idempotent). **`setBpm()` is NOT in v1** | `src/music/types.ts` |
+| `SequencerConfig` | type | `{ lookaheadMs?, scheduleAheadS?, swing? }` — scheduler tuning (all optional with defaults from Chris Wilson's canonical values) | `src/music/types.ts` |
+| `createSequencer(audio, pattern, config?)` | function | Factory: create a sequencer that plays `pattern` via the existing `AudioAdapter`. Uses Chris Wilson's two-clock lookahead scheduler. Reuses `AudioAdapter` — no second `AudioContext`. Returns a `Sequencer` | `src/music/sequencer.ts` |
+
+#### `src/music/constants.ts` — Named tunables
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_SWING` | const | `0.5` — straight (no swing) | `src/music/constants.ts` |
+| `DEFAULT_BPM` | const | `110` — default tempo (chill ambient baseline) | `src/music/constants.ts` |
+| `DEFAULT_STEPS_PER_BEAT` | const | `4` — 16th notes | `src/music/constants.ts` |
+| `DEFAULT_STEPS_PER_PATTERN` | const | `16` — one bar of 16th notes in 4/4 | `src/music/constants.ts` |
+| `DEFAULT_MUSIC_VOLUME` | const | `1` — unity gain (independent of AudioAdapter SFX volume) | `src/music/constants.ts` |
+| `DEFAULT_ROOT_MIDI` | const | `48` — C3 (bass range) | `src/music/constants.ts` |
+| `DEFAULT_SCALE_OCTAVES` | const | `2` — number of octaves `buildScale` spans by default | `src/music/constants.ts` |
+| `LOOKAHEAD_MS` | const | `25` — JS scheduler poll interval (ms). Chris Wilson's canonical 25 ms | `src/music/constants.ts` |
+| `SCHEDULE_AHEAD_S` | const | `0.1` — pre-queue window (seconds). Chris Wilson's canonical 100 ms | `src/music/constants.ts` |
 
 ### `src/blend/`
 
@@ -1063,7 +1368,7 @@ localStorage-backed adapter for local dev. Lazily resolves `window.localStorage`
 
 ### `src/level/`
 
-Versioned, serializable 2D platformer level schema with forward-ladder migration, defensive validation, and a tile-grid bridge to `src/collision/`. Ships an opinionated entity taxonomy (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform) that mirrors Spitekeep's `LevelData` shape. Consumer extends via typed `props` bags on each entity kind.
+Versioned, serializable 2D platformer level schema with forward-ladder migration, defensive validation, and a tile-grid bridge to `src/collision/`. Ships an opinionated entity taxonomy (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform, enemy, collectible) that mirrors Spitekeep's `LevelData` shape. Consumer extends via typed `props` bags on each entity kind.
 
 #### `src/level/types.ts`
 
@@ -1071,7 +1376,9 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 |---|---|---|---|
 | `LevelRect` | type | `{x, y, width, height}` — serializable AABB (world-space, top-left origin) | `src/level/types.ts` |
 | `EntityId` | type | `number` — stable monotonic entity identifier | `src/level/types.ts` |
-| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform' \| 'enemy'` — shipped entity kinds (non-breaking union expansion for future kinds) | `src/level/types.ts` |
+| `EntityKind` | type | `'spawn' \| 'exit' \| 'platform' \| 'passthrough' \| 'trap' \| 'hazard' \| 'decoration' \| 'trigger' \| 'movingPlatform' \| 'enemy' \| 'collectible'` — shipped entity kinds (non-breaking union expansion for future kinds) | `src/level/types.ts` |
+| `CollectibleKind` | type | `'coin' \| 'gem' \| 'key'` — typed sub-kind union for collectible entities. Adding a tier later is a non-breaking union expansion | `src/level/types.ts` |
+| `CollectibleProps` | type | `{ kind: CollectibleKind, value?: number, persists?: boolean }` — collectible entity props. `kind` dispatches to renderer palette and catalog prefabs; `value` is an opaque score/currency number; `persists` (default `false`) controls per-run vs persistent collection state | `src/level/types.ts` |
 | `ExitProps` | type | `{isTrap: boolean, locked: boolean}` — exit props; `isTrap` marks decoy/failure exits | `src/level/types.ts` |
 | `PlatformProps` | type | `{visual?: 'normal' \| 'cracked' \| 'dark'}` — platform visual variant hint | `src/level/types.ts` |
 | `TrapProps` | type | `{type: string, params: Record<string, unknown>}` — trap dispatch key + untyped params bag | `src/level/types.ts` |
@@ -1079,7 +1386,7 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 | `TriggerProps` | type | `{action: string, params: Record<string, unknown>}` — rectangular event zone | `src/level/types.ts` |
 | `MovingPlatformProps` | type | `{speed, path, loopMode?}` — kinematic platform motion (path is `readonly {x, y}[]`) | `src/level/types.ts` |
 | `EnemyProps` | type | `{archetype: string, params: Record<string, unknown>}` — archetyped dispatch key + untyped params bag. Canonical definition lives here; re-exported from `src/platformer/enemy/types.ts` | `src/level/types.ts` |
-| `LevelEntity` | type | Discriminated union on `kind` with kind-specific `props` — 10 variants (`'enemy'` kind carries `EnemyProps`) | `src/level/types.ts` |
+| `LevelEntity` | type | Discriminated union on `kind` with kind-specific `props` — 11 variants (`'enemy'` kind carries `EnemyProps`, `'collectible'` kind carries `CollectibleProps`) | `src/level/types.ts` |
 | `TileGrid` | type | `{data, cols, rows, tileSize}` — flat row-major tile-value integer array | `src/level/types.ts` |
 | `LevelFlags` | type | `{lookahead?, foreground?, background?}` — optional renderer flags | `src/level/types.ts` |
 | `LevelData` | type | Complete level schema: version, id, name, dimensions, spawn, tiles, entities, nextEntityId, bottomLava?, hints?, flags? | `src/level/types.ts` |
@@ -1225,7 +1532,7 @@ Selection is ephemeral — NOT recorded in history.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `DEFAULT_CATALOG` | const | Ships one `CatalogEntry` per `EntityKind` (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform) with sensible defaults | `src/editor/catalog.ts` |
+| `DEFAULT_CATALOG` | const | Ships one `CatalogEntry` per `EntityKind` (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform, collectible) with sensible defaults. Additional prefab entries for collectible sub-kinds: `coin`, `gem`, `key` (all with `kind: 'collectible'` and appropriate `CollectibleProps`) | `src/editor/catalog.ts` |
 | `createCatalogEntry(kind, label, defaultRect?, defaultProps?)` | function | Helper for consumers to build custom catalog entries | `src/editor/catalog.ts` |
 | `instantiateCatalogEntry(entry, at)` | function | Returns an `addEntity` op for placing this catalog entry at the given position. Caller applies via `applyOp` | `src/editor/catalog.ts` |
 
@@ -1243,6 +1550,97 @@ Barrel re-export of all public editor APIs. Uses `export type` for type-only re-
 - _proposal: `docs/design/editor-core-proposal.md`_
 - _research: `docs/research/editor-core.md`_
 - _composes with: `src/level/types.ts` (`LevelData`, `LevelEntity`, `EntityId`, `EntityKind`, `LevelRect`), `src/level/validate.ts` (`validateLevel`, `ValidationResult`), `src/level/entity-id.ts` (`allocateEntityId`)_
+
+### `src/collectibles/` ✓ shipped
+
+### `src/replay/` ✓ shipped
+
+> Decision: `docs/design/replay-decision.md` (consolidated proposal + decision — architecture pre-determined by existing seams).
+> Research: `docs/research/replay.md`.
+> Status: **shipped** — implementation complete; verification at `src/tests/replay.test.ts` (byte-identity-with-`stepPlatformer` rerun + hash determinism).
+
+Replay record/playback — the determinism-harness. Captures per-tick `PlatformerInput` + initial state + seed + config into a frozen `Replay`, re-simulates via a consumer-supplied `step` callback, and produces a 32-bit FNV-1a fingerprint via `canonicalize` (re-uses `src/level/serialize.ts`). Determinism discipline was paid for by the existing `stepPlatformer` kernel + serializable `PlatformerInput` shape + the `mulberry32`-only RNG mandate; this module is the final slab.
+
+**Recorder:** mutable renderer-output-buffer exception (mirrors `EdgeAccumulator`). `record()` swallows bad inputs silently and returns the recorder for fluent chaining. `finish()` returns a frozen `Replay`; further `record()` is a no-op.
+
+**Player:** pure. `playReplay(replay, step, dt) → PlatformerState` runs the consumer's `step` for `frames.length` ticks. Empty replay returns `initial` without invoking `step`. `step` throws are swallowed at the throw boundary (returns the highest state reached) — belt-and-braces; `stepPlatformer` is pure.
+
+**Hash:** `replayHash(replay) → number` uses `fnv1a(canonicalize(replay))`. Stable across orders/engines (canonicalize sorts keys), stable across repeated calls, different inputs → different fingerprints with overwhelming probability. Returns `0` on malformed input (stable sentinel).
+
+#### `src/replay/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Replay` | type | Frozen `{ seed, initial: PlatformerState, frames: readonly PlatformerInput[], config: ReplayConfig }`. Re-simulation contract: same `(replay, step, dt)` → byte-identical final state | `src/replay/types.ts` |
+| `ReplayFrame` | type | Alias of `PlatformerInput` — one tick worth of consumer input. Serializes via the platformer's existing `JSON.stringify` round-trip | `src/replay/types.ts` |
+| `ReplayConfig` | type | `{ tickRate: number; [key: string]: unknown }` — open extension surface so consumers can attach level id / physics version / etc. into the canonical hash without a library update | `src/replay/types.ts` |
+| `ReplayRecorder` | type | The mutable sibling of `Replay`. `record(input) → ReplayRecorder` (chainable), `finish(config) → Replay`, `discard(): void`, `pending: number` | `src/replay/types.ts` |
+
+#### `src/replay/recorder.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createReplayRecorder` | function | `(seed: number, initial: PlatformerState) → ReplayRecorder`. Closure-scoped mutable `ReplayFrame[]` buffer (renderer-output buffer exception). Seed falls back to `0` on non-finite input. Never throws | `src/replay/recorder.ts` |
+
+#### `src/replay/player.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `ReplayStep` | type | `(state, input, dt) → state` — the consumer's pure step (typically a closure over `stepPlatformer(state, input, solids, dt).state`). `playReplay` invokes `step` exactly once per recorded frame | `src/replay/player.ts` |
+| `playReplay` | function | Pure. Runs `step` for `frames.length` ticks; swallows throws defensively (returns highest state reached); clamps non-finite `dt` to `0`; empty replay → initial; malformed replay → fallback empty state — never throws | `src/replay/player.ts` |
+
+#### `src/replay/hash.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `replayHash` | function | `fnv1a(canonicalize(replay))` → unsigned 32-bit. Stable across orderings (canonicalize sorts keys). Returns `0` on malformed input as a stable sentinel | `src/replay/hash.ts` |
+
+### `src/collectibles/` ✓ shipped
+
+> Decision: `docs/design/collectibles-decision.md` (Approach A: Closed Kind Taxonomy).
+> Proposal: `docs/design/collectibles-proposal.md`.
+> Research: `docs/research/collectibles.md`.
+> Status: **shipped** — `@architect` APPROVED (loop 2); implementation complete.
+
+Collectibles / pickups subsystem. Extends the level entity taxonomy with a `'collectible'` kind (`CollectibleProps` with typed sub-kind dispatch) and provides pure-progression-ops save state mirroring `src/cosmetics/ownership.ts`. The platformer kernel remains unaware of collectibles — pickups are derived from deterministic AABB collision after each tick, so replays re-derive the same collection events from the same inputs.
+
+**Schema change:** additive union expansion — `'collectible'` added to `EntityKind`. Levels without collectibles are unaffected. Forward-ladder migration v1→v2 is a no-op for the entity list.
+
+**Kernel isolation:** `compileLevel` (in `src/platformer/level-runtime.ts`) already ignores non-solid entity kinds via fallthrough (line 207-208). Collectibles are NOT collision surfaces — they are consumed by `derivePickups` in the consumer's game loop, not by the kernel's collision resolver.
+
+#### `src/collectibles/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `CollectibleSave` | type | `{ collected: string[] }` — player collection state. Fields intentionally **NOT `readonly`** (clone-then-mutate discipline, same as `CosmeticSave`). `collected` is a plain sorted `string[]`, never Set/Map. JSON-roundtrip-safe | `src/collectibles/types.ts` |
+
+#### `src/collectibles/collectibles.ts`
+
+Pure progression ops for collectible ownership. Mirrors `src/cosmetics/ownership.ts`: immutable in → JSON-clone out → never mutate → never throw. Call only on user actions (collection events), never per-frame. **Per-level scoping is consumer-owned** — the consumer maintains a `Record<string, CollectibleSave>` keyed by level ID and drops/replaces entries on level reset.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `collect(save, entityId)` | function | Pure op: add entity ID to `collected` (sorted alphabetically, deduped). `entityId` is string — entity IDs are `number` (`EntityId`) in the level schema, but the save stores them as string for canonical sorted-string[] serialization (mirrors `CosmeticSave.owned`). Consumer bridges with `String(id)`. Invalid/empty entityId = silent no-op. Already-collected = silent no-op | `src/collectibles/collectibles.ts` |
+| `hasCollected(save, entityId)` | function | Pure reader: `true` if entityId is in `collected`. Invalid/empty entityId = `false` | `src/collectibles/collectibles.ts` |
+
+#### `src/collectibles/derive-pickups.ts`
+
+Deterministic pickup derivation. Pure function of `(playerRect, collectibles, save)` — same inputs → same outputs forever. Uses `aabbOverlap` from `src/collision/aabb.ts` for the overlap test (strict: edges touching = NOT overlapping, preventing false-positive collection at exact boundaries).
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `derivePickups(playerRect, collectibles, save)` | function | Pure: test each `collectible` entity's rect against `playerRect` via `aabbOverlap`. Returns `{ collected: EntityId[], remaining: LevelEntity[] }` — newly-collected IDs this tick (number `EntityId`, consumer bridges to string via `String(id)`) and entities not yet collected. Skips entities already in `save.collected`. O(n) per tick where n = collectible count. Never throws — malformed inputs return empty results | `src/collectibles/derive-pickups.ts` |
+
+#### `src/collectibles/constants.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DEFAULT_COLLECTIBLE_RECT` | const | `{ x: 0, y: 0, width: 16, height: 16 }` — default rect for catalog-placed collectibles (one tile) | `src/collectibles/constants.ts` |
+| `DEFAULT_COLLECTIBLE_VALUE` | const | `0` — default value when `CollectibleProps.value` is omitted | `src/collectibles/constants.ts` |
+
+- _proposal: `docs/design/collectibles-proposal.md`_
+- _research: `docs/research/collectibles.md`_
+- _composes with: `src/level/types.ts` (`EntityKind`, `LevelEntity`, `CollectibleProps`), `src/collision/aabb.ts` (`aabbOverlap`), `src/cosmetics/ownership.ts` (pattern template for pure-progression-ops save)_
 
 ### `src/primitives/vector.ts` — NOT SHIPPED
 
@@ -1312,6 +1710,93 @@ Runtime types for the enemy archetype system. `EnemyProps` is re-exported from `
 - _research: `docs/research/platformer-enemy-archetypes.md`_
 - _composes with: `src/collision/types.ts` (`Solid`, `Rect`), `src/collision/aabb.ts` (`aabbOverlap`), `src/collision/tiles.ts` (`worldToTile`), `src/primitives/outline-rect.ts` (`outlineRect`)_
 
+### `src/platformer/enemy/` — PROPOSED: Archetype Catalog Extension (Phase 2)
+
+> Proposal: `docs/design/enemy-archetype-catalog-proposal.md` (Approach C: Per-Archetype Modules + Registry-Driven Renderer).
+> Research: `docs/research/enemy-archetype-catalog.md`.
+> Prior decision: `docs/design/platformer-enemy-archetypes-decision.md`.
+> Status: **PROPOSED** — awaiting `@architect` critique and benchmark.
+
+Extends the shipped 3-archetype system with 5 new behavior archetypes (`charger`, `chaser`, `burster`, `flyer`, `crawler`). Adds per-archetype modules, line-of-sight helper, surface-hugging stepper, projectile lifetime, and registry-driven renderer. All changes are additive-only — no existing type signatures change.
+
+#### `src/platformer/enemy/types.ts` — additive changes
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `EnemyArchetype` | type | Extended to `'spinny' \| 'turret' \| 'spider' \| 'charger' \| 'chaser' \| 'burster' \| 'flyer' \| 'crawler'`. Still a free string at runtime for consumer extensibility | PROPOSED |
+| `ProjectileState.lifetime` | field | Optional `number` — remaining lifetime in seconds. When `> 0`, decremented by `dt` each tick; deactivates when `<= 0`. `undefined` = no limit (legacy turrets). Enables burster explosion (zero-velocity, short-lived) | PROPOSED |
+| `EnemyStepResult.projectiles` | field | Optional `readonly ProjectileState[]` — all projectiles spawned this tick (may be 0, 1, or many). `stepEnemies` merges with legacy `projectile?` for backward compat | PROPOSED |
+| `EnemyUpdateContext.playerVelocity` | field | Optional `{readonly vx: number; readonly vy: number} \| null` — player's velocity this tick. Used by chaser to predict movement, by flyer to lead targets | PROPOSED |
+| `EnemyUpdateContext.tick` | field | Optional `number` — current world tick count (monotonic integer). Used for visual timing (flash frequency, shake phase), NOT simulation decisions | PROPOSED |
+
+#### `src/platformer/enemy/los.ts` (NEW)
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `checkLineOfSight(x1, y1, x2, y2, tileQuery, tileSize)` | function | DDA tile-grid raycast: returns `true` if the line between two world-space points is unobstructed by solid tiles. Pure, O(max(|dx|, |dy|)), never throws. Used by chaser/charger for player detection | PROPOSED |
+
+#### `src/platformer/enemy/crawler-stepper.ts` (NEW)
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `AttachmentSide` | type | `'bottom' \| 'left' \| 'top' \| 'right'` — which side of the enemy is touching the solid surface | PROPOSED |
+| `stepCrawler(x, y, crawlDir, speed, dt, side, hitboxSize, tileQuery, tileSize)` | function | Surface-hugging stepper: advances a crawler by one step along its current surface, rotating attachment side at corners. Returns `{x, y, side, angle}`. Pure, grid-aligned 90° only (no slopes), never throws | PROPOSED |
+
+#### `src/platformer/enemy/archetypes/` (NEW — 5 files)
+
+| Export | Kind | Summary | Source | Status |
+|---|---|---|---|---|
+| `chargerBehavior` | const | Charger: 4-phase state machine (patrol → windup → dash → recovery). Telegraphed high-speed dash with wall-stun. Params: `speed`, `windupDuration`, `dashSpeed`, `dashMaxDistance`, `recoveryDuration`, `detectionRadius` | `archetypes/charger.ts` | PROPOSED |
+| `chaserBehavior` | const | Chaser: 2-phase (patrol → chase). Active ground pursuit with LOS detection, lost-timer, optional ledge-turnaround. Params: `patrolSpeed`, `chaseSpeed`, `detectionRadius`, `lostTimer`, `ledgeTurnAround` | `archetypes/chaser.ts` | PROPOSED |
+| `bursterBehavior` | const | Burster: 3-phase (seek → fuse → exploded). Kamikaze with proximity trigger, fuse countdown, zero-velocity explosion projectile. Params: `seekSpeed`, `fuseDuration`, `explosionRadius`, `explosionLifetime`, `detectionRadius`, `proximityThreshold` | `archetypes/burster.ts` | PROPOSED |
+| `flyerBehavior` | const | Flyer: 2-phase (sinePatrol → seek). Aerial patrol with sine-wave offset, player seek in 2D space. Ignores gravity. Params: `patrolSpeed`, `seekSpeed`, `sineAmplitude`, `sineFrequency`, `detectionRadius` | `archetypes/flyer.ts` | PROPOSED |
+| `crawlerBehavior` | const | Crawler: continuous surface-hugging patrol. Walks on floors, climbs walls, traverses ceilings. Composes `stepCrawler`. Params: `speed`, `crawlDir` | `archetypes/crawler.ts` | PROPOSED |
+
+#### `src/platformer/enemy/registry.ts` — additive changes
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `chargerBehavior` | const (re-export) | Re-exported from `archetypes/charger.ts` | PROPOSED |
+| `chaserBehavior` | const (re-export) | Re-exported from `archetypes/chaser.ts` | PROPOSED |
+| `bursterBehavior` | const (re-export) | Re-exported from `archetypes/burster.ts` | PROPOSED |
+| `flyerBehavior` | const (re-export) | Re-exported from `archetypes/flyer.ts` | PROPOSED |
+| `crawlerBehavior` | const (re-export) | Re-exported from `archetypes/crawler.ts` | PROPOSED |
+| `BUILT_IN_HANDLERS` | const (internal) | Extended to include all 8 archetypes | PROPOSED |
+
+#### `src/platformer/enemy/renderer.ts` — refactored dispatch
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `EnemyPalette` | type | Extended with optional per-archetype colors: `charger?`, `chaser?`, `burster?`, `flyer?`, `crawler?` | PROPOSED |
+| `drawEnemies` | function | Refactored: registry-driven dispatch via `DRAW_REGISTRY` lookup instead of `if/else if` chain. Same signature, same behavior. Fallback: outlined rect for unknown archetypes | PROPOSED |
+
+#### `src/platformer/enemy/index.ts` — additive exports
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `checkLineOfSight` | function (re-export) | Re-exported from `los.ts` | PROPOSED |
+| `stepCrawler` | function (re-export) | Re-exported from `crawler-stepper.ts` | PROPOSED |
+| `AttachmentSide` | type (re-export) | Re-exported from `crawler-stepper.ts` | PROPOSED |
+| `chargerBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
+| `chaserBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
+| `bursterBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
+| `flyerBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
+| `crawlerBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
+
+#### `src/editor/catalog.ts` — additive prefab entries
+
+| Export | Kind | Summary | Status |
+|---|---|---|---|
+| `DEFAULT_CATALOG.entries.charger` | CatalogEntry | Charger prefab: `{archetype: 'charger', params: {speed: 40, windupDuration: 0.5, dashSpeed: 300, dashMaxDistance: 128, recoveryDuration: 0.8, detectionRadius: 160}}` | PROPOSED |
+| `DEFAULT_CATALOG.entries.chaser` | CatalogEntry | Chaser prefab: `{archetype: 'chaser', params: {patrolSpeed: 50, chaseSpeed: 90, detectionRadius: 160, lostTimer: 2.0, ledgeTurnAround: true}}` | PROPOSED |
+| `DEFAULT_CATALOG.entries.burster` | CatalogEntry | Burster prefab: `{archetype: 'burster', params: {seekSpeed: 60, fuseDuration: 0.6, explosionRadius: 32, explosionLifetime: 0.3, detectionRadius: 200, proximityThreshold: 32}}` | PROPOSED |
+| `DEFAULT_CATALOG.entries.flyer` | CatalogEntry | Flyer prefab: `{archetype: 'flyer', params: {patrolSpeed: 40, seekSpeed: 70, sineAmplitude: 20, sineFrequency: 2, detectionRadius: 160}}` | PROPOSED |
+| `DEFAULT_CATALOG.entries.crawler` | CatalogEntry | Crawler prefab: `{archetype: 'crawler', params: {speed: 30, crawlDir: 1}}` | PROPOSED |
+
+- _proposal: `docs/design/enemy-archetype-catalog-proposal.md`_
+- _research: `docs/research/enemy-archetype-catalog.md`_
+- _composes with: `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/collision/aabb.ts` (`aabbOverlap`), `src/rng/mulberry32.ts` (deterministic shake offsets)_
+
 ### `src/primitives/death-feedback.ts` — NOT SHIPPED (showcase-local composition recipe)
 
 > Proposal: `docs/design/minimalist-death-feedback-proposal.md`.
@@ -1350,13 +1835,14 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, `./blend`, `./platformer`, `./level`, and `./editor`.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./easing`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, `./blend`, `./platformer`, `./level`, and `./editor`.
 
 ```ts
 export * from './primitives';
 export * from './rng';
 export * from './particles';
 export * from './animation';
+export * from './easing';
 export * from './palette';
 export * from './cosmetics';
 export * from './iap';

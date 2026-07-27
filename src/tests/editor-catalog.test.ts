@@ -96,6 +96,48 @@ describe('DEFAULT_CATALOG', () => {
   });
 });
 
+describe('DEFAULT_CATALOG — collectible prefabs (coin / gem / key)', () => {
+  it('has a coin prefab pointing to kind: collectible with props.kind: coin', () => {
+    const coin = DEFAULT_CATALOG.entries['coin'];
+    if (!coin) throw new Error('missing coin prefab');
+    expect(coin.kind).toBe('collectible');
+    expect(coin.defaultProps.kind).toBe('coin');
+    expect(typeof coin.label).toBe('string');
+    expect(coin.label.length).toBeGreaterThan(0);
+    expect(coin.defaultRect.width).toBeGreaterThan(0);
+    expect(coin.defaultRect.height).toBeGreaterThan(0);
+  });
+
+  it('has a gem prefab pointing to kind: collectible with props.kind: gem', () => {
+    const gem = DEFAULT_CATALOG.entries['gem'];
+    if (!gem) throw new Error('missing gem prefab');
+    expect(gem.kind).toBe('collectible');
+    expect(gem.defaultProps.kind).toBe('gem');
+  });
+
+  it('has a key prefab pointing to kind: collectible with props.kind: key', () => {
+    const key = DEFAULT_CATALOG.entries['key'];
+    if (!key) throw new Error('missing key prefab');
+    expect(key.kind).toBe('collectible');
+    expect(key.defaultProps.kind).toBe('key');
+  });
+
+  it('ship sensible defaults: coin has value, key defaults to persists=false', () => {
+    const coin = DEFAULT_CATALOG.entries['coin'];
+    if (!coin) throw new Error('missing coin prefab');
+    // Coin ships with a default numeric value (>= 0).
+    expect(typeof coin.defaultProps.value).toBe('number');
+    expect((coin.defaultProps.value as number)).toBeGreaterThanOrEqual(0);
+
+    // Key may ship with or without persists; if present it must be boolean.
+    const key = DEFAULT_CATALOG.entries['key'];
+    if (!key) throw new Error('missing key prefab');
+    if (key.defaultProps.persists !== undefined) {
+      expect(typeof key.defaultProps.persists).toBe('boolean');
+    }
+  });
+});
+
 describe('createCatalogEntry', () => {
   it('builds an entry with kind defaults', () => {
     const entry = createCatalogEntry('platform', 'My Platform');

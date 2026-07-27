@@ -57,9 +57,13 @@ function entity(
             ? { action: 'x', params: {} }
             : kind === 'movingPlatform'
               ? { speed: 30, path: [], loopMode: 'loop' }
-              : kind === 'platform'
-                ? {}
-                : {};
+              : kind === 'enemy'
+                ? { archetype: 'spinny', params: {} }
+                : kind === 'collectible'
+                  ? { kind: 'coin' }
+                  : kind === 'platform'
+                    ? {}
+                    : {};
   return { id, kind, rect, props } as unknown as LevelEntity;
 }
 
@@ -159,6 +163,39 @@ describe('drawLevelEntity', () => {
       palette: { platform: '#abcdef' },
     });
     expect(ctx.fillStyle).toBe('#abcdef');
+  });
+
+  it('draws a coin collectible with the collectibleCoin palette color (gold #ffd700)', () => {
+    const ctx = createStubCtx();
+    const coin = { ...entity('collectible'), props: { kind: 'coin' } } as unknown as LevelEntity;
+    drawLevelEntity(ctx as unknown as CanvasRenderingContext2D, coin);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(1);
+    expect(ctx.fillStyle).toBe(DEFAULT_ENTITY_PALETTE.collectibleCoin);
+  });
+
+  it('draws a gem collectible with the collectibleGem palette color (blue #4a9eff)', () => {
+    const ctx = createStubCtx();
+    const gem = { ...entity('collectible'), props: { kind: 'gem' } } as unknown as LevelEntity;
+    drawLevelEntity(ctx as unknown as CanvasRenderingContext2D, gem);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(1);
+    expect(ctx.fillStyle).toBe(DEFAULT_ENTITY_PALETTE.collectibleGem);
+  });
+
+  it('draws a key collectible with the collectibleKey palette color (silver #c0c0c0)', () => {
+    const ctx = createStubCtx();
+    const key = { ...entity('collectible'), props: { kind: 'key' } } as unknown as LevelEntity;
+    drawLevelEntity(ctx as unknown as CanvasRenderingContext2D, key);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(1);
+    expect(ctx.fillStyle).toBe(DEFAULT_ENTITY_PALETTE.collectibleKey);
+  });
+
+  it('collectible respects a palette override (e.g. consumer recolors coin)', () => {
+    const ctx = createStubCtx();
+    const coin = { ...entity('collectible'), props: { kind: 'coin' } } as unknown as LevelEntity;
+    drawLevelEntity(ctx as unknown as CanvasRenderingContext2D, coin, {
+      palette: { collectibleCoin: '#custom' },
+    });
+    expect(ctx.fillStyle).toBe('#custom');
   });
 });
 

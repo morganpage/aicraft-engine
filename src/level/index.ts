@@ -26,6 +26,8 @@ export type {
   TriggerProps,
   MovingPlatformProps,
   EnemyProps,
+  CollectibleKind,
+  CollectibleProps,
   LevelEntity,
   TileGrid,
   LevelFlags,

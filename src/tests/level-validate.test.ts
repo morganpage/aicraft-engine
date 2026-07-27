@@ -735,6 +735,121 @@ describe('validateLevel — enemy props shape (archetype + params)', () => {
   });
 });
 
+describe('validateLevel — collectible props shape (kind + value + persists)', () => {
+  /**
+   * Build a level that keeps the spawn + exit (so cardinality is satisfied)
+   * and appends a collectible entity at entities[2] with the supplied props.
+   * The returned entity index for the collectible is always `entities[2]`,
+   * so error-path assertions target `entities[2].props.*`.
+   */
+  function collectibleLevel(props: Record<string, unknown>): unknown {
+    const level = clone(baseLevel()) as {
+      entities: Array<Record<string, unknown>>;
+      nextEntityId: number;
+    };
+    level.entities.push({
+      id: 3,
+      kind: 'collectible',
+      rect: { x: 40, y: 40, width: 16, height: 16 },
+      props,
+    });
+    level.nextEntityId = 4;
+    return level;
+  }
+
+  /** Error-path prefix for the collectible entity added by {@link collectibleLevel}. */
+  const P = 'entities[2].props';
+
+  it('accepts a minimal coin with just kind', () => {
+    const result = validateLevel(collectibleLevel({ kind: 'coin' }));
+    expect(result.valid).toBe(true);
+    expect(errorsOnly(result)).toEqual([]);
+  });
+
+  it('accepts a gem and a key', () => {
+    expect(
+      validateLevel(collectibleLevel({ kind: 'gem' })).valid,
+    ).toBe(true);
+    expect(
+      validateLevel(collectibleLevel({ kind: 'key' })).valid,
+    ).toBe(true);
+  });
+
+  it('accepts a coin with value and persists', () => {
+    const result = validateLevel(
+      collectibleLevel({ kind: 'coin', value: 10, persists: true }),
+    );
+    expect(result.valid).toBe(true);
+    expect(errorsOnly(result)).toEqual([]);
+  });
+
+  it('accepts value: 0 (finite number >= 0)', () => {
+    const result = validateLevel(collectibleLevel({ kind: 'coin', value: 0 }));
+    expect(result.valid).toBe(true);
+    expect(errorsOnly(result)).toEqual([]);
+  });
+
+  it('rejects an unknown kind (ruby is not in the closed union)', () => {
+    const result = validateLevel(collectibleLevel({ kind: 'ruby' }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.kind`)).toBe(true);
+  });
+
+  it('rejects a missing kind', () => {
+    const result = validateLevel(collectibleLevel({ value: 10 }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.kind`)).toBe(true);
+  });
+
+  it('rejects a non-string kind', () => {
+    const result = validateLevel(collectibleLevel({ kind: 42 }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.kind`)).toBe(true);
+  });
+
+  it('rejects a negative value', () => {
+    const result = validateLevel(collectibleLevel({ kind: 'coin', value: -1 }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.value`)).toBe(true);
+  });
+
+  it('rejects a non-numeric value', () => {
+    const result = validateLevel(collectibleLevel({ kind: 'coin', value: 'x' }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.value`)).toBe(true);
+  });
+
+  it('rejects a NaN value', () => {
+    const result = validateLevel(collectibleLevel({ kind: 'coin', value: NaN }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.value`)).toBe(true);
+  });
+
+  it('rejects an Infinity value', () => {
+    const result = validateLevel(
+      collectibleLevel({ kind: 'coin', value: Infinity }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.value`)).toBe(true);
+  });
+
+  it('rejects a non-boolean persists', () => {
+    const result = validateLevel(
+      collectibleLevel({ kind: 'coin', persists: 'yes' }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === `${P}.persists`)).toBe(true);
+  });
+
+  it('accepts unknown props (forward-compat)', () => {
+    const result = validateLevel(
+      collectibleLevel({ kind: 'coin', futureField: 'forward-compat' }),
+    );
+    expect(result.valid).toBe(true);
+    expect(errorsOnly(result)).toEqual([]);
+  });
+});
+
 describe('validateLevel — never throws on malformed input', () => {
   it('returns invalid result for a string', () => {
     const result = validateLevel('hello');

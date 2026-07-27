@@ -21,6 +21,9 @@ The common contract every prompt here enforces:
 | Game | File | Genre | Engine pillars exercised |
 |---|---|---|---|
 | **Embertomb** | [simple-platformer.md](./simple-platformer.md) | Side-view platformer | loop, input, tile/AABB collision, camera, hit-stop, squash, locomotion, foot-plant audio, jump, **spring rods**, particles, emitters (lava/water presets), wave-lines (water+lava), parallax, glow, palettes, RNG level-gen |
+| **Celerock** | [celerock.md](./celerock.md) | Single-screen precision platformer | **platformer kernel** (`defaultPrecisionPipeline`: jump + wall-slide + dash), `compileLevel` + `drawTileGrid` + `drawActor`, **collectibles** (`collect`/`hasCollected`), `save`, bitmap text, hit-stop + sineShake, tween, parallax |
+| **World 1-1** | [world-1-1.md](./world-1-1.md) | Horizontal-scrolling classic platformer | **platformer kernel** (`CLASSIC_PLATFORMER`: jump + double-jump), hand-authored `LevelData` + `validateLevel`, `compileLevel` + `drawLevelEntity`, **moving platforms** (`advanceMovingPlatform`), 3-layer `drawTiledParallax`, collectibles + save, classic Sokpop vector look |
+| **Flipside** | [flipside.md](./flipside.md) | No-jump gravity-flip explorer | **procedural music** (`generatePattern` + `advanceSequencer` + `createSequencer` reusing the shared `AudioAdapter`), no-jump player with gravity inversion, `pick`-named crewmates, `compileLevel` + `drawTileGrid` for connected rooms, trinket via collectibles + save, mono palette |
 
 _More to come — see "Adding a new prompt" below._
 

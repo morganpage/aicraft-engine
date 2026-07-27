@@ -168,6 +168,13 @@ function makeEntity(
         rect,
         props: props as unknown as Extract<LevelEntity, { kind: 'enemy' }>['props'],
       };
+    case 'collectible':
+      return {
+        id,
+        kind,
+        rect,
+        props: props as unknown as Extract<LevelEntity, { kind: 'collectible' }>['props'],
+      };
   }
 }
 

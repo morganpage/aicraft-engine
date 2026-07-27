@@ -124,3 +124,94 @@ export interface TouchButtonSetAdapter {
   /** Remove all per-element and document-level listeners. Idempotent. */
   dispose(): void;
 }
+
+/**
+ * Bidirectional axis binding for {@link GamepadConfig.axisToAction}: maps
+ * positive / negative deflection of a single analog axis to action names.
+ * Either direction can be omitted (e.g. a camera-pan axis that only cares
+ * about rightward deflection). When BOTH are omitted the entry is silently
+ * skipped — no error, no warning.
+ */
+export interface AxisBinding {
+  /** Action name for positive axis deflection (e.g. `'right'`). Omit to ignore. */
+  readonly positive?: string;
+  /** Action name for negative axis deflection (e.g. `'left'`). Omit to ignore. */
+  readonly negative?: string;
+}
+
+/**
+ * Configuration for {@link createGamepadAdapter}.
+ *
+ * Maps W3C Standard Gamepad button indices (0-16) and axis indices (0-3) to
+ * logical action names. Multiple buttons can map to the same action (e.g.
+ * D-pad right + left-stick positive-X → `'right'` → one shared accumulator).
+ *
+ * v1 ships single-pad (`getGamepads()[0]`), `mapping === 'standard'` only,
+ * axial per-axis threshold deadzone. See {@link GamepadAdapter} for the
+ * lifecycle contract.
+ */
+export interface GamepadConfig {
+  /**
+   * Maps Standard Gamepad button indices to action names. Keys are stringified
+   * numbers (matches the `Record<string, string>` shape of
+   * {@link KeyboardConfig.codeToAction}).
+   *
+   * W3C Standard layout: 0-3 = face cluster (A/B/X/Y), 4-5 = shoulders
+   * (LB/RB), 6-7 = triggers (L2/R2), 8-9 = center (Back/Start),
+   * 10-11 = stick clicks (LS/RS), 12-15 = D-pad (up/down/left/right),
+   * 16 = guide.
+   *
+   * @example
+   * ```ts
+   * { '0': 'jump', '12': 'up', '13': 'down', '14': 'left', '15': 'right' }
+   * ```
+   */
+  readonly buttonToAction: Readonly<Record<string, string>>;
+
+  /**
+   * Maps Standard Gamepad axis indices to directional action pairs. The axis
+   * value is compared against {@link GamepadConfig.deadzone}; when magnitude
+   * ≥ deadzone the corresponding direction's accumulator is pressed.
+   *
+   * Axes 0-1 = left stick (X, Y); axes 2-3 = right stick (X, Y).
+   *
+   * @example
+   * ```ts
+   * { '0': { positive: 'right', negative: 'left' }, '1': { positive: 'down', negative: 'up' } }
+   * ```
+   */
+  readonly axisToAction?: Readonly<Record<string, AxisBinding>>;
+
+  /**
+   * Analog stick deadzone magnitude. Values with `Math.abs(raw) < deadzone`
+   * are treated as idle (no edge fired). Applied **per-axis independently**
+   * (axial per-axis threshold) — each axis is compared against the deadzone
+   * on its own, NOT as a 2D stick magnitude. Defaults to
+   * {@link DEFAULT_GAMEPAD_DEADZONE} (`0.25`).
+   */
+  readonly deadzone?: number;
+}
+
+/**
+ * Gamepad adapter — polls `navigator.getGamepads()` once per tick and maps the
+ * W3C Standard Gamepad layout to logical actions via one
+ * {@link EdgeAccumulator} per action. OR-merges with keyboard/touch via the
+ * existing `orEdges` helper.
+ *
+ * Single-player v1: binds to the first connected pad (`getGamepads()[0]`).
+ * Multi-player v2: consumer creates a second adapter instance.
+ *
+ * Returns `{}` from `poll()` when no standard-mapping gamepad is connected,
+ * or in Node / SSR. Never throws.
+ */
+export interface GamepadAdapter {
+  /**
+   * Drain all accumulators, returning a per-action edge snapshot. Call exactly
+   * once per tick. Every mapped action appears in the record each tick (idle
+   * actions report `{held:false, pressed:false, released:false}`). Returns
+   * `{}` when no standard-mapping gamepad is connected, or in Node / SSR.
+   */
+  poll(): Record<string, PolledEdge>;
+  /** Remove all window listeners and release resources. Idempotent. */
+  dispose(): void;
+}

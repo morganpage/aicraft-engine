@@ -50,7 +50,8 @@ export type EntityKind =
   | 'decoration'
   | 'trigger'
   | 'movingPlatform'
-  | 'enemy';
+  | 'enemy'
+  | 'collectible';
 
 /**
  * Props for the `'exit'` kind. `isTrap` marks decoy/failure exits (Spitekeep's
@@ -124,6 +125,43 @@ export interface EnemyProps {
 }
 
 /**
+ * Closed sub-kind union for the `'collectible'` entity kind. Mirrors the
+ * `EnemyProps.archetype` dispatch pattern: one `EntityKind` with a typed
+ * sub-kind discriminator on `props`. Adding a fourth kind later (e.g.
+ * `'heart'`) is a non-breaking union expansion.
+ */
+export type CollectibleKind = 'coin' | 'gem' | 'key';
+
+/**
+ * Props for the `'collectible'` kind. The `kind` field dispatches to a
+ * renderer palette entry and an editor catalog prefab (one prefab per
+ * `CollectibleKind`, mirroring the `spinny`/`turret`/`spider` enemy
+ * pattern).
+ *
+ * Note the field-name shadow: `CollectibleProps.kind` is the collectible
+ * sub-kind (`'coin' | 'gem' | 'key'`), distinct from the outer
+ * `LevelEntity.kind` (which is `'collectible'`). This mirrors
+ * `EnemyProps.archetype` — a typed dispatch key nested inside a
+ * kind-discriminated union variant.
+ */
+export interface CollectibleProps {
+  /** Collectible sub-type. Dispatches to renderer palette and catalog prefabs. */
+  readonly kind: CollectibleKind;
+  /**
+   * Opaque numeric value (score, currency, etc.). The consumer owns the
+   * semantics — the library does not interpret this field. Must be a
+   * finite number `>= 0` when present.
+   */
+  readonly value?: number;
+  /**
+   * If `true`, the collected state persists across runs (Celeste strawberry
+   * / Mario Maker pink coin). Default `false` (per-run respawn, Mario coin).
+   * The persistence boundary (per-level, per-checkpoint) is consumer-owned.
+   */
+  readonly persists?: boolean;
+}
+
+/**
  * Entity with kind-specific props via a discriminated union on `kind`.
  *
  * The variants with `props: Record<string, never>` (`spawn`, `passthrough`,
@@ -140,7 +178,8 @@ export type LevelEntity =
   | { readonly id: EntityId; readonly kind: 'decoration'; readonly rect: LevelRect; readonly props: DecorationProps }
   | { readonly id: EntityId; readonly kind: 'trigger'; readonly rect: LevelRect; readonly props: TriggerProps }
   | { readonly id: EntityId; readonly kind: 'movingPlatform'; readonly rect: LevelRect; readonly props: MovingPlatformProps }
-  | { readonly id: EntityId; readonly kind: 'enemy'; readonly rect: LevelRect; readonly props: EnemyProps };
+  | { readonly id: EntityId; readonly kind: 'enemy'; readonly rect: LevelRect; readonly props: EnemyProps }
+  | { readonly id: EntityId; readonly kind: 'collectible'; readonly rect: LevelRect; readonly props: CollectibleProps };
 
 /**
  * Flat tile grid. Indexing: `data[tileY * cols + tileX]`. `0` is empty by

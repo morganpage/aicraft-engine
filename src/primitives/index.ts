@@ -53,3 +53,28 @@ export {
   drawTiledParallax,
   type TiledParallaxRange,
 } from './parallax';
+export {
+  createFont,
+  addGlyph,
+  measureText,
+  drawText,
+  drawTextOutlined,
+  DEFAULT_FONT,
+  DEFAULT_TEXT_COLOR,
+  DEFAULT_TEXT_SCALE,
+  DEFAULT_LINE_GAP,
+  DEFAULT_CHAR_GAP,
+  type BitmapFont,
+  type GlyphData,
+  type TextMetrics,
+  type TextAlign,
+  type TextDrawOptions,
+} from './bitmap-font';
+export {
+  FONT_5X7_DATA,
+  FONT_5X7_GLYPHS,
+  FONT_5X7_CELL_WIDTH,
+  FONT_5X7_CELL_HEIGHT,
+  FONT_5X7_FIRST_CHAR,
+  FONT_5X7_LAST_CHAR,
+} from './font5x7-data';
