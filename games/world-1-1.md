@@ -15,12 +15,10 @@
 ```bash
 npm create vite@latest world-1-1 -- --template vanilla-ts
 cd world-1-1
-npm install aicraft-engine@0.3.0
+npm install aicraft-engine@0.4.0
 ```
 
-> Release-preparation note: the implementation requirements below target the
-> pending 0.4.0 API. Keep the verified 0.3.0 pin until 0.4.0 is published,
-> then update the pin and verify this prompt against the registry tarball.
+> This brief targets the published `0.4.0` API exactly.
 
 **TypeScript**, strict. Target ES2021, `moduleResolution: bundler`. **Vite** dev server + build. Single `<canvas>` in `index.html`. **`aicraft-engine`** is your only runtime dependency. Import from the **root barrel only** (the published package only exposes the root `"."` entry — never deep-import subpaths):
     ```ts

@@ -17,20 +17,14 @@ The engine's **`music` module is the headline pillar of Flipside.** The fixed-st
 ```bash
 npm create vite@latest flipside -- --template vanilla-ts
 cd flipside
-npm install aicraft-engine@0.3.0
+npm install aicraft-engine@0.4.0
 ```
 
-> **Prep pin — 0.4.0 is pending.** The currently published npm release is
-> `0.3.0`, and this brief is being prepared against the in-development `0.4.0`
-> API. `0.3.0` does NOT yet resolve every export used below — signed
-> platformer gravity, the fixed-step `advanceSequencer` step-boundary fix,
-> `createNoteFirePlayer`, and the unified `compileLevel` that returns
-> `compiled.tileQuery` + tile-derived `staticSolids` all ship in `0.4.0`.
-> Pin `0.3.0` during release prep; switch the pin to `aicraft-engine@0.4.0`
-> only after `npm view aicraft-engine version` reports `0.4.0` and an
-> external Vite smoke build against the published tarball passes. Do not
-> assume `0.3.0` resolves the `0.4.0`-only symbols, and do not pre-pin
-> `0.4.0` before it exists on the registry.
+> This brief targets the published `0.4.0` API exactly. It relies on
+> `0.4.0`-only exports: signed platformer gravity, the fixed-step
+> `advanceSequencer` step-boundary fix, `createNoteFirePlayer`, and the
+> unified `compileLevel` that returns `compiled.tileQuery` + tile-derived
+> `staticSolids`. Do not substitute `0.3.0`.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
