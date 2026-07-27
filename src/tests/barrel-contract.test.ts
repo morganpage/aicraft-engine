@@ -160,7 +160,7 @@ describe('root barrel re-exports every module', () => {
     expect(aicraft.turretBehavior).not.toBeNull();
   });
 
-  it('music: noteToFrequency, generatePattern, advanceSequencer, createSequencer are functions, SCALES is an object, A4_FREQ is a number', () => {
+  it('music: pure advance and both host adapters are exported', () => {
     expect(typeof aicraft.noteToFrequency).toBe('function');
     expect(typeof aicraft.frequencyToNote).toBe('function');
     expect(typeof aicraft.buildScale).toBe('function');
@@ -171,11 +171,18 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.generatePattern).toBe('function');
     expect(typeof aicraft.advanceSequencer).toBe('function');
     expect(typeof aicraft.createSequencer).toBe('function');
+    expect(typeof aicraft.createNoteFirePlayer).toBe('function');
     expect(typeof aicraft.SCALES).toBe('object');
     expect(aicraft.SCALES).not.toBeNull();
     expect(typeof aicraft.A4_FREQ).toBe('number');
     expect(typeof aicraft.A4_MIDI).toBe('number');
     expect(typeof aicraft.LOOKAHEAD_MS).toBe('number');
     expect(typeof aicraft.SCHEDULE_AHEAD_S).toBe('number');
+  });
+
+  it('replay: createReplayRecorder and playReplay are functions, replayHash is a function', () => {
+    expect(typeof aicraft.createReplayRecorder).toBe('function');
+    expect(typeof aicraft.playReplay).toBe('function');
+    expect(typeof aicraft.replayHash).toBe('function');
   });
 });

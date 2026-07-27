@@ -1,5 +1,13 @@
 # Decision: Procedural Music / Step Sequencer
 
+## 0.4.0 clarification: external fixed-step output
+
+`advanceSequencer` locates the next absolute song boundary from
+`loopCount`/`stepIndex`; sub-step simulation calls no longer advance one note
+per call. `createNoteFirePlayer(audio)` renders the exact returned
+`NoteFire[]` without owning a pattern or clock. `createSequencer` remains the
+autonomous host-clock convenience API; consumers choose one ownership model.
+
 > Date: 2026-07-26. Stage 6 (Decide) for the `music-sequencer` technique.
 
 ## Decision

@@ -58,7 +58,11 @@ export interface RidingTracker {
    * @returns a new shallow-copied core with `x`/`y` adjusted, or the input
    *   core unchanged if no carry applies this tick
    */
-  applyCarry(core: ActorCore, getDisplacement: SolidDisplacementProvider | null): ActorCore;
+  applyCarry(
+    core: ActorCore,
+    getDisplacement: SolidDisplacementProvider | null,
+    supportId?: string | null,
+  ): ActorCore;
 }
 
 /**
@@ -79,13 +83,19 @@ export interface RidingTracker {
  */
 export function createRidingTracker(): RidingTracker {
   return {
-    applyCarry(core, getDisplacement) {
-      const groundId = core.contacts.groundId;
-      if (groundId === null || getDisplacement === null) return core;
-      const disp = getDisplacement(groundId);
-      if (disp === null) return core;
-      if (disp.dx === 0 && disp.dy === 0) return core;
-      return { ...core, x: core.x + disp.dx, y: core.y + disp.dy };
+    applyCarry(core, getDisplacement, supportId = core.contacts.groundId) {
+      if (supportId === null || getDisplacement === null) return core;
+      try {
+        const disp = getDisplacement(supportId);
+        if (disp === null || typeof disp !== 'object') return core;
+        const dx = Number(disp.dx);
+        const dy = Number(disp.dy);
+        if (!Number.isFinite(dx) || !Number.isFinite(dy)) return core;
+        if (dx === 0 && dy === 0) return core;
+        return { ...core, x: core.x + dx, y: core.y + dy };
+      } catch {
+        return core;
+      }
     },
   };
 }

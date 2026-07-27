@@ -1,5 +1,20 @@
 # Decision: Platformer Kernel
 
+## 0.4.0 clarification: signed gravity
+
+`gravity` is signed and `maxFallSpeed` is its terminal-speed magnitude.
+Negative gravity uses physical ceiling contact as support, including
+`onGround`, `justLanded`, and moving-platform carry. Contact IDs remain
+physical: floors populate `groundId`, ceilings populate `ceilingId`.
+`jumpEnabled?: boolean` disables only the jump processor when explicitly
+false; gravity-relative jump and other oriented abilities remain deferred.
+Before abilities run, the kernel re-evaluates support in the active gravity
+direction from contact identity and current solid geometry. This covers
+anonymous solids and prevents stale `onGround` after a sign change.
+`hitCeiling` remains a physical per-tick collision flag, so inverted actors
+pressed against a ceiling observe it every supported tick; `justLanded` is the
+one-tick entry event.
+
 > Status: APPROVED for implementation.
 > Proposal: `docs/design/platformer-kernel-proposal.md`.
 > Research: `docs/research/platformer-kernel.md`.

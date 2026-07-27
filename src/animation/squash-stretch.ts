@@ -89,7 +89,7 @@ const MAX_SCALE_Y = 3.0;
  *
  * @example
  * ```ts
- * const jump = volumeScale(-0.08); // stretch vertically on jump
+ * const jump = volumeScale(0.08); // stretch vertically on jump
  * ctx.scale(jump.scaleX, jump.scaleY);
  * ```
  */

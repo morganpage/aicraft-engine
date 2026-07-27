@@ -31,6 +31,14 @@ function makeCore(groundId: string | null): ActorCore {
 }
 
 describe('createRidingTracker', () => {
+  it('swallows throwing and malformed displacement providers', () => {
+    const tracker = createRidingTracker();
+    const core = makeCore('platform');
+    expect(() => tracker.applyCarry(core, () => { throw new Error('hostile'); })).not.toThrow();
+    expect(tracker.applyCarry(core, () => ({ dx: Number.NaN, dy: 1 }))).toBe(core);
+    expect(tracker.applyCarry(core, () => undefined as never)).toBe(core);
+  });
+
   it('no groundId: returns the input core unchanged', () => {
     const tracker = createRidingTracker();
     const core = makeCore(null);

@@ -40,13 +40,13 @@ import type { PolledEdge } from '../input/types';
  * the solid has no id assigned.
  */
 export interface Contacts {
-  /** The id of the solid the actor is standing on, or `null`. */
+  /** The id of a physical floor contact, or `null` (independent of gravity). */
   readonly groundId: string | null;
   /** The id of the solid the actor is touching on its left side, or `null`. */
   readonly leftWallId: string | null;
   /** The id of the solid the actor is touching on its right side, or `null`. */
   readonly rightWallId: string | null;
-  /** The id of the solid the actor bumped from below (ceiling), or `null`. */
+  /** The id of a physical ceiling contact, or `null` (independent of gravity). */
   readonly ceilingId: string | null;
 }
 
@@ -56,11 +56,15 @@ export interface Contacts {
  * reads these from the returned state and they reset on the next tick.
  */
 export interface PlatformerEvents {
-  /** `true` on the tick the actor transitioned from airborne → grounded. */
+  /** `true` on transition from unsupported to supported in gravity's direction. */
   readonly justLanded: boolean;
   /** `true` on the tick the jump ability launched the actor upward. */
   readonly justLaunched: boolean;
-  /** `true` on the tick the actor's head bumped the underside of a solid. */
+  /**
+   * Physical upward collision for this tick. Under negative gravity, gravity
+   * presses a supported actor upward every tick, so this remains `true` while
+   * ceiling-supported; only `justLanded` is the support-entry pulse.
+   */
   readonly hitCeiling: boolean;
   /** `true` on the tick the actor's side bumped a wall while moving. */
   readonly hitWall: boolean;
@@ -108,7 +112,7 @@ export interface ActorCore {
   readonly vy: number;
   /** Facing direction: +1 right, -1 left. */
   readonly facing: 1 | -1;
-  /** `true` if the actor was on ground at the end of last tick. */
+  /** `true` when supported opposite the current gravity direction. */
   readonly onGround: boolean;
   /** Contact identity from last tick's collision resolution. */
   readonly contacts: Contacts;
@@ -287,9 +291,9 @@ export interface PlatformerState {
  * `core/player.ts`.
  */
 export interface PlatformerConfig {
-  /** Gravity in px/s² applied during the integrate step (after abilities). */
+  /** Signed gravity in px/s². Positive pulls down; negative pulls up. */
   readonly gravity: number;
-  /** Terminal fall velocity in px/s (downward cap). */
+  /** Maximum speed in the current gravity direction, expressed as a magnitude. */
   readonly maxFallSpeed: number;
   /** Ground move speed in px/s. */
   readonly moveSpeed: number;
@@ -297,6 +301,8 @@ export interface PlatformerConfig {
   readonly airControl: number;
   /** Jump tuning (apex parameterization, coyote, buffer, variable height). */
   readonly jump: JumpConfig;
+  /** Master switch for jump. Omitted means enabled. Signed-gravity jump is deferred. */
+  readonly jumpEnabled?: boolean;
   /** Master switch for the wall-slide ability. */
   readonly wallSlideEnabled: boolean;
   /** Wall-slide terminal velocity in px/s (slow slide). */

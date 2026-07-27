@@ -22,7 +22,7 @@
  */
 
 import type { LevelData } from '../level/types';
-import type { Solid } from '../collision/types';
+import type { Solid, TileSolidityQuery, TileType } from '../collision/types';
 import type { PlatformerState, PlatformerConfig } from './types';
 import { createPlatformerState } from './kernel';
 import {
@@ -67,6 +67,8 @@ export interface CompiledLevel {
   readonly movingPlatforms: readonly CompiledMovingPlatform[];
   /** Initial platformer state at `level.spawn`, with default player dimensions (overridable) and the supplied config. */
   readonly initialState: PlatformerState;
+  /** Captured tile classification used to generate tile collision geometry. */
+  readonly tileQuery: TileSolidityQuery;
 }
 
 /** Prefix used to namespace level-entity ids when lifting them into `Solid.id`. */
@@ -107,6 +109,8 @@ export interface CompileLevelOptions {
   readonly playerHeight?: number;
   /** Override the default platformer config (`DEFAULT_PLATFORMER_CONFIG`). */
   readonly config?: Readonly<PlatformerConfig>;
+  /** Classify serialized numeric tile values for platformer collision. */
+  readonly tileTypeMap?: (tileValue: number) => TileType;
 }
 
 /**
@@ -142,12 +146,40 @@ export function compileLevel(
   level: LevelData,
   options?: CompileLevelOptions,
 ): CompiledLevel {
+  try {
+    return compileLevelUnsafe(level, options);
+  } catch {
+    return {
+      staticSolids: [],
+      movingPlatforms: [],
+      initialState: createPlatformerState(0, 0),
+      tileQuery: () => 'empty',
+    };
+  }
+}
+
+function compileLevelUnsafe(
+  level: LevelData,
+  options?: CompileLevelOptions,
+): CompiledLevel {
   const staticSolids: Solid[] = [];
   const movingPlatforms: CompiledMovingPlatform[] = [];
 
+  let entities: readonly import('../level/types').LevelEntity[] = [];
   try {
-    const entities = level && Array.isArray(level.entities) ? level.entities : [];
-    for (const entity of entities) {
+    entities = level && Array.isArray(level.entities) ? level.entities : [];
+  } catch {
+    entities = [];
+  }
+  let entityCount = 0;
+  try {
+    entityCount = Math.min(1_000_000, entities.length);
+  } catch {
+    entityCount = 0;
+  }
+  for (let entityIndex = 0; entityIndex < entityCount; entityIndex += 1) {
+    try {
+      const entity = entities[entityIndex];
       if (!entity || typeof entity.kind !== 'string') continue;
       const r = entity.rect;
       if (!r) continue;
@@ -206,37 +238,187 @@ export function compileLevel(
       }
       // Other kinds (spawn, exit, trap, hazard, decoration, trigger) are not
       // collision surfaces and are intentionally ignored here.
+    } catch {
+      // A hostile entity is skipped without preventing later entities.
     }
-  } catch {
-    // Defensive: never throw. Whatever was pushed into the arrays so far is
-    // returned; an unreadable entity is silently skipped.
   }
 
-  const config = options?.config ?? DEFAULT_PLATFORMER_CONFIG;
-  const playerWidth = options?.playerWidth ?? DEFAULT_PLAYER_WIDTH;
-  const playerHeight = options?.playerHeight ?? DEFAULT_PLAYER_HEIGHT;
+  let classifier: ((tileValue: number) => TileType) | undefined;
+  try {
+    classifier = options?.tileTypeMap;
+  } catch {
+    classifier = undefined;
+  }
+  let captured = emptyCapturedTiles();
+  try {
+    captured = captureTiles(level, classifier);
+    const tileSolids = flattenCapturedTiles(
+      captured.types,
+      captured.cols,
+      captured.rows,
+      captured.tileSize,
+    );
+    for (const solid of tileSolids) staticSolids.push(solid);
+  } catch {
+    captured = emptyCapturedTiles();
+  }
 
-  const spawnX =
-    level && level.spawn && typeof level.spawn.x === 'number' && Number.isFinite(level.spawn.x)
-      ? level.spawn.x
-      : 0;
-  const spawnY =
-    level && level.spawn && typeof level.spawn.y === 'number' && Number.isFinite(level.spawn.y)
-      ? level.spawn.y
-      : 0;
+  let config: Readonly<PlatformerConfig> = DEFAULT_PLATFORMER_CONFIG;
+  let playerWidth = DEFAULT_PLAYER_WIDTH;
+  let playerHeight = DEFAULT_PLAYER_HEIGHT;
+  try {
+    config = options?.config ?? DEFAULT_PLATFORMER_CONFIG;
+  } catch {
+    config = DEFAULT_PLATFORMER_CONFIG;
+  }
+  try {
+    const value = options?.playerWidth;
+    if (typeof value === 'number' && Number.isFinite(value)) playerWidth = value;
+  } catch {
+    playerWidth = DEFAULT_PLAYER_WIDTH;
+  }
+  try {
+    const value = options?.playerHeight;
+    if (typeof value === 'number' && Number.isFinite(value)) playerHeight = value;
+  } catch {
+    playerHeight = DEFAULT_PLAYER_HEIGHT;
+  }
+
+  let spawnX = 0;
+  let spawnY = 0;
+  try {
+    const spawn = level?.spawn;
+    if (typeof spawn?.x === 'number' && Number.isFinite(spawn.x)) spawnX = spawn.x;
+    if (typeof spawn?.y === 'number' && Number.isFinite(spawn.y)) spawnY = spawn.y;
+  } catch {
+    // Preserve successfully compiled entities/tiles when spawn is hostile.
+  }
 
   let initialState: PlatformerState;
   try {
     initialState = createPlatformerState(spawnX, spawnY, config, playerWidth, playerHeight);
   } catch {
-    initialState = createPlatformerState(0, 0, config, playerWidth, playerHeight);
+    initialState = createPlatformerState(
+      spawnX,
+      spawnY,
+      DEFAULT_PLATFORMER_CONFIG,
+      playerWidth,
+      playerHeight,
+    );
   }
 
   return {
     staticSolids,
     movingPlatforms,
     initialState,
+    tileQuery: captured.query,
   };
+}
+
+interface CapturedTiles {
+  readonly types: readonly TileType[];
+  readonly cols: number;
+  readonly rows: number;
+  readonly tileSize: number;
+  readonly query: TileSolidityQuery;
+}
+
+function emptyCapturedTiles(): CapturedTiles {
+  return { types: [], cols: 0, rows: 0, tileSize: 1, query: () => 'empty' };
+}
+
+function captureTiles(
+  level: LevelData,
+  classifier?: (tileValue: number) => TileType,
+): CapturedTiles {
+  const grid = level?.tiles;
+  const cols = Number.isFinite(grid?.cols) ? Math.max(0, Math.floor(grid.cols)) : 0;
+  const rows = Number.isFinite(grid?.rows) ? Math.max(0, Math.floor(grid.rows)) : 0;
+  const tileSize = Number.isFinite(grid?.tileSize) && grid.tileSize > 0 ? grid.tileSize : 1;
+  const data: readonly unknown[] = Array.isArray(grid?.data) ? grid.data : [];
+  const cellCount = cols * rows;
+  if (!Number.isSafeInteger(cellCount) || cellCount > 1_000_000) {
+    return { types: [], cols: 0, rows: 0, tileSize, query: () => 'empty' };
+  }
+  const types: TileType[] = [];
+  for (let index = 0; index < cellCount; index += 1) {
+    let type: TileType = 'empty';
+    const value = data[index];
+    if (classifier && typeof value === 'number' && Number.isFinite(value)) {
+      try {
+        const classified = classifier(value);
+        if (classified === 'solid' || classified === 'passthrough' || classified === 'empty') {
+          type = classified;
+        }
+      } catch {
+        type = 'empty';
+      }
+    }
+    types.push(type);
+  }
+  const query: TileSolidityQuery = (x, y) => {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= cols || y >= rows) {
+      return 'empty';
+    }
+    return types[y * cols + x] ?? 'empty';
+  };
+  return { types, cols, rows, tileSize, query };
+}
+
+function flattenCapturedTiles(
+  types: readonly TileType[],
+  cols: number,
+  rows: number,
+  tileSize: number,
+): Solid[] {
+  const result: Solid[] = [];
+  const visited = new Array<boolean>(types.length).fill(false);
+  const emit = (x: number, y: number, width: number, height: number, passthrough: boolean) => {
+    const bounds = {
+      x: x * tileSize,
+      y: y * tileSize,
+      width: width * tileSize,
+      height: height * tileSize,
+    };
+    result.push({
+      id: `tile-${bounds.x}-${bounds.y}-${bounds.width}-${bounds.height}`,
+      ...bounds,
+      ...(passthrough ? { passthrough: true } : {}),
+    });
+  };
+
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const start = y * cols + x;
+      if (visited[start]) continue;
+      const type = types[start] ?? 'empty';
+      if (type === 'empty') continue;
+      let width = 1;
+      while (
+        x + width < cols &&
+        !visited[start + width] &&
+        types[start + width] === type
+      ) width += 1;
+
+      let height = 1;
+      if (type === 'solid') {
+        rows: while (y + height < rows) {
+          for (let dx = 0; dx < width; dx += 1) {
+            const index = (y + height) * cols + x + dx;
+            if (visited[index] || types[index] !== 'solid') break rows;
+          }
+          height += 1;
+        }
+      }
+      for (let dy = 0; dy < height; dy += 1) {
+        for (let dx = 0; dx < width; dx += 1) {
+          visited[(y + dy) * cols + x + dx] = true;
+        }
+      }
+      emit(x, y, width, height, type === 'passthrough');
+    }
+  }
+  return result;
 }
 
 /**

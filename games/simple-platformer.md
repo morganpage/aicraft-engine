@@ -15,9 +15,12 @@
 ```bash
 npm create vite@latest embertomb -- --template vanilla-ts
 cd embertomb
-npm install aicraft-engine
-npm install -D vite
+npm install aicraft-engine@0.3.0
 ```
+
+> Release-preparation note: the implementation requirements below target the
+> pending 0.4.0 API. Keep the verified 0.3.0 pin until 0.4.0 is published,
+> then update the pin and verify this prompt against the registry tarball.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -26,18 +29,20 @@ npm install -D vite
   import {
     createGameLoop, createKeyboardAdapter, createTouchButtonSet, orEdges,
     resolveAxisX, resolveAxisY, aabbOverlap,
-    resolveTileX, resolveTileY, worldToTile, tileToWorld, tileRect,
-    type TileSolidityQuery,
+    resolveTileX, resolveTileY, createTileQuery, worldToTile, tileToWorld, tileRect,
+    type TileSolidityQuery, type TileGrid,
     createCamera, updateCamera,
     createHitStop, triggerHitStop, stepHitStop, isHitStopActive,
     volumeScale, breathe, DEFAULT_BREATH,
     advanceLocomotionByDisplacement, evaluateLocomotion, DEFAULT_GAIT, blendAirborneTuck, DEFAULT_TUCK,
     createFootPlantState, advanceFootPlant,
     drawSimpleFeet, DEFAULT_SIMPLE_FEET,
+    solveLimb, sineShake, shakeEnvelope,
     advanceJump, createJumpState, evaluateJump, DEFAULT_JUMP,
     advanceSpringRod, createSpringRod, DEFAULT_SPRING_ROD,
     spawn, step as stepParticles, sampleConeVelocity,
-    createEmitter, stepEmitters,
+    createEmitter, stepEmitters, type SpawnRegion,
+    advanceGapMotion, gapSolids,
     LAVA_FIRE_PARTICLES, LAVA_SMOKE_PARTICLES, WATER_BUBBLE_PARTICLES,
     LAVA_SURFACE_COLOR, LAVA_BODY_COLOR, WATER_SURFACE_COLOR,
     generateWaveLine, DEFAULT_GERSTNER, DEFAULT_WAVE_LINE,
@@ -46,6 +51,7 @@ npm install -D vite
     createAudioAdapter,
     mulberry32, nextInt, nextFloat, pick,
     generatePalette, lerp,
+    drawTileGrid,
   } from 'aicraft-engine';
   ```
   (The published package only exposes the root `"."` entry — never deep-import subpaths like `aicraft-engine/animation`; use the root barrel.)
@@ -75,7 +81,7 @@ npm install -D vite
 | Jump arc + landing squash | `advanceJump`, `createJumpState`, `evaluateJump`, `DEFAULT_JUMP`, `blendAirborneTuck`, `DEFAULT_TUCK` |
 | Tail / antenna / hair physics | `advanceSpringRod`, `createSpringRod`, `DEFAULT_SPRING_ROD` (use this — the raw `advanceSpringChain` can blow out; the rod is blowout-proof) |
 | Dust, splashes, sparks, bubbles, embers | `spawn`, `stepParticles`, `sampleConeVelocity` |
-| Continuous fire/smoke/lava-bubble emitters | `createEmitter`, `stepEmitters`, + the tuned `LAVA_FIRE_PARTICLES` / `LAVA_SMOKE_PARTICLES` / `WATER_BUBBLE_PARTICLES` presets (do NOT invent params) |
+| Continuous fire/smoke/lava-bubble emitters | `createEmitter`, `stepEmitters`, + the ratified presets: showcase-tuned `LAVA_FIRE_PARTICLES` / `LAVA_SMOKE_PARTICLES` and derived `WATER_BUBBLE_PARTICLES` (do NOT invent params — spread the preset, only override `region`/`rng`) |
 | Water + lava animated surfaces | `generateWaveLine`, `DEFAULT_GERSTNER`, `DEFAULT_WAVE_LINE` |
 | Parallax background layers | `drawTiledParallax` |
 | Glow (lava, coins, magic) | `drawGlow` |
@@ -88,8 +94,10 @@ npm install -D vite
 
 ## 4. The player
 
-- **Body:** rounded-rect drawn with `outlineRect`, fill = `palette.base`, outline = `palette.outline`. Volume-preserving squash/stretch via `volumeScale(squashOffset)` composed with idle `breathe(tick, DEFAULT_BREATH)`. `squashOffset` spikes negative on launch (stretch up) and positive on landing (squash down), decaying exponentially each step.
-- **Legs:** `drawSimpleFeet` driven by `evaluateLocomotion(loco, DEFAULT_GAIT)`. Advance phase by displacement: `loco = advanceLocomotionByDisplacement(loco, vx * facing, DEFAULT_GAIT)` so phase freezes when idle (feet plant, no foot-slide).
+- **Body:** rounded-rect drawn with `outlineRect`, fill = `palette.base`, outline = `palette.outline`. For `volumeScale`, positive offsets stretch vertically and negative offsets squash vertically: use positive on launch and negative on landing.
+- **Legs:** `drawSimpleFeet` driven by `evaluateLocomotion(loco, DEFAULT_GAIT)`.
+  Advance phase with actual per-step displacement:
+  `loco = advanceLocomotionByDisplacement(loco, player.vx * dt * player.facing, DEFAULT_GAIT)`.
 - **⚠ Facing mirror (MANDATORY — or you get a moonwalk):** the locomotion foot offsets are LOCAL-space and assume the draw is mirrored for facing. You MUST wrap the body+feet+face draw in `ctx.scale(facing, 1)` around the body's vertical axis, or walking left shows the character facing right. Canonical pattern:
   ```ts
   ctx.save();
@@ -101,8 +109,15 @@ npm install -D vite
   ctx.restore();
   ```
   (Draw any spring-rod tail/antenna OUTSIDE the mirror — its physics already own a screen-space direction.)
-- **Footstep audio:** maintain `plantState = createFootPlantState()`; each step call `advanceFootPlant(plantState, pose.leftFootOffset.y, pose.rightFootOffset.y)`, thread the returned state, and on `events.leftPlanted`/`rightPlanted` fire `audio.playNoise(40, 'lowpass', 200, 0.12)`. This syncs taps to the *actual* walk cycle, not a timer. (Mirror the playground pattern from the engine's own showcase.)
-- **Jump:** `advanceJump(jumpState, { pressed, held }, dt, DEFAULT_JUMP)` — variable height (tap = short hop, hold = full). Airborne tuck via `blendAirborneTuck(footOffset, airborneBlend, DEFAULT_TUCK)`.
+- **Footstep audio:** call `const plant = advanceFootPlant(...)`, assign
+  `plantState = plant.state`, and read `plant.events`.
+- **Jump:** keep one vertical velocity path. Call
+  `jumpState = advanceJump(jumpState, { jumpPressed, jumpHeld, isGrounded, hitCeiling }, dt, DEFAULT_JUMP)`,
+  copy `jumpState.vy` into the collision body before `resolveTileY`, then feed
+  `yRes.landed`/`yRes.hitCeiling` into the next jump inputs. Never integrate or
+  mutate a second independent vertical velocity. (Water in §6 obeys this rule:
+  it swaps the `JumpConfig` and clamps this same `jumpState.vy` for buoyancy —
+  no separate swim integrator.)
 - **Tail/hair:** a `createSpringRod` strand anchored at the body (`restDirection` points back/down for a tail, up/forward for an antenna). Use `advanceSpringRod` — NOT the raw `advanceSpringChain`, which lacks bend resistance and can numerically blow a node across the screen. The rod is blowout-proof by construction.
 - **Feel:** launch stretch, landing squash, hit-stop on hard landings (`triggerHitStop` when impact > threshold), screen shake (`sineShake`/`shakeEnvelope`), landing-dust (`spawn` upward cone).
 
@@ -130,7 +145,9 @@ Each enemy: own hitbox (`aabbOverlap` vs player), own death = particle burst (`s
 
 - **Surface:** `generateWaveLine(0, waterY, W, waterY, spacing, t, DEFAULT_WAVE_LINE)` — a gentle sine ripple. Stroked in a translucent blue.
 - **Body:** fill below the surface polyline, semi-transparent.
-- **Physics when submerged** (player center below `waterY`): gravity halved, `vx` damped, jump becomes a swim-stroke (upward impulse on press), max fall speed clamped low (floaty). Detect submersion by sampling the wave line's Y at the player's X.
+- **Physics when submerged** (player center below `waterY`): water is a MODIFIER on the single authoritative `JumpState` / vertical path from §4 — never a second integrator, never a separate swim-velocity field. Detect submersion by sampling the wave line's Y at the player's X, then:
+  - **Vertical (the one path):** select a water `JumpConfig` (e.g. `{ ...DEFAULT_JUMP, apexHeight: smaller, timeToApex: larger, fallMultiplier: ~1, coyoteTime: 0 }`) and pass it to the SAME `advanceJump(jumpState, inputs, dt, waterConfig)` call you use on land — `advanceJump` then emits the floaty swim arc on `jumpState.vy` itself. The swim-stroke is just `jumpPressed` → the normal launch impulse; there is no branch that writes a second vertical velocity. Optionally clamp `jumpState.vy` to a buoyant max-fall (`jumpState = { ...jumpState, vy: Math.min(jumpState.vy, BUOYANT_TERMINAL) }`) AFTER `advanceJump` and BEFORE handing it to `resolveTileY`, exactly as the §8 loop does. One field, one path.
+  - **Horizontal (independent of the jump path):** damp `vx` toward zero each tick (water drag).
 - **Splash:** on surface entry, `spawn` a burst of droplets upward via `sampleConeVelocity` (cone pointing up), advanced + culled by `stepParticles`. `audio.playNoise` splash.
 - **Bubble ambience:** a slow `createEmitter` under the surface emitting rising particles (negative gravity scale).
 - **Underwater tint:** draw a translucent blue rect over the viewport when the camera is submerged.
@@ -143,11 +160,15 @@ Each enemy: own hitbox (`aabbOverlap` vs player), own death = particle burst (`s
 - **Body fill:** `LAVA_BODY_COLOR`, drawn as the wave polyline closed to the bottom.
 - **Emitters (the tuned recipe):**
   ```ts
-  const fire = createEmitter({ ...LAVA_FIRE_PARTICLES, region: surfaceLine, rng: rngA });
-  const smoke = createEmitter({ ...LAVA_SMOKE_PARTICLES, region: surfaceLine, rng: rngB });
+  const surfaceRegion: SpawnRegion = {
+    type: 'line', x1: 0, y1: lavaY, x2: levelWidth, y2: lavaY,
+  };
+  let fire = createEmitter({ ...LAVA_FIRE_PARTICLES, region: surfaceRegion, rng: rngA });
+  let smoke = createEmitter({ ...LAVA_SMOKE_PARTICLES, region: surfaceRegion, rng: rngB });
   // each tick:
-  [fire, smoke] = stepEmitters([fire, smoke], dt, { gravity, drag, rateScale: intensity });
+  [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity, drag, rateScale: intensity });
   ```
+  `WavePoint[]` is render geometry only; it is not a `SpawnRegion`.
   ⚠ **Units contract:** the presets are TICK-based (the showcase uses `dt = 1`). If your game steps in seconds, either step emitters with `dt = 1` (tick units) or convert the preset values to seconds. Mixing units silently produces flat fire / off-screen sparks. Document your choice.
 - **Ambient glow:** `drawGlow` at the surface center, low intensity, warm color — sells the light spill.
 - **Contact = damage + knockback + heavy hit-stop** (`triggerHitStop`) + a molten splash (`spawn` yellow embers upward) + `audio.playNoise` hiss.
@@ -167,36 +188,57 @@ Each enemy: own hitbox (`aabbOverlap` vs player), own death = particle burst (`s
   ];
   const TILE_SIZE = 16;
 
-  // Wrap the grid behind the engine's uniform tile-query interface.
-  // Out-of-bounds tiles read as 'empty' here; use 'solid' instead if you
-  // want level boundaries to act as walls.
-  const tileQuery: TileSolidityQuery = (tileX, tileY) => {
-    if (tileY < 0 || tileY >= grid.length || tileX < 0 || tileX >= grid[0].length) {
-      return 'empty';
-    }
-    return grid[tileY][tileX] === 1 ? 'solid' : 'empty';
+  const renderGrid: TileGrid = {
+    data: grid.flat(),
+    cols: grid[0].length,
+    rows: grid.length,
+    tileSize: TILE_SIZE,
   };
+  const tileQuery: TileSolidityQuery = createTileQuery(
+    renderGrid,
+    value => value === 1 ? 'solid' : 'empty',
+  );
 
-  // Per-axis move-and-resolve in the fixed `step` (player.x/y are the
-  // authoritative body position; vx/vy are per-tick velocity):
+  // JumpState is the authoritative vertical-velocity path (px/s). Collision
+  // receives a per-tick delta and feeds contact-zeroed velocity back into it.
+  player.vy = jumpState.vy;
   const prevBottom = player.y + player.height;
-  const xRes = resolveTileX(player, player.vx, tileQuery, TILE_SIZE);
+  const xRes = resolveTileX(player, player.vx * dt, tileQuery, TILE_SIZE);
   player.x = xRes.x;
-  player.vx = xRes.vx;
-  if (xRes.hitWall) player.onWallHit();
+  if (xRes.hitWall) {
+    player.vx = 0;
+    player.onWallHit();
+  }
 
-  const yRes = resolveTileY(player, player.vy, tileQuery, TILE_SIZE, prevBottom);
+  const yRes = resolveTileY(player, player.vy * dt, tileQuery, TILE_SIZE, prevBottom);
   player.y = yRes.y;
-  player.vy = yRes.vy;
-  if (yRes.landed) player.onLand();
+  player.vy = yRes.landed || yRes.hitCeiling ? 0 : jumpState.vy;
+  jumpState = { ...jumpState, vy: player.vy };
+  isGrounded = yRes.landed;
+  hitCeiling = yRes.hitCeiling;
   if (yRes.hitCeiling) player.onCeilingHit();
   ```
+
+  Render that same grid through the engine renderer; do not write a second
+  nested row/column traversal:
+  ```ts
+  drawTileGrid(ctx, renderGrid, (c, x, y, tileValue, tileSize) => {
+    if (tileValue === 1) outlineRect(c, x, y, tileSize, tileSize, palette.background, palette.outline);
+  });
+  ```
+  The callback signature is `(ctx, x, y, tileValue, tileSize)` — screen-space
+  pixel origin first, then the tile value, then the pixel size. The callback
+  owns only tile appearance; `drawTileGrid` owns traversal.
 
   Use `worldToTile` / `tileToWorld` / `tileRect` when you need to convert between world and tile coordinates (ray probes, debug overlay, spawn placement). One-way platforms are `'passthrough'` tiles — they only block downward movement and only when the body was above the tile last tick (`prevBottom` drives the rule inside `resolveTileY`).
 - **Procedural rooms** seeded per-level: `const rng = mulberry32(levelSeed)`. Place platforms, gaps, hazards, enemy spawns, coins, and the exit door using `nextInt`/`nextFloat`/`pick`. Same seed → same level forever (replay-perfect).
 - **Parallax background:** 3 layers via `drawTiledParallax` at depth factors 0.15 / 0.4 / 0.75, each a procedurally-drawn tile (no art) — distant silhouettes, mid ruins, foreground debris. Palette from `generatePalette(levelSeed)` so each level has a cohesive hue.
 - **Coins:** `outlineRect` diamonds in `palette.feature` with a `drawGlow`; on collect, a `spawn` sparkle burst + `audio.playTone` ping.
-- **Moving platforms:** reuse the moving-gap motion primitive (`advanceGapMotion`/`gapSolids`) as rideable platforms with a swept/clamped path — the player rides them (collision already handles standing-on-top).
+- **Moving gaps:** `advanceGapMotion` + `gapSolids` model a traveling hole in
+  an otherwise static span. The returned span fragments are collision solids,
+  but they are not rideable moving platforms and provide no carry
+  displacement. Use level `movingPlatform` entities with the platformer
+  runtime's displacement provider when the player must ride moving geometry.
 
 ## 9. Game feel checklist (the juice — every item uses the engine)
 
@@ -205,8 +247,8 @@ Each enemy: own hitbox (`aabbOverlap` vs player), own death = particle burst (`s
 - [ ] Screen shake on impacts (`sineShake` + `shakeEnvelope`, decaying envelope)
 - [ ] Phase-synced footstep taps (`advanceFootPlant`)
 - [ ] Dust on every footplant + on landings (`spawn`)
-- [ ] Coyote time + jump buffer (consumer-side timers in `step`, fine — these aren't in the engine)
-- [ ] Spring-chain tail/hair lag on the player
+- [ ] Coyote time + jump buffer from `advanceJump` / `JumpState`; do not duplicate them in consumer state.
+- [ ] Spring-rod tail/hair lag on the player (`advanceSpringRod`, never the raw `advanceSpringChain`)
 - [ ] Reduced-motion gate (`prefersReducedMotion`) that renders one static frame
 
 ## 10. Audio (all synthesized via `createAudioAdapter`)
@@ -229,7 +271,7 @@ src/
     step.ts          # the fixed-step: input → physics → AI → collisions → audio
     render.ts        # pure draw: parallax, tiles, water, lava, entities, FX
     levels.ts        # mulberry32-seeded room generator
-    enemies.ts       # the 10 enemy types (each: step AI + render)
+    enemies.ts       # the 13 enemy types (each: step AI + render)
     player.ts        # player step + render (locomotion/jump/squash/feet)
     water.ts lava.ts # surface + emitters + physics hooks
   input.ts           # createKeyboardAdapter + createTouchButtonSet + orEdges
@@ -251,7 +293,7 @@ src/
 11. **No tail/appendage blow-out.** Every Verlet strand (player tail, flyer trail, slime antenna, swimmer body) uses `advanceSpringRod`, never the raw `advanceSpringChain`. The reviewer will grep for `advanceSpringChain` in appendage code — it must not appear there. (The rod is blowout-proof; the raw chain is not — Embertomb had a swimmer node stroked across the whole viewport.)
 12. **Lava uses the presets.** The reviewer will grep for `LAVA_FIRE_PARTICLES` / `LAVA_SMOKE_PARTICLES` in the lava setup — the tuned recipe must be used, not invented params.
 
-## 13. Stretch goals (only after criteria 1–9)
+## 13. Stretch goals (only after criteria 1–12)
 
 - `cosmetics` + `iap` modules: unlockable seeded character skins via a dev/local-storage IAP adapter.
 - `save` storage: checkpoints + coin total persist across reloads.

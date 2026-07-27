@@ -43,6 +43,9 @@ export const jumpAbility: AbilityProcessor<JumpAbilityState> = {
 
   advance(ctx: AbilityContext, state: JumpAbilityState): AbilityResult<JumpAbilityState> {
     const { core, input, dt, config } = ctx;
+    if (config.jumpEnabled === false) {
+      return { core, state, events: {} };
+    }
 
     const jumpInputs: JumpInputs = {
       jumpHeld: input.jump.held,

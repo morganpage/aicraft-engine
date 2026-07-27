@@ -28,6 +28,7 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   moveSpeed: 200,
   airControl: 0.65,
   jump: DEFAULT_JUMP,
+  jumpEnabled: true,
   wallSlideEnabled: true,
   wallSlideSpeed: 60,
   wallJumpVx: 220,

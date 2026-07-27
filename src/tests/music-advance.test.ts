@@ -56,6 +56,16 @@ function minimalPattern(): Pattern {
 }
 
 describe('advanceSequencer — purity & shape', () => {
+  it.each([0, -120, Number.POSITIVE_INFINITY, Number.NaN])(
+    'treats invalid bpm %s as silent and never emits non-finite events',
+    (bpm) => {
+      const pattern = { ...minimalPattern(), bpm };
+      const result = advanceSequencer(state0(), 1, pattern);
+      expect(result.events).toEqual([]);
+      expect(result.next).toEqual(state0());
+    },
+  );
+
   it('returns a fresh state object (distinct reference from input)', () => {
     const s = state0();
     const r = advanceSequencer(s, 0.1, minimalPattern());
@@ -118,6 +128,22 @@ describe('advanceSequencer — purity & shape', () => {
 });
 
 describe('advanceSequencer — note firing', () => {
+  it('fires step zero once across repeated fixed sub-step advances', () => {
+    const pat = minimalPattern();
+    let state = state0();
+    const fired: number[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const result = advanceSequencer(state, 1 / 60, pat);
+      state = result.next;
+      fired.push(...result.events.map((event) => event.midi));
+    }
+    expect(fired).toEqual([69]);
+    const boundary = advanceSequencer(state, 1 / 60, pat);
+    expect(boundary.events).toEqual([]);
+    const crossed = advanceSequencer(boundary.next, 1 / 60, pat);
+    expect(crossed.next.stepIndex).toBe(2);
+  });
+
   it('a note at step 0 fires when advancing from elapsed=0 by ≥ one step', () => {
     const pat = minimalPattern(); // 120 BPM, 4 steps/beat → 0.125 s/step
     const stepDur = secondsPerStep(120, 4);
@@ -304,6 +330,25 @@ describe('advanceSequencer — swing', () => {
     const swung = advanceSequencer(state0(), stepDur * 2, pat, { swing: 0.75 });
     expect(straight.events[0].whenOffset).toBeCloseTo(swung.events[0].whenOffset, 9);
   });
+
+  it('applies an exact swing delay inside a nonzero advance window', () => {
+    const pat = twoStepPattern();
+    const stepDur = secondsPerStep(120, 2);
+    const windowStart = stepDur / 2;
+    const swing = 0.66;
+    const r = advanceSequencer(
+      { elapsedS: windowStart, stepIndex: 1, loopCount: 0 },
+      stepDur,
+      pat,
+      { swing },
+    );
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0].midi).toBe(67);
+    expect(r.events[0].whenOffset).toBeCloseTo(
+      stepDur - windowStart + (stepDur * 2 * swing - stepDur),
+      9,
+    );
+  });
 });
 
 describe('advanceSequencer — loop wrap', () => {
@@ -313,7 +358,8 @@ describe('advanceSequencer — loop wrap', () => {
     let s = state0();
     // Advance one full pattern length.
     s = advanceSequencer(s, stepDur * pat.stepsPerPattern, pat).next;
-    expect(s.loopCount).toBeGreaterThanOrEqual(1);
+    expect(s.loopCount).toBe(1);
+    expect(s.stepIndex).toBe(0);
   });
 
   it('stepIndex wraps into [0, stepsPerPattern)', () => {
@@ -342,6 +388,132 @@ describe('advanceSequencer — loop wrap', () => {
 });
 
 describe('advanceSequencer — determinism', () => {
+  it('clamps tolerance-included boundary offsets to zero', () => {
+    const pattern = minimalPattern();
+    const result = advanceSequencer(
+      { elapsedS: 0.25000000000000006, stepIndex: 2, loopCount: 0 },
+      0.01,
+      pattern,
+    );
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].whenOffset).toBe(0);
+  });
+
+  it('does not drift across repeated fractional deltas at an exact boundary', () => {
+    const pattern = minimalPattern();
+    const whole = advanceSequencer(state0(), 0.25, pattern);
+    let state = state0();
+    const events: NoteFire[] = [];
+    for (let index = 0; index < 25; index += 1) {
+      const part = advanceSequencer(state, 0.01, pattern);
+      state = part.next;
+      events.push(...part.events);
+    }
+    expect(events).toEqual(whole.events);
+    expect(state.stepIndex).toBe(whole.next.stepIndex);
+    expect(state.loopCount).toBe(whole.next.loopCount);
+    expect(state.elapsedS).toBeCloseTo(whole.next.elapsedS, 12);
+  });
+
+  it('keeps huge finite inputs finite and safe-integer bounded', () => {
+    const pattern = minimalPattern();
+    const result = advanceSequencer(
+      {
+        elapsedS: Number.MAX_VALUE,
+        stepIndex: Number.MAX_SAFE_INTEGER,
+        loopCount: Number.MAX_SAFE_INTEGER,
+      },
+      Number.MAX_VALUE,
+      pattern,
+    );
+    expect(Number.isFinite(result.next.elapsedS)).toBe(true);
+    expect(Number.isSafeInteger(result.next.stepIndex)).toBe(true);
+    expect(Number.isSafeInteger(result.next.loopCount)).toBe(true);
+    for (const event of result.events) {
+      expect(Number.isFinite(event.whenOffset)).toBe(true);
+      expect(Number.isFinite(event.gateS)).toBe(true);
+    }
+  });
+
+  it('sanitizes unsafe finite ordinals even when no time advances', () => {
+    const result = advanceSequencer(
+      {
+        elapsedS: 10,
+        stepIndex: 1e100,
+        loopCount: 1e200,
+      },
+      0,
+      minimalPattern(),
+    );
+    expect(result.next.elapsedS).toBe(10);
+    expect(Number.isSafeInteger(result.next.stepIndex)).toBe(true);
+    expect(Number.isSafeInteger(result.next.loopCount)).toBe(true);
+  });
+
+  it('keeps swung event offsets and gates finite at extreme finite tempos', () => {
+    const pattern: Pattern = {
+      bpm: 4e-307,
+      stepsPerBeat: 1,
+      stepsPerPattern: 2,
+      tracks: [{
+        name: 'lead',
+        waveform: 'sine',
+        volume: 0.2,
+        sequence: [0],
+        patterns: [[{ midi: null }, { midi: 60, durationSteps: 2 }]],
+      }],
+    };
+    const result = advanceSequencer(state0(), Number.MAX_VALUE, pattern, { swing: 0.75 });
+    expect(result.events).toHaveLength(1);
+    expect(Number.isFinite(result.events[0].whenOffset)).toBe(true);
+    expect(Number.isFinite(result.events[0].gateS)).toBe(true);
+    expect(Number.isSafeInteger(result.next.stepIndex)).toBe(true);
+    expect(Number.isSafeInteger(result.next.loopCount)).toBe(true);
+  });
+
+  it('sanitizes non-finite swing to the straight default', () => {
+    const pattern = minimalPattern();
+    const stepDur = secondsPerStep(pattern.bpm, pattern.stepsPerBeat);
+    const invalid = advanceSequencer(state0(), stepDur * 3, pattern, { swing: Number.NaN });
+    const straight = advanceSequencer(state0(), stepDur * 3, pattern, { swing: 0.5 });
+    expect(invalid).toEqual(straight);
+  });
+
+  it('keeps final state correct when the event iteration cap is reached', () => {
+    const pattern: Pattern = {
+      bpm: 60,
+      stepsPerBeat: 1,
+      stepsPerPattern: 1,
+      tracks: [{
+        name: 'lead',
+        waveform: 'sine',
+        volume: 0.2,
+        sequence: [0],
+        patterns: [[{ midi: 60 }]],
+      }],
+    };
+    const steps = 65_540;
+    const result = advanceSequencer(state0(), steps, pattern);
+    expect(result.events).toHaveLength(65_536);
+    expect(result.next).toEqual({ elapsedS: steps, stepIndex: 0, loopCount: steps });
+  });
+
+  it('matches a large advance with equivalent fixed advances', () => {
+    const pattern = minimalPattern();
+    const stepDur = secondsPerStep(pattern.bpm, pattern.stepsPerBeat);
+    const whole = advanceSequencer(state0(), stepDur * 20, pattern);
+    let state = state0();
+    const events: NoteFire[] = [];
+    for (let index = 0; index < 20; index += 1) {
+      const part = advanceSequencer(state, stepDur, pattern);
+      state = part.next;
+      events.push(...part.events);
+    }
+    expect(events.map(({ midi, waveform, peak, gateS }) => ({ midi, waveform, peak, gateS })))
+      .toEqual(whole.events.map(({ midi, waveform, peak, gateS }) => ({ midi, waveform, peak, gateS })));
+    expect(state).toEqual(whole.next);
+  });
+
   it('same (state, dt, pattern) → byte-identical events', () => {
     const pat = generatePattern(42);
     const stepDur = secondsPerStep(pat.bpm, pat.stepsPerBeat);

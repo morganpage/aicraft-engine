@@ -116,6 +116,47 @@ function runAbility(
 // ---------------------------------------------------------------------------
 
 describe('jumpAbility', () => {
+  it('freezes core and jump state when jumpEnabled is false', () => {
+    const core = makeAirborneCore(-123);
+    const state = makeJumpState();
+    const input = makeInput(pressEdge(true));
+    const ctx = makeCtx(core, input, {
+      ...DEFAULT_PLATFORMER_CONFIG,
+      gravity: -980,
+      jumpEnabled: false,
+    });
+    const snapshot = JSON.parse(JSON.stringify(ctx));
+    const result = jumpAbility.advance(ctx, state);
+    expect(result.core).toBe(core);
+    expect(result.state).toBe(state);
+    expect(result.events).toEqual({});
+    expect(result.core.vy).toBe(-123);
+    expect(ctx).toEqual(snapshot);
+  });
+
+  it.each([
+    ['explicitly true', { ...DEFAULT_PLATFORMER_CONFIG, jumpEnabled: true }],
+    [
+      'omitted',
+      (({ jumpEnabled: _ignored, ...config }) => config)(DEFAULT_PLATFORMER_CONFIG),
+    ],
+  ] as const)('preserves launch behavior when jumpEnabled is %s', (_label, config) => {
+    let core = makeGroundedCore();
+    let state = makeJumpState();
+    let launched = false;
+    for (let i = 0; i < 12; i += 1) {
+      const result = jumpAbility.advance(
+        makeCtx(core, makeInput(i === 0 ? pressEdge(true) : heldEdge(true)), config),
+        state,
+      );
+      core = result.core;
+      state = result.state;
+      launched ||= result.events.justLaunched === true;
+    }
+    expect(launched).toBe(true);
+    expect(core.vy).toBeLessThan(0);
+  });
+
   it('ground jump: grounded + jump.pressed → justLaunched fires on launch tick with negative vy', () => {
     const traj = runAbility(makeGroundedCore(), makeJumpState(), 12, (i) => ({
       input: makeInput(i === 0 ? pressEdge(true) : heldEdge(true)),

@@ -78,6 +78,193 @@ function makeMovingPlatformFixture(
 }
 
 describe('compileLevel', () => {
+  it('never throws for hostile accessors or extreme tile dimensions', () => {
+    const hostile = {} as LevelData;
+    Object.defineProperty(hostile, 'tiles', {
+      get() { throw new Error('hostile tiles'); },
+    });
+    expect(() => compileLevel(hostile)).not.toThrow();
+    expect(compileLevel(hostile).staticSolids).toEqual([]);
+
+    const extreme = makeLevel({
+      tiles: { data: [], cols: Number.MAX_SAFE_INTEGER, rows: Number.MAX_SAFE_INTEGER, tileSize: 16 },
+    });
+    const compiled = compileLevel(extreme, { tileTypeMap: () => 'solid' });
+    expect(compiled.staticSolids).toEqual([]);
+    expect(compiled.tileQuery(0, 0)).toBe('empty');
+  });
+
+  it('degrades hostile entities and tiles independently', () => {
+    const hostileEntity = {} as LevelEntity;
+    Object.defineProperty(hostileEntity, 'kind', {
+      get() { throw new Error('hostile entity'); },
+    });
+    const level = makeLevel({
+      spawn: { x: 77, y: 88 },
+      entities: [platform(1, 0, 100), hostileEntity, platform(2, 40, 100)],
+    });
+    Object.defineProperty(level, 'tiles', {
+      get() { throw new Error('hostile tiles'); },
+    });
+    const compiled = compileLevel(level);
+    expect(compiled.staticSolids.map((solid) => solid.id)).toEqual(['entity-1', 'entity-2']);
+    expect(compiled.initialState.core.x).toBe(77);
+    expect(compiled.initialState.core.y).toBe(88);
+    expect(compiled.tileQuery(0, 0)).toBe('empty');
+  });
+
+  it('preserves compiled geometry and spawn when config access is hostile', () => {
+    const hostileConfig = {} as PlatformerConfig;
+    Object.defineProperty(hostileConfig, 'jump', {
+      get() { throw new Error('hostile config'); },
+    });
+    const compiled = compileLevel(
+      makeLevel({
+        spawn: { x: 44, y: 55 },
+        entities: [platform(1, 0, 100)],
+      }),
+      { config: hostileConfig },
+    );
+    expect(compiled.staticSolids.map((solid) => solid.id)).toEqual(['entity-1']);
+    expect(compiled.initialState.core.x).toBe(44);
+    expect(compiled.initialState.core.y).toBe(55);
+  });
+
+  it('captures tile types and deterministically flattens solid and passthrough cells', () => {
+    const level = makeLevel({
+      tiles: {
+        data: [1, 1, 0, 2, 2, 0, 1, 1],
+        cols: 4,
+        rows: 2,
+        tileSize: 16,
+      },
+      entities: [platform(9, 0, 100)],
+    });
+    const compiled = compileLevel(level, {
+      tileTypeMap: (value) => value === 1 ? 'solid' : value === 2 ? 'passthrough' : 'empty',
+    });
+    expect(compiled.staticSolids).toEqual([
+      { id: 'entity-9', x: 0, y: 100, width: 32, height: 8 },
+      { id: 'tile-0-0-32-16', x: 0, y: 0, width: 32, height: 16 },
+      { id: 'tile-48-0-16-16', x: 48, y: 0, width: 16, height: 16, passthrough: true },
+      { id: 'tile-0-16-16-16', x: 0, y: 16, width: 16, height: 16, passthrough: true },
+      { id: 'tile-32-16-32-16', x: 32, y: 16, width: 32, height: 16 },
+    ]);
+    expect(compiled.tileQuery(0, 0)).toBe('solid');
+    expect(compiled.tileQuery(3, 0)).toBe('passthrough');
+    expect(compiled.tileQuery(-1, 0)).toBe('empty');
+  });
+
+  it('isolates throwing and malformed tile-classifier results per cell', () => {
+    const compiled = compileLevel(makeLevel({
+      tiles: { data: [1, 2, 3, 1], cols: 4, rows: 1, tileSize: 16 },
+    }), {
+      tileTypeMap: (value) => {
+        if (value === 2) throw new Error('hostile classifier');
+        if (value === 3) return 'lava' as never;
+        return 'solid';
+      },
+    });
+    expect(compiled.tileQuery(0, 0)).toBe('solid');
+    expect(compiled.tileQuery(1, 0)).toBe('empty');
+    expect(compiled.tileQuery(2, 0)).toBe('empty');
+    expect(compiled.tileQuery(3, 0)).toBe('solid');
+    expect(compiled.staticSolids).toEqual([
+      { id: 'tile-0-0-16-16', x: 0, y: 0, width: 16, height: 16 },
+      { id: 'tile-48-0-16-16', x: 48, y: 0, width: 16, height: 16 },
+    ]);
+  });
+
+  it('vertically merges identical solid runs into one rectangle', () => {
+    const compiled = compileLevel(makeLevel({
+      tiles: { data: [1, 1, 1, 1, 1, 1], cols: 2, rows: 3, tileSize: 16 },
+    }), {
+      tileTypeMap: (value) => value === 1 ? 'solid' : 'empty',
+    });
+    expect(compiled.staticSolids).toEqual([
+      { id: 'tile-0-0-32-48', x: 0, y: 0, width: 32, height: 48 },
+    ]);
+  });
+
+  it('keeps passthrough runs on adjacent rows as separate one-way surfaces', () => {
+    const compiled = compileLevel(makeLevel({
+      tiles: { data: [2, 2, 2, 2], cols: 2, rows: 2, tileSize: 16 },
+    }), {
+      tileTypeMap: (value) => value === 2 ? 'passthrough' : 'empty',
+    });
+    expect(compiled.staticSolids).toEqual([
+      {
+        id: 'tile-0-0-32-16',
+        x: 0,
+        y: 0,
+        width: 32,
+        height: 16,
+        passthrough: true,
+      },
+      {
+        id: 'tile-0-16-32-16',
+        x: 0,
+        y: 16,
+        width: 32,
+        height: 16,
+        passthrough: true,
+      },
+    ]);
+  });
+
+  it('preserves distinct stable identities for overlapping entity and tile solids', () => {
+    const level = makeLevel({
+      tiles: { data: [1], cols: 1, rows: 1, tileSize: 16 },
+      entities: [platform(7, 0, 0, 16, 16)],
+    });
+    const compiled = compileLevel(level, {
+      tileTypeMap: (value) => value === 1 ? 'solid' : 'empty',
+    });
+    expect(compiled.staticSolids).toEqual([
+      { id: 'entity-7', x: 0, y: 0, width: 16, height: 16 },
+      { id: 'tile-0-0-16-16', x: 0, y: 0, width: 16, height: 16 },
+    ]);
+  });
+
+  it('produces byte-identical output on repeated compilation', () => {
+    const level = makeLevel({
+      tiles: { data: [1, 2, 0, 1], cols: 2, rows: 2, tileSize: 16 },
+      entities: [
+        platform(4, 16, 48),
+        movingPlatform(8, 0, 0, [{ x: 0, y: 0 }, { x: 32, y: 0 }]),
+      ],
+    });
+    const options = {
+      tileTypeMap: (value: number) =>
+        value === 1 ? 'solid' as const : value === 2 ? 'passthrough' as const : 'empty' as const,
+    };
+    const first = compileLevel(level, options);
+    const second = compileLevel(level, options);
+    expect(JSON.stringify(first.staticSolids)).toBe(JSON.stringify(second.staticSolids));
+    expect(JSON.stringify(first.movingPlatforms)).toBe(JSON.stringify(second.movingPlatforms));
+    expect(JSON.stringify(first.initialState)).toBe(JSON.stringify(second.initialState));
+    const queryCoordinates = [
+      [-1, -1], [0, 0], [1, 0], [0, 1], [1, 1], [2, 2],
+    ] as const;
+    expect(queryCoordinates.map(([x, y]) => first.tileQuery(x, y))).toEqual(
+      queryCoordinates.map(([x, y]) => second.tileQuery(x, y)),
+    );
+    expect(first.staticSolids).not.toBe(second.staticSolids);
+    expect(first.tileQuery).not.toBe(second.tileQuery);
+  });
+
+  it('captures classification once and is detached from later source mutation', () => {
+    const data = [1];
+    let mapped: 'solid' | 'empty' = 'solid';
+    const compiled = compileLevel(makeLevel({
+      tiles: { data, cols: 1, rows: 1, tileSize: 16 },
+    }), { tileTypeMap: () => mapped });
+    data[0] = 0;
+    mapped = 'empty';
+    expect(compiled.tileQuery(0, 0)).toBe('solid');
+    expect(compiled.staticSolids).toHaveLength(1);
+  });
+
   it('extracts platform entities as static solids with stable "entity-" prefixed ids', () => {
     const level = makeLevel({ entities: [platform(1, 0, 100), platform(2, 50, 200, 64, 16)] });
     const compiled = compileLevel(level);

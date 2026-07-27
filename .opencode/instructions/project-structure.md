@@ -7,43 +7,67 @@ This is `aicraft-engine` — a TypeScript library of procedural rendering primit
 ```
 aicraft-engine/
 ├── src/                       # Library source (the only thing consumers import from)
-│   ├── index.ts               # Top-level barrel export
-│   ├── primitives/            # Pillar 1 — color, outline-rect, pixel, motion, animation
-│   ├── rng/                   # Pillar 1 — seeded mulberry32 PRNG + distribution helpers
-│   ├── particles/             # Pillar 1 — deterministic spawn / advance / cull / step
-│   ├── palette/               # Pillar 2 — per-skin palette substitution + contrast check (planned)
-│   ├── cosmetics/             # Pillar 2 — skin manifest, seeded generation, ownership (planned)
-│   ├── iap/                   # Pillar 3 — IAP bridge + adapters (planned)
-│   ├── fake3d/                # Pillar 4 — Sokpop-inspired billboarding/isometric/cube (planned)
+│   ├── index.ts               # Top-level barrel export (re-exports every module below)
+│   ├── primitives/            # color, outline-rect, pixel, motion/dpr probes, glow, parallax, hit-stop, bitmap font, wave-line
+│   ├── rng/                   # seeded mulberry32 PRNG + distribution helpers
+│   ├── particles/             # deterministic spawn / advance / cull / step + emitters + presets
+│   ├── animation/             # skeletal rig, IK (limb/ccd/fabrik), locomotion, squash/stretch, springs, spring-rod, spider
+│   ├── easing/                # Penner curves + stateless tween driver
+│   ├── collision/             # AABB, per-axis resolve, tile-grid, moving-gap platforms
+│   ├── camera/                # follow camera (lerp, clamp, snap)
+│   ├── input/                 # edge accumulator, keyboard/touch/gamepad adapters, OR-merge
+│   ├── game-loop/             # fixed-step accumulator + defensive RAF adapter
+│   ├── game-state/            # pure dt-driven FSM reducer + adjacency table
+│   ├── audio/                 # WebAudio synthesized SFX adapter
+│   ├── music/                 # procedural step-sequencer: theory, seeded patterns, advanceSequencer, createSequencer, createNoteFirePlayer
+│   ├── save/                  # defensive localStorage/memory backends + JSON load/write
+│   ├── blend/                 # pose interpolation (blendPose/blendPoses)
+│   ├── palette/               # OKLCH substitution, harmonic generation, WCAG contrast repair
+│   ├── cosmetics/             # versioned manifest, seeded variant generation, multi-slot ownership
+│   ├── iap/                   # IAP bridge + memory/localStorage dev adapters + entitlements
+│   ├── level/                 # versioned platformer level schema, migration, validation, tile queries
+│   ├── platformer/            # composable kernel + ability pipeline + signed gravity + level-runtime + renderer + presets + enemy archetypes
+│   ├── editor/                # headless level-editor core (ops, history, selection, snapping, clipboard, catalog, playtest)
+│   ├── collectibles/          # pure-progression CollectibleSave + deterministic derivePickups
+│   ├── replay/                # record/playback + 32-bit replayHash fingerprint
+│   ├── _prototype/            # throwaway spikes (not shipped, may be empty)
 │   └── tests/                 # *.test.ts, vitest node env
 ├── docs/                      # Documentation (not shipped to consumers)
 │   ├── architecture.md        # Layer model + determinism rules
 │   ├── conventions.md         # Code style rules
 │   ├── integration.md         # How consumers wire the library in
 │   ├── api-surface.md         # Maintained by @api-designer — the export map by pillar
+│   ├── design/                # Decisions, proposals, plans (per-technique)
 │   └── research/              # Maintained by @researcher — prior-art notes per technique
 ├── benchmarks/                # Maintained by @benchmarker — sample PNGs + comparison reports
+├── showcase/                  # Standalone Vite app demoing the library (not shipped)
+├── games/                     # Game build-brief prompts (consume the npm package)
 ├── prompts/                   # Agent prompts (referenced by opencode.json)
 ├── .opencode/
 │   └── instructions/          # Always-loaded context (this file + tech-stack.md)
 ├── opencode.json              # Agent team configuration
 ├── package.json               # devDependencies only — no runtime deps
 ├── tsconfig.json              # Strict TS, mirrors Spitekeep exactly
+├── tsconfig.build.json        # Emits dist/ (.js + .d.ts) for npm publish
 ├── tsconfig.node.json         # For vite.config.ts
 └── vite.config.ts             # Vitest config (node env)
 ```
 
+> _Planned: `fake3d/` (Pillar 4 — Sokpop-inspired billboarding/isometric/cube). Not yet implemented._
+
 ## Pillar Model
 
-The library is organised into pillars that ship incrementally. See `README.md` for the status table.
+The library is organised into pillars that ship incrementally. See `README.md` for the live status table. Every module listed under `src/` above is **shipped** except `fake3d/` (planned) and `_prototype/` (scratch).
 
 | Pillar | Modules | What it provides |
 |---|---|---|
-| **1. Primitives** | `primitives/`, `rng/`, `particles/` | Rendering helpers, seeded determinism, deterministic FX |
-| **2. Cosmetics** | `palette/`, `cosmetics/` | Skin manifests, palette substitution, ownership state |
-| **3. IAP** | `iap/` | Bridge adapter interface, entitlement store, dev adapters |
-| **4. Fake-3D** | `fake3d/` | Billboarding, isometric, orthographic cube, heightmap |
+| **1. Primitives** | `primitives/`, `rng/`, `particles/`, `animation/`, `easing/`, `collision/`, `camera/`, `input/`, `game-loop/`, `game-state/`, `audio/`, `music/`, `save/`, `blend/` | Rendering helpers, seeded determinism, deterministic FX, motion, audio, music, FSM, replay-safe fixed-step loop |
+| **2. Cosmetics** | `palette/`, `cosmetics/`, `level/`, `collectibles/` | Palettes, skins, versioned level schema + validation, collectible ownership |
+| **2. Platformer** | `platformer/`, `editor/` | Composable kernel + abilities, signed gravity, level runtime, renderer, presets, enemy archetypes, headless editor core |
+| **3. IAP** | `iap/` | Bridge adapter interface, entitlement store, memory + localStorage dev adapters |
+| **4. Fake-3D** | `fake3d/` (planned) | Billboarding, isometric, orthographic cube, heightmap |
 | **5. Platform adapters** | (extends `iap/`) | Jest SDK, Poki SDK — on-demand |
+| **— Replay** | `replay/` | Record/playback + deterministic hash fingerprint (cross-cutting, consumes the kernel) |
 
 ## File naming
 

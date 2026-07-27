@@ -5,6 +5,9 @@ A catalog of build-briefs (prompts) for games built **on top of** the
 file is a self-contained prompt — paste it to a coding agent (Claude / Cursor /
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
+Every prompt pins the latest registry-verified release exactly. During 0.4.0
+release preparation they remain on `aicraft-engine@0.3.0`; switch all pins to
+`0.4.0` only after publication and registry/tarball verification.
 
 The common contract every prompt here enforces:
 
@@ -14,7 +17,8 @@ The common contract every prompt here enforces:
 - **Reduced-motion** gate (static frame, no loop).
 - **Zero hand-rolled** reimplementations of the engine's primitives (the
   acceptance criteria grep for `requestAnimationFrame`, `Math.random` in `step`,
-  and manual AABB — none should appear outside the engine).
+  manual AABB, and duplicate tile-grid traversal). Renderer callbacks required
+  by APIs such as `drawTileGrid` and `drawTiledParallax` are explicitly allowed.
 
 ## Prompts
 
@@ -22,8 +26,8 @@ The common contract every prompt here enforces:
 |---|---|---|---|
 | **Embertomb** | [simple-platformer.md](./simple-platformer.md) | Side-view platformer | loop, input, tile/AABB collision, camera, hit-stop, squash, locomotion, foot-plant audio, jump, **spring rods**, particles, emitters (lava/water presets), wave-lines (water+lava), parallax, glow, palettes, RNG level-gen |
 | **Celerock** | [celerock.md](./celerock.md) | Single-screen precision platformer | **platformer kernel** (`defaultPrecisionPipeline`: jump + wall-slide + dash), `compileLevel` + `drawTileGrid` + `drawActor`, **collectibles** (`collect`/`hasCollected`), `save`, bitmap text, hit-stop + sineShake, tween, parallax |
-| **World 1-1** | [world-1-1.md](./world-1-1.md) | Horizontal-scrolling classic platformer | **platformer kernel** (`CLASSIC_PLATFORMER`: jump + double-jump), hand-authored `LevelData` + `validateLevel`, `compileLevel` + `drawLevelEntity`, **moving platforms** (`advanceMovingPlatform`), 3-layer `drawTiledParallax`, collectibles + save, classic Sokpop vector look |
-| **Flipside** | [flipside.md](./flipside.md) | No-jump gravity-flip explorer | **procedural music** (`generatePattern` + `advanceSequencer` + `createSequencer` reusing the shared `AudioAdapter`), no-jump player with gravity inversion, `pick`-named crewmates, `compileLevel` + `drawTileGrid` for connected rooms, trinket via collectibles + save, mono palette |
+| **World 1-1** | [world-1-1.md](./world-1-1.md) | Horizontal-scrolling classic platformer | **platformer kernel** (`CLASSIC_PLATFORMER`: jump, no double-jump), hand-authored `LevelData` + `validateLevel`, unified `compileLevel`, moving platforms, parallax, collectibles + save |
+| **Flipside** | [flipside.md](./flipside.md) | No-jump gravity-flip explorer | Signed-gravity controllers with empty ability pipelines, unified tile compilation, and fixed-step `advanceSequencer` events rendered by `createNoteFirePlayer` |
 
 _More to come — see "Adding a new prompt" below._
 
@@ -31,9 +35,10 @@ _More to come — see "Adding a new prompt" below._
 
 1. Create `<slug>.md` in this directory (e.g. `top-down-dungeon.md`).
 2. Follow the structure of `simple-platformer.md`: concept → tech stack &
-   install (root-barrel import) → determinism rules → **engine module → game
+   exact-version install (root-barrel import) → determinism rules → **engine module → game
    system map** → per-system specs → acceptance criteria (incl. the
-   no-reimplementation grep).
+   no-reimplementation checks). Compile the claimed public imports in a clean,
+   strict TypeScript consumer project.
 3. Add a row to the table above with the genre and the engine pillars it
    stresses — pick game ideas that **differ in which pillars they lean on** so
    the catalog collectively exercises the whole engine (e.g. a top-down roguelike

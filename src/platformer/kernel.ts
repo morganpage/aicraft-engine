@@ -178,11 +178,19 @@ export function createPlatformerController(
 
   return {
     step(state, input, solids, dt) {
-      const wasOnGround = state.core.onGround;
-
       // Step 2 — Carry actors (apply solid displacement from previous tick's
       // groundId BEFORE ability processing).
-      let core = tracker.applyCarry(state.core, getDisp);
+      const invertedGravity = config.gravity < 0;
+      const supportId = invertedGravity
+        ? state.core.contacts.ceilingId
+        : state.core.contacts.groundId;
+      const wasOnGround =
+        supportId !== null ||
+        hasPhysicalSupport(state.core, solids, invertedGravity);
+      let core = tracker.applyCarry(state.core, getDisp, supportId);
+      if (core.onGround !== wasOnGround) {
+        core = { ...core, onGround: wasOnGround };
+      }
 
       // Shallow-clone the abilities record so the input state's record is not
       // mutated; ability slices are replaced as we iterate.
@@ -229,7 +237,9 @@ export function createPlatformerController(
       // Step 5 — Integrate forces (gravity; skip during dash).
       if (!dashActive) {
         let nextVy = core.vy + config.gravity * dt;
-        if (nextVy > config.maxFallSpeed) nextVy = config.maxFallSpeed;
+        const terminalSpeed = Math.abs(config.maxFallSpeed);
+        if (config.gravity < 0) nextVy = Math.max(nextVy, -terminalSpeed);
+        else nextVy = Math.min(nextVy, terminalSpeed);
         core = { ...core, vy: nextVy };
       }
 
@@ -305,7 +315,7 @@ export function createPlatformerController(
       };
 
       // Step 7 — Update contacts & events.
-      const nowOnGround = ry.landed;
+      const nowOnGround = invertedGravity ? ry.hitCeiling : ry.landed;
       if (nowOnGround && !wasOnGround) {
         events.justLanded = true;
       }
@@ -375,6 +385,22 @@ export function stepPlatformer(
  */
 function makeInitialJumpState(config: Readonly<PlatformerConfig>): JumpAbilityState {
   return { kind: 'jump', jump: createJumpState(config.jump) };
+}
+
+function hasPhysicalSupport(
+  core: ActorCore,
+  solids: readonly Solid[],
+  invertedGravity: boolean,
+): boolean {
+  const edge = invertedGravity ? core.y : core.y + core.height;
+  const tolerance = 1e-7;
+  for (const solid of solids) {
+    if (invertedGravity && solid.passthrough) continue;
+    const supportEdge = invertedGravity ? solid.y + solid.height : solid.y;
+    if (Math.abs(edge - supportEdge) > tolerance) continue;
+    if (core.x < solid.x + solid.width && core.x + core.width > solid.x) return true;
+  }
+  return false;
 }
 
 /**

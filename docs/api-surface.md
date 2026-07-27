@@ -60,11 +60,15 @@ Pure-function easing curves and a stateless tween driver. Deterministic: same `(
 | `easeOutBack(t)` | function | Overshoots past 1.0 then settles (Penner back constant `s = 1.70158`) | `src/easing/curves.ts` |
 | `easeOutElastic(t)` | function | Oscillates with exponential decay — spring/bounce feel | `src/easing/curves.ts` |
 | `easeOutBounce(t)` | function | Piecewise quadratic floor-bounce simulation (4 segments) | `src/easing/curves.ts` |
+| `easeOutSine(t)` | function | Sine-based ease-out curve | `src/easing/curves.ts` |
+| `easeOutExpo(t)` | function | Exponential ease-out curve | `src/easing/curves.ts` |
+| `easeOutCirc(t)` | function | Circular ease-out curve | `src/easing/curves.ts` |
 | `powOut(t, n)` | function | Generic power-out: `1 - (1-t)^n`. Covers quad/cubic/quart/quint by n | `src/easing/curves.ts` |
 | `easeIn(outFn)` | function | Derive In variant from any Out curve: `(t) => 1 - outFn(1 - t)` | `src/easing/curves.ts` |
 | `easeInOut(outFn)` | function | Derive InOut variant from any Out curve: symmetric around t=0.5 | `src/easing/curves.ts` |
 | `TweenState` | type | Consumer-owned tween state: `elapsed`, `direction`, `loopCount`, `delay` | `src/easing/tween.ts` |
 | `TweenConfig` | type | Immutable tween config: `duration`, `ease`, `yoyo?`, `loops?`, `delay?` | `src/easing/tween.ts` |
+| `TweenSeedConfig` | type | Optional initial loop/delay values accepted by `createTweenState` | `src/easing/tween.ts` |
 | `TweenResult` | type | Advance result: `{ state, value, done }` | `src/easing/tween.ts` |
 | `createTweenState()` | function | Factory: fresh state with all fields zeroed (no delay, single forward pass) | `src/easing/tween.ts` |
 | `advanceTween(state, dt, config)` | function | Pure: advance tween by `dt` seconds; returns new state + eased value + done flag. Call inside `step(fixedDt)` for replay-deterministic animation | `src/easing/tween.ts` |
@@ -138,6 +142,7 @@ Asset-less bitmap font renderer. Draws text as sequences of `fillRect` calls —
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `BitmapFont` | type | Font definition: `name`, `cellWidth`, `cellHeight`, `lineGap`, `glyphs` (ReadonlyMap) | `src/primitives/bitmap-font-types.ts` |
+| `GlyphData` | type | Readonly column-byte array for one bitmap glyph | `src/primitives/bitmap-font-types.ts` |
 | `TextMetrics` | type | Measurement result: `width`, `height`, `lineCount` | `src/primitives/bitmap-font-types.ts` |
 | `TextAlign` | type | `'left' \| 'center' \| 'right'` — text alignment | `src/primitives/bitmap-font-types.ts` |
 | `TextDrawOptions` | type | Draw options: `font?`, `scale?`, `align?`, `color?`, `outline?`, `charGap?` | `src/primitives/bitmap-font-types.ts` |
@@ -151,6 +156,12 @@ Asset-less bitmap font renderer. Draws text as sequences of `fillRect` calls —
 | `measureText(text, font?, scale?, charGap?)` | function | Pure measurement: `{width, height, lineCount}` — no ctx, no DOM, SSR-safe. Width excludes trailing `charGap` on last glyph per line: `(lineLength - 1) × (cellWidth + charGap) × scale + cellWidth × scale`. Height excludes trailing `lineGap` on last line | `src/primitives/bitmap-font.ts` |
 | `drawText(ctx, text, x, y, options?)` | function | Draw text using flat `fillRect` calls (one per lit pixel) | `src/primitives/bitmap-font.ts` |
 | `drawTextOutlined(ctx, text, x, y, options?)` | function | Draw text with 1px outline via 4-offset technique (outline color at ±1 offsets, fill on top). Reuses `DEFAULT_OUTLINE_COLOR` | `src/primitives/bitmap-font.ts` |
+| `FONT_5X7_DATA` | const | Packed column bytes for printable ASCII glyphs | `src/primitives/font5x7-data.ts` |
+| `FONT_5X7_GLYPHS` | const | ReadonlyMap from printable ASCII code to glyph column data | `src/primitives/font5x7-data.ts` |
+| `FONT_5X7_CELL_WIDTH` | const | Default font cell width (`5`) | `src/primitives/font5x7-data.ts` |
+| `FONT_5X7_CELL_HEIGHT` | const | Default font cell height (`7`) | `src/primitives/font5x7-data.ts` |
+| `FONT_5X7_FIRST_CHAR` | const | First supported printable ASCII code (`0x20`) | `src/primitives/font5x7-data.ts` |
+| `FONT_5X7_LAST_CHAR` | const | Last supported printable ASCII code (`0x7e`) | `src/primitives/font5x7-data.ts` |
 
 #### `src/primitives/parallax.ts`
 
@@ -946,7 +957,7 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 | `AbilityResult<T>` | type | Per-ability return: `core` (shallow-copied), `state`, `events` (partial) | `src/platformer/types.ts` |
 | `AbilityProcessor<T>` | interface | Ability processor: `kind` + `advance(ctx, state) → AbilityResult<T>`. Pure, never throws | `src/platformer/types.ts` |
 | `PlatformerState` | type | Full character state: `core`, `abilities` (Record by kind), `events`, `tick` | `src/platformer/types.ts` |
-| `PlatformerConfig` | type | All tunable knobs: gravity, maxFallSpeed, moveSpeed, airControl, jump, wallSlide*, dash*, doubleJump* | `src/platformer/types.ts` |
+| `PlatformerConfig` | type | Tunable knobs including signed `gravity`, gravity-direction terminal-speed magnitude `maxFallSpeed`, optional `jumpEnabled`, and existing movement/ability settings | `src/platformer/types.ts` |
 | `MoveInput` | type | Convenience pair: `left` + `right` PolledEdge for building `PlatformerInput.moveX` | `src/platformer/types.ts` |
 | `JumpAbilityState` | type | Jump ability state: `kind: 'jump'`, wraps `JumpState` from `src/animation/jump` | `src/platformer/types.ts` |
 | `WallSlideAbilityState` | type | Wall-slide state: `kind: 'wallSlide'`, `sliding`, `side`, `lockTimer` | `src/platformer/types.ts` |
@@ -970,8 +981,8 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 |---|---|---|---|
 | `SolidDisplacement` | type | `{dx, dy}` — per-tick displacement of a moving solid in world units | `src/platformer/riding-tracker.ts` |
 | `SolidDisplacementProvider` | type | `(solidId: string) => SolidDisplacement \| null` — consumer-provided callback for moving-platform carry | `src/platformer/riding-tracker.ts` |
-| `RidingTracker` | type | `{applyCarry(core, getDisplacement)}` — applies riding solid's displacement to actor before abilities | `src/platformer/riding-tracker.ts` |
-| `createRidingTracker()` | function | Pure factory: fresh tracker reading `core.contacts.groundId` for carry. Returns input core unchanged (by reference) when no carry applies | `src/platformer/riding-tracker.ts` |
+| `RidingTracker` | type | `{applyCarry(core, getDisplacement, supportId?)}` — applies a support solid's displacement before abilities; defaults to `groundId` | `src/platformer/riding-tracker.ts` |
+| `createRidingTracker()` | function | Pure factory with optional explicit support ID for inverted-gravity carry. Returns input core unchanged when no carry applies | `src/platformer/riding-tracker.ts` |
 
 #### `src/platformer/kernel.ts`
 
@@ -979,9 +990,37 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 |---|---|---|---|
 | `PlatformerController` | type | Stateless step function bound to a pipeline + config: `step(state, input, solids, dt) → {state}` | `src/platformer/kernel.ts` |
 | `PlatformerControllerOptions` | type | `{getSolidDisplacement?}` — optional moving-platform carry provider | `src/platformer/kernel.ts` |
-| `createPlatformerState(x, y, config?, width?, height?)` | function | Factory: grounded at-rest `PlatformerState` with all ability initial states. Pure, never throws | `src/platformer/kernel.ts` |
+| `createPlatformerState(x, y, config?, width?, height?)` | function | Factory: airborne at-rest `PlatformerState` with all ability initial states. Pure, never throws | `src/platformer/kernel.ts` |
 | `createPlatformerController(pipeline, config, options?)` | function | Stateless controller bound to a fixed ability pipeline + config. Multiple characters can share one controller | `src/platformer/kernel.ts` |
 | `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` | function | Convenience: builds a default-precision controller and steps once. For hot loops, prefer `createPlatformerController` (avoids per-tick closure allocation) | `src/platformer/kernel.ts` |
+| `CompileLevelOptions` | type | Player overrides plus optional `tileTypeMap(value)`, captured once per in-bounds cell | `src/platformer/level-runtime.ts` |
+| `CompiledLevel` | type | Complete `staticSolids` (entity first, then tile), moving platforms, initial state, and captured `tileQuery` | `src/platformer/level-runtime.ts` |
+| `compileLevel(level, options?)` | function | Unified entity/tile runtime compiler. Without `tileTypeMap`, preserves entity-only collision behavior | `src/platformer/level-runtime.ts` |
+| `CompiledMovingPlatform` | type | Consumer-owned moving-platform runtime descriptor with stable ID, path, speed, target, and direction | `src/platformer/level-runtime.ts` |
+| `advanceMovingPlatform(platform, dt)` | function | Pure seconds-based moving-platform progression | `src/platformer/level-runtime.ts` |
+| `movingPlatformToSolid(platform)` | function | Convert the current moving-platform descriptor to a kernel `Solid` | `src/platformer/level-runtime.ts` |
+| `createMovingPlatformDisplacementProvider(current, previous)` | function | Build the per-tick carry displacement lookup used by the kernel | `src/platformer/level-runtime.ts` |
+
+#### `src/platformer/renderer.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `EntityPalette` | type | Semantic colors for actors, platforms, enemies, traps, and collectibles | `src/platformer/renderer.ts` |
+| `DEFAULT_ENTITY_PALETTE` | const | Default semantic renderer palette | `src/platformer/renderer.ts` |
+| `DrawLevelEntityOverrideMap` | type | Per-entity-kind renderer override callbacks | `src/platformer/renderer.ts` |
+| `DrawLevelEntityOptions` | type | Palette and override options for `drawLevelEntity` | `src/platformer/renderer.ts` |
+| `drawLevelEntity(ctx, entity, options?)` | function | Draw one level entity using semantic defaults or an override | `src/platformer/renderer.ts` |
+| `drawActor(ctx, core, options?)` | function | Draw a platformer actor from `ActorCore` | `src/platformer/renderer.ts` |
+| `drawTileGrid(ctx, grid, drawTile)` | function | Traverse nonzero tiles and invoke the consumer appearance callback | `src/platformer/renderer.ts` |
+
+#### `src/platformer/presets.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `PRECISION_PLATFORMER` | const | Precision-platformer tuning preset | `src/platformer/presets.ts` |
+| `CLASSIC_PLATFORMER` | const | Classic jump-focused preset with double-jump disabled | `src/platformer/presets.ts` |
+| `EXPLORATION_PLATFORMER` | const | Exploration-oriented movement preset | `src/platformer/presets.ts` |
+| `PUZZLE_PLATFORMER` | const | Puzzle movement preset with advanced abilities disabled | `src/platformer/presets.ts` |
 
 #### `src/platformer/pipelines.ts`
 
@@ -1104,6 +1143,8 @@ The determinism seam. Pure sequencer advance — walks the pattern deterministic
 | `NoteFire` | type | `{ midi, waveform, peak, gateS, whenOffset }` — fired note event (pure data). `gateS` = `durationSteps × secondsPerStep(bpm, stepsPerBeat)` in seconds; host adapter passes `gateS × 1000` as `durMs` to `playTone`. `whenOffset` is seconds from window start | `src/music/types.ts` |
 | `AdvanceOptions` | type | `{ swing?: number }` — optional advance-time config. `swing` ratio `[0.5, 0.75]`. **Not re-exported from barrel** (name collision with particles); import from `src/music/types` directly | `src/music/types.ts` |
 | `advanceSequencer(state, dt, pattern, opts?)` | function | Pure: advance sequencer by `dt` seconds. Returns `{ next, events }` where `next` is new `SequencerState` and `events` is readonly array of `NoteFire`. Empty `events` = no notes crossed a step boundary. `opts.swing` sets swing ratio (default `DEFAULT_SWING` = 0.5). No host access, fully Node-testable | `src/music/advance.ts` |
+| `NoteFirePlayer` | type | Defensive stateless host renderer for externally advanced `NoteFire[]` | `src/music/types.ts` |
+| `createNoteFirePlayer(audio)` | function | Maps exact external note events to an existing `AudioAdapter`; owns no pattern, clock, or simulation state | `src/music/note-fire-player.ts` |
 
 #### `src/music/sequencer.ts` — Two-clock lookahead sequencer
 
@@ -1503,6 +1544,7 @@ Architecture: **serializable operations + snapshot history (hybrid)**. Undo rest
 | `clearSelection(state)` | function | Pure: empty selection set | `src/editor/selection.ts` |
 | `selectAll(state)` | function | Pure: select all entity IDs | `src/editor/selection.ts` |
 | `isInSelection(state, id)` | function | Pure reader | `src/editor/selection.ts` |
+| `entityAtPoint(level, point)` | function | Return the topmost entity containing a world-space point, or null | `src/editor/selection.ts` |
 
 Selection is ephemeral — NOT recorded in history.
 
@@ -1535,6 +1577,7 @@ Selection is ephemeral — NOT recorded in history.
 | `DEFAULT_CATALOG` | const | Ships one `CatalogEntry` per `EntityKind` (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform, collectible) with sensible defaults. Additional prefab entries for collectible sub-kinds: `coin`, `gem`, `key` (all with `kind: 'collectible'` and appropriate `CollectibleProps`) | `src/editor/catalog.ts` |
 | `createCatalogEntry(kind, label, defaultRect?, defaultProps?)` | function | Helper for consumers to build custom catalog entries | `src/editor/catalog.ts` |
 | `instantiateCatalogEntry(entry, at)` | function | Returns an `addEntity` op for placing this catalog entry at the given position. Caller applies via `applyOp` | `src/editor/catalog.ts` |
+| `findCatalogEntry(catalog, kind)` | function | Find a catalog entry by entity kind, or return `undefined` | `src/editor/catalog.ts` |
 
 #### `src/editor/factory.ts`
 
@@ -1550,8 +1593,6 @@ Barrel re-export of all public editor APIs. Uses `export type` for type-only re-
 - _proposal: `docs/design/editor-core-proposal.md`_
 - _research: `docs/research/editor-core.md`_
 - _composes with: `src/level/types.ts` (`LevelData`, `LevelEntity`, `EntityId`, `EntityKind`, `LevelRect`), `src/level/validate.ts` (`validateLevel`, `ValidationResult`), `src/level/entity-id.ts` (`allocateEntityId`)_
-
-### `src/collectibles/` ✓ shipped
 
 ### `src/replay/` ✓ shipped
 
@@ -1613,6 +1654,7 @@ Collectibles / pickups subsystem. Extends the level entity taxonomy with a `'col
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `CollectibleSave` | type | `{ collected: string[] }` — player collection state. Fields intentionally **NOT `readonly`** (clone-then-mutate discipline, same as `CosmeticSave`). `collected` is a plain sorted `string[]`, never Set/Map. JSON-roundtrip-safe | `src/collectibles/types.ts` |
+| `CollectibleEntity` | type | `LevelEntity` narrowed to `kind: 'collectible'` | `src/collectibles/types.ts` |
 
 #### `src/collectibles/collectibles.ts`
 
@@ -1630,13 +1672,15 @@ Deterministic pickup derivation. Pure function of `(playerRect, collectibles, sa
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `derivePickups(playerRect, collectibles, save)` | function | Pure: test each `collectible` entity's rect against `playerRect` via `aabbOverlap`. Returns `{ collected: EntityId[], remaining: LevelEntity[] }` — newly-collected IDs this tick (number `EntityId`, consumer bridges to string via `String(id)`) and entities not yet collected. Skips entities already in `save.collected`. O(n) per tick where n = collectible count. Never throws — malformed inputs return empty results | `src/collectibles/derive-pickups.ts` |
+| `PickupDerivation` | type | Immutable `{ collected, remaining }` result from `derivePickups` | `src/collectibles/derive-pickups.ts` |
+| `PlayerRect` | type | Player AABB input accepted by `derivePickups` | `src/collectibles/derive-pickups.ts` |
 
 #### `src/collectibles/constants.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `DEFAULT_COLLECTIBLE_RECT` | const | `{ x: 0, y: 0, width: 16, height: 16 }` — default rect for catalog-placed collectibles (one tile) | `src/collectibles/constants.ts` |
-| `DEFAULT_COLLECTIBLE_VALUE` | const | `0` — default value when `CollectibleProps.value` is omitted | `src/collectibles/constants.ts` |
+| `DEFAULT_COLLECTIBLE_VALUE` | const | `1` — default value when `CollectibleProps.value` is omitted | `src/collectibles/constants.ts` |
 
 - _proposal: `docs/design/collectibles-proposal.md`_
 - _research: `docs/research/collectibles.md`_
@@ -1835,14 +1879,17 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ## Top-level barrel: `src/index.ts`
 
-Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`, `./easing`, `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`, `./game-loop`, `./audio`, `./save`, `./blend`, `./platformer`, `./level`, and `./editor`.
+Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`,
+`./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`,
+`./game-loop`, `./game-state`, `./audio`, `./save`, `./blend`, `./easing`,
+`./music`, `./platformer`, `./level`, `./editor`, `./collectibles`, and
+`./replay`.
 
 ```ts
 export * from './primitives';
 export * from './rng';
 export * from './particles';
 export * from './animation';
-export * from './easing';
 export * from './palette';
 export * from './cosmetics';
 export * from './iap';
@@ -1850,12 +1897,17 @@ export * from './collision';
 export * from './camera';
 export * from './input';
 export * from './game-loop';
+export * from './game-state';
 export * from './audio';
 export * from './save';
 export * from './blend';
+export * from './easing';
+export * from './music';
 export * from './platformer';
 export * from './level';
 export * from './editor';
+export * from './collectibles';
+export * from './replay';
 // Phase 4: export * from './fake3d';
 ```
 

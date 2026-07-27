@@ -51,6 +51,29 @@ import type {
 
 /** Empty events array singleton — returned when no notes fire. */
 const NO_EVENTS: readonly NoteFire[] = Object.freeze([]);
+const MAX_SAFE_ORDINAL = Number.MAX_SAFE_INTEGER - 1;
+const MAX_EVENT_ITERATIONS = 65_536;
+
+function safeNonNegativeInteger(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(MAX_SAFE_ORDINAL, Math.max(0, Math.floor(value)));
+}
+
+function finiteResult(value: number, fallbackSign = 1): number {
+  if (Number.isFinite(value)) return value;
+  return fallbackSign < 0 ? -Number.MAX_VALUE : Number.MAX_VALUE;
+}
+
+function boundaryTolerance(timeS: number, stepDur: number): number {
+  return Number.EPSILON * 16 * Math.max(1, Math.abs(timeS), stepDur);
+}
+
+function ordinalAtOrAfter(timeS: number, stepDur: number): number {
+  const adjusted = Math.max(0, timeS - boundaryTolerance(timeS, stepDur));
+  const ordinal = Math.ceil(adjusted / stepDur);
+  if (!Number.isSafeInteger(ordinal)) return MAX_SAFE_ORDINAL;
+  return Math.max(0, Math.min(MAX_SAFE_ORDINAL, ordinal));
+}
 
 /**
  * Advance the sequencer by `dt` seconds. Returns the next state plus any note
@@ -87,72 +110,116 @@ export function advanceSequencer(
   pattern: Pattern,
   opts?: AdvanceOptions,
 ): { readonly next: SequencerState; readonly events: readonly NoteFire[] } {
+  try {
+    return advanceSequencerUnsafe(state, dt, pattern, opts);
+  } catch {
+    return { next: sanitizeState(state), events: NO_EVENTS };
+  }
+}
+
+function sanitizeState(state: SequencerState): SequencerState {
+  try {
+    return {
+      elapsedS: Number.isFinite(state?.elapsedS) && state.elapsedS >= 0 ? state.elapsedS : 0,
+      stepIndex: safeNonNegativeInteger(state?.stepIndex),
+      loopCount: safeNonNegativeInteger(state?.loopCount),
+    };
+  } catch {
+    return { elapsedS: 0, stepIndex: 0, loopCount: 0 };
+  }
+}
+
+function advanceSequencerUnsafe(
+  state: SequencerState,
+  dt: number,
+  pattern: Pattern,
+  opts?: AdvanceOptions,
+): { readonly next: SequencerState; readonly events: readonly NoteFire[] } {
   const safeDt = Number.isFinite(dt) && dt > 0 ? dt : 0;
-  const stepsPerPattern = pattern.stepsPerPattern;
+  const stepsPerPattern = safeNonNegativeInteger(pattern?.stepsPerPattern);
+  const tracks = Array.isArray(pattern?.tracks) ? pattern.tracks : [];
   const hasSteps =
     stepsPerPattern > 0 &&
-    pattern.tracks.length > 0 &&
-    pattern.tracks.every((t) => t.patterns.length > 0);
+    tracks.length > 0 &&
+    tracks.every((t) => Array.isArray(t?.patterns) && t.patterns.length > 0);
+
+  const { elapsedS, stepIndex, loopCount } = sanitizeState(state);
 
   if (!hasSteps || safeDt === 0) {
     return {
-      next: { elapsedS: state.elapsedS, stepIndex: state.stepIndex, loopCount: state.loopCount },
+      next: { elapsedS, stepIndex, loopCount },
       events: NO_EVENTS,
     };
   }
 
   const stepDur = secondsPerStep(pattern.bpm, pattern.stepsPerBeat);
-  if (!(stepDur > 0)) {
+  if (!Number.isFinite(stepDur) || !(stepDur > 0)) {
     return {
-      next: { elapsedS: state.elapsedS, stepIndex: state.stepIndex, loopCount: state.loopCount },
+      next: { elapsedS, stepIndex, loopCount },
       events: NO_EVENTS,
     };
   }
 
-  const swingRatio = opts?.swing ?? DEFAULT_SWING;
+  const requestedSwing = opts?.swing;
+  const swingRatio = Number.isFinite(requestedSwing) ? requestedSwing! : DEFAULT_SWING;
 
-  const windowStart = state.elapsedS;
-  const windowEnd = windowStart + safeDt;
-
-  const startStep = state.stepIndex;
-  const maxIterations = stepsPerPattern * 4 + 4;
-  const maxSteps = Math.ceil(safeDt / stepDur) + 1;
-  const cap = Math.min(maxSteps, maxIterations);
+  const maxElapsedForStep = Math.min(Number.MAX_VALUE, MAX_SAFE_ORDINAL * stepDur);
+  const windowStart = Math.min(elapsedS, maxElapsedForStep);
+  const rawWindowEnd = windowStart + safeDt;
+  const windowEnd = Math.min(
+    maxElapsedForStep,
+    Number.isFinite(rawWindowEnd) ? rawWindowEnd : maxElapsedForStep,
+  );
+  if (!(windowEnd > windowStart)) {
+    return {
+      next: { elapsedS: windowStart, stepIndex, loopCount },
+      events: NO_EVENTS,
+    };
+  }
 
   const events: NoteFire[] = [];
-  let cursor = startStep;
-  let loopCount = state.loopCount;
+  const rawOrdinal = loopCount * stepsPerPattern + (stepIndex % stepsPerPattern);
+  let ordinal = Number.isSafeInteger(rawOrdinal)
+    ? Math.max(0, rawOrdinal)
+    : MAX_SAFE_ORDINAL;
+  const firstWindowOrdinal = ordinalAtOrAfter(windowStart, stepDur);
+  if (ordinal < firstWindowOrdinal) ordinal = firstWindowOrdinal;
+  const endOrdinal = Math.max(ordinal, ordinalAtOrAfter(windowEnd, stepDur));
   let iter = 0;
 
-  while (iter < cap) {
-    const nominalStepTime = windowStart + iter * stepDur;
-    if (nominalStepTime >= windowEnd) break;
+  while (ordinal < endOrdinal && iter < MAX_EVENT_ITERATIONS) {
+    const boundaryS = ordinal * stepDur;
 
-    const localStep = cursor % stepsPerPattern;
+    const localStep = ordinal % stepsPerPattern;
     const isOffBeat = localStep % 2 === 1;
     // Odd-indexed off-beat steps get pushed late by the swing excess
     // (longDuration − stepDur) of a 2-step pair. Even-indexed on-beats are
     // untouched (decision §2).
     const swingDelay = isOffBeat ? swingLongDuration(stepDur * 2, swingRatio) - stepDur : 0;
-    const firedAt = nominalStepTime + swingDelay;
-    const whenOffset = firedAt - windowStart;
+    const firedAt = finiteResult(boundaryS + swingDelay);
+    const rawOffset = firedAt - windowStart;
+    // Tolerance-based boundary inclusion can deliberately include a boundary
+    // a few ulps behind windowStart. Host scheduling offsets are never
+    // negative, so collapse that floating-point residue to an immediate fire.
+    const whenOffset = Math.max(
+      0,
+      finiteResult(rawOffset, firedAt < windowStart ? -1 : 1),
+    );
 
     fireStep(pattern, localStep, whenOffset, events);
 
-    cursor += 1;
-    if (cursor % stepsPerPattern === 0) {
-      loopCount += 1;
-    }
+    ordinal += 1;
     iter += 1;
   }
 
-  const finalStepIndex = cursor % stepsPerPattern;
+  const finalStepIndex = endOrdinal % stepsPerPattern;
+  const finalLoopCount = Math.floor(endOrdinal / stepsPerPattern);
 
   return {
     next: {
       elapsedS: windowEnd,
       stepIndex: finalStepIndex,
-      loopCount,
+      loopCount: finalLoopCount,
     },
     events,
   };
@@ -174,16 +241,21 @@ function fireStep(
 ): void {
   const stepDur = secondsPerStep(pattern.bpm, pattern.stepsPerBeat);
   for (const track of pattern.tracks) {
-    const ev = noteAt(track, stepIndex);
-    if (ev === null || ev.midi === null) continue;
-    const durationSteps = ev.durationSteps ?? 1;
-    out.push({
-      midi: ev.midi,
-      waveform: ev.waveform ?? track.waveform,
-      peak: ev.peak ?? track.volume,
-      gateS: durationSteps * stepDur,
-      whenOffset,
-    });
+    try {
+      const ev = noteAt(track, stepIndex);
+      if (ev === null || ev.midi === null || !Number.isFinite(ev.midi)) continue;
+      const durationSteps = Number.isFinite(ev.durationSteps) ? Math.max(0, ev.durationSteps!) : 1;
+      const rawGateS = durationSteps * stepDur;
+      out.push({
+        midi: ev.midi,
+        waveform: ev.waveform ?? track.waveform,
+        peak: Number.isFinite(ev.peak) ? ev.peak! : track.volume,
+        gateS: finiteResult(rawGateS),
+        whenOffset,
+      });
+    } catch {
+      // A malformed track is silent; advancing the song remains never-throwing.
+    }
   }
 }
 

@@ -50,9 +50,11 @@ export {
 export { generatePattern } from './pattern';
 export { advanceSequencer } from './advance';
 export { createSequencer } from './sequencer';
+export { createNoteFirePlayer } from './note-fire-player';
 export type {
   NoteEvent,
   NoteFire,
+  NoteFirePlayer,
   Pattern,
   PatternGenConfig,
   Sequencer,

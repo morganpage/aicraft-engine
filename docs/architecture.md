@@ -61,24 +61,32 @@ function grantEntitlement(save: SaveData, sku: string): SaveData {
 
 ```
 src/
-├── index.ts              # Barrel export
-├── primitives/           # Pillar 1 — rendering helpers (outline, color, motion, glow, parallax)
-├── rng/                  # Pillar 1 — seeded determinism
-├── particles/            # Pillar 1 — deterministic FX
-├── animation/            # Pillar 1 — skeletal rig, IK, procedural locomotion, springs
-├── collision/            # Pillar 1 — AABB, tile-grid, moving-gap platforms
-├── camera/               # Pillar 1 — follow camera (lerp, clamp, snap)
-├── input/                # Pillar 1 — edge accumulator, keyboard/touch adapters
-├── game-loop/            # Pillar 1 — fixed-step accumulator, defensive RAF adapter
-├── audio/                # Pillar 1 — WebAudio synthesized SFX adapter
-├── save/                 # Pillar 1 — defensive localStorage/memory save backends
-├── blend/                # Pillar 1 — pose interpolation (blendPose/blendPoses)
-├── palette/              # Pillar 2 — skin palette substitution
-├── cosmetics/            # Pillar 2 — algorithmic skins
-├── iap/                  # Pillar 3 — IAP bridge + adapters
-└── tests/                # *.test.ts, mirrors Spitekeep's patterns
+├── index.ts              # Top-level barrel (re-exports every shipped module below)
+├── primitives/           # color, outline-rect, pixel, motion/dpr probes, glow, parallax, hit-stop, bitmap font, wave-line
+├── rng/                  # seeded mulberry32 PRNG + distribution helpers
+├── particles/            # deterministic spawn/advance/cull/step + emitters + presets
+├── animation/            # skeletal rig, IK (limb/ccd/fabrik), locomotion, squash/stretch, springs, spring-rod, spider
+├── easing/               # Penner curves + stateless tween driver
+├── collision/            # AABB, per-axis resolve, tile-grid, moving-gap platforms
+├── camera/               # follow camera (lerp, clamp, snap)
+├── input/                # edge accumulator, keyboard/touch/gamepad adapters, OR-merge
+├── game-loop/            # fixed-step accumulator, defensive RAF adapter
+├── game-state/           # pure dt-driven FSM reducer + adjacency table
+├── audio/                # WebAudio synthesized SFX adapter
+├── music/                # procedural step-sequencer (theory, patterns, advanceSequencer, createSequencer, createNoteFirePlayer)
+├── save/                 # defensive localStorage/memory save backends
+├── blend/                # pose interpolation (blendPose/blendPoses)
+├── palette/              # OKLCH substitution, harmonic generation, WCAG contrast repair
+├── cosmetics/            # versioned manifest, seeded variant generation, multi-slot ownership
+├── iap/                  # IAP bridge + adapters + entitlements
+├── level/                # versioned platformer level schema, migration, validation, tile queries
+├── platformer/           # composable kernel + ability pipeline + signed gravity + level-runtime + renderer + presets + enemy archetypes
+├── editor/               # headless level-editor core (ops, history, selection, snapping, clipboard, catalog, playtest)
+├── collectibles/         # pure-progression CollectibleSave + deterministic derivePickups
+├── replay/               # record/playback + 32-bit replayHash fingerprint
+└── tests/                # *.test.ts, vitest node env
 ```
 
-_Planned: `fake3d/` (Pillar 4 — Sokpop-inspired billboarding/isometric/cube), `editor/` (Pillar 4 — headless level-editor core)._
+_Planned: `fake3d/` (Pillar 4 — Sokpop-inspired billboarding/isometric/cube). Not yet implemented._
 
-Each module ships with its own `index.ts` barrel and a colocated test file.
+Each module ships with its own `index.ts` barrel. Tests live in `src/tests/<thing>.test.ts`.

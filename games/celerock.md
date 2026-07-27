@@ -6,7 +6,7 @@
 
 ## 0. You are building
 
-**Celerock** — a single-character precision platformer in the *Forsaken City* aesthetic: a young mountaineer climbs a snowy peak through ~5 hand-designed rooms, each teaching one new technique (jump / wall-jump / dash / dash-into-wall). The feel target is **Celeste-tight**: variable-height jump (tap = short hop, hold = full), a horizontal dash that snaps exactly four tiles, wall-slide that slows the fall, wall-jump that fires the player up-and-opposite, hit-stop on dash-into-wall, screen shake on hard landings, instant respawn, and a strawberry counter that persists across reloads. Nothing procedural — every room is hand-built and deterministic.
+**Celerock** — a single-character precision platformer in the *Forsaken City* aesthetic: a young mountaineer climbs a snowy peak through ~5 hand-designed rooms, each teaching one new technique (jump / wall-jump / dash / dash-into-wall). The feel target is **Celeste-tight**: variable-height jump (tap = short hop, hold = full), a short configured horizontal dash, wall-slide that slows the fall, wall-jump that fires the player up-and-opposite, hit-stop on dash-into-wall, screen shake on hard landings, instant respawn, and a strawberry counter that persists across reloads. Nothing procedural — every room is hand-built and deterministic.
 
 **Non-negotiable: build the entire game on top of `aicraft-engine`.** Do not hand-roll the controller, fixed-step loops, AABB collision, cameras, footstep detection, particles, jump arcs, locomotion, palettes, or audio — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slope check, a jump-apex formula, a dash-frame counter, or `Math.random()` in the simulation, STOP and use the engine instead. The whole point of Celerock is to show off the **platformer kernel** (`defaultPrecisionPipeline`) plus the **`collectibles`** + **`save`** pillars that Embertomb doesn't touch.
 
@@ -15,9 +15,12 @@
 ```bash
 npm create vite@latest celerock -- --template vanilla-ts
 cd celerock
-npm install aicraft-engine
-npm install -D vite
+npm install aicraft-engine@0.3.0
 ```
+
+> Release-preparation note: the implementation requirements below target the
+> pending 0.4.0 API. Keep the verified 0.3.0 pin until 0.4.0 is published,
+> then update the pin and verify this prompt against the registry tarball.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -29,7 +32,7 @@ npm install -D vite
     createGameState, reduceGameState, isLegalTransition, DEFAULT_GAME_STATE_ADJACENCY,
 
     // input
-    createKeyboardAdapter, createTouchButtonSet, orEdges,
+    createKeyboardAdapter, createTouchButtonSet, createGamepadAdapter, orEdges,
 
     // platformer kernel — THE big showcase for Celerock
     createPlatformerController, createPlatformerState, stepPlatformer,
@@ -37,17 +40,23 @@ npm install -D vite
     DEFAULT_PLAYER_WIDTH, DEFAULT_PLAYER_HEIGHT,
     jumpAbility, wallSlideAbility, dashAbility, doubleJumpAbility,
     compileLevel, advanceMovingPlatform, movingPlatformToSolid,
-    createMovingPlatformDisplacementProvider,
-    drawActor, drawTileGrid, drawLevelEntity,
+    createMovingPlatformDisplacementProvider, type SolidDisplacementProvider,
+    drawActor, drawTileGrid, drawLevelEntity, DEFAULT_ENTITY_PALETTE,
+    type PlatformerConfig, type PlatformerState, type PlatformerInput,
+    type CompiledLevel, type CompiledMovingPlatform,
+
+    // level schema (used to author the 5 hand-designed rooms)
+    type LevelData, type LevelEntity, type EntityKind, type CollectibleKind,
 
     // collision (only for hazards — the player uses the kernel)
-    aabbOverlap, tileToWorld, worldToTile,
+    aabbOverlap, tileToWorld, worldToTile, type Rect,
 
     // camera
     createCamera, updateCamera,
 
     // collectibles (pillar that Embertomb doesn't show)
     collect, hasCollected, derivePickups,
+    type CollectibleSave, type CollectibleEntity,
 
     // save
     createLocalStorageSaveStorage, createMemorySaveStorage,
@@ -83,7 +92,7 @@ npm install -D vite
     // audio + rng + palette
     createAudioAdapter,
     mulberry32, nextInt, nextFloat, pick,
-    generatePalette, lerp,
+    generatePalette, lerp, type Palette,
   } from 'aicraft-engine';
   ```
   Tree-shaking works because every export has `sideEffects: false`. Never deep-import subpaths like `aicraft-engine/platformer` — use the root barrel.
@@ -124,11 +133,11 @@ npm install -D vite
 | Parallax background (far mountains / mid trees / near particles) | `drawTiledParallax`, `parallaxOffset`, `PARALLAX_FAR/MID/NEAR` |
 | Vector look + glow | `outlineRect`, `drawGlow` |
 | Crisp Retina canvas | `resizeCanvasToBackingStore`, `getDevicePixelRatio` |
-| Death counter, room title cards, "Press X to respawn" | `drawText`, `drawTextOutlined`, `drawText(..., DEFAULT_FONT)` |
+| Death counter, room title cards, "Press X to respawn" | `drawText`, `drawTextOutlined`, `drawText(..., { font: DEFAULT_FONT })` |
 | Tween (death-and-respawn flash, room transitions) | `createTweenState`, `advanceTween`, `easeOutCubic`, `easeOutBack` |
 | Synthesized SFX | `createAudioAdapter` |
 | Per-room palette (snow / dusk / dusk-2 / etc.) | `generatePalette`, `lerp` |
-| Frame FSM (menu / playing / dead-flash / levelComplete) | `createGameState`, `reduceGameState`, `isLegalTransition`, `DEFAULT_GAME_STATE_ADJACENCY` |
+| Frame FSM (menu / playing / gameover / levelComplete) | `createGameState`, `reduceGameState`, `isLegalTransition`, `DEFAULT_GAME_STATE_ADJACENCY` |
 | Cosmetic hair colour unlocks (stretch) | `cosmetics` pillar (`generateSkinVariants`), `iap` (`createMemoryIAPAdapter`) |
 
 ## 4. The player
@@ -137,15 +146,41 @@ The player is built in **two layers**: the **physics** is the platformer kernel,
 
 - **Physics layer.** Build the controller once at boot, then call it every tick with the current state + input snapshot:
   ```ts
-  const controller = createPlatformerController(defaultPrecisionPipeline(), DEFAULT_PLATFORMER_CONFIG);
-  let state = createPlatformerState(spawnX, spawnY);
+  const config: PlatformerConfig = {
+    ...DEFAULT_PLATFORMER_CONFIG,
+    doubleJumpEnabled: true,
+    maxDoubleJumps: 1,
+  };
+  const controller = createPlatformerController(defaultPrecisionPipeline(), config);
+  let state = createPlatformerState(spawnX, spawnY, config);
   // each fixed tick:
   const { state: next } = controller.step(state, input, solids, dt);
   state = next;
   ```
-  The kernel handles variable-height jump (tap = short, hold = full), wall-slide (slower fall when grounded-on-wall side), wall-jump (fires up-and-opposite, applies `facing` flip), dash (overrides velocity for N frames, snaps 4 tiles horizontally), and double-jump in the locked pipeline order (`jump → wallSlide → dash → doubleJump`).
-- **Spawn.** Build one level at a time via `compileLevel(levelData)` — that returns a `CompiledLevel` (tile grid + entities + moving-platform runtime). Pass the entities' solids (via `tileRect` from the grid or `movingPlatformToSolid` for moving ones) to the kernel as the `solids` argument. For moving-platform rooms, pass `createMovingPlatformDisplacementProvider(level)` to `createPlatformerController`'s options as `getSolidDisplacement` so the kernel carries the player off moving solids automatically.
-- **Body render.** Body = `outlineRect(ctx, cx - w/2, cy - h/2, w, h, palette.base, palette.outline)` with `volumeScale(squashOffset)` composed over idle `breathe(tick, DEFAULT_BREATH)`. Volume-preserving: when vertical squashes by `s`, horizontal stretches by `1/s`. `squashOffset` spikes **negative** (stretch up) on launch and **positive** (squash down) on landing, decaying exponentially each step.
+  The kernel handles variable-height jump, wall-slide/wall-jump, configured
+  dash speed and duration, and Celerock's explicitly enabled one-air-jump
+  double-jump budget in the locked
+  pipeline order. Do not claim an exact dash distance unless Celerock's own
+  `dashSpeed * dashDuration` is tuned to that distance.
+- **Spawn.** Use `compileLevel(levelData, { tileTypeMap })`. Each tick combine
+  `compiled.staticSolids` with current moving-platform solids and build
+  `createMovingPlatformDisplacementProvider(current, previous)`. Wire it into
+  the controller once through a delegating closure:
+  ```ts
+  let displacement: SolidDisplacementProvider = () => null;
+  const controller = createPlatformerController(defaultPrecisionPipeline(), config, {
+    getSolidDisplacement: id => displacement(id),
+  });
+  // Before controller.step each tick:
+  const previous = movingPlatforms;
+  movingPlatforms = movingPlatforms.map(p => advanceMovingPlatform(p, dt));
+  displacement = createMovingPlatformDisplacementProvider(movingPlatforms, previous);
+  const solids = [...compiled.staticSolids, ...movingPlatforms.map(movingPlatformToSolid)];
+  state = controller.step(state, input, solids, dt).state;
+  ```
+- **Body render.** `volumeScale` uses positive offsets for vertical stretch
+  and negative offsets for vertical squash. Use positive on launch and negative
+  on landing.
 - **⚠ Facing mirror (MANDATORY — or you get a moonwalk):** the locomotion foot offsets are LOCAL-space and assume the draw is mirrored for facing. You MUST wrap the body+feet draw in `ctx.scale(facing, 1)` around the body's vertical axis, or running left shows the character facing right. Canonical:
   ```ts
   ctx.save();
@@ -157,14 +192,19 @@ The player is built in **two layers**: the **physics** is the platformer kernel,
   ctx.restore();
   ```
   Draw any **spring-rod hair OUTSIDE the mirror** — its physics already owns a screen-space direction (mounted at the head, wagging back/up).
-- **Hair.** One `createSpringRod` strand anchored at the top-back of the head (forward `restDirection` bias so it flows back while moving forward, lifts up when dashing). Always `advanceSpringRod(hair, anchor, dt)` — never the raw `advanceSpringChain`, which lacks bend resistance and can numerically blow a node off-screen.
-- **Walk cycle.** `evaluateLocomotion(loco, DEFAULT_GAIT)` drives feet via `drawSimpleFeet`. Advance phase by displacement, not time: `loco = advanceLocomotionByDisplacement(loco, vx * facing, DEFAULT_GAIT)` so feet plant when idle (no foot-slide while standing still or holding against a wall).
-- **Foot-tap audio.** `plantState = createFootPlantState()`; each step `plantState = advanceFootPlant(plantState, pose.leftFootOffset.y, pose.rightFootOffset.y)`. On `plantState.events.leftPlanted` / `rightPlanted` fire `audio.playNoise(40, 'lowpass', 200, 0.12)`. Syncs taps to the *visible* walk cycle, not a timer.
+- **Hair.** Advance with the complete seconds-based signature:
+  `hair = advanceSpringRod(hair, anchor.x, anchor.y, dt, {
+  ...DEFAULT_SPRING_ROD, restDirection,
+  })`.
+- **Walk cycle.** Advance by actual per-step displacement:
+  `advanceLocomotionByDisplacement(loco, state.core.vx * dt * state.core.facing, DEFAULT_GAIT)`.
+- **Foot-tap audio.** Assign the result of `advanceFootPlant`, thread
+  `plantResult.state`, and read `plantResult.events`.
 - **Airborne tuck.** `blendAirborneTuck(footOffset, airborneBlend, DEFAULT_TUCK)` — `airborneBlend` ramps 0→1 once the player leaves the ground; releases on contact.
 
 ## 5. Rooms (5 hand-designed rooms, each teaches one technique)
 
-Celerock is **hand-designed**, not procedural. Use the level schema (`compileLevel` accepts `LevelData` with `entities: LevelEntity[]` discriminated by `EntityKind`). Below is a sketch — write them out as actual tile grids + entity lists, then `compileLevel(levelData)` each at boot. Keep rooms small (≤ 20 tiles wide × ≤ 15 tiles tall, `DEFAULT_TILE_SIZE` is usually 16 or 32 — pick one and stick to it).
+Celerock is **hand-designed**, not procedural. Use the level schema (`compileLevel` accepts `LevelData` with `entities: LevelEntity[]` discriminated by `EntityKind`). Below is a sketch — write them out as actual tile grids + entity lists, then `compileLevel(levelData, { tileTypeMap })` each at boot. Keep rooms small (≤ 20 tiles wide × ≤ 15 tiles tall). `DEFAULT_TILE_SIZE` is exactly 16; use it or choose one explicit consumer tile size and keep it consistent.
 
 | # | Name | Teaches | Sketch |
 |---|---|---|---|
@@ -172,11 +212,15 @@ Celerock is **hand-designed**, not procedural. Use the level schema (`compileLev
 | **2** | **Old Site** | Variable-height jump over gaps | A 10-tile floor with two 2-tile gaps (2 tiles wide × 1 tile deep). One strawberry at the far end. Teaches jump-arc judgment. |
 | **3** | **Resolution** | Wall-slide | Tall narrow corridor (4 tiles wide × 14 tiles tall). Walls on both sides. Snowfall particle layer behind. Teaches wall-slide. |
 | **4** | **Through the Mirror** | Wall-jump | Same corridor as room 3 but with horizontal ledges every 3 tiles vertically. Teaches chaining wall-jumps to ascend. |
-| **5** | **The Summit** | Dash + dash-into-wall hit-stop | Corridor with one vertical wall mid-room and one strawberry placed directly behind it — only reachable with dash. Teaches dash + the iconic hit-stop-and-shake moment. One moving-platform gully between room transitions. |
+| **5** | **The Summit** | Dash + dash-into-wall hit-stop | Corridor with a vertical wall used as a dash target; bonking it triggers hit-stop and shake. Put the strawberry above the wall on a ledge reached by chaining wall-jump into dash (dash collides with solids; it never phases through them). One moving-platform gully sits before the goal. |
 
-Room transitions: on reaching the `trigger` goal tile (treat as an AABB hit against a `goalRect` registered at boot), transition `playing → levelComplete` (see §8), advance `roomIndex`, re-`compileLevel(roomDef)`.
+Room transitions: on reaching the `trigger` goal tile (treat as an AABB hit against a `goalRect` registered at boot), emit `{ type: 'win' }` to take the shipped `playing → levelComplete` edge (see §8). After the "Cleared" card, emit `{ type: 'next' }` to return to `playing`, bump `roomIndex` (loop back to room 0 after room 4), then recompile with the same classifier: `compiled = compileLevel(roomDef, { tileTypeMap })`.
 
-For each room, write a small fixed-draw layer using `drawTileGrid(ctx, room.tileGrid, dt, parallaxOffset(camera, 0.2))` (the kernel handles the player's solid-against-tile collision because the tiles are in the level schema). Use `drawActor(ctx, playerRect, palette)` for the player entity render path, OR override with `drawLevelEntity` if you register the player as an entity.
+Map the generated `Palette` into an `EntityPalette`, for example
+`{ ...DEFAULT_ENTITY_PALETTE, player: palette.base, platform: palette.accent }`.
+Render with `drawTileGrid(ctx, room.tiles, drawTile)` and
+`drawActor(ctx, state.core, { palette: entityPalette })`. The draw callback owns appearance,
+not traversal or collision.
 
 Hand-tip: put one **moving platform** in room 5 (or as the room-to-room connector) so the kernel's `movingPlatformToSolid` + `createMovingPlatformDisplacementProvider` path gets exercised. The kernel's step-2 (carry) will automatically move the player with the platform.
 
@@ -185,30 +229,88 @@ Hand-tip: put one **moving platform** in room 5 (or as the room-to-room connecto
 The engine does **not** ship a first-class hazard module (hazards are level entities of `kind === 'trap'` in the level schema). Celerock needs spikes — wrap a player-state AABB check in a `tryStep` so the player respawns in place:
 
 - **Static spikes.** Where the level designer places `'trap'` entities of subtype `"spikes"` (your convention), fold them into a `hazardRects: Rect[]` array at boot. Each tick, check `aabbOverlap(playerRect, hazardRect)` — if true AND the player is moving downward (`state.core.vy > 0`) or freshly landed on a hazard tile (`events.justLanded` while their AABB overlapped a hazard), trigger death.
-- **Moving spike row (room 5 stretch).** One `'movingPlatform'` entity with the spike geometry on top. Because the kernel rides moving platforms automatically (see step-2 carry), the player gets carried into the spike and dies correctly. No extra code — the platformer kernel already does this for free.
+- **Moving spike row (room 5 stretch).** One `'movingPlatform'` entity carrying a `'trap'`/`'hazard'` child entity whose rect is the spike row on top of the platform. **Hazards are NOT collision surfaces** — `compileLevel` ignores them, so the kernel never sees them and the "the kernel kills the player for free" claim is false. You must derive the spike rect from the platform's *current advanced* position each tick and run the same `aabbOverlap(playerRect, currentSpikeRect)` check as for static spikes:
+  ```ts
+  // after movingPlatforms = movingPlatforms.map(p => advanceMovingPlatform(p, dt)):
+  for (const spike of movingSpikes) {
+    const plat = movingPlatforms.find(p => p.id === spike.platformId);
+    if (!plat) continue;
+    const spikeRect: Rect = {
+      x: plat.x + spike.offsetX,
+      y: plat.y + spike.offsetY,      // platform top edge + spike offset
+      width: spike.width,
+      height: spike.height,
+    };
+    if (aabbOverlap(playerRect, spikeRect)) { triggerDeath(); break; }
+  }
+  ```
+  Register the `(platformId, offsetX, offsetY, width, height)` tuples once at boot from the level's `'trap'` entities. Do NOT recompile or hand-resolve the platform's motion — `advanceMovingPlatform` already owns it; just read `plat.x`/`plat.y`.
 
-Death effect: `triggerHitStop(hitStop, 6)` (very short, flicks), `audio.playNoise(120, 'lowpass', 400, 0.3)`, spawn 8 dust particles via `sampleConeVelocity` upward from the player's position, transition FSM to `dead` for ~12 frames (the **respawn flash**), then instantly `playing` at the room's spawn point with `squashOffset = 0` and the death counter incremented.
+Death effect: assign `hitStop = triggerHitStop(hitStop, 6)`, advance it by
+`hitStop = stepHitStop(hitStop, 1)` per fixed tick, and transition the FSM with
+the returned state from `reduceGameState`.
 
 ## 7. Collectibles — strawberries (the engine's `collectibles` pillar)
 
 **Use the engine's `collectibles` module. Do NOT hand-roll "is this strawberry already collected" or pickup math.**
 
-- **Spawn strawberries as entities.** In each room's `LevelData`, include `LevelEntity` records with `kind: 'collectible'` and `props.kind: CollectibleKind` (engine-level `coin | gem | key` enum — for Celeste, **define a `'strawberry'` literal in your own union** by storing the entity's id and treating that id as the strawberry item when restoring). Or simpler: keep the engine `CollectibleKind` and use `gem` as the visual stand-in for strawberry — same AABB, same persistence semantics, render with `drawGlow` + `outlineRect` in `palette.feature`.
-- **Derive pickups deterministically each tick** (this is what keeps replays correct — the kernel stays unaware of collectibles, so `derivePickups` re-derives the same pickup events from the same inputs):
+- **Spawn strawberries as entities.** In each room's `LevelData`, include `LevelEntity` records with `kind: 'collectible'`, `props.kind: CollectibleKind` (engine-level `'coin' | 'gem' | 'key'`), and unique numeric `id`s per room. For Celeste, **use `'gem'` as the visual stand-in for a strawberry** — same AABB, same persistence semantics, render with `drawGlow` + `outlineRect` in `palette.feature`. Do NOT invent a `'strawberry'` literal in `CollectibleKind`; the union is closed and the renderer dispatches only on its three members.
+- **Composite persisted save.** The library ships a *flat* `CollectibleSave` (`{ collected: string[] }`) and explicitly leaves per-level scoping to the consumer. Celerock composes it with its death counter into one persisted record:
   ```ts
-  const playerRect: PlayerRect = {
-    x: state.core.x, y: state.core.y, w: state.core.width, h: state.core.height,
-  };
-  const { collected } = derivePickups(playerRect, room.collectibles, collectibleSave);
-  for (const id of collected) {
-    collectibleSave = collect(collectibleSave, String(id));
-    audio.playTone('triangle', 600, 1200, 60, 0.15);  // ping
-    spawn(strawberry.x, strawberry.y, { count: 8, speed: 3, life: 24, size: 4 });
+  interface CelerockSave {
+    /** Per-room collectible state, keyed by room id (e.g. `'room-0'`). */
+    readonly collectibles: Record<string, CollectibleSave>;
+    /** Total deaths across the run. */
+    readonly deaths: number;
   }
+  const DEFAULT_SAVE: CelerockSave = { collectibles: {}, deaths: 0 };
+
+  const storage = createLocalStorageSaveStorage('celerock-save');
+  let save = loadSave(storage, DEFAULT_SAVE);
   ```
-- **Persistence** (the save pillar): on boot, `const save = loadSave(storage, 'celerock:strawberries') ?? { collected: [] }`. After each `collect` call, `writeSave(storage, 'celerock:strawberries', save)`. Death counter should also persist — same pattern with a `'celerock:deaths'` key.
-- **Render strawberries** by reading the level entity list and skipping any where `hasCollected(collectibleSave, String(entity.id))` is true; for the uncollected ones, draw a pulsing diamond outline with `drawGlow` (intensity ramps with `Math.sin(tick / 20)` from the render frame).
-- **'gem' is recommended over 'coin' for strawberries** because their value semantics match (single-pickup, persistent, persistent-across-reload). Use whatever visual look fits the room.
+  Because every field is a primitive or plain array, this shape survives a JSON round-trip and reproduces identically across reloads — matching the engine's `CollectibleSave` determinism contract.
+- **Scope collectible ids by room.** Strawberry entity ids are `number` and may
+  repeat across rooms. The outer `Record<roomId, CollectibleSave>` provides the
+  namespace; each room-local `CollectibleSave` stores plain `String(entity.id)`
+  values so it remains compatible with `derivePickups`:
+  ```ts
+  const roomId = `room-${roomIndex}`;
+  const roomSave: CollectibleSave = save.collectibles[roomId] ?? { collected: [] };
+
+  const playerRect: Rect = {
+    x: state.core.x, y: state.core.y,
+    width: state.core.width, height: state.core.height,
+  };
+  const { collected, remaining } = derivePickups(playerRect, collectibleEntities, roomSave);
+  for (const id of collected) {
+    const strawberry = collectibleEntities.find(entity => entity.id === id);
+    if (!strawberry) continue;
+    save = {
+      ...save,
+      collectibles: {
+        ...save.collectibles,
+        [roomId]: collect(save.collectibles[roomId] ?? roomSave, String(id)),
+      },
+    };
+    audio.playTone('triangle', 600, 1200, 60, 0.15);  // ping
+    particles = [
+      ...particles,
+      ...spawn(strawberry.x, strawberry.y, { count: 8, speed: 3, life: 24, size: 4 }),
+    ];
+  }
+  writeSave(storage, save);   // after the immutable update, persist
+  // Once per fixed tick: both helpers are pure, so retain their returned array.
+  particles = cull(advanceParticles(particles, 1, { gravity: 0.08, drag: 0.98 }));
+  ```
+  `remaining` is the render list for this tick (already-collected strawberries are excluded by `derivePickups`), so you don't need a separate filter pass.
+- **Death counter integration.** On every `gameover → playing` respawn, assign
+  `save = { ...save, deaths: save.deaths + 1 }`, then
+  `writeSave(storage, save)`. The counter persists through the same storage
+  adapter as the strawberries: one key, one load, one write path.
+- **Render strawberries** from `remaining`, or skip an entity when
+  `hasCollected(save.collectibles[roomId] ?? { collected: [] }, String(entity.id))`
+  is true. Draw uncollected entities as pulsing diamond outlines with
+  `drawGlow`.
 
 ## 8. Game state FSM
 
@@ -216,39 +318,41 @@ Use the engine's `game-state` reducer, not a hand-rolled enum switch:
 
 ```ts
 // boot:
-const initialState = createGameState({ mode: 'menu' });
+let gameState = createGameState();
 
 // each tick:
-const { state: next } = reduceGameState(initialState, gameEvent);
-if (!isLegalTransition(next.mode, gameEvent, DEFAULT_GAME_STATE_ADJACENCY)) {
+if (gameEvent && !isLegalTransition(gameState.current, gameEvent)) {
   // optional: log a debug warning; never throw
 }
-initialState = next;
+gameState = reduceGameState(gameState, gameEvent, dt);
 ```
 
-Adjacency in your game:
+Adjacency in your game (matches the shipped `DEFAULT_GAME_STATE_ADJACENCY`):
 
-- `menu → playing` on first input (any keypress).
-- `playing → playing` for everything normal.
-- `playing → dead` on hazard AABB hit.
-- `dead → playing` after 12-tick respawn flash (instant respawn — **no level reset**, just snap player to the room's spawn point with `squashOffset = 0`).
-- `playing → levelComplete` on reaching the goal tile (pick a `trigger` entity).
-- `levelComplete → playing` immediately for `roomIndex + 1` (loop back to room 0 after room 4).
-- A brief `levelComplete` stay should still call `reduceGameState` 1× to render the "Cleared" text card (via `drawTextOutlined`), then auto-advance.
+- `menu → playing` via `{ type: 'start', level: roomIndex }` on first input (any keypress).
+- `playing → playing` for everything normal — send no event; `reduceGameState(gs, null, dt)` just advances `timeInState`. Self-transitions are illegal in the table; do not invent a `'tick'` event.
+- `playing → gameover` via `{ type: 'die' }` on a hazard.
+- `gameover → playing` via `{ type: 'retry' }` after a consumer-owned
+  12-tick respawn flash.
+- `playing → levelComplete` via `{ type: 'win' }` on reaching the goal tile (pick a `trigger` entity).
+- `levelComplete → playing` via `{ type: 'next' }` to advance `roomIndex` (loop back to room 0 after room 4). The reducer itself does not bump `roomIndex` — your game bumps its own `roomIndex` when it observes a legal `levelComplete → playing` transition, then recompiles the next room.
+- A brief `levelComplete` stay should still call `reduceGameState` 1× (with `dt` and no event) to render the "Cleared" text card (via `drawTextOutlined`), then emit `{ type: 'next' }`.
 
-Events: avoid hand-rolling `state.mode = X`; just `reduceGameState(state, { type: 'enter', mode: 'playing' })`.
+Use the shipped events: `start`, `die`, `retry`, `win`, `next`, `pause`,
+`resume`, and `quit`. Do not invent destination-mode events.
 
 ## 9. Game feel checklist (the juice — every item uses the engine)
 
 - [ ] Launch stretch + landing squash (`volumeScale` over `breathe`)
-- [ ] Hit-stop on **dash-into-wall** — detect as `state.abilities.dash.timer > 0 && state.events.hitWall` on the same tick, then `triggerHitStop` — the iconic Celeste moment
+- [ ] Hit-stop on **dash-into-wall** — narrow the union first:
+  `const dash = state.abilities.dash; const dashing = dash?.kind === 'dash' && dash.timer > 0`.
 - [ ] Hit-stop on death
 - [ ] Screen shake on dash-bonk and hard landings (`sineShake` + `shakeEnvelope` decaying)
-- [ ] Air control during jump (built into `dashAbility` — verify by feel)
+- [ ] Air control during jump (the kernel's horizontal movement uses `config.airControl`; verify by feel)
 - [ ] Dash trail particles (`spawn` 4 small white particles on each dash tick, culled by `cull`)
 - [ ] Phase-synced landing dust (`spawn` upward cone on landing)
 - [ ] Reduced-motion gate (`prefersReducedMotion`) renders room 1 and starts no loop
-- [ ] Coyote time + jump buffer (consumer-side 4-tick timers in `step` — the kernel's `jumpAbility` doesn't include these, so they're a thin consumer wrapper)
+- [ ] Coyote time + jump buffer from the shipped `jumpAbility`; do not duplicate them.
 - [ ] Spring-rod hair (`advanceSpringRod`) wags backward when moving, lifts during dash
 - [ ] Room title cards fade in over 0.6s (`createTweenState` + `easeOutCubic`); "Cleared" card uses `easeOutBack` for Celeste's bouncy entry
 
@@ -259,8 +363,11 @@ Unlock on first user gesture (one-shot `keydown`/`pointerdown` calling `audio.un
 - **Walk tap:** `playNoise(40, 'lowpass', 200, 0.12)` per `advanceFootPlant` event.
 - **Jump:** `playTone('sine', 200, 400, 80, 0.2)` (upward boing).
 - **Wall-jump:** `playTone('triangle', 300, 500, 60, 0.18)` (slightly different timbre).
-- **Wall-slide:** continuous soft noise, gated: `playNoise(20, 'highpass', 800, 0.05)` each tick while `state.abilities.wallSlide.sliding === true`. Start a smooth ramp on `events.startedWallSlide`; fade on the tick it goes false.
-- **Dash:** `playNoise(60, 'bandpass', 1500, 0.18, 80)` (short whoosh).
+- **Wall-slide:** narrow the ability-state union before reading its fields:
+  `const wall = state.abilities.wallSlide; const sliding = wall?.kind === 'wallSlide' && wall.sliding`.
+  While `sliding`, gate `playNoise(20, 'highpass', 800, 0.05)`; start a
+  smooth ramp on `events.startedWallSlide` and fade when it becomes false.
+- **Dash:** `playNoise(60, 'bandpass', 1500, 0.18)` (short whoosh).
 - **Dash-into-wall hit-stop:** `playTone('square', 120, 90, 70, 0.25)` (low thump).
 - **Land (hard):** `playNoise(80, 'lowpass', 300, 0.3)`; (soft): `playNoise(50, 'lowpass', 250, 0.18)`.
 - **Strawberry:** `playTone('triangle', 600, 1200, 60, 0.15)` (a two-note arpeggio: same recipe played twice ascending).
@@ -273,7 +380,7 @@ Unlock on first user gesture (one-shot `keydown`/`pointerdown` calling `audio.un
 src/
   main.ts              # boot: canvas, store, audio.unlock, loop.start()
   game/
-    state.ts           # World, RoomData, CollectibleSave, death counter
+    state.ts           # CelerockSave (collectibles: Record<roomId, CollectibleSave>, deaths), World, RoomData
     step.ts            # the fixed-step: input → controller.step → pickups → audio
     render.ts          # pure draw: parallax, tiles, hazzards, player art, UI
     rooms.ts           # 5 hand-designed room defs (LevelData[] with entities)
@@ -288,22 +395,27 @@ src/
 ## 12. Acceptance criteria
 
 1. Playable in the browser via `npm run dev` with keyboard (`←→`/`A D`, `Space` jump, `Shift` / `X` dash) **and** on-screen touch buttons on coarse-pointer devices (via `createTouchButtonSet`).
-2. All **5 rooms reachable**; each teaches one new technique (criteria 1–4 below). Same input sequence → same-room-geometry on every reload (no `Math.random` in level defs).
+2. All **5 rooms reachable**; each teaches one new technique from the room
+   progression in §5. Same input sequence → same-room-geometry on every reload
+   (no `Math.random` in level defs).
 3. At least **one room uses wall-jump** (room 4) and **one room uses dash** (room 5) **and** room 5 uses **both** (wall + dash past it).
-4. The **"dash-into-wall"** moment has audible hit-stop + visible shake — detect as `state.abilities.dash.timer > 0 && state.events.hitWall` on the same tick, then `triggerHitStop` + `sineShake` (decaying envelope).
+4. The **"dash-into-wall"** moment narrows the dash ability state before
+   reading `timer`, then applies hit-stop and shake.
 5. Strawberries persist across page reload via the engine's `save` module (`createLocalStorageSaveStorage` + `writeSave`).
-6. Death counter increments every respawn (in-memory for the bare demo; persisted via `save` is the named-stretch upgrade).
+6. Death counter increments every respawn and persists through the same save adapter.
 7. `prefersReducedMotion` renders room 1 statically and never calls `loop.start()`.
-8. **Zero hand-rolled reimplementations** of: fixed-step loop, AABB/tile collision for the player, jump-arc math, dash-frame timer, camera follow, locomotion phase, foot-plant detection, particle stepping, or text rendering. All come from `aicraft-engine`. The reviewer will grep for `requestAnimationFrame` outside `node_modules`, `Math.random` inside `step`, manual AABB resolvers, and hand-drawn tile renderers — none should appear in `src/`.
+8. **Zero duplicate engine systems**: no direct animation-frame loop, random
+   authoritative simulation, manual collision resolver, or duplicate tile-grid
+   traversal. Required tile/entity appearance callbacks are allowed.
 9. **No moonwalk.** Walking left faces left in the player. Enforced by the `ctx.scale(facing, 1)` mirror around the body draw (see §4). The reviewer will playtest.
 10. **No appendage blow-out.** The hair uses `advanceSpringRod`, never the raw `advanceSpringChain`. Grep for `advanceSpringChain` outside `node_modules` — must not appear.
 
 ## 13. Stretch goals (only after criteria 1–10)
 
-- **Optional 8-way dash.** Replace the kernel's `dashAbility` horizontal snap with a custom `dashAbility` variant that takes an aim direction (8-way) — append to `[...defaultPrecisionPipeline(), customDashAbility]` to swap in.
+- **Optional 8-way dash.** Replace the kernel's shipped `dashAbility` with a custom variant that takes an aim direction. Build a pipeline that filters out the existing `kind === 'dash'` ability and inserts `customDashAbility` at that same position; do not append a second dash processor.
 - **Badeline chase ghost (visual only):** render a colored "ghost" character whose input snapshot is the player's from N frames ago. Buffer the last `N` `PlatformerInput` snapshots in a ring; on each tick, replay the buffered input through a *second* `createPlatformerController` instance with a tinted `palette.feature` and render its `state.core.x/y`. No new physics code — the kernel does the work twice.
 - **Cosmetic hair colour unlocks** via `generateSkinVariants` + `createMemoryIAPAdapter` from the `cosmetics` + `iap` pillars. Skin variants change the hair's `palette.feature`; one unlockable per room-clear (a lavender, a cyan, an auburn). This is the **easiest possible cosmetics demo** and the cleanest bridge from Celerock to Embertomb's IAP surface.
-- **Per-room seeded palette** — `const palette = generatePalette(mulberry32(room.seed | 0))` so each room has its own dusk/snow/dusk2/snow2/dusk3 look.
+- **Per-room seeded palette** — `const palette = generatePalette(room.seed | 0)`.
 
 ---
 

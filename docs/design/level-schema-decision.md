@@ -1,5 +1,14 @@
 # Decision: Level Schema
 
+## 0.4.0 clarification: unified runtime compilation
+
+`compileLevel(level, { tileTypeMap })` captures each numeric tile
+classification once, exposes the captured `tileQuery`, and appends
+deterministically coalesced tile solids after entity-derived solids.
+Full-solid cells use a row-major greedy rectangle merge; passthrough cells
+merge horizontally within a row only. Omitting the classifier preserves the
+previous entity-only collision output.
+
 > Status: APPROVED for implementation.
 > Proposal: `docs/design/level-schema-proposal.md`.
 > Research: `docs/research/level-schema.md`.

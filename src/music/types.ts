@@ -195,6 +195,14 @@ export interface Sequencer {
   dispose(): void;
 }
 
+/** Defensive host adapter for externally advanced {@link NoteFire} events. */
+export interface NoteFirePlayer {
+  play(events: readonly NoteFire[]): void;
+  setVolume(value: number): void;
+  getVolume(): number;
+  dispose(): void;
+}
+
 /**
  * Sequencer tuning. All optional with proven defaults from
  * Chris Wilson's "A Tale of Two Clocks".

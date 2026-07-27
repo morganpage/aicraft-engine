@@ -6,20 +6,31 @@
 
 ## 0. You are building
 
-**Flipside** — a minimalist black-and-white explorer in the *VVVVVV* aesthetic: a small crewmate drifts through 4–6 connected single-screen rooms, rescuing one stranded crewmate and collecting one gold trinket, while a procedural chiptune plays in the background. The player has **no jump**. The only vertical move is a single button that **flips gravity up or down** — the player walks on ceilings the same way they walk on floors, and spike traps that are safe from below become lethal from above (that IS the puzzle). The feel target is **minimalist + atmospheric**: chiptune "Pushing Onwards" homage, no imported art, every sound synthesized from oscillators + noise, every room hand-designed and byte-identical across reloads.
+**Flipside** — a minimalist black-and-white explorer in the *VVVVVV* aesthetic: a small crewmate drifts through six connected single-screen rooms (A–F), rescuing one stranded crewmate and collecting one gold trinket, while a procedural chiptune plays in the background. The player has **no jump**. The only vertical move is a single button that **flips gravity up or down** — the player walks on ceilings the same way they walk on floors, and spike traps that are safe from below become lethal from above (that IS the puzzle). The feel target is **minimalist + atmospheric**: chiptune "Pushing Onwards" homage, no imported art, every sound synthesized from oscillators + noise, every room hand-designed and byte-identical across reloads.
 
 **Non-negotiable: build the entire game on top of `aicraft-engine`.** Do not hand-roll fixed-step loops, AABB collision, cameras, tile rendering, joypad input, particle bursts, the music sequencer, audio synthesis, or chiptune OSC graphs. If you find yourself writing a `requestAnimationFrame` accumulator, a gravity-flip velocity integrator, an `OscillatorNode` graph, a hand-drawn tile renderer, or a `Math.random()` in the simulation, stop and use the engine instead.
 
-The engine's **`music` module is the headline pillar of Flipside.** The same `(seed, config)` always produces the same `Pattern`; `advanceSequencer` is the pure determinism seam the loop calls every tick; `createSequencer` (Layer 4, host-touching) plays the same fired notes through the same `AudioAdapter` the SFX use — no second `AudioContext`. This is the only prompt in the catalog that makes procedural music a first-class citizen.
+The engine's **`music` module is the headline pillar of Flipside.** The fixed-step loop owns `SequencerState`, calls `advanceSequencer` exactly once per tick, and passes those exact events to `createNoteFirePlayer` using the shared `AudioAdapter`.
 
 ## 1. Tech stack & install
 
 ```bash
 npm create vite@latest flipside -- --template vanilla-ts
 cd flipside
-npm install aicraft-engine
-npm install -D vite
+npm install aicraft-engine@0.3.0
 ```
+
+> **Prep pin — 0.4.0 is pending.** The currently published npm release is
+> `0.3.0`, and this brief is being prepared against the in-development `0.4.0`
+> API. `0.3.0` does NOT yet resolve every export used below — signed
+> platformer gravity, the fixed-step `advanceSequencer` step-boundary fix,
+> `createNoteFirePlayer`, and the unified `compileLevel` that returns
+> `compiled.tileQuery` + tile-derived `staticSolids` all ship in `0.4.0`.
+> Pin `0.3.0` during release prep; switch the pin to `aicraft-engine@0.4.0`
+> only after `npm view aicraft-engine version` reports `0.4.0` and an
+> external Vite smoke build against the published tarball passes. Do not
+> assume `0.3.0` resolves the `0.4.0`-only symbols, and do not pre-pin
+> `0.4.0` before it exists on the registry.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -41,7 +52,7 @@ npm install -D vite
     spawn, step as stepParticles, sampleConeVelocity, createEmitter, stepEmitters,
     DEFAULT_GRAVITY_SCALE, DEFAULT_DRAG_SCALE,
     aabbOverlap, worldToTile, tileToWorld, tileRect,
-    type TileSolidityQuery,
+    type Rect, type TileSolidityQuery,
     linear, easeOutCubic, easeIn, easeInOut, createTweenState, advanceTween,
     createKeyboardAdapter, createTouchButton, createTouchButtonSet,
     createEdgeAccumulator, pressEdge, releaseEdge, pollEdge, orEdges,
@@ -56,8 +67,8 @@ npm install -D vite
 
     // ★ THE SHOWCASE — procedural chiptune step-sequencer (four-layer architecture)
     noteToFrequency, frequencyToNote, buildScale, SCALES,
-    secondsPerBeat, secondsPerStep, swingLongDuration,
-    generatePattern, advanceSequencer, createSequencer,
+    secondsPerBeat, swingLongDuration,
+    generatePattern, advanceSequencer, createNoteFirePlayer,
     DEFAULT_BPM, DEFAULT_ROOT_MIDI, DEFAULT_SCALE_OCTAVES,
     DEFAULT_STEPS_PER_BEAT, DEFAULT_STEPS_PER_PATTERN, DEFAULT_SWING,
     LOOKAHEAD_MS, SCHEDULE_AHEAD_S,
@@ -71,8 +82,9 @@ npm install -D vite
     PUZZLE_PLATFORMER, DEFAULT_PLATFORMER_CONFIG,
     DEFAULT_PLAYER_WIDTH, DEFAULT_PLAYER_HEIGHT,
     compileLevel, drawTileGrid, drawActor, drawLevelEntity, DEFAULT_ENTITY_PALETTE,
-    migrateLevel, validateLevel, createTileQuery, canonicalize, fnv1a,
+    LEVEL_VERSION, migrateLevel, validateLevel, canonicalize, fnv1a,
     type LevelData, type LevelEntity, type TileGrid, type EntityKind,
+    type PlatformerConfig, type PlatformerInput,
 
     // collectibles + save + (stretch) cosmetics + iap
     collect, hasCollected, derivePickups, DEFAULT_COLLECTIBLE_RECT,
@@ -83,16 +95,16 @@ npm install -D vite
     createMemoryIAPAdapter, createLocalStorageIAPAdapter, flushIAPEvents,
   } from 'aicraft-engine';
   ```
-  The published package only exposes the root `"."` entry — never deep-import subpaths like `aicraft-engine/music`; use the root barrel. Every named export above resolves today against `src/<module>/index.ts`.
+  The published package only exposes the root `"."` entry — never deep-import subpaths like `aicraft-engine/music`; use the root barrel. The import block above mirrors the in-development `0.4.0` root barrel; until `0.4.0` is published, verify each symbol against the installed tarball's root type declarations rather than against this repo's local `src/` (the npm contract is the published declaration surface, not the working tree).
 
 ## 2. Determinism & discipline rules (enforced by the engine — follow them)
 
 - **Fixed-step sim, variable render** via `createGameLoop({ fixedDt: 1/60, step, render })`. Poll input **exactly once per `step`**.
 - **No `Math.random()` in the simulation.** Use `mulberry32(zoneSeed)` → `nextInt` / `nextFloat` / `pick` for crewmate names, trinket sparkle counters, particle jitter. `Math.random` is OK only for purely decorative audio/visual side-effects that never feed back into game state.
 - **No `Date.now()` in the sim.** Time comes from `tick` or the loop's `dt`.
-- **Music is deterministic.** Same `(levelSeed, zoneId)` produces a byte-identical `Pattern` from `generatePattern`. The pure `advanceSequencer(state, dt, pattern)` seam is the engine's guarantee — your loop step **calls it every tick**, threading `state` through. `createSequencer` (Layer 4) consumes those fired notes; the chiptune you hear is the deterministic advance output rendered through `audio.playTone`. The wall-clock scheduling adds nothing the simulation can depend on.
+- **Music is deterministic.** Call `advanceSequencer` exactly once per fixed tick, assign its returned state, and pass only its returned events to `createNoteFirePlayer.play`.
 - **Defensive host access.** Anything touching `window`/`AudioContext`/`matchMedia`/`localStorage` goes through the engine's adapters (`createAudioAdapter`, `prefersReducedMotion`, `resizeCanvasToBackingStore`, `createLocalStorageSaveStorage`) — they're lazy, error-swallowing, no-op in Node.
-- **Reduced-motion gate.** If `prefersReducedMotion()` is true, render one static frame of room 1 and never call `loop.start()`. **Corollary:** `createSequencer` must not be called either. See §10.7.
+- **Reduced-motion gate.** If `prefersReducedMotion()` is true, render one static frame and create no audio adapter, note player, or game loop.
 - **Pure progression ops.** `collect` / `grantSkin` / `loadSave` return brand-new state objects; mirror their discipline (never mutate the player, room, or save in place).
 
 ## 3. Architecture — engine module → game system map
@@ -102,7 +114,7 @@ npm install -D vite
 | Game loop (60 Hz fixed) | `createGameLoop`, `DEFAULT_FIXED_DT` |
 | Keyboard + touch input, edge merging | `createKeyboardAdapter`, `createTouchButtonSet`, `orEdges` |
 | **Gravity-flip player controller (no jump)** | `createPlatformerController`, `createPlatformerState`, `stepPlatformer`, `PUZZLE_PLATFORMER` config + externally driven `gravitySign` (see §4) |
-| Tile render in each single-screen room | `compileLevel` → `drawTileGrid(ctx, room.tileGrid, dt, parallaxOffset(camera, 0.2))` |
+| Tile collision/render | `compileLevel(room, { tileTypeMap })`; `drawTileGrid(ctx, room.tiles, drawTile)` |
 | Spike hazard AABB | `aabbOverlap` against the player's rect (read from the kernel state) |
 | Camera (locked per room, ease tween on room entry) | `createCamera` + `updateCamera` + `createTweenState` / `easeOutCubic` for the brief pan |
 | **Gold trinket** + persistence | `collect`, `hasCollected`, `derivePickups`; `loadSave` / `writeSave` over `createLocalStorageSaveStorage` (key `'flipside:trinkets'`) |
@@ -113,18 +125,19 @@ npm install -D vite
 | Vector look + glow + text | `outlineRect`, `drawGlow`, `drawText`, `drawTextOutlined` |
 | Frame FSM | `createGameState`, `reduceGameState`, `isLegalTransition` |
 | Mono palette | `generatePalette`, `repairContrast` |
-| ★ **Procedural chiptune (THE SHOWCASE — see §10)** | Layer 1 `buildScale` / `SCALES`, Layer 2 `generatePattern(seed, config)`, Layer 3 `advanceSequencer(state, dt, pattern)` (the determinism seam), Layer 4 `createSequencer(audio, pattern, config)` (reuses the `AudioAdapter`, NO second `AudioContext`) |
+| ★ **Procedural chiptune (THE SHOWCASE — see §10)** | `generatePattern`; fixed-step `advanceSequencer`; `createNoteFirePlayer(audio)` |
 | Synthesized SFX (gravity-flip zap, trinket ping, death, door) | `createAudioAdapter` — `playTone('square', ...)` for the lead timbre the chiptune also uses |
 | Retina canvas + reduced-motion gate | `resizeCanvasToBackingStore`, `getDevicePixelRatio`, `prefersReducedMotion` |
 | Stretch — cosmetic skin variants + dev IAP | `cosmetics` (`generateSkinVariants`), `iap` (`createMemoryIAPAdapter`) |
 
 ## 4. The player — **no jump, gravity is the verb**
 
-The player is a chunky capsule drawn with `outlineRect`, two square eye dots that face the move direction, and a short `createSpringRod` antenna that whips when gravity flips. The key difference vs. Celerock/Embertomb: **no jumpAbility, no dashAbility, no wallSlideAbility — the only Y-axis input is a `gravitySign *= -1` swap.**
+The player is a chunky capsule drawn with `outlineRect`, two square eye dots
+that face the move direction, and a short spring-rod antenna. There are no
+ability processors; the only Y-axis input toggles the `1 | -1` gravity
+direction with an explicit ternary assignment.
 
-- **Physics layer.** Two clean paths — pick ONE and stick to it.
-
-  **Path A (recommended — kernel-driven)** keeps `stepPlatformer` in the loop and inverts the kernel's `gravity` field from your external `gravitySign` each tick. Collapse Path A into the boot block:
+- **Physics layer.** Use the signed-gravity kernel exclusively. Build both controllers once with an empty ability pipeline and keep one logical state:
   ```ts
   // 🔒 NO JUMP — Flipside's gravity flip IS the verb. Do not bind Space to input.jump.
   const FLIPPER_CONFIG: PlatformerConfig = {
@@ -135,26 +148,34 @@ The player is a chunky capsule drawn with `outlineRect`, two square eye dots tha
     airControl: 0.6,
     wallJumpVx: 0, wallJumpVy: 0,
   };
-  const controller = createPlatformerController(defaultPrecisionPipeline(), FLIPPER_CONFIG);
+  const downController = createPlatformerController([], FLIPPER_CONFIG);
+  const upController = createPlatformerController([], {
+    ...FLIPPER_CONFIG,
+    gravity: -FLIPPER_CONFIG.gravity,
+  });
   let state = createPlatformerState(spawnX, spawnY);
   let gravitySign: 1 | -1 = 1;
   // each fixed tick:
-  const flipped: PlatformerConfig = { ...FLIPPER_CONFIG, gravity: gravitySign * FLIPPER_CONFIG.gravity };
   const idleJump = { held: false, pressed: false, released: false };
-  const input: PlatformerInput = { moveX: edges.left ? -1 : edges.right ? 1 : 0, jump: idleJump, dash: null };
-  const { state: next } = controller.step(state, input, compiled.solids, dt);
+  const input: PlatformerInput = {
+    moveX: edges.left.held ? -1 : edges.right.held ? 1 : 0,
+    jump: idleJump,
+    dash: null,
+  };
+  const controller = gravitySign === 1 ? downController : upController;
+  const { state: next } = controller.step(state, input, compiled.staticSolids, dt);
   state = next;
   // on flip press AND |state.core.vy| < 80:
   if (flipEdge && Math.abs(state.core.vy) < 80) {
-    gravitySign *= -1;
-    state = { ...state, core: { ...state.core, vy: -gravitySign * 4 } };   // small kick
+    gravitySign = gravitySign === 1 ? -1 : 1;
   }
   ```
-
-  **Path B (lightweight — manual)** skips the kernel entirely: `Player = { x, y, vx, vy, w, h }` + `resolveAxisX` + `resolveAxisY` against a `TileSolidityQuery` built from `compiled.tileQuery`. On flip, swap `gravitySign`, set `vy = -gravitySign * 4`, and let the axis resolver handle the rest. Use this when you want maximum transparency on the gravity rule.
-
-  Either way: **Space / W / Up / the touch flip button binds ONLY to `gravitySign *= -1`.** LLM coding agents will default to "platformers have jumping" — this rule IS the mechanic. Reinforce with a code comment `// 🔒 NO JUMP`.
-- **Body render.** `outlineRect(ctx, cx − w/2, cy − h/2, w, h, palette.base, palette.outline)` + idle `breathe(tick, DEFAULT_BREATH)`. On gravity flip, drive `squashOffset` from `1.0 → 0` over 0.15 s via `createTweenState({ from: 1.0, to: 0, dur: 0.15 })` + `easeOutCubic` (volumePreserved via `volumeScale(squashOffset)`). The body flattens one frame, springs back — that's the tween-down.
+  **Space / W / Up / touch binds only to the polled gravity-flip edge.** Do not add a consumer gravity integrator or collision path.
+- **Body render.** Positive `volumeScale` offsets stretch vertically and
+  negative offsets squash vertically. On flip, create state with
+  `createTweenState()` and advance it using
+  `{ duration: 0.15, ease: easeOutCubic }`; map the normalized result from a
+  negative squash offset back to zero.
 - **Face.** Two `outlineRect` 2×2 eye dots above the body's midline. **Horizontal mirror only** (facing flips, gravity does NOT mirror vertically — Viridian's eye positions don't change when upside-down):
   ```ts
   ctx.save();
@@ -165,31 +186,55 @@ The player is a chunky capsule drawn with `outlineRect`, two square eye dots tha
   outlineRect(ctx, +1, -h + 6, 2, 2, palette.accent);   // right eye
   ctx.restore();
   ```
-- **Antenna.** One `createSpringRod` anchored at the head, `restDirection: { x: 0, y: -gravitySign }` (points away from the floor = away from gravity). Each tick: `antenna = advanceSpringRod(antenna, anchor, dt)` — on flip, the antenna whips to the other side. **Never** raw `advanceSpringChain`.
+- **Antenna.** Advance using scalar anchors and full config:
+  `antenna = advanceSpringRod(antenna, anchor.x, anchor.y, dt, {
+  ...DEFAULT_SPRING_ROD,
+  restDirection: { x: 0, y: -gravitySign },
+  })`.
 - **No footstep tap.** VVVVVV is silent during walking. Don't add `playNoise` for steps — the chiptune is the backdrop.
 
-## 5. World — 4–6 connected single-screen rooms
+## 5. World — six connected single-screen rooms (A–F)
 
-The VVVVVV structure: a **room graph** (each node a `LevelData`, each edge a cardinal direction door). Walking off one edge → arrive at the next room, camera lerps to the new screen over `0.25 s` (`easeOutCubic`), the player ports to the new room's matching edge spawn.
+The VVVVVV structure: a **room graph** of exactly six rooms labelled A–F (each node a `LevelData`, each edge a cardinal direction door). Room `A` is the overworld spawn; rooms `B`/`C` are connectors; room `D` holds the spike puzzle (§6); room `E` holds the trinket (§7); room `F` holds the crewmate rescue (§8). Walking off one edge → arrive at the next room, camera lerps to the new screen over `0.25 s` (`easeOutCubic`), the player ports to the new room's matching edge spawn.
 
 - **Room definition.** Each room is a `LevelData`; build with `compileLevel` and read the kernel-exposed `tileQuery`:
   ```ts
   const roomA: LevelData = {
-    version: 1, id: 'a', name: 'Overworld', seed: levelSeed,
-    width: 24, height: 14, tileSize: 32, tileGrid: grid,
+    version: LEVEL_VERSION, id: 'a', name: 'Overworld',
+    width: 768, height: 448, tileSize: 32,
+    spawn: { x: 64, y: 352 },
+    tiles: { data: grid, cols: 24, rows: 14, tileSize: 32 },
     entities: [
-      { id: 'sp_a_1', kind: 'spawn', x: 4, y: 11 },
-      { id: 'tr_a',   kind: 'collectible', x: 12, y: 2, props: { kind: 'gem' } },
-      { id: 'door_e', kind: 'decoration', x: 24, y: 7, props: { decoration: 'doorEast' } },
+      { id: 1, kind: 'spawn', rect: { x: 64, y: 352, width: 16, height: 24 }, props: {} },
+      { id: 2, kind: 'collectible', rect: { x: 384, y: 64, width: 16, height: 16 }, props: { kind: 'gem', persists: true } },
+      { id: 3, kind: 'decoration', rect: { x: 736, y: 224, width: 32, height: 32 }, props: { sprite: 'doorEast' } },
+      { id: 4, kind: 'exit', rect: { x: 736, y: 224, width: 32, height: 32 }, props: { isTrap: false, locked: false } },
     ],
+    nextEntityId: 5,
   };
-  const compiled = compileLevel(roomA);
-  const tileQuery: TileSolidityQuery = (tx, ty) => compiled.tileQuery(tx, ty);
+  const compiled = compileLevel(roomA, { tileTypeMap });
+  const tileQuery: TileSolidityQuery = compiled.tileQuery;
   ```
-- **Room graph.** Hand-authored. Typical layout: `A (overworld) → B (north)`, `A → C (east)`, `C → D (spike trap)`, `D → E (trinket)`, `E → F (rescue)`. Crossing `player.x + player.w ≥ room.width * tileSize − 1` triggers the door; `roomIndex++`, re-`compileLevel(nextRoom.data)`.
-- **Background.** `drawTiledParallax` at depth factors `PARALLAX_FAR = 0.15 / PARALLAX_MID = 0.4 / PARALLAX_NEAR = 0.75` — three layers of monochrome vector tiles (distant stars, dim bars, foreground dust). All drawn in `palette.outline` — the VVVVVV near-monochrome look.
-- **Tile render.** `drawTileGrid(ctx, compiled.tileGrid, dt, parallaxOffset(camera, 0.2), DEFAULT_ENTITY_PALETTE)` — the kernel's renderer reads your `tileGrid` directly. **Do not** hand-roll a tile traversal.
-- **Mono palette.** `generatePalette({ strategy: 'mono', baseLightness: 0.65, lightnessJitter: 0.05, chromaJitter: 0 })` — near-grayscale with controlled lightness jitter; `repairContrast(palette, { pair: 'base/outline', targetRatio: 7 })`. Same `zoneSeed` → same palette forever.
+- **Room graph.** Crossing `player.x + player.width >= room.width - 1`
+  triggers the door. Recompile every transitioned room with
+  `compileLevel(nextRoom, { tileTypeMap })`; top-level width is already pixels.
+- **Background.** `drawTiledParallax` at the exported depth factors `PARALLAX_FAR = 0.25 / PARALLAX_MID = 0.5 / PARALLAX_NEAR = 1.0` — three layers of monochrome vector tiles (distant stars, dim bars, foreground dust). All drawn in `palette.outline` — the VVVVVV near-monochrome look.
+- **Tile render.** `drawTileGrid(ctx, room.tiles, drawTile)`. The required
+  appearance callback is allowed; do not duplicate grid traversal.
+- **Restricted palette.** Use `generatePalette(zoneSeed, { strategy:
+  'analogous' })` for deterministic structure, then explicitly replace the
+  gameplay roles with grayscale values because generated `feature` chroma is
+  intentionally nonzero even when `baseChroma` is zero. Reserve gold as the
+  one deliberate exception for the trinket:
+  ```ts
+  const generated = generatePalette(zoneSeed, { strategy: 'analogous' });
+  const palette = {
+    ...generated,
+    base: '#d8d8d8', accent: '#888888', outline: '#111111',
+    background: '#f4f4f4', feature: '#d4af37',
+  };
+  ```
+  Do not invent unsupported `mono` or named-pair contrast options.
 
 ## 6. Hazards — spikes (the gravity-flip puzzle)
 
@@ -197,24 +242,42 @@ A **2-tile-row spike pit** sits in one room (call it room `D`). The pattern is: 
 
 - **Spike entity.** Add `'trap'` entities to the room's `LevelData`:
   ```ts
-  { id: 'spike_d_1', kind: 'trap', x: 8,  y: 12, props: { trap: 'spikes', facing: 'up' } },
-  { id: 'spike_d_2', kind: 'trap', x: 10, y: 12, props: { trap: 'spikes', facing: 'up' } },
-  { id: 'spike_d_3', kind: 'trap', x: 12, y: 12, props: { trap: 'spikes', facing: 'up' } },
+  { id: 10, kind: 'trap', rect: { x: 256, y: 384, width: 32, height: 32 }, props: { type: 'spikes', params: { facing: 'up' } } },
+  { id: 11, kind: 'trap', rect: { x: 320, y: 384, width: 32, height: 32 }, props: { type: 'spikes', params: { facing: 'up' } } },
+  { id: 12, kind: 'trap', rect: { x: 384, y: 384, width: 32, height: 32 }, props: { type: 'spikes', params: { facing: 'up' } } },
   ```
-- **Hazard AABB.** At boot, fold the `'trap'` entities whose `trap === 'spikes'` into `hazardRects: Rect[]` (use `tileRect(x, y, tileSize)` from the engine). Each fixed step:
+- **Hazard AABB.** Filter entities with
+  `entity.kind === 'trap' && entity.props.type === 'spikes'` and use each
+  entity’s pixel-space `rect` directly.
   ```ts
-  const playerRect: Rect = { x: state.core.x, y: state.core.y, w: state.core.width, h: state.core.height };
+  const playerRect: Rect = {
+    x: state.core.x, y: state.core.y,
+    width: state.core.width, height: state.core.height,
+  };
   for (const h of hazardRects) {
     if (aabbOverlap(playerRect, h)) {
-      // spike hits are resolution-aware — touching a spike pointing UP while falling is fatal,
-      // touching a spike pointing DOWN while flipped is also fatal. aabbOverlap handles both.
+      // aabbOverlap is a DIRECTION-BLIND, symmetric strict-AABB overlap
+      // test — it has no knowledge of gravity sign, player velocity, or
+      // which way a spike "faces". It returns true for ANY interior pixel
+      // overlap, regardless of flip state. The puzzle works because
+      // flipping changes which SURFACE (floor vs ceiling) the player walks
+      // on, and therefore whether the player's body overlaps the spike row
+      // at all — NOT because the hit detection changes with gravity.
       die();
       break;
     }
   }
   ```
-  (You do NOT need a per-axis spike test — VVVVVV's spike hitbox is symmetric, and `aabbOverlap` already returns true for either flip state.)
-- **Death.** `triggerHitStop(hitStop, 8)` for a freeze-frame flash, `sineShake` + `shakeEnvelope` (decay over 12 ticks, magnitude 4), particle burst via `spawn(player.x, player.y, { count: 12, speed: 6, life: 18, size: 3 })` + `sampleConeVelocity` upward-outward, `audio.playNoise(120, 'lowpass', 400, 0.3)`. FSM transitions `playing → dead` for **one fixed tick** (12 frames), then back to `playing` with the player respawned at the **current room's `spawn` entity position** — **no animation, instant snap**. No lives, no countdown.
+  (You do NOT need a per-axis or per-facing spike test — VVVVVV's spike
+  hitbox is a symmetric rect, and one `aabbOverlap` call covers both flip
+  states. The `props.params.facing` value on the trap entity is a
+  rendering/decoration hint only; the gameplay check ignores it. Note
+  `aabbOverlap` is *strict*: edges that merely touch do not count, so a
+  player resting exactly on a spike row's top edge is not killed until a
+  1px overlap appears.)
+- **Death.** Assign `hitStop = triggerHitStop(hitStop, 8)` and advance it by
+  one tick per fixed step. Use a consumer-owned 12-tick respawn phase; the
+  shipped FSM represents failure as `gameover`, then returns through `retry`.
 
 ## 7. Collectibles — the gold trinket
 
@@ -222,23 +285,36 @@ A single gold trinket sits in the rescue-room-adjacent area (room `E`). It persi
 
 - **Trinket entity.** Register as a `'collectible'` `LevelEntity` with `props.kind: 'gem'` (engine's `CollectibleKind` enum is `coin | gem | key` — `gem` is the gold single-pickup semantic):
   ```ts
-  { id: 'tr_e', kind: 'collectible', x: 18, y: 5, props: { kind: 'gem' } },
+  {
+    id: 1,
+    kind: 'collectible',
+    rect: { x: 576, y: 160, width: 16, height: 16 },
+    props: { kind: 'gem', persists: true },
+  },
   ```
 - **Per-tick `derivePickups`** — deterministic AABB, byte-identical for the same `(state, room, save)` on every reload:
   ```ts
-  const playerRect: PlayerRect = { x: state.core.x, y: state.core.y, w: state.core.width, h: state.core.height };
-  const { collected } = derivePickups(playerRect, compiled.collectibles, trinketSave);
+  const playerRect: Rect = {
+    x: state.core.x, y: state.core.y,
+    width: state.core.width, height: state.core.height,
+  };
+  const { collected } = derivePickups(playerRect, collectibleEntities, trinketSave);
   for (const id of collected) {
     trinketSave = collect(trinketSave, String(id));
-    writeSave(storage, 'flipside:trinkets', trinketSave);
+    writeSave(storage, trinketSave);
     audio.playTone('square', 1200, 1600, 90, 0.18);   // sharp trig "ping"
-    spawn(trinketX, trinketY, { count: 10, speed: 4, life: 22, size: 3 });
-    drawGlow(ctx, trinketX, trinketY, 6, palette.feature);
-    reduceGameState(fsm, { type: 'enter', mode: 'levelComplete' });
+    particles = [
+      ...particles,
+      ...spawn(trinketX, trinketY, { count: 10, speed: 4, life: 22, size: 3 }),
+    ];
   }
   ```
-- **Persistence.** Boot: `const trinketSave = loadSave(storage, 'flipside:trinkets') ?? { collected: [] }`. After each `collect`: `writeSave(...)`. The kernel does not need to know about collectibles — `derivePickups` keeps replays pure.
-- **Render.** Skip when `hasCollected(trinketSave, 'tr_e')` is true. Otherwise, draw a pulsing outline diamond via `outlineRect(..., 'ceil', palette.feature, palette.feature)` with a `drawGlow` ramped by `0.5 + 0.5 * Math.sin(tick / 18)` (decorative ratio — frame-only).
+- **Persistence.** Boot with
+  `const storage = createLocalStorageSaveStorage('flipside:trinkets')` and
+  `let trinketSave = loadSave(storage, { collected: [] as string[] })`.
+- **Render.** Skip when `hasCollected(trinketSave, '1')` is true. Rendering
+  and `drawGlow` occur only in the render phase. Use
+  `outlineRect(ctx, x, y, w, h, palette.feature, palette.outline, 'ceil')`.
 
 ## 8. NPCs — one crewmate to rescue
 
@@ -247,10 +323,19 @@ A single stranded crewmate sits in the final room (`F`). It does NOT block or mo
 ```ts
 const crewmateNames = ['Viridian', 'Verdigris', 'Victoria', 'Vermilion'];
 const crewmateName = pick(mulberry32((levelSeed ^ 0x5EA51DE) >>> 0), crewmateNames);
-// On overlap with the player:
-if (aabbOverlap(playerRect, crewmateRect)) {
-  drawText(ctx, `${crewmateName}: Thank you!`, playerX, playerY - 12, { ...DEFAULT_FONT, color: palette.feature });
-  if (rescueTimer++ > 60) reduceGameState(fsm, { type: 'enter', mode: 'levelComplete' });
+// Fixed-step update: this is the only place rescueTimer changes.
+const isRescuing = aabbOverlap(playerRect, crewmateRect);
+rescueTimer = isRescuing ? rescueTimer + 1 : 0;
+if (rescueTimer > 60) {
+  fsm = reduceGameState(fsm, { type: 'win' }, dt);
+}
+
+// Render phase: display only; never advance authoritative state here.
+if (isRescuing) {
+  drawText(ctx, `${crewmateName}: Thank you!`, playerX, playerY - 12, {
+    font: DEFAULT_FONT,
+    color: palette.feature,
+  });
 }
 ```
 
@@ -258,8 +343,11 @@ if (aabbOverlap(playerRect, crewmateRect)) {
 
 VVVVVV is screen-locked; the camera doesn't follow. Use the engine's `createCamera` for the locked target snap + `createTweenState` for the room-entry ease:
 
-- **Locked camera.** Each tick: `updateCamera(camera, { x: current.room.viewport.x, y: current.room.viewport.y }, bounds, viewport, DEFAULT_CAMERA)` — `DEFAULT_CAMERA.snapThreshold` collapses the lerp once close, so the camera sits exactly on the room's origin.
-- **Room-entry ease.** On door cross: `tweenState = createTweenState({ from: fromX, to: toX, dur: 0.25 })` + `easeOutCubic`. While the tween runs, hold the player at the doorway; on completion, port to the new room's matching edge spawn and unlock movement.
+- **Locked camera.** Pass a full target rectangle:
+  `camera = updateCamera(camera, { x: roomX, y: roomY, width: viewport.width, height: viewport.height }, bounds, viewport, DEFAULT_CAMERA)`.
+- **Room-entry ease.** Use `createTweenState()` plus
+  `advanceTween(tweenState, dt, { duration: 0.25, ease: easeOutCubic })`, then
+  interpolate `fromX`/`toX` with the returned normalized value.
 
 ## 10. ★ Procedural chiptune (THE showcase pillar)
 
@@ -274,7 +362,7 @@ A typical VVVVVV-like game ships an `.mp3` and calls `audio.play()`. A typical p
 | **1 — Theory** | MIDI ↔ Hz, scales, swing math | `music/theory.ts` | Pure (no host, no state) |
 | **2 — Pattern** | Seeded `Pattern` (bass+lead+harmony+perc) | `music/pattern.ts` via `generatePattern(seed, config)` | Pure (`mulberry32` only) |
 | **3 — Advance** | Walk the pattern; emit `NoteFire[]` | `music/advance.ts` via `advanceSequencer(state, dt, pattern)` | **Pure — the determinism seam** |
-| **4 — Host** | Play fired notes via the consumer's `AudioAdapter` | `music/sequencer.ts` via `createSequencer(audio, pattern, config)` | Host-touching (uses `audio.currentTime` + `setTimeout`); the carve-out |
+| **4 — Host** | Render external events through the shared `AudioAdapter` | `createNoteFirePlayer(audio)` | Host-only; owns no clock or simulation state |
 
 The engine guarantee you ship: **Layer 3 is the only thing gameplay logic depends on.** Same `(state, dt, pattern)` → same `NoteFire[]` `.events`, byte-identical, forever. The wall-clock scheduler in Layer 4 is the determinism carve-out (decorative audio output) — it never feeds back into game state.
 
@@ -285,17 +373,18 @@ import { SCALES, buildScale, noteToFrequency } from 'aicraft-engine';
 
 // VVVVVV's lead lives in C-minor pentatonic. Two octaves of it.
 const scale = buildScale(60, SCALES.minorPentatonic, 2);
-// [60, 63, 65, 67, 70, 72, 75, 77, 79, 82] — C3 minor pentatonic
+// [60, 63, 65, 67, 70, 72, 75, 77, 79, 82] — C4 minor pentatonic
 
 const freq = (midi: number) => noteToFrequency(midi);   // MIDI → Hz (12-tone ET)
 freq(60); // ~261.6256 (C4)
 ```
 
-`SCALES` ships six presets (`major`, `minor`, `majorPentatonic`, `minorPentatonic`, `blues`, `dorian`). Use `minorPentatonic` for the VVVVVV feel. You need `noteToFrequency` only when calling `audio.playTone` yourself — `createSequencer` resolves `NoteFire.midi` → Hz internally.
+`SCALES` ships six presets. Use `minorPentatonic`; `createNoteFirePlayer`
+converts each returned event's MIDI value to frequency.
 
 ### 10.3 Layer 2 — Pattern
 
-`generatePattern(seed, config)` produces a complete `Pattern` (bass+lead by default). Pass a full track config for the four-voice chiptune:
+`generatePattern(seed, config)` produces a complete `Pattern` (bass+lead by default). Pass a full track config for the three tonal voices; percussion is a separate noise lane driven by sequencer step boundaries:
 
 ```ts
 import { generatePattern, SCALES } from 'aicraft-engine';
@@ -319,7 +408,6 @@ const pattern: Pattern = generatePattern(levelSeed, {
     { name: 'harmony', waveform: 'triangle', volume: 0.10,
       rhythm: [true, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false],
       degreeMin: 1, degreeMax: 7, noteDurationSteps: 4 },
-    // D — percussion: schedule `audio.playNoise` from the same tick (see §10.6).
   ],
 });
 ```
@@ -333,79 +421,82 @@ The pattern is **JSON-serializable, pure**. Same `(levelSeed, config)` → same 
 Hold the playback state on your game store. Each fixed step, advance by the simulator's `dt` and commit the next state:
 
 ```ts
-import { advanceSequencer, secondsPerStep, type SequencerState, type NoteFire } from 'aicraft-engine';
+import { advanceSequencer, type SequencerState, type NoteFire } from 'aicraft-engine';
 
 let seqState: SequencerState = { elapsedS: 0, stepIndex: 0, loopCount: 0 };
 let firedNotes: NoteFire[] = [];   // last-tick buffer for any consumer (HUD, derives from the deterministic seam)
 
 // each fixed step (from the engine's createGameLoop callback):
-const stepDur = secondsPerStep(pattern.bpm, pattern.stepsPerBeat);
 const { next, events } = advanceSequencer(seqState, dt, pattern, { swing: 0.5 });
 seqState = next;
 firedNotes = events.slice();        // immutable — already a fresh array
+notePlayer.play(events);             // render every tonal event from this fixed-step window
 ```
 
 **This is the seam.** `advanceSequencer` is the only place that decides when a note fires. The keyboard input, the player's x position, the spike hit, the gravity-flip — none of them touch the music. Input → simulation → `advanceSequencer(state, dt, pattern)` → `events` → `audio.playTone(...)`. The cross-loop determinism test (§14.6) is the proof you shipped the split correctly.
 
 > ⚠ **`dt` units:** the engine's fixed-step loop gives you `dt = 1/60` per tick. Don't multiply by anything before passing to `advanceSequencer` — the function's window-crossing math expects `dt` in seconds. `secondsPerStep(bpm, stepsPerBeat)` returns the step duration in seconds, ready for both the advance layer and the host layer.
 
-### 10.5 Layer 4 — Host: `createSequencer` reuses the AudioAdapter (no second AudioContext)
+### 10.5 Layer 4 — Host: render the exact fixed-step events
 
 This is the consumer-facing entry point. **You pass your already-unlocked `AudioAdapter`**; the sequencer does not allocate a second `AudioContext`, does not require a separate user gesture, does not duplicate the master-gain chain:
 
 ```ts
-import { createAudioAdapter, createSequencer } from 'aicraft-engine';
+import { createNoteFirePlayer, type AudioAdapter } from 'aicraft-engine';
 
-// one AudioAdapter, shared by SFX and music:
-const audio = createAudioAdapter();
-// on first user gesture (keydown / pointerdown / touchstart):
-audio.unlock();
-
-// like Celerock's: one AudioContext, one master gain, both SFX and music through it
-const seq = createSequencer(audio, pattern, {
-  // all optional — proven defaults
-  swing: 0.5,
-  lookaheadMs: 25,                 // LOOKAHEAD_MS
-  scheduleAheadS: 0.1,             // SCHEDULE_AHEAD_S
-});
-seq.setVolume(0.5);                // independent of SFX volume (per decision §8)
-seq.play();
+// Call only after §10.7 has admitted the non-reduced-motion boot path.
+function wireMusicHost(audio: AudioAdapter) {
+  const notePlayer = createNoteFirePlayer(audio);
+  notePlayer.setVolume(0.5);
+  return notePlayer;
+}
 ```
 
-Internally:
-- The scheduler polls every `LOOKAHEAD_MS = 25` ms, pre-queueing any step whose boundary falls within `SCHEDULE_AHEAD_S = 0.1` s of `audio.currentTime`.
-- Each fired note becomes one `audio.playTone(waveform, freq, freq, gateMs, peak × musicVolume, whenS)` call. (`gateS` × 1000 = `gateMs`; `peak` × `musicVolume` = scaled peak.)
-- `setVolume(v)` scales `peak` multiplicatively — no extra gain node, no separate context.
-
-**This is the only correct path.** Calling `audio.playTone` manually on a `setInterval` to simulate a step sequencer would re-implement Layer 3 (and lose byte-identical determinism) — and you would reintroduce timing drift that the lookahead scheduler already solved (Chris Wilson's "A Tale of Two Clocks").
+The player owns no clock or pattern. It converts MIDI to frequency, gate
+seconds to milliseconds, scales peak by its music volume, and forwards
+`whenOffset`. Never also create `createSequencer` for this song.
 
 ### 10.6 Percussion via noise
 
-`createSequencer` plays oscillator tones. For a noise-based perc line, schedule `audio.playNoise(...)` yourself at the same step boundaries that Layer 3 fires — driven by the **same `stepIndex`**:
+Keep percussion as a fourth, independent rhythm lane. At this brief's fixed
+`1/60 s` step and 130 BPM, at most one music-step boundary can be crossed per
+simulation tick, so a change in `stepIndex` is the drum clock. Do not emit one
+drum hit per melodic event; that would couple percussion density to the number
+of sounding tonal tracks.
+
+> The block below **replaces** the tonal-only advance from §10.4 — it is the
+> same single `advanceSequencer` call, now bracketed by the drum-edge test.
+> Do NOT paste both blocks into `step.ts`; acceptance #12 requires exactly
+> one `advanceSequencer` call per fixed tick.
 
 ```ts
-const onSeqTick = (events: NoteFire[]) => {
-  for (const ev of events) {
-    audio.playNoise(60, 'bandpass', 1800, 0.18, ev.whenOffset);   // hi-hat-like hiss
-  }
-};
-// call from the same fixed-step site as advanceSequencer:
+const percussion = [true, false, true, false, true, false, true, false,
+                    true, false, true, false, true, false, true, false];
+const previousStep = seqState.stepIndex;
 const { next, events } = advanceSequencer(seqState, dt, pattern, { swing: 0.5 });
 seqState = next;
-onSeqTick(events);
+notePlayer.play(events);
+if (seqState.stepIndex !== previousStep &&
+    percussion[previousStep % percussion.length]) {
+  audio.playNoise(60, 'bandpass', 1800, 0.18, events[0]?.whenOffset ?? 0);
+}
 ```
 
-The drummer's clock IS the bass+lead's clock — derived from `stepIndex` of the pure sequencer state, never from `setInterval`. For richer grooves, mirror a per-track rhythm array and walk it identically.
+The drummer shares the sequencer's `stepIndex`, but remains a distinct fourth
+voice. It never uses `setInterval`.
 
-### 10.7 Reduced-motion → no `createSequencer`
+### 10.7 Reduced-motion → no audio host or loop
 
-If `prefersReducedMotion()` is true at boot, render room 1 statically and **do not call `createSequencer` or `loop.start`**:
+Check reduced motion before allocating any audio host. If it is active, render
+once and create neither the audio adapter, note player, nor loop:
 
 ```ts
 if (prefersReducedMotion()) {
-  renderStaticFrame(roomA, camera);           // one frame; no audio scheduler, no loop
+  renderStaticFrame(roomA, camera); // one frame; no audio host, scheduler, or loop
 } else {
-  seq.play();
+  const audio = createAudioAdapter();
+  const notePlayer = wireMusicHost(audio);
+  installAudioUnlockHandlers(audio);
   loop.start();
 }
 ```
@@ -417,20 +508,20 @@ The pickup room (`E`) and rescue room (`F`) may have different `levelSeed` salts
 ```ts
 // per-room pattern regen on door cross:
 const pattern: Pattern = generatePattern((levelSeed ^ currentRoom.seedSalt) >>> 0, patternConfig);
-seq.stop(); seq.dispose();
-seq = createSequencer(audio, pattern, { swing: 0.5 });
-seq.setVolume(0.5); seq.play();
+seqState = { elapsedS: 0, stepIndex: 0, loopCount: 0 };
 ```
 
 ## 11. Game feel (every item uses the engine)
 
-- [ ] **Gravity flip tween-down**: 0.15 s body-squash then spring back via `volumeScale(squashOffset)` over `createTweenState({ from: 1.0, to: 0, dur: 0.15 })` + `easeOutCubic`. Antenna whips (one `advanceSpringRod`).
+- [ ] **Gravity flip tween-down**: advance a valid `TweenState`/`TweenConfig`
+  pair and map its normalized value from a negative squash offset to zero.
 - [ ] **Hit-stop on spike death**: `triggerHitStop(hitStop, 8)` for the freeze-frame flash.
 - [ ] **Screen shake on death**: `sineShake + shakeEnvelope` decay envelope for 12 ticks, magnitude 4.
-- [ ] **Instant respawn**: snap player to current room's `spawn` entity, no lives, no animation. The brief `dead` state lasts 12 frames purely for the shake + flash.
+- [ ] **Instant respawn**: use a consumer-owned 12-tick respawn counter while
+  the shipped FSM is in `gameover`, then send `{ type: 'retry' }`.
 - [ ] **Trinket sparkle on collect**: `spawn` 10 small particles outward + `drawGlow` burn-out (one frame).
 - [ ] **Room-entry camera ease**: 0.25 s `easeOutCubic` position tween (held player position until complete).
-- [ ] **Reduced-motion gate** (`prefersReducedMotion`) renders room 1 and starts no `seq.play()`, no `loop.start()`.
+- [ ] **Reduced-motion gate** (`prefersReducedMotion`) renders room 1 and creates no audio adapter, note player, or loop.
 - [ ] **Mono parallax background** (`drawTiledParallax`, 3 layers far/mid/near).
 - [ ] **Eye dots face** the move direction (mandatory `ctx.scale(facing, 1)` mirror). No moonwalk.
 
@@ -457,34 +548,41 @@ src/
     state.ts         # Player, Room[], TrinketSave, SequencerState, FSM
     step.ts          # the fixed-step: input → controller → pickups → death → music advance
     render.ts        # parallax → tiles → entities → player art → text
-    rooms.ts         # the 4–6 hand-authored LevelData rooms
+    rooms.ts         # the six hand-authored LevelData rooms (A–F)
     player.ts        # player input → flip + walk; cheap render of body + eyes + antenna
     hazards.ts       # spike AABB check + die()
     collectibles.ts  # trinket: derivePickups → collect → writeSave
     npcs.ts          # crewmate render + drawText line
-  music.ts           # pattern config + per-zone regen; calls advanceSequencer + createSequencer
+  music.ts           # pattern config + advanceSequencer + createNoteFirePlayer
   audio.ts           # createAudioAdapter + the SFX recipe helpers (gravity-flip zap, etc.)
   save.ts            # createLocalStorageSaveStorage + the trinket key
 ```
 
 ## 14. Acceptance criteria
 
-1. Playable in browser via `npm run dev` with **keyboard (←→ move, Space / W / Up to flip gravity)** + on-screen touch buttons (`createTouchButtonSet`) — both routes route to `gravitySign *= -1` and **never** to jump.
-2. At least **4 connected single-screen rooms**, hand-authored as `LevelData`, with at least **1 room demonstrating the gravity-flip-as-puzzle** (spikes on the floor; flip to the ceiling to walk across).
+1. Playable in browser via `npm run dev`; keyboard and touch flip with
+   `gravitySign = gravitySign === 1 ? -1 : 1` and never trigger jump.
+2. **Six connected single-screen rooms (A–F)**, hand-authored as `LevelData`, with at least **1 room demonstrating the gravity-flip-as-puzzle** (spikes on the floor; flip to the ceiling to walk across).
 3. **One gold trinket** collected in room `E` via `derivePickups` → `collect`; persists across page reload via `createLocalStorageSaveStorage` + `writeSave` + a `'flipside:trinkets'` save key.
 4. **One crewmate rescue** in room `F`. The crewmate's name is generated once via `pick(rng, ['Viridian', 'Verdigris', 'Victoria', 'Vermilion'])` driven by `levelSeed ^ 0x5EA51DE`. The name is displayed via `drawText` on screen overlap.
-5. **Procedural chiptune plays in the background**, generated from `generatePattern(levelSeed, PatternGenConfig)` and advanced every fixed step via `advanceSequencer(seqState, dt, pattern)`. The host adapter is `createSequencer(audio, pattern, { swing: 0.5 })` — reuses the existing `audio` `AudioAdapter`, NO second `AudioContext`. Different `(levelSeed)` produces a different melody byte-for-byte (compare `pattern.tracks[x].patterns[y][z]` across runs).
-6. **Strict determinism in the sequencer.** The first 16 `NoteFire`s emitted by `advanceSequencer` over `t ∈ [0, 0.5] s` are byte-identical across reloads given the same `levelSeed`. (Acceptance test: hash → serialize → string-compare against a snapshot saved alongside the seed.)
-7. Death on spike → `triggerHitStop(hitStop, 8)` freeze-frame → `sineShake` + `shakeEnvelope` → instant respawn at the current room's `spawn` entity (NO animation, NO lives). FSM goes `playing → dead` for ~12 fixed ticks then `dead → playing`.
-8. `prefersReducedMotion()` renders room 1 statically and **does NOT call `seq.play()` or `loop.start()`**.
-9. **Zero hand-rolled reimplementations** — grep must return zero matches in `src/` for: `requestAnimationFrame`, `Math.random` inside `step`, manual AABB collision outside `aabbOverlap` / `resolveAxis*` / `resolveTile*`, manual jump-arc math (anything reading `jumpState`), manual gravity integrator outside `state.core.vy`, hand-drawn tile renderers (anything iterating over `tileGrid` for visual draw — `drawTileGrid` is the only path), **manual chiptune synthesis (no raw `OscillatorNode` outside `createSequencer` / `audio.playTone`)**, hand-rolled parallax (`drawTiledParallax` is the only path).
+5. **Procedural chiptune plays in the background**, generated by `generatePattern`, advanced exactly once per fixed step, and rendered from that exact `NoteFire[]` by `createNoteFirePlayer(audio)`.
+6. **Strict determinism in the sequencer.** Every `NoteFire` emitted by `advanceSequencer` over the fixed window `t ∈ [0, 2.0] s` is byte-identical across reloads given the same `levelSeed`, and the window emits at least one event. (Acceptance test: serialize → string-compare against a snapshot saved alongside the seed.)
+7. Death on spike assigns hit-stop, enters shipped `gameover` via `die`, waits
+   a consumer-owned 12-tick flash, snaps to spawn, then sends `retry`.
+8. `prefersReducedMotion()` is checked before audio setup, renders room 1 statically, and creates no audio adapter, note player, or loop.
+9. **Zero hand-rolled reimplementations** — no direct animation-frame loop,
+   random authoritative simulation, duplicate AABB/tile traversal, consumer
+   gravity integrator, raw WebAudio graph, or duplicate parallax system.
+   Required `drawTileGrid` and `drawTiledParallax` appearance callbacks are allowed.
 10. **No moonwalk.** Horizontal `ctx.scale(facing, 1)` mirror is wrapped around the body + eye-dot draw — walking left faces left. Gravity flip does NOT multiply the render by `gravitySign` (no vertical mirror — VVVVVV's character does not visually invert, only the floor/ceiling detection swaps).
 11. **Use `playTone('square', ...)` for the lead track** AND for the gravity-flip SFX — the chiptune sound and the gameplay feedback sound are recognised as the same voice. The reader should be able to hear the gameplay's gravity-flip blending into the music.
 12. **`step` calls `advanceSequencer` exactly once per fixed tick.** Grep `advanceSequencer` — it should appear once, in `step.ts`, called in the same place as `controller.step(state, input, solids, dt)`.
 
 ## 15. Stretch goals (only after criteria 1–12)
 
-- **No-flip zones**: some rooms where `gravitySign` is locked (e.g. the trinket room is always orientation-1; spikes from the underside won't help). Add a `lockGravity: boolean` flag on `LevelData` and guard the flip handler.
+- **No-flip zones**: wrap level data in a consumer-owned room descriptor such
+  as `{ data: LevelData; lockGravity: boolean }`; do not add unsupported fields
+  to `LevelData`. Guard the flip handler using the descriptor's flag.
 - **V-mode visual only**: a faint vertical "checkpoint line" drawn with `outlineRect` (no time trial, no scoring — pure flourish).
 - **Music-zone palette tie-in**: each zone's `levelSeed` drives BOTH the `generatePalette` (with a per-zone tint) AND the `generatePattern` seed. Listen and watch swap together.
 - **Cosmetic palette skin variants** via `generateSkinVariants` + `createMemoryIAPAdapter` — violet / amber / celadon monochrome variants unlock on trinket pickup. The current `palette` becomes the unlocked variant via `equipSkin(cosmeticSave, variantId)`.
@@ -492,4 +590,4 @@ src/
 
 ---
 
-**Build order suggestion:** loop + input + a player capsule that walks L/R on a flat-floor single screen (criterion 1) → `compileLevel` + `drawTileGrid` rendering that screen (criterion 2 base) → gravity-flip mechanic: external `gravitySign` + path-A kernel branch, demo on a ceiling (criterion 2 puzzle section) → 4 rooms connected by edge cells + camera ease (criteria 2 + 4) → trinket via `derivePickups` + `save` (criterion 3) → crewmate via `pick` + `drawText` (criterion 4) → **procedural music (THE long step): theory (`buildScale`) → pattern (`generatePattern`) → advance (`advanceSequencer` in `step`) → host (`createSequencer` reusing `audio`) → per-zone regen on room change** (criteria 5 + 6 + 11 + 12) → spike hazards + death + respawn + `prefersReducedMotion` gate (criteria 7–9) → polish (criteria 10 + 12). Get the gravity flip right before breadth — that is the mechanic.
+**Build order suggestion:** loop/input → unified level compilation/render → two signed empty-pipeline controllers → rooms/camera → collectibles/save → fixed-step music with `createNoteFirePlayer` → hazards/reduced-motion → polish.
