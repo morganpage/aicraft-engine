@@ -7,6 +7,7 @@
 import { safeHex, shade } from '../primitives/color';
 import { visualChannel } from '../rng/visual-seed';
 import type {
+  BuiltinEdgeDetail,
   BuiltinSurfaceDetail,
   TerrainMaterialInput,
   TerrainPalette,
@@ -27,6 +28,9 @@ export interface NormalizedTerrainMaterial {
   readonly surfaceDetail: BuiltinSurfaceDetail;
   readonly detailDensity: number;
   readonly detailScale: number;
+  readonly edgeDetail: BuiltinEdgeDetail;
+  readonly edgeDensity: number;
+  readonly edgeScale: number;
 }
 
 export interface TerrainMaterialTable {
@@ -36,6 +40,10 @@ export interface TerrainMaterialTable {
 
 const DETAILS: ReadonlySet<string> = new Set([
   'none', 'mortar', 'cracks', 'rivulets', 'rivets', 'crystal',
+]);
+
+const EDGES: ReadonlySet<string> = new Set([
+  'none', 'chipped', 'rocky', 'beveled', 'grass',
 ]);
 
 function finiteClamp(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -60,6 +68,9 @@ export function normalizeTerrainMaterial(
   const detail = DETAILS.has(input.surfaceDetail ?? '')
     ? input.surfaceDetail as BuiltinSurfaceDetail
     : 'none';
+  const edgeDetail = EDGES.has(input.edgeDetail ?? '')
+    ? input.edgeDetail as BuiltinEdgeDetail
+    : 'none';
   return Object.freeze({
     [normalized]: true as const,
     id,
@@ -72,6 +83,9 @@ export function normalizeTerrainMaterial(
     surfaceDetail: detail,
     detailDensity: finiteClamp(input.detailDensity, 0.28, 0, 1),
     detailScale: finiteClamp(input.detailScale, 1, 0.25, 4),
+    edgeDetail,
+    edgeDensity: finiteClamp(input.edgeDensity, 0.38, 0, 1),
+    edgeScale: finiteClamp(input.edgeScale, 1, 0.5, 4),
   });
 }
 
@@ -94,17 +108,33 @@ export function createTerrainMaterialTable(
 export const RUINS_TERRAIN_MATERIAL = normalizeTerrainMaterial({
   id: 'ruins',
   palette: { fill: '#735846', top: '#b49872', side: '#594033', outline: '#241b1c', detail: '#49352c' },
-  surfaceDetail: 'mortar',
+  edgeDetail: 'chipped',
 });
 
 export const CAVERN_TERRAIN_MATERIAL = normalizeTerrainMaterial({
   id: 'cavern',
   palette: { fill: '#51445d', top: '#8a7891', side: '#3b3047', outline: '#1c1724', detail: '#32283d', accent: '#bca8cb' },
-  surfaceDetail: 'cracks',
+  edgeDetail: 'rocky',
 });
 
 export const MECHANICAL_TERRAIN_MATERIAL = normalizeTerrainMaterial({
   id: 'mechanical',
   palette: { fill: '#52616b', top: '#9dabb0', side: '#36434d', outline: '#172027', detail: '#26333b', accent: '#d7a84b' },
-  surfaceDetail: 'rivets',
+  edgeDetail: 'beveled',
+});
+
+export const OUTDOOR_TERRAIN_MATERIAL = normalizeTerrainMaterial({
+  id: 'outdoor',
+  palette: {
+    fill: '#765035',
+    top: '#6f9f46',
+    side: '#422c20',
+    outline: '#251c17',
+    detail: '#513722',
+    accent: '#9bc764',
+  },
+  topThickness: 4,
+  sideDepth: 5,
+  edgeDetail: 'grass',
+  edgeDensity: 0.72,
 });

@@ -95,6 +95,20 @@ export type BuiltinSurfaceDetail =
   | 'rivets'
   | 'crystal';
 
+/**
+ * Procedural treatment applied only to exposed tile silhouettes.
+ *
+ * Unlike {@link BuiltinSurfaceDetail}, these treatments never place marks in
+ * the terrain body. They decorate a connected mass without revealing its
+ * underlying cell grid.
+ */
+export type BuiltinEdgeDetail =
+  | 'none'
+  | 'chipped'
+  | 'rocky'
+  | 'beveled'
+  | 'grass';
+
 /** Loose author-facing terrain material. Normalize once before drawing. */
 export interface TerrainMaterialInput {
   readonly id: string;
@@ -106,6 +120,9 @@ export interface TerrainMaterialInput {
   readonly surfaceDetail?: BuiltinSurfaceDetail;
   readonly detailDensity?: number;
   readonly detailScale?: number;
+  readonly edgeDetail?: BuiltinEdgeDetail;
+  readonly edgeDensity?: number;
+  readonly edgeScale?: number;
 }
 
 export type TerrainRectRole = 'solid' | 'passthrough' | 'moving' | 'hazard';

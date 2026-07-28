@@ -970,15 +970,18 @@ dependency; material normalization and drawing are Phase 2.
 | `TerrainRectExposure` | type | Exposed spans for top/right/bottom/left edges | `src/terrain/types.ts` |
 | `ComputeRectExposureOptions` | type | Optional family connector and touching epsilon | `src/terrain/types.ts` |
 | `computeRectExposures(rects, options?)` | function | Order-independent, family-scoped static edge exposure preparation | `src/terrain/rect-exposure.ts` |
-| `TerrainMaterialInput`, `TerrainPalette` | interfaces | Loose author-facing material and palette inputs | `src/terrain/types.ts` |
+| `TerrainMaterialInput`, `TerrainPalette` | interfaces | Loose author-facing material, palette, surface-detail, and edge-detail inputs | `src/terrain/types.ts` |
+| `BuiltinEdgeDetail` | type | Built-in exposed-edge treatments: none, chipped, rocky, beveled, or grass | `src/terrain/types.ts` |
 | `NormalizedTerrainMaterial` | branded interface | Validated, fully resolved material accepted by draw APIs | `src/terrain/material.ts` |
 | `normalizeTerrainMaterial(input)` | function | Validate colors, clamp geometry/detail values, and resolve the hot-path channel id | `src/terrain/material.ts` |
 | `TerrainMaterialTable` | opaque interface | Prepared numeric tile-value to normalized-material lookup | `src/terrain/material.ts` |
 | `createTerrainMaterialTable(entries)` | function | Normalize a complete material table once at setup | `src/terrain/material.ts` |
-| `RUINS_TERRAIN_MATERIAL`, `CAVERN_TERRAIN_MATERIAL`, `MECHANICAL_TERRAIN_MATERIAL` | constants | Built-in example materials with distinct structural treatments | `src/terrain/material.ts` |
+| `RUINS_TERRAIN_MATERIAL`, `CAVERN_TERRAIN_MATERIAL`, `MECHANICAL_TERRAIN_MATERIAL`, `OUTDOOR_TERRAIN_MATERIAL` | constants | Built-in example materials with plain interiors and distinct exposed-edge treatments | `src/terrain/material.ts` |
 | `TerrainDetailRenderer`, `TerrainDetailContext` | types | Seeded per-surface extension contract | `src/terrain/surface-detail.ts` |
 | `drawBuiltinTerrainDetail(ctx, detail)` | function | Mortar, cracks, rivulets, rivets, and crystal detail dispatcher | `src/terrain/surface-detail.ts` |
-| `drawTerrainTiles(ctx, grid, options)` | function | Culled connected-tile renderer with exposed caps, sides, silhouettes, and stable details | `src/terrain/tile-renderer.ts` |
+| `TerrainEdgeDetailRenderer`, `TerrainEdgeDetailContext` | types | Seeded exposed-silhouette extension contract | `src/terrain/edge-detail.ts` |
+| `drawBuiltinTerrainEdgeDetail(ctx, detail)` | function | Chipped stone, rocky, beveled, and grass edge dispatcher | `src/terrain/edge-detail.ts` |
+| `drawTerrainTiles(ctx, grid, options)` | function | Culled seamless connected-tile renderer with exposed caps, undersides, and stable edge treatments | `src/terrain/tile-renderer.ts` |
 | `TerrainRectRole` | type | `solid`, `passthrough`, `moving`, or `hazard` rectangle role | `src/terrain/types.ts` |
 | `drawTerrainRect(ctx, rect, options)` | function | Span-aware role renderer, including mechanical and pointed hazard silhouettes | `src/terrain/rect-renderer.ts` |
 
@@ -1000,6 +1003,7 @@ dependency; material normalization and drawing are Phase 2.
 | `RUINS_LEVEL_THEME` | constant | Warm masonry example theme | `src/platformer/themes/ruins.ts` |
 | `CAVERN_LEVEL_THEME` | constant | Cool rock-and-vein example theme | `src/platformer/themes/cavern.ts` |
 | `MECHANICAL_LEVEL_THEME` | constant | Steel plate example theme | `src/platformer/themes/mechanical.ts` |
+| `OUTDOOR_LEVEL_THEME` | constant | Grass-topped earth example theme | `src/platformer/themes/outdoor.ts` |
 | `drawThemedLevelEntity(ctx, resolved, frame, options)` | function | Semantic exits, collectibles, traps, and play/edit marker behavior | `src/platformer/themed-entity-renderer.ts` |
 | `DrawThemedLevelEntityOptions` | interface | Theme identity and entity-palette input for semantic fallbacks | `src/platformer/themed-entity-renderer.ts` |
 | `drawRuinsDust` | layer callback | Sparse stateless dust recipe with fixed reduced-motion output | `src/platformer/atmosphere-recipes.ts` |

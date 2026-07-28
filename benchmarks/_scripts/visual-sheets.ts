@@ -325,9 +325,10 @@ function renderTopologySheet(): Canvas {
 
 function renderScaleSheet(): Canvas {
   const sizes = [8, 16, 32] as const;
+  const treatments = ['fallback', 'cavern', 'outdoor'] as const;
   const panelW = TILE_ROOM_VIEW_W;
   const panelH = 300;
-  const width = GUTTER * 2 + panelW * 2;
+  const width = GUTTER * 2 + panelW * treatments.length;
   const height = HEADER_H + (LABEL_H + panelH + GUTTER) * sizes.length + GUTTER;
   const canvas = createCanvas(width, height);
   const ctx = ctx2d(canvas);
@@ -338,7 +339,7 @@ function renderScaleSheet(): Canvas {
     ctx,
     width,
     'Scale sheet — the same topology at 8px, 16px, and 32px tiles',
-    'Review question 3: does any surface detail become noise at small scale? Left column fallback, right column production terrain. Same camera origin in tile units at every size.',
+    'Fallback, Cavern edge treatment, and Outdoor grass/mud. Same camera origin in tile units at every size.',
   );
 
   sizes.forEach((size, i) => {
@@ -347,8 +348,8 @@ function renderScaleSheet(): Canvas {
     const y = HEADER_H + GUTTER + i * (LABEL_H + panelH + GUTTER);
     const camera = clampCameraToLevel(4 * size, 18 * size, level, panelW, panelH);
 
-    (['fallback', 'cavern'] as const).forEach((treatment, col) => {
-      const x = GUTTER + col * (panelW + GUTTER) - (col === 1 ? GUTTER : 0);
+    treatments.forEach((treatment, col) => {
+      const x = GUTTER + col * (panelW + GUTTER) - (col > 0 ? GUTTER : 0);
       drawPanelLabel(
         ctx,
         x,
@@ -377,7 +378,7 @@ function renderTreatmentCompare(): Canvas {
   const panelW = TILE_ROOM_VIEW_W;
   const panelH = TILE_ROOM_VIEW_H;
   const scenes = [playground, generatedRoom, topologyRoom];
-  const treatments = ['fallback', 'ruins', 'cavern', 'mechanical'] as const;
+  const treatments = ['fallback', 'ruins', 'cavern', 'mechanical', 'outdoor'] as const;
   const width = GUTTER * (treatments.length + 1) + panelW * treatments.length;
   const height = HEADER_H + (LABEL_H + panelH + GUTTER) * scenes.length + GUTTER;
   const canvas = createCanvas(width, height);
@@ -389,7 +390,7 @@ function renderTreatmentCompare(): Canvas {
     ctx,
     width,
     'Treatment comparison — identical geometry, identical camera, only the renderer changes',
-    '§9.2. Fallback, Ruins, Cavern, Mechanical. Geometry, player, camera, and entity list are identical across columns.',
+    'Fallback, Ruins, Cavern, Mechanical, Outdoor. Geometry, player, camera, and entity list are identical across columns.',
   );
 
   scenes.forEach((scene, i) => {

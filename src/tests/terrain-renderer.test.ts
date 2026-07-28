@@ -7,6 +7,7 @@ import {
   createTerrainMaterialTable,
   drawTerrainRect,
   drawTerrainTiles,
+  OUTDOOR_TERRAIN_MATERIAL,
 } from '../terrain';
 import type { TileGrid } from '../level/types';
 
@@ -67,6 +68,71 @@ describe('terrain renderers', () => {
     for (let i = 3; i < pixels.length; i += 4) expect(pixels[i]).toBe(255);
   });
 
+  it('draws connected tiles as one seamless lit mass without outline pixels', () => {
+    const canvas = createCanvas(32, 32);
+    const ctx = canvas.getContext('2d');
+    const connected: TileGrid = {
+      cols: 2,
+      rows: 2,
+      tileSize: 16,
+      data: [1, 1, 1, 1],
+    };
+    drawTerrainTiles(ctx as unknown as CanvasRenderingContext2D, connected, {
+      visualSeed: 1,
+      view: { x: 0, y: 0, width: 32, height: 32 },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({
+        1: {
+          id: 'seamless',
+          palette: {
+            fill: '#445566',
+            top: '#88aa77',
+            side: '#223344',
+            outline: '#ff00ff',
+          },
+          topThickness: 3,
+          sideDepth: 4,
+        },
+      }),
+      connections: createTerrainConnectionTable(connected, (a, b) => a === b),
+    });
+
+    const rgba = (x: number, y: number): readonly number[] =>
+      [...ctx.getImageData(x, y, 1, 1).data];
+    expect(rgba(15, 0)).toEqual([136, 170, 119, 255]);
+    expect(rgba(16, 0)).toEqual([136, 170, 119, 255]);
+    expect(rgba(15, 15)).toEqual([68, 85, 102, 255]);
+    expect(rgba(16, 16)).toEqual([68, 85, 102, 255]);
+    expect(rgba(15, 31)).toEqual([34, 51, 68, 255]);
+    expect(rgba(16, 31)).toEqual([34, 51, 68, 255]);
+
+    const pixels = ctx.getImageData(0, 0, 32, 32).data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      expect([pixels[i], pixels[i + 1], pixels[i + 2]]).not.toEqual([255, 0, 255]);
+    }
+  });
+
+  it('keeps the outdoor terrain body plain between its grass and dark mud edges', () => {
+    const canvas = createCanvas(20, 24);
+    const ctx = canvas.getContext('2d');
+    ctx.translate(2, 4);
+    const earth: TileGrid = { cols: 1, rows: 1, tileSize: 16, data: [1] };
+    drawTerrainTiles(ctx as unknown as CanvasRenderingContext2D, earth, {
+      visualSeed: 7,
+      view: { x: 0, y: 0, width: 16, height: 16 },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({ 1: OUTDOOR_TERRAIN_MATERIAL }),
+      connections: createTerrainConnectionTable(earth, (a, b) => a === b),
+    });
+
+    const middle = ctx.getImageData(10, 12, 1, 1).data;
+    expect([...middle]).toEqual([118, 80, 53, 255]);
+    const top = ctx.getImageData(10, 4, 1, 1).data;
+    expect([...top]).toEqual([111, 159, 70, 255]);
+    const bottom = ctx.getImageData(10, 19, 1, 1).data;
+    expect([...bottom]).toEqual([66, 44, 32, 255]);
+  });
+
   it('isolates a throwing detail renderer per tile', () => {
     const canvas = createCanvas(48, 32);
     const ctx = canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
@@ -78,6 +144,21 @@ describe('terrain renderers', () => {
       materials: createTerrainMaterialTable({ 1: { id: 'x', palette: { fill: '#555555' } } }),
       connections: createTerrainConnectionTable(grid, (a, b) => a === b),
       drawDetail: detail,
+    });
+    expect(detail).toHaveBeenCalledTimes(3);
+  });
+
+  it('isolates a throwing edge-detail renderer per tile', () => {
+    const canvas = createCanvas(48, 32);
+    const ctx = canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
+    const detail = vi.fn(() => { throw new Error('edge detail'); });
+    drawTerrainTiles(ctx, grid, {
+      visualSeed: 1,
+      view: { x: 0, y: 0, width: 48, height: 32 },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({ 1: { id: 'x', palette: { fill: '#555555' } } }),
+      connections: createTerrainConnectionTable(grid, (a, b) => a === b),
+      drawEdgeDetail: detail,
     });
     expect(detail).toHaveBeenCalledTimes(3);
   });

@@ -4,6 +4,7 @@ import type { LevelData, LevelEntity } from '../level/types';
 import {
   CAVERN_LEVEL_THEME,
   MECHANICAL_LEVEL_THEME,
+  OUTDOOR_LEVEL_THEME,
   NON_TERRAIN_KINDS,
   TERRAIN_ROLE_KINDS,
   createLevelThemeRenderer,
@@ -166,9 +167,25 @@ describe('level theme facade', () => {
     expect(context.getTransform()).toEqual(before);
   });
 
-  it('ships three visually distinct leaf themes', () => {
-    const themes = [RUINS_LEVEL_THEME, CAVERN_LEVEL_THEME, MECHANICAL_LEVEL_THEME];
-    expect(themes.map((theme) => theme.id)).toEqual(['ruins', 'cavern', 'mechanical']);
-    expect(new Set(themes.map((theme) => theme.backgroundColor)).size).toBe(3);
+  it('ships four visually distinct leaf themes with plain terrain interiors', () => {
+    const themes = [
+      RUINS_LEVEL_THEME,
+      CAVERN_LEVEL_THEME,
+      MECHANICAL_LEVEL_THEME,
+      OUTDOOR_LEVEL_THEME,
+    ];
+    expect(themes.map((theme) => theme.id)).toEqual([
+      'ruins',
+      'cavern',
+      'mechanical',
+      'outdoor',
+    ]);
+    expect(new Set(themes.map((theme) => theme.backgroundColor)).size).toBe(4);
+    for (const theme of themes) {
+      for (const material of Object.values(theme.terrain.tiles)) {
+        expect(material.surfaceDetail ?? 'none').toBe('none');
+      }
+    }
+    expect(OUTDOOR_LEVEL_THEME.terrain.tiles[1]?.edgeDetail).toBe('grass');
   });
 });

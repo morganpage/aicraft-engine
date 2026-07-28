@@ -13,7 +13,9 @@ import {
   createTopologyRoomScene,
 } from '../sections/tile-room-fixtures';
 
-function render(treatment: 'fallback' | 'ruins' | 'cavern' | 'mechanical'): Uint8Array {
+function render(
+  treatment: 'fallback' | 'ruins' | 'cavern' | 'mechanical' | 'outdoor',
+): Uint8Array {
   const scene = createTopologyRoomScene();
   const canvas = createCanvas(TILE_ROOM_VIEW_W, TILE_ROOM_VIEW_H);
   const context = canvas.getContext('2d');
@@ -46,11 +48,18 @@ describe('tile-room frame composition', () => {
     expect(render('fallback')).not.toEqual(render('cavern'));
   });
 
-  it('renders the three production themes distinctly', () => {
-    const themed = [render('ruins'), render('cavern'), render('mechanical')];
-    expect(themed[0]).not.toEqual(themed[1]);
-    expect(themed[1]).not.toEqual(themed[2]);
-    expect(themed[0]).not.toEqual(themed[2]);
+  it('renders the four production themes distinctly', () => {
+    const themed = [
+      render('ruins'),
+      render('cavern'),
+      render('mechanical'),
+      render('outdoor'),
+    ];
+    for (let a = 0; a < themed.length; a++) {
+      for (let b = a + 1; b < themed.length; b++) {
+        expect(themed[a]).not.toEqual(themed[b]);
+      }
+    }
   });
 
   it('substitutes runtime moving-platform rectangles without mutating the level', () => {

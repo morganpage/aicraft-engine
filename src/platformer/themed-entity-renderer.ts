@@ -26,10 +26,14 @@ interface SemanticColors {
 function colorsFor(themeId: string, palette?: Readonly<EntityPalette>): SemanticColors {
   const body = themeId === 'mechanical'
     ? '#9dabb0'
-    : themeId === 'cavern' ? '#aa91b0' : '#b49872';
+    : themeId === 'cavern'
+      ? '#aa91b0'
+      : themeId === 'outdoor' ? '#7fa354' : '#b49872';
   const dark = themeId === 'mechanical'
     ? '#172027'
-    : themeId === 'cavern' ? '#1c1724' : '#241b1c';
+    : themeId === 'cavern'
+      ? '#1c1724'
+      : themeId === 'outdoor' ? '#26321f' : '#241b1c';
   return {
     bright: safeHex(palette?.exit, '#ffe066'),
     body,

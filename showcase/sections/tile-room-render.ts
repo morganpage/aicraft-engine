@@ -27,6 +27,7 @@ import {
   createLevelThemeRenderer,
   CAVERN_LEVEL_THEME,
   MECHANICAL_LEVEL_THEME,
+  OUTDOOR_LEVEL_THEME,
   RUINS_LEVEL_THEME,
   drawPreparedLevelFrame,
   drawTileGrid,
@@ -45,7 +46,12 @@ import type { LevelData, LevelEntity, LevelRect } from '../../src/level/types';
 import type { TileRoomScene } from './tile-room-fixtures';
 
 /** Which treatment composes the frame. */
-export type TileRoomTreatment = 'fallback' | 'ruins' | 'cavern' | 'mechanical';
+export type TileRoomTreatment =
+  | 'fallback'
+  | 'ruins'
+  | 'cavern'
+  | 'mechanical'
+  | 'outdoor';
 
 /**
  * Everything that varies frame to frame. Deliberately shaped like the
@@ -186,18 +192,21 @@ const TILE_ROOM_THEMES = {
   ruins: RUINS_LEVEL_THEME,
   cavern: CAVERN_LEVEL_THEME,
   mechanical: MECHANICAL_LEVEL_THEME,
+  outdoor: OUTDOOR_LEVEL_THEME,
 } as const;
 
 const THEME_RENDERERS = {
   ruins: createLevelThemeRenderer(TILE_ROOM_THEMES.ruins),
   cavern: createLevelThemeRenderer(TILE_ROOM_THEMES.cavern),
   mechanical: createLevelThemeRenderer(TILE_ROOM_THEMES.mechanical),
+  outdoor: createLevelThemeRenderer(TILE_ROOM_THEMES.outdoor),
 } as const;
 
 const themedSceneCaches = {
   ruins: new WeakMap<LevelData, PreparedLevelScene>(),
   cavern: new WeakMap<LevelData, PreparedLevelScene>(),
   mechanical: new WeakMap<LevelData, PreparedLevelScene>(),
+  outdoor: new WeakMap<LevelData, PreparedLevelScene>(),
 } as const;
 
 function themedSceneFor(

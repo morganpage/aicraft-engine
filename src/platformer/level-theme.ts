@@ -18,6 +18,7 @@ import {
   drawTerrainTiles,
   normalizeTerrainMaterial,
   type NormalizedTerrainMaterial,
+  type TerrainEdgeDetailRenderer,
   type TerrainDetailRenderer,
   type TerrainMaterialInput,
   type TerrainRectRole,
@@ -56,6 +57,7 @@ export interface LevelTerrainTheme {
   readonly connects?: (centerValue: number, neighborValue: number) => boolean;
   readonly rectFamilyFor?: (entity: Readonly<LevelEntity>) => number;
   readonly drawTileDetail?: TerrainDetailRenderer;
+  readonly drawTileEdgeDetail?: TerrainEdgeDetailRenderer;
   readonly drawRectDetail?: TerrainDetailRenderer;
 }
 
@@ -188,6 +190,16 @@ export function createLevelThemeRenderer(
   };
   const tileDetail = guardedDetail(theme.terrain.drawTileDetail, 'tile detail renderer threw');
   const rectDetail = guardedDetail(theme.terrain.drawRectDetail, 'rectangle detail renderer threw');
+  const guardedEdgeDetail = theme.terrain.drawTileEdgeDetail === undefined
+    ? undefined
+    : ((ctx, detail) => {
+      try {
+        theme.terrain.drawTileEdgeDetail?.(ctx, detail);
+      } catch (error) {
+        onDiagnostic?.({ code: 'detail-threw', detail: 'tile edge detail renderer threw', error });
+        throw error;
+      }
+    }) satisfies TerrainEdgeDetailRenderer;
 
   return {
     prepare(level) {
@@ -285,6 +297,7 @@ export function createLevelThemeRenderer(
             materials,
             connections,
             drawDetail: tileDetail,
+            drawEdgeDetail: guardedEdgeDetail,
             overscanTiles: 1,
           });
         },

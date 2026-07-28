@@ -21,6 +21,8 @@ describe('terrain material normalization', () => {
     expect(material.topThickness).toBe(0);
     expect(material.sideDepth).toBe(24);
     expect(material.detailDensity).toBe(1);
+    expect(material.edgeDetail).toBe('none');
+    expect(material.edgeDensity).toBeGreaterThan(0);
     expect(material.channelId).toBeTypeOf('number');
   });
 
@@ -50,6 +52,9 @@ describe('terrain material normalization', () => {
       surfaceDetail: 'none',
       detailDensity: 0,
       detailScale: 1,
+      edgeDetail: 'none',
+      edgeDensity: 0,
+      edgeScale: 1,
     };
     expect(forged.id).toBe('forged');
   });

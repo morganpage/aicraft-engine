@@ -114,6 +114,7 @@ export { drawPreparedLevelFrame } from './level-layers';
 export { RUINS_LEVEL_THEME } from './themes/ruins';
 export { CAVERN_LEVEL_THEME } from './themes/cavern';
 export { MECHANICAL_LEVEL_THEME } from './themes/mechanical';
+export { OUTDOOR_LEVEL_THEME } from './themes/outdoor';
 export type { DrawThemedLevelEntityOptions } from './themed-entity-renderer';
 export { drawThemedLevelEntity } from './themed-entity-renderer';
 export {

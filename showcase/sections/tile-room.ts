@@ -301,7 +301,8 @@ export function initTileRoom(
         next !== 'fallback' &&
         next !== 'ruins' &&
         next !== 'cavern' &&
-        next !== 'mechanical'
+        next !== 'mechanical' &&
+        next !== 'outdoor'
       ) return;
       treatment = next;
       updateChrome();
