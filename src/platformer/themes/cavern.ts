@@ -8,8 +8,8 @@ export const CAVERN_LEVEL_THEME: Readonly<LevelRenderTheme> = {
   backgroundColor: '#12101a',
   terrain: {
     tiles: {
-      1: { id: 'cavern-rock', palette: { fill: '#51445d', top: '#8a7891', side: '#3b3047', outline: '#1c1724', detail: '#32283d', accent: '#bca8cb' }, edgeDetail: 'rocky', edgeDensity: 0.38 },
-      2: { id: 'cavern-shelf', palette: { fill: '#60506b', top: '#aa91b0', side: '#45374f', outline: '#1c1724', detail: '#392d43' }, edgeDetail: 'rocky', edgeDensity: 0.28 },
+      1: { id: 'cavern-rock', palette: { fill: '#51445d', top: '#8a7891', side: '#3b3047', outline: '#1c1724', detail: '#32283d', accent: '#bca8cb' }, edgeDetail: 'rocky', edgeDensity: 0.76 },
+      2: { id: 'cavern-shelf', palette: { fill: '#60506b', top: '#aa91b0', side: '#45374f', outline: '#1c1724', detail: '#392d43' }, edgeDetail: 'rocky', edgeDensity: 0.66 },
     },
     solid: { id: 'cavern-solid', palette: { fill: '#51445d', top: '#8a7891', side: '#3b3047', outline: '#1c1724', detail: '#32283d' } },
     passthrough: { id: 'cavern-shelf', palette: { fill: '#60506b', top: '#aa91b0', side: '#45374f', outline: '#1c1724' } },

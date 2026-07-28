@@ -186,6 +186,8 @@ describe('level theme facade', () => {
         expect(material.surfaceDetail ?? 'none').toBe('none');
       }
     }
+    expect(RUINS_LEVEL_THEME.terrain.tiles[1]?.edgeDetail).toBe('stonework');
+    expect(CAVERN_LEVEL_THEME.terrain.tiles[1]?.edgeDetail).toBe('rocky');
     expect(OUTDOOR_LEVEL_THEME.terrain.tiles[1]?.edgeDetail).toBe('grass');
   });
 });

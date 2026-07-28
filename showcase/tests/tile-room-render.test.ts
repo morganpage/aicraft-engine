@@ -222,6 +222,8 @@ describe('culling invariance against the tile room (§11.3)', () => {
     const b = renderAt(180 + shift);
 
     let compared = 0;
+    let mismatch: string | null = null;
+    compare:
     for (let y = 0; y < TILE_ROOM_VIEW_H; y++) {
       // Exclude the two device pixels adjacent to each canvas clip boundary:
       // Canvas anti-alias coverage there is implementation-dependent even when
@@ -229,12 +231,18 @@ describe('culling invariance against the tile room (§11.3)', () => {
       for (let x = shift + 2; x < TILE_ROOM_VIEW_W - 2; x++) {
         const ai = (y * TILE_ROOM_VIEW_W + x) * 4;
         const bi = (y * TILE_ROOM_VIEW_W + (x - shift)) * 4;
-        expect(a.data[ai]).toBe(b.data[bi]);
-        expect(a.data[ai + 1]).toBe(b.data[bi + 1]);
-        expect(a.data[ai + 2]).toBe(b.data[bi + 2]);
+        if (
+          a.data[ai] !== b.data[bi] ||
+          a.data[ai + 1] !== b.data[bi + 1] ||
+          a.data[ai + 2] !== b.data[bi + 2]
+        ) {
+          mismatch = `world pixel ${x},${y} differed after a ${shift}px camera pan`;
+          break compare;
+        }
         compared++;
       }
     }
+    expect(mismatch).toBeNull();
     expect(compared).toBeGreaterThan(0);
   });
 });

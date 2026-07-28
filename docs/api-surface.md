@@ -971,7 +971,7 @@ dependency; material normalization and drawing are Phase 2.
 | `ComputeRectExposureOptions` | type | Optional family connector and touching epsilon | `src/terrain/types.ts` |
 | `computeRectExposures(rects, options?)` | function | Order-independent, family-scoped static edge exposure preparation | `src/terrain/rect-exposure.ts` |
 | `TerrainMaterialInput`, `TerrainPalette` | interfaces | Loose author-facing material, palette, surface-detail, and edge-detail inputs | `src/terrain/types.ts` |
-| `BuiltinEdgeDetail` | type | Built-in exposed-edge treatments: none, chipped, rocky, beveled, or grass | `src/terrain/types.ts` |
+| `BuiltinEdgeDetail` | type | Built-in exposed-edge treatments: none, chipped, stonework, rocky, beveled, or grass | `src/terrain/types.ts` |
 | `NormalizedTerrainMaterial` | branded interface | Validated, fully resolved material accepted by draw APIs | `src/terrain/material.ts` |
 | `normalizeTerrainMaterial(input)` | function | Validate colors, clamp geometry/detail values, and resolve the hot-path channel id | `src/terrain/material.ts` |
 | `TerrainMaterialTable` | opaque interface | Prepared numeric tile-value to normalized-material lookup | `src/terrain/material.ts` |

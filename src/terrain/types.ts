@@ -105,6 +105,7 @@ export type BuiltinSurfaceDetail =
 export type BuiltinEdgeDetail =
   | 'none'
   | 'chipped'
+  | 'stonework'
   | 'rocky'
   | 'beveled'
   | 'grass';

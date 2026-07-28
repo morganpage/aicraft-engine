@@ -8,8 +8,8 @@ export const RUINS_LEVEL_THEME: Readonly<LevelRenderTheme> = {
   backgroundColor: '#171116',
   terrain: {
     tiles: {
-      1: { id: 'ruins-stone', palette: { fill: '#735846', top: '#b49872', side: '#594033', outline: '#241b1c', detail: '#49352c' }, edgeDetail: 'chipped', edgeDensity: 0.42 },
-      2: { id: 'ruins-ledge', palette: { fill: '#6d6045', top: '#c0a96f', side: '#50462f', outline: '#241b1c', detail: '#453c2a' }, edgeDetail: 'chipped', edgeDensity: 0.32 },
+      1: { id: 'ruins-stone', palette: { fill: '#735846', top: '#b49872', side: '#594033', outline: '#241b1c', detail: '#49352c' }, edgeDetail: 'stonework', edgeDensity: 0.82 },
+      2: { id: 'ruins-ledge', palette: { fill: '#6d6045', top: '#c0a96f', side: '#50462f', outline: '#241b1c', detail: '#453c2a' }, edgeDetail: 'stonework', edgeDensity: 0.72 },
     },
     solid: { id: 'ruins-solid', palette: { fill: '#735846', top: '#b49872', side: '#594033', outline: '#241b1c', detail: '#49352c' } },
     passthrough: { id: 'ruins-ledge', palette: { fill: '#6d6045', top: '#c0a96f', side: '#50462f', outline: '#241b1c' } },

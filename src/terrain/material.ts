@@ -43,7 +43,7 @@ const DETAILS: ReadonlySet<string> = new Set([
 ]);
 
 const EDGES: ReadonlySet<string> = new Set([
-  'none', 'chipped', 'rocky', 'beveled', 'grass',
+  'none', 'chipped', 'stonework', 'rocky', 'beveled', 'grass',
 ]);
 
 function finiteClamp(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -108,13 +108,15 @@ export function createTerrainMaterialTable(
 export const RUINS_TERRAIN_MATERIAL = normalizeTerrainMaterial({
   id: 'ruins',
   palette: { fill: '#735846', top: '#b49872', side: '#594033', outline: '#241b1c', detail: '#49352c' },
-  edgeDetail: 'chipped',
+  edgeDetail: 'stonework',
+  edgeDensity: 0.82,
 });
 
 export const CAVERN_TERRAIN_MATERIAL = normalizeTerrainMaterial({
   id: 'cavern',
   palette: { fill: '#51445d', top: '#8a7891', side: '#3b3047', outline: '#1c1724', detail: '#32283d', accent: '#bca8cb' },
   edgeDetail: 'rocky',
+  edgeDensity: 0.76,
 });
 
 export const MECHANICAL_TERRAIN_MATERIAL = normalizeTerrainMaterial({
@@ -130,11 +132,12 @@ export const OUTDOOR_TERRAIN_MATERIAL = normalizeTerrainMaterial({
     top: '#6f9f46',
     side: '#422c20',
     outline: '#251c17',
-    detail: '#513722',
+    detail: '#345b2d',
     accent: '#9bc764',
   },
   topThickness: 4,
   sideDepth: 5,
+  cornerSize: 3,
   edgeDetail: 'grass',
-  edgeDensity: 0.72,
+  edgeDensity: 0.88,
 });
