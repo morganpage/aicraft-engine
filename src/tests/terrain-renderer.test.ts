@@ -416,6 +416,52 @@ describe('terrain renderers', () => {
     expect(maxBottomDrop).toBeLessThanOrEqual(1);
   });
 
+  it('gives exposed light-mud walls a subtle continuous organic contour', () => {
+    const tileSize = 16;
+    const rows = 6;
+    const originX = 8;
+    const canvas = createCanvas(32, rows * tileSize);
+    const ctx = canvas.getContext('2d');
+    ctx.translate(originX, 0);
+    const column: TileGrid = {
+      cols: 1,
+      rows,
+      tileSize,
+      data: new Array<number>(rows).fill(1),
+    };
+    drawTerrainTiles(ctx as unknown as CanvasRenderingContext2D, column, {
+      visualSeed: 91,
+      view: { x: 0, y: 0, width: tileSize, height: rows * tileSize },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({
+        1: {
+          id: 'organic-mud-wall-test',
+          palette: OUTDOOR_TERRAIN_MATERIAL.palette,
+          topThickness: 4,
+          sideDepth: 5,
+          cornerSize: 3,
+          edgeDetail: 'grass',
+          edgeDensity: 0,
+        },
+      }),
+      connections: createTerrainConnectionTable(column, (a, b) => a === b),
+      drawEdgeDetail: () => {},
+    });
+
+    const image = ctx.getImageData(0, 0, 32, rows * tileSize).data;
+    const leftCoverages = new Set<number>();
+    const rightCoverages = new Set<number>();
+    for (let y = tileSize; y < (rows - 1) * tileSize; y++) {
+      leftCoverages.add(image[(y * 32 + originX) * 4 + 3] ?? 0);
+      rightCoverages.add(image[(y * 32 + originX + tileSize - 1) * 4 + 3] ?? 0);
+      expect(image[(y * 32 + originX + 1) * 4 + 3]).toBe(255);
+      expect(image[(y * 32 + originX + tileSize - 2) * 4 + 3]).toBe(255);
+    }
+
+    expect(leftCoverages.size).toBeGreaterThan(1);
+    expect(rightCoverages.size).toBeGreaterThan(1);
+  });
+
   it('keeps grass tufts occasional and no more than three pixels tall', () => {
     const width = 128;
     const surfaceY = 10;
@@ -458,9 +504,152 @@ describe('terrain renderers', () => {
     expect(maxDarkHeight).toBeLessThanOrEqual(3);
   });
 
-  it.each(['stonework', 'rocky'] as const)(
-    'builds a layered, irregular %s silhouette above exposed terrain',
-    (edgeDetail) => {
+  it('uses varied outline-free square shading for stonework without tile-border seams', () => {
+    const width = 128;
+    const surfaceY = 12;
+    const tileSize = 16;
+    const canvas = createCanvas(width, 36);
+    const ctx = canvas.getContext('2d');
+    ctx.translate(0, surfaceY);
+    const stone: TileGrid = {
+      cols: 8,
+      rows: 1,
+      tileSize,
+      data: new Array<number>(8).fill(1),
+    };
+    drawTerrainTiles(ctx as unknown as CanvasRenderingContext2D, stone, {
+      visualSeed: 37,
+      view: { x: 0, y: 0, width, height: tileSize },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({
+        1: {
+          id: 'stonework',
+          palette: {
+            fill: '#735846',
+            top: '#b49872',
+            side: '#594033',
+            outline: '#241b1c',
+            detail: '#49352c',
+          },
+          edgeDetail: 'stonework',
+          edgeDensity: 1,
+        },
+      }),
+      connections: createTerrainConnectionTable(stone, (a, b) => a === b),
+    });
+
+    const image = ctx.getImageData(0, surfaceY, width, tileSize).data;
+    const colorAt = (x: number, y: number): string => {
+      const i = (y * width + x) * 4;
+      return `${image[i]},${image[i + 1]},${image[i + 2]}`;
+    };
+    const bodyColor = colorAt(Math.floor(width / 2), 10);
+    let shadePixels = 0;
+    let outlinePixels = 0;
+    for (let y = 4; y <= 7; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const color = colorAt(x, y);
+        if (color !== bodyColor) shadePixels++;
+        if (color === '36,27,28') outlinePixels++;
+      }
+    }
+    expect(shadePixels).toBeGreaterThan(0);
+    expect(outlinePixels).toBe(0);
+
+    const tileSamples = new Set<string>();
+    for (let tile = 0; tile < stone.cols; tile++) {
+      const startX = tile * tileSize;
+      const sample = [4, 6].map((y) => (
+        Array.from({ length: tileSize }, (_, localX) => colorAt(startX + localX, y))
+          .join('|')
+      )).join('/');
+      tileSamples.add(sample);
+    }
+    expect(tileSamples.size).toBeGreaterThan(3);
+
+    // The broad facets remain an edge treatment; the inner face stays plain.
+    const interiorColors = new Set<string>();
+    for (let y = 9; y < tileSize - 4; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        interiorColors.add(colorAt(x, y));
+      }
+    }
+    expect(interiorColors.has('36,27,28')).toBe(false);
+    expect(interiorColors.has('73,53,44')).toBe(false);
+  });
+
+  it('continues stonework squares through stacked terrain rows', () => {
+    const tileSize = 16;
+    const cols = 6;
+    const rows = 4;
+    const width = cols * tileSize;
+    const height = rows * tileSize;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    const wall: TileGrid = {
+      cols,
+      rows,
+      tileSize,
+      data: new Array<number>(cols * rows).fill(1),
+    };
+    drawTerrainTiles(ctx as unknown as CanvasRenderingContext2D, wall, {
+      visualSeed: 37,
+      view: { x: 0, y: 0, width, height },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({
+        1: {
+          id: 'stacked-stonework',
+          palette: {
+            fill: '#808080',
+            top: '#c0c0c0',
+            side: '#606060',
+            outline: '#202020',
+            detail: '#404040',
+          },
+          edgeDetail: 'stonework',
+          edgeDensity: 1,
+        },
+      }),
+      connections: createTerrainConnectionTable(wall, (a, b) => a === b),
+    });
+
+    const image = ctx.getImageData(0, 0, width, height).data;
+    let shadedLowerPixels = 0;
+    for (let y = tileSize + 2; y < tileSize * 3 - 2; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const i = (y * width + x) * 4;
+        if (
+          image[i] !== 128 ||
+          image[i + 1] !== 128 ||
+          image[i + 2] !== 128
+        ) {
+          shadedLowerPixels++;
+        }
+      }
+    }
+    expect(shadedLowerPixels).toBeGreaterThan(0);
+    expect(shadedLowerPixels).toBeLessThan(width * tileSize * 2 * 0.75);
+
+    // No explicit horizontal rule is introduced where stacked tiles meet.
+    for (const boundaryY of [tileSize, tileSize * 2]) {
+      let outlinePixels = 0;
+      for (let x = 0; x < width; x++) {
+        const i = (boundaryY * width + x) * 4;
+        if (
+          image[i] === 32 &&
+          image[i + 1] === 32 &&
+          image[i + 2] === 32
+        ) {
+          outlinePixels++;
+        }
+      }
+      expect(outlinePixels).toBe(0);
+    }
+  });
+
+  it(
+    'keeps rocky treatment as sparse shading inside the lit cap',
+    () => {
       const width = 128;
       const surfaceY = 12;
       const canvas = createCanvas(width, 36);
@@ -478,34 +667,62 @@ describe('terrain renderers', () => {
         devicePixelRatio: 1,
         materials: createTerrainMaterialTable({
           1: {
-            id: edgeDetail,
+            id: 'rocky',
             palette: {
               fill: '#735846',
               top: '#b49872',
               side: '#594033',
               outline: '#241b1c',
             },
-            edgeDetail,
+            edgeDetail: 'rocky',
             edgeDensity: 1,
           },
         }),
         connections: createTerrainConnectionTable(stone, (a, b) => a === b),
       });
 
-      const pixels = ctx.getImageData(0, 0, width, surfaceY).data;
-      const heights = new Set<number>();
-      const colors = new Set<string>();
-      for (let x = 0; x < width; x++) {
-        for (let y = 0; y < surfaceY; y++) {
+      const above = ctx.getImageData(0, 0, width, surfaceY).data;
+      let abovePixels = 0;
+      let maxLift = 0;
+      for (let y = 0; y < surfaceY; y++) {
+        for (let x = 0; x < width; x++) {
           const i = (y * width + x) * 4;
-          if (pixels[i + 3] === 0) continue;
-          colors.add(`${pixels[i]},${pixels[i + 1]},${pixels[i + 2]}`);
-          heights.add(surfaceY - y);
-          break;
+          if (above[i + 3] === 0) continue;
+          abovePixels++;
+          maxLift = Math.max(maxLift, surfaceY - y);
         }
       }
-      expect(heights.size).toBeGreaterThanOrEqual(3);
-      expect(colors.size).toBeGreaterThanOrEqual(3);
+      expect(abovePixels).toBeGreaterThan(0);
+      expect(maxLift).toBeLessThanOrEqual(2);
+
+      const capHeight = 3;
+      const cap = ctx.getImageData(0, surfaceY, width, capHeight).data;
+      let shaded = 0;
+      for (let i = 0; i < cap.length; i += 4) {
+        if (
+          cap[i] !== 180 ||
+          cap[i + 1] !== 152 ||
+          cap[i + 2] !== 114
+        ) {
+          shaded++;
+        }
+      }
+      expect(shaded).toBeGreaterThan(0);
+      expect(shaded).toBeLessThan(width * capHeight * 0.35);
+
+      const below = ctx.getImageData(0, surfaceY + 16, width, 4).data;
+      let belowPixels = 0;
+      let maxDrop = 0;
+      for (let y = 0; y < 4; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          if (below[i + 3] === 0) continue;
+          belowPixels++;
+          maxDrop = Math.max(maxDrop, y + 1);
+        }
+      }
+      expect(belowPixels).toBeGreaterThan(0);
+      expect(maxDrop).toBeLessThanOrEqual(2);
     },
   );
 

@@ -36,14 +36,6 @@ const GRASS_TUFTS: readonly (readonly number[])[] = [
   [1, 2, 3, 2, 1],
 ];
 
-/** Angular silhouettes used by both broken masonry and natural boulders. */
-const ROCK_PROFILES: readonly (readonly (readonly [number, number])[])[] = [
-  [[0, 0], [0.12, 0.42], [0.35, 0.82], [0.58, 1], [0.82, 0.72], [1, 0.2]],
-  [[0, 0.1], [0.16, 0.58], [0.4, 0.78], [0.7, 0.74], [0.9, 0.42], [1, 0]],
-  [[0, 0], [0.22, 0.36], [0.48, 1], [0.66, 0.86], [0.84, 0.4], [1, 0.12]],
-  [[0, 0.08], [0.1, 0.52], [0.3, 0.7], [0.52, 0.62], [0.76, 0.9], [1, 0.18]],
-];
-
 function randomSpan(
   rng: () => number,
   start: number,
@@ -98,127 +90,51 @@ function drawGrassTuft(
   }
 }
 
-function drawRock(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  baseY: number,
-  width: number,
-  height: number,
-  unit: number,
-  profile: readonly (readonly [number, number])[],
-  outline: string,
-  fill: string,
-  highlight: string,
-): void {
-  ctx.save();
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.lineWidth = unit;
-
-  ctx.beginPath();
-  for (let i = 0; i < profile.length; i++) {
-    const point = profile[i]!;
-    const px = Math.round(x + point[0] * width);
-    const py = Math.round(baseY - point[1] * height);
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.lineTo(x + width, baseY);
-  ctx.lineTo(x, baseY);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-  ctx.strokeStyle = outline;
-  ctx.stroke();
-
-  // A short inset highlight follows the upper-facing facets without turning
-  // into a straight cap line.
-  ctx.beginPath();
-  const highlightEnd = Math.max(2, Math.ceil(profile.length * 0.6));
-  for (let i = 1; i < highlightEnd; i++) {
-    const point = profile[i]!;
-    const px = Math.round(x + point[0] * width);
-    const py = Math.round(baseY - point[1] * height + unit);
-    if (i === 1) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.strokeStyle = highlight;
-  ctx.lineWidth = unit;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawRockTopEdge(
+function drawSubtleRockCapShade(
   ctx: CanvasRenderingContext2D,
   detail: Readonly<TerrainEdgeDetailContext>,
   rng: () => number,
-  natural: boolean,
 ): void {
-  const { material: m, neighborhood: n, x, y, width } = detail;
-  const baseUnit = Math.max(1, Math.round(m.edgeScale));
-  const unit = Math.max(baseUnit, Math.min(2, Math.floor(width / 16)));
-  const spacing = (natural ? 11 : 9) * unit;
-  const clusters = Math.max(1, Math.ceil(width / spacing));
-  const topDepth = Math.max(1, Math.round(m.topThickness));
-  const overhang = unit * 2;
-  const segmentWidth = width / clusters;
+  const { material: m, x, y, width, height } = detail;
+  const capHeight = Math.max(1, Math.min(height, Math.round(m.topThickness)));
+  const unit = Math.max(1, Math.round(m.edgeScale));
+  const attempts = 2;
+  const shadeChance = m.edgeDensity * 0.3;
 
-  for (let i = 0; i < clusters; i++) {
-    const segmentX = x + i * segmentWidth;
-    const canOverhangLeft = i > 0 || n.west;
-    const canOverhangRight = i < clusters - 1 || n.east;
-    const start = segmentX - (canOverhangLeft ? overhang : 0);
-    const span = segmentWidth
-      + (canOverhangLeft ? overhang : 0)
-      + (canOverhangRight ? overhang : 0);
+  ctx.save();
+  for (let i = 0; i < attempts; i++) {
+    if (rng() > shadeChance) continue;
+    const shadeWidth = Math.min(
+      width - 2,
+      unit * (4 + Math.floor(rng() * 4)),
+    );
+    const shadeX = randomSpan(rng, x + 1, width - 2, shadeWidth);
+    const leftInset = capHeight > 1 ? Math.floor(rng() * 2) : 1;
+    const middleInset = capHeight > 1 ? Math.floor(rng() * 2) : 1;
 
-    // A darker rear stone makes the edge read as a shallow pile rather than a
-    // row of independent bumps.
-    if (rng() <= m.edgeDensity * 0.72) {
-      const rockWidth = Math.min(
-        span,
-        unit * ((natural ? 5 : 4) + Math.floor(rng() * 4)),
-      );
-      const rockHeight = unit * ((natural ? 3 : 2) + Math.floor(rng() * 3));
-      const rockX = randomSpan(rng, start, span, rockWidth);
-      const profile = ROCK_PROFILES[Math.floor(rng() * ROCK_PROFILES.length)]
-        ?? ROCK_PROFILES[0]!;
-      drawRock(
-        ctx,
-        rockX,
-        y + Math.max(unit, topDepth - unit),
-        rockWidth,
-        rockHeight,
-        unit,
-        profile,
-        m.palette.outline,
-        m.palette.side,
-        m.palette.fill,
-      );
+    // Broad translucent facets stay entirely inside the existing lit cap.
+    // They suggest uneven stone without creating a second silhouette.
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = m.palette.detail;
+    ctx.beginPath();
+    ctx.moveTo(shadeX, y + capHeight);
+    ctx.lineTo(shadeX + unit, y + Math.min(capHeight - 1, leftInset));
+    ctx.lineTo(
+      shadeX + shadeWidth * 0.58,
+      y + Math.min(capHeight - 1, middleInset),
+    );
+    ctx.lineTo(shadeX + shadeWidth, y + capHeight);
+    ctx.closePath();
+    ctx.fill();
+
+    if (rng() < 0.4) {
+      const highlightWidth = Math.max(unit, Math.floor(shadeWidth * 0.42));
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = m.palette.accent;
+      ctx.fillRect(shadeX + unit, y, highlightWidth, unit);
     }
-
-    if (rng() > m.edgeDensity) continue;
-    const rockWidth = Math.min(
-      span,
-      unit * ((natural ? 7 : 6) + Math.floor(rng() * (natural ? 6 : 4))),
-    );
-    const rockHeight = unit * ((natural ? 4 : 3) + Math.floor(rng() * (natural ? 4 : 3)));
-    const rockX = randomSpan(rng, start, span, rockWidth);
-    const profile = ROCK_PROFILES[Math.floor(rng() * ROCK_PROFILES.length)]
-      ?? ROCK_PROFILES[0]!;
-    drawRock(
-      ctx,
-      rockX,
-      y + topDepth,
-      rockWidth,
-      rockHeight,
-      unit,
-      profile,
-      m.palette.outline,
-      m.palette.fill,
-      m.palette.top,
-    );
   }
+  ctx.restore();
 }
 
 /** Draw restrained, deterministic decoration on exposed terrain edges. */
@@ -255,37 +171,14 @@ export const drawBuiltinTerrainEdgeDetail: TerrainEdgeDetailRenderer = (
     }
 
     case 'stonework': {
-      if (!n.north) drawRockTopEdge(ctx, detail, rng, false);
-      if (!n.south && chance()) {
-        const chipW = Math.min(width - 2, unit * (1 + Math.floor(rng() * 2)));
-        const chipX = randomSpan(rng, x + 1, width - 2, chipW);
-        ctx.fillStyle = m.palette.fill;
-        ctx.fillRect(chipX, y + height - sideDepth, chipW, unit);
-      }
+      // Stonework is drawn across the complete exposed ledge by the tile
+      // renderer. Drawing it per cell here would restart the masonry pattern
+      // at every tile boundary.
       break;
     }
 
     case 'rocky': {
-      if (!n.north) drawRockTopEdge(ctx, detail, rng, true);
-      if (!n.south && chance()) {
-        const rockW = Math.min(width - 2, unit * (1 + Math.floor(rng() * 3)));
-        const rockH = unit * (1 + Math.floor(rng() * 2));
-        const rockX = randomSpan(rng, x + 1, width - 2, rockW);
-        ctx.fillStyle = m.palette.side;
-        ctx.fillRect(rockX, y + height, rockW, rockH);
-      }
-      if (!n.west && chance() && rng() < 0.45) {
-        const rockH = Math.min(height - 2, unit * (1 + Math.floor(rng() * 3)));
-        const rockY = randomSpan(rng, y + 1, height - 2, rockH);
-        ctx.fillStyle = m.palette.fill;
-        ctx.fillRect(x - unit, rockY, unit, rockH);
-      }
-      if (!n.east && chance() && rng() < 0.45) {
-        const rockH = Math.min(height - 2, unit * (1 + Math.floor(rng() * 3)));
-        const rockY = randomSpan(rng, y + 1, height - 2, rockH);
-        ctx.fillStyle = m.palette.fill;
-        ctx.fillRect(x + width, rockY, unit, rockH);
-      }
+      if (!n.north) drawSubtleRockCapShade(ctx, detail, rng);
       break;
     }
 
