@@ -36,6 +36,7 @@ import type {
   EditorState,
   HistoryEntry,
 } from './types';
+import type { ValidationResult } from '../level/types';
 
 /**
  * Writable view of {@link LevelData}.
@@ -493,6 +494,41 @@ function applyMutation(level: WritableLevel, op: EditorOperation): boolean {
       }
       return any;
     }
+    case 'replaceLevel': {
+      // Validate the replacement level before replacing.
+      const validation: ValidationResult = validateLevel(op.level);
+      if (!validation.valid) return false;
+      // Defensively clone the replacement so mutations don't leak.
+      const replacement = JSON.parse(JSON.stringify(op.level)) as WritableLevel;
+      // Replace all top-level fields.
+      level.version = replacement.version;
+      level.id = replacement.id;
+      level.name = replacement.name;
+      level.width = replacement.width;
+      level.height = replacement.height;
+      level.tileSize = replacement.tileSize;
+      level.spawn = replacement.spawn;
+      level.tiles = replacement.tiles;
+      level.entities = replacement.entities;
+      level.nextEntityId = replacement.nextEntityId;
+      // Manage optional fields: set if present on replacement, clear otherwise.
+      if (replacement.bottomLava !== undefined) {
+        level.bottomLava = replacement.bottomLava;
+      } else {
+        level.bottomLava = undefined;
+      }
+      if (replacement.hints !== undefined) {
+        level.hints = replacement.hints;
+      } else {
+        level.hints = undefined;
+      }
+      if (replacement.flags !== undefined) {
+        level.flags = replacement.flags;
+      } else {
+        level.flags = undefined;
+      }
+      return true;
+    }
   }
 }
 
@@ -518,6 +554,8 @@ function defaultLabel(op: EditorOperation): string {
     case 'setSpawnPoint':
       return 'Move spawn point';
     case 'batch':
+      return op.label;
+    case 'replaceLevel':
       return op.label;
   }
 }

@@ -22,6 +22,8 @@
  */
 
 import type { LevelData } from '../level/types';
+import type { GeneratedTileSemantics } from '../level/tile-semantics';
+import { createTileTypeMap } from '../level/tile-semantics';
 import type { Solid, TileSolidityQuery, TileType } from '../collision/types';
 import type { PlatformerState, PlatformerConfig } from './types';
 import { createPlatformerState } from './kernel';
@@ -419,6 +421,68 @@ function flattenCapturedTiles(
     }
   }
   return result;
+}
+
+/**
+ * Input to {@link compileGeneratedLevel} — a generated level paired with
+ * its explicit tile semantics so the runtime, reachability, and simulation
+ * all interpret tile values consistently.
+ *
+ * @see {@link GeneratedTileSemantics}
+ * @see {@link compileGeneratedLevel}
+ */
+export interface GeneratedLevelInput {
+  /** The generated level data. */
+  readonly level: LevelData;
+  /** Explicit tile-value classification for this generated level. */
+  readonly tileSemantics: Readonly<GeneratedTileSemantics>;
+}
+
+/**
+ * Compile a generated level with its explicit tile semantics.
+ *
+ * This is the canonical entry point for generated levels. It builds the
+ * `tileTypeMap` from `generated.tileSemantics` via
+ * {@link createTileTypeMap}, then delegates to {@link compileLevel}.
+ *
+ * This preserves `compileLevel`'s existing entity-only default (no
+ * `tileTypeMap`) while making generated levels safe by default — tile
+ * values the generator emitted are correctly classified as solid,
+ * passthrough, or empty.
+ *
+ * Pure: never mutates input, never throws. Malformed input produces a
+ * graceful empty {@link CompiledLevel} (see {@link compileLevel}).
+ *
+ * @example
+ * ```ts
+ * const compiled = compileGeneratedLevel({
+ *   level: generatedLevel,
+ *   tileSemantics: { solid: [1], passthrough: [2] },
+ * });
+ * // compiled.staticSolids includes tile-derived solids
+ * ```
+ *
+ * @param generated - The generated level and its tile semantics.
+ * @param options   - Optional overrides passed through to `compileLevel`
+ *                    (player dimensions, config). `tileTypeMap` is
+ *                    derived from `tileSemantics` and cannot be overridden.
+ * @returns A {@link CompiledLevel} with tile solids from the semantics.
+ */
+export function compileGeneratedLevel(
+  generated: GeneratedLevelInput,
+  options?: Omit<CompileLevelOptions, 'tileTypeMap'>,
+): CompiledLevel {
+  try {
+    const tileTypeMap = createTileTypeMap(generated.tileSemantics);
+    return compileLevel(generated.level, { ...options, tileTypeMap });
+  } catch {
+    return {
+      staticSolids: [],
+      movingPlatforms: [],
+      initialState: createPlatformerState(0, 0),
+      tileQuery: () => 'empty',
+    };
+  }
 }
 
 /**

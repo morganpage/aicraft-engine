@@ -76,6 +76,11 @@ export type EditorOperation =
       readonly type: 'batch';
       readonly ops: readonly EditorOperation[];
       readonly label: string;
+    }
+  | {
+      readonly type: 'replaceLevel';
+      readonly level: LevelData;
+      readonly label: string;
     };
 
 /**

@@ -40,6 +40,8 @@ export type {
 
 export type { LevelMigrationResult } from './migrate';
 
+export type { GeneratedTileSemantics } from './tile-semantics';
+
 export {
   LEVEL_VERSION,
   DEFAULT_TILE_SIZE,
@@ -54,6 +56,12 @@ export { validateLevel } from './validate';
 
 export { createTileQuery } from './tiles';
 
+export { createTileTypeMap } from './tile-semantics';
+
 export { allocateEntityId } from './entity-id';
 
 export { canonicalize, fnv1a } from './serialize';
+
+export { createLevelScaffold, createMinimalValidLevel } from './factory';
+
+export type { LevelScaffoldOptions, MinimalLevelOptions } from './factory';

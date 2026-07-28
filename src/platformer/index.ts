@@ -72,12 +72,14 @@ export { doubleJumpAbility } from './abilities/double-jump-ability';
 
 export {
   compileLevel,
+  compileGeneratedLevel,
   advanceMovingPlatform,
   movingPlatformToSolid,
   createMovingPlatformDisplacementProvider,
   type CompiledLevel,
   type CompiledMovingPlatform,
   type CompileLevelOptions,
+  type GeneratedLevelInput,
 } from './level-runtime';
 
 export {
