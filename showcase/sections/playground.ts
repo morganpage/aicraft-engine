@@ -327,8 +327,12 @@ const MIN_DRAW_SIZE = TILE_SIZE;
  * The tile grid is empty — collision comes from the `platform` /
  * `passthrough` entities, which `compileLevel` lifts into `staticSolids`
  * for the kernel.
+ *
+ * Exported so the level-visual baseline captures in
+ * `benchmarks/_scripts/visual-sheets.ts` render *this* level rather than a
+ * hand-copied lookalike that could silently drift from it.
  */
-const PLAYGROUND_LEVEL: LevelData = {
+export const PLAYGROUND_LEVEL: LevelData = {
   version: 1,
   id: 'playground',
   name: 'Playground',

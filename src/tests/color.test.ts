@@ -8,7 +8,28 @@ import {
   relativeLuminance,
   contrastRatio,
   meetsWcagAa,
+  isHexColor,
+  safeHex,
 } from '../primitives/color';
+
+describe('hex color guards', () => {
+  it('accepts complete six-digit colors with or without #', () => {
+    expect(isHexColor('#ff8800')).toBe(true);
+    expect(isHexColor('A0b1C2')).toBe(true);
+  });
+
+  it('rejects malformed and non-string values without throwing', () => {
+    for (const value of ['#fff', '#12zzzz', '1234567', '', null, undefined, 42]) {
+      expect(isHexColor(value)).toBe(false);
+    }
+  });
+
+  it('returns a valid fallback and safely degrades a malformed fallback', () => {
+    expect(safeHex('#abcdef', '#000000')).toBe('#abcdef');
+    expect(safeHex('bad', '#123456')).toBe('#123456');
+    expect(safeHex('bad', 'also bad')).toBe('#000000');
+  });
+});
 
 describe('parseHex', () => {
   it('parses #rrggbb', () => {

@@ -19,8 +19,8 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 
 | Pillar | Modules | Status |
 |---|---|---|
-| **1. Primitives** | `outlineRect`, `shade`, color math, pixel snap, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | **Shipped** |
-| **1. RNG** | Seeded mulberry32, distribution helpers | **Shipped** |
+| **1. Primitives** | `outlineRect`, `shade`, color guards, device-pixel camera snapping, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | **Shipped** |
+| **1. RNG** | Seeded mulberry32, distribution helpers, stateless typed visual-address folding | **Shipped** |
 | **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | **Shipped** |
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators, procedural spider enemy (multi-legged IK gait, segmented body) | **Shipped** |
 | **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms (`gapSolids`, `advanceGapMotion`, `gapTileQuery`) | **Shipped** |
@@ -40,6 +40,9 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |
 | **2. Cosmetics** | Versioned manifest, seeded variant generation, multi-slot ownership | **Shipped** |
 | **2. Level schema** | Versioned platformer levels, migration and validation, standalone tile queries, and unified `compileLevel` output combining captured tile collision with entity geometry | **Shipped** |
+| **2. Terrain rendering** | Prepared connectivity and exposure, normalized materials, deterministic surface details, culled connected tiles, and role-aware rectangle rendering | **Shipped** |
+| **3. Level themes** | Two-stage theme/level preparation, ordered render passes, resolved runtime entities, and Ruins/Cavern/Mechanical examples | **Shipped** |
+| **4. Semantic level art** | Themed exits, coin/gem/key silhouettes, warning-form traps, edit-only markers, and stateless reduced-motion atmosphere recipes | **Shipped** |
 | **2. Collectibles** | First-class `'collectible'` `EntityKind`, pure-progression-ops `CollectibleSave` mirroring `cosmetics/ownership.ts` (`collect`/`hasCollected`), pure `derivePickups` (deterministic AABB collision — kernel unaware, zero replay impact); per-level scoping is consumer-owned via `Record<levelId, CollectibleSave>` | **Shipped** |
 | **2. Editor core** | Headless level-editor operations: serializable ops + snapshot undo/redo, transactions, multi-select, grid + edge snapping, in-memory clipboard, sandbox playtest boundary, prefab catalog. `applyOp`, `undo`, `beginTransaction`, `selectInRect`, `snapToEdges`, `enterPlaytest`, `DEFAULT_CATALOG` | **Shipped** |
 | **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (Poki/Jest/StoreKit/Play Billing deferred to Phase 5) | **Shipped** |

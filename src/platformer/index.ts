@@ -92,6 +92,36 @@ export {
   type DrawLevelEntityOverrideMap,
 } from './renderer';
 
+export type {
+  ResolvedLevelEntity,
+  LevelRenderFrame,
+  LevelTerrainTheme,
+  LevelLayerRenderer,
+  LevelRenderTheme,
+  TerrainDiagnostic,
+  LevelThemeRendererOptions,
+  LevelThemeRenderer,
+  PreparedLevelScene,
+} from './level-theme';
+export {
+  TERRAIN_ROLE_KINDS,
+  NON_TERRAIN_KINDS,
+  createLevelThemeRenderer,
+  resolveLevelEntities,
+} from './level-theme';
+export type { DrawPreparedLevelFrameOptions } from './level-layers';
+export { drawPreparedLevelFrame } from './level-layers';
+export { RUINS_LEVEL_THEME } from './themes/ruins';
+export { CAVERN_LEVEL_THEME } from './themes/cavern';
+export { MECHANICAL_LEVEL_THEME } from './themes/mechanical';
+export type { DrawThemedLevelEntityOptions } from './themed-entity-renderer';
+export { drawThemedLevelEntity } from './themed-entity-renderer';
+export {
+  drawRuinsDust,
+  drawCavernDrips,
+  drawMechanicalSparks,
+} from './atmosphere-recipes';
+
 export {
   PRECISION_PLATFORMER,
   CLASSIC_PLATFORMER,

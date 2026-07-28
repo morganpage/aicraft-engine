@@ -1,6 +1,8 @@
 export { outlineRect, DEFAULT_OUTLINE_COLOR, type OutlineCoverage } from './outline-rect';
 export {
   parseHex,
+  isHexColor,
+  safeHex,
   toHex,
   shade,
   mixHex,
@@ -10,6 +12,11 @@ export {
   meetsWcagAa,
   type RGB,
 } from './color';
+export {
+  snapCameraTranslation,
+  applySnappedTranslate,
+  type SnappedTranslation,
+} from './snap';
 export { clamp, floor, lerp, approach } from './pixel';
 export { prefersReducedMotion, resetMotionCacheForTests } from './motion';
 export {

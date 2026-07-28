@@ -28,6 +28,7 @@ export * from './editor';
 export * from './collectibles';
 export * from './replay';
 export * from './simtest';
+export * from './terrain';
 // leveltest — values and types for the verification module
 export type {
   ReachabilityConfidence,

@@ -28,7 +28,9 @@
     "showcase:build": "vite build --config showcase/vite.config.ts",
     "showcase:typecheck": "tsc --noEmit --project showcase/tsconfig.json",
     "showcase:test": "vitest run --config showcase/vitest.config.ts",
-    "showcase:test:watch": "vitest --config showcase/vitest.config.ts"
+    "showcase:test:watch": "vitest --config showcase/vitest.config.ts",
+    "bench:level-visual": "npx --yes tsx benchmarks/_scripts/level-visual-bench.ts",
+    "visual:sheets": "node scripts/run-visual-sheets.mjs"
   },
   "devDependencies": {
     "canvas": "^3.2.3",

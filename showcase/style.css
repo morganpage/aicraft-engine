@@ -1020,3 +1020,224 @@ main {
   image-rendering: pixelated;
   touch-action: none;
 }
+
+/* =========================================================================
+   Section 6 — Tile room.
+   The second level-visual validation scene (a generated tile grid seen
+   through a scrolling camera). Same one-column shape as the playground:
+   copy first, then the stage (toolbar + canvas + status). The canvas keeps
+   its 600×400 (3:2) ratio via `aspect-ratio`.
+   ========================================================================= */
+
+.tile-room-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: start;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+.tile-room-copy {
+  min-width: 0;
+}
+
+.tile-room-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.tile-room-blurb {
+  margin: 0 0 12px;
+  color: var(--palette-text-dim);
+  max-width: 60ch;
+}
+
+.tile-room-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.tile-room-snippet {
+  margin: 0;
+  padding: 12px 14px;
+  background: #0e0e12;
+  color: #e2e8f0;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---------- Tile room stage / canvas ---------- */
+
+.tile-room-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.tile-room-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  background: var(--palette-bg);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+}
+
+.tile-room-toolbar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: rgba(232, 232, 238, 0.18);
+}
+
+.tile-room-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--palette-surface);
+  color: var(--palette-text);
+  border: 2px solid var(--outline);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.tile-room-btn:hover {
+  background: #2a2a32;
+}
+
+.tile-room-btn:active {
+  transform: translateY(1px);
+}
+
+.tile-room-btn:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.tile-room-btn[aria-pressed="true"] {
+  background: var(--palette-base);
+  color: #fff;
+  border-color: var(--outline);
+}
+
+.tile-room-btn[aria-pressed="true"]:hover {
+  background: #ff7320;
+}
+
+.tile-room-canvas-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.tile-room-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 600 / 400;
+  background: #120c18;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  touch-action: none;
+  cursor: default;
+}
+
+.tile-room-status {
+  width: 100%;
+  padding: 8px 12px;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--palette-text-dim);
+  background: var(--palette-bg);
+  border: 2px solid var(--outline);
+  border-radius: var(--radius);
+  word-break: break-word;
+}
+
+/* ---------- Tile room touch controls (coarse-pointer only) ---------- */
+
+.tile-room-touch-btn {
+  display: none;
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  background: rgba(20, 12, 10, 0.55);
+  color: #e8e8ee;
+  border: 2px solid rgba(232, 232, 238, 0.35);
+  border-radius: 50%;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: default;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.tile-room-touch-btn:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.tile-room-touch-btn--left {
+  bottom: 12px;
+  left: 12px;
+}
+
+.tile-room-touch-btn--right {
+  bottom: 12px;
+  left: 80px;
+}
+
+.tile-room-touch-btn--jump {
+  bottom: 12px;
+  right: 12px;
+  width: 72px;
+  height: 72px;
+  font-size: 14px;
+  border-radius: var(--radius-lg);
+}
+
+@media (pointer: coarse), (hover: none) {
+  .tile-room-touch-btn {
+    display: flex;
+  }
+}

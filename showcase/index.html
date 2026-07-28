@@ -493,11 +493,78 @@ drawSpider(ctx, pose, config);</code></pre>
         its toolbar, drag-draw, undo/redo, and moving-platform path widget
         now live inside the unified playground section above.)
       -->
+
+      <!--
+        Section 6 — Tile room.
+        The second level-visual validation scene: a generated tile grid from
+        src/levelgen, viewed through a camera smaller than the level. The
+        playground has no tiles and no camera, so it cannot validate the tile
+        half of the level-visual plan (docs/design/level-visual-rendering-plan.md
+        §9.0). The production treatments exercise the public prepared-theme
+        facade against identical geometry.
+      -->
+      <section id="tile-room" class="section tile-room-section">
+        <div class="tile-room-copy">
+          <h2 class="tile-room-title">A generated room, seen through a camera.</h2>
+          <p class="tile-room-blurb">
+            A tile grid straight out of <code>generateLevel</code>, compiled by
+            <code>compileGeneratedLevel</code> and simulated by the same kernel
+            the playground uses &mdash; but here the level is
+            960&times;544 and the viewport is 600&times;400, so the camera
+            scrolls on both axes. Switch to the <strong>Topology room</strong>
+            for a fixture carrying every shape a tile renderer has to get right:
+            isolated cell, ledge, corner, tunnel, pillar, enclosed room,
+            staircase.
+          </p>
+          <p class="tile-room-blurb">
+            <strong>Ruins</strong>, <strong>Cavern</strong>, and
+            <strong>Mechanical</strong> use the production theme facade,
+            semantic entity silhouettes, and stateless atmosphere recipes.
+            <strong>Fallback</strong> keeps the original collision-style view
+            available for direct comparison.
+          </p>
+          <p class="tile-room-hint">
+            <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> to move ·
+            <span class="kbd">Space</span> to jump ·
+            <span class="kbd">R</span> to reset
+          </p>
+          <pre class="tile-room-snippet"><code>// A generated level, a camera, and one draw pass
+const { level, tileSemantics } = generateLevel(1337, { cols: 60, rows: 34 });
+const compiled = compileGeneratedLevel({ level, tileSemantics });
+// each tick:
+state = stepPlatformer(state, input, solids, dt, config).state;
+camera = updateCamera(camera, state.core, levelBounds, viewport);
+// each frame:
+const scene = createLevelThemeRenderer(theme).prepare(level);
+drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
+        </div>
+        <div class="tile-room-stage">
+          <div class="tile-room-toolbar" role="toolbar" aria-label="Tile room controls">
+            <button class="tile-room-btn" data-scene="generated" type="button" aria-pressed="true">Generated room</button>
+            <button class="tile-room-btn" data-scene="topology" type="button" aria-pressed="false">Topology room</button>
+            <span class="tile-room-toolbar-sep" aria-hidden="true"></span>
+            <button class="tile-room-btn" data-treatment="fallback" type="button" aria-pressed="true">Fallback</button>
+            <button class="tile-room-btn" data-treatment="ruins" type="button" aria-pressed="false">Ruins</button>
+            <button class="tile-room-btn" data-treatment="cavern" type="button" aria-pressed="false">Cavern</button>
+            <button class="tile-room-btn" data-treatment="mechanical" type="button" aria-pressed="false">Mechanical</button>
+            <span class="tile-room-toolbar-sep" aria-hidden="true"></span>
+            <button class="tile-room-btn tile-room-markers" type="button" aria-pressed="false">Markers</button>
+          </div>
+          <div class="tile-room-canvas-wrap">
+            <canvas class="tile-room-canvas" width="600" height="400"
+              aria-label="Scrolling generated tile room with a playable character"></canvas>
+            <button class="tile-room-touch-btn tile-room-touch-btn--left" type="button" aria-label="Move left">◀</button>
+            <button class="tile-room-touch-btn tile-room-touch-btn--right" type="button" aria-label="Move right">▶</button>
+            <button class="tile-room-touch-btn tile-room-touch-btn--jump" type="button" aria-label="Jump">Jump</button>
+          </div>
+          <div class="tile-room-status" role="status" aria-live="polite">Loading.</div>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">
       <p>
-        Prototype hero section. The full 9-section showcase is a work in progress.
+        Live validation scenes for the deterministic rendering and simulation stack.
       </p>
     </footer>
 

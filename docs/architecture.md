@@ -62,8 +62,8 @@ function grantEntitlement(save: SaveData, sku: string): SaveData {
 ```
 src/
 ├── index.ts              # Top-level barrel (re-exports every shipped module below)
-├── primitives/           # color, outline-rect, pixel, motion/dpr probes, glow, parallax, hit-stop, bitmap font, wave-line
-├── rng/                  # seeded mulberry32 PRNG + distribution helpers
+├── primitives/           # color, outline-rect, pixel/DPR snapping, motion probes, glow, parallax, hit-stop, bitmap font, wave-line
+├── rng/                  # seeded mulberry32 PRNG, distributions, stateless visual addresses
 ├── particles/            # deterministic spawn/advance/cull/step + emitters + presets
 ├── animation/            # skeletal rig, IK (limb/ccd/fabrik), locomotion, squash/stretch, springs, spring-rod, spider
 ├── easing/               # Penner curves + stateless tween driver
@@ -80,7 +80,8 @@ src/
 ├── cosmetics/            # versioned manifest, seeded variant generation, multi-slot ownership
 ├── iap/                  # IAP bridge + adapters + entitlements
 ├── level/                # versioned platformer level schema, migration, validation, tile queries
-├── platformer/           # composable kernel + ability pipeline + signed gravity + level-runtime + renderer + presets + enemy archetypes
+├── terrain/              # connectivity/exposure preparation, materials, surface detail, tile/rect renderers
+├── platformer/           # kernel/runtime, theme facade/layers, semantic entity art, atmosphere recipes, leaf themes, enemies
 ├── editor/               # headless level-editor core (ops, history, selection, snapping, clipboard, catalog, playtest)
 ├── collectibles/         # pure-progression CollectibleSave + deterministic derivePickups
 ├── replay/               # record/playback + 32-bit replayHash fingerprint

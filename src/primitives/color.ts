@@ -13,20 +13,32 @@ export interface RGB {
   b: number;
 }
 
+/** True when `value` is a complete `#rrggbb` or `rrggbb` color string. */
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#?[0-9a-fA-F]{6}$/.test(value);
+}
+
+/**
+ * Return `value` when it is a valid hex color, otherwise `fallback`.
+ *
+ * If both values are malformed, the stable safe fallback is black.
+ */
+export function safeHex(value: unknown, fallback: string): string {
+  if (isHexColor(value)) return value;
+  return isHexColor(fallback) ? fallback : '#000000';
+}
+
 /**
  * Parse a `#rrggbb` (or `rrggbb`) hex string into an RGB record.
  * Throws on malformed input — invalid color values are a programmer error,
  * not a runtime condition.
  */
 export function parseHex(hex: string): RGB {
-  const clean = hex.startsWith('#') ? hex.slice(1) : hex;
-  if (clean.length !== 6) {
-    throw new Error(`parseHex: expected 6-char hex, got "${hex}"`);
-  }
-  const n = parseInt(clean, 16);
-  if (Number.isNaN(n)) {
+  if (!isHexColor(hex)) {
     throw new Error(`parseHex: invalid hex "${hex}"`);
   }
+  const clean = hex.startsWith('#') ? hex.slice(1) : hex;
+  const n = parseInt(clean, 16);
   return {
     r: (n >> 16) & 0xff,
     g: (n >> 8) & 0xff,

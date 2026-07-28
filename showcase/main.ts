@@ -14,6 +14,7 @@ import { initLavaPool } from './sections/lava-pool';
 import { initPlayground } from './sections/playground';
 import { initParallax } from './sections/parallax';
 import { initSpider } from './sections/spider';
+import { initTileRoom } from './sections/tile-room';
 
 /**
  * Global showcase state. The hero fields are populated; the rest of the
@@ -114,4 +115,9 @@ if (parallaxSection) {
 const spiderSection = document.getElementById('spider');
 if (spiderSection) {
   initSpider(spiderSection, store);
+}
+
+const tileRoomSection = document.getElementById('tile-room');
+if (tileRoomSection) {
+  initTileRoom(tileRoomSection, store);
 }

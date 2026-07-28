@@ -31,6 +31,15 @@ describe('root barrel re-exports every module', () => {
 
   it('rng: mulberry32 is a function', () => {
     expect(typeof aicraft.mulberry32).toBe('function');
+    expect(typeof aicraft.deriveVisualSeed).toBe('function');
+    expect(typeof aicraft.visualChannel).toBe('function');
+  });
+
+  it('terrain: connectivity, viewport, and exposure helpers are functions', () => {
+    expect(typeof aicraft.sampleTerrainNeighborhood).toBe('function');
+    expect(typeof aicraft.createTerrainConnectionTable).toBe('function');
+    expect(typeof aicraft.visibleTileRange).toBe('function');
+    expect(typeof aicraft.computeRectExposures).toBe('function');
   });
 
   it('particles: spawn and step are functions', () => {
