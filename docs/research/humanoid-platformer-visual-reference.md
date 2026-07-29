@@ -143,6 +143,76 @@ Sources:
 - [Godot frame assignments](https://github.com/godotengine/godot-demo-projects/blob/master/2d/platformer/player/player.tscn)
 - [Godot demo repository and MIT license](https://github.com/godotengine/godot-demo-projects)
 
+### Shantae and Freedom Planet 2 — explicit three-quarter construction
+
+Freedom Planet 2 character designer Tyson Tan describes the same projection
+problem visible in the Godot robot. Most platformers use a dead-lateral view,
+but the Freedom Planet 2 team deliberately chose a `3/4` front view. Tan's
+comparison identifies Shantae and the Pirate's Curse as a successful example
+of that approach and contrasts it with near-side-view Mega Man X and a less
+successful Mega Man 7 attempt.
+
+The comparison is especially useful because it explains why a mechanically
+symmetrical drawing can look tilted or droopy. The nearer and farther halves
+cannot be rendered identically. In the successful examples:
+
+- the farther eye is lower, smaller, and less bright than the nearer eye;
+- the farther shoulder is partially obscured by the torso;
+- the farther hand and corresponding joints are vertically offset;
+- hair and other silhouette shapes help separate the two sides;
+- the result behaves like a small pseudo two-point perspective drawing.
+
+This independently confirms that the Godot robot's readable face and chest are
+not an accidental front-facing idle pasted onto a side-view character. They are
+part of an established **cheated three-quarter platformer profile**: travel and
+gait remain horizontal, while the head, chest, and limb layering turn enough
+toward the viewer to show identity and depth.
+
+Source:
+
+- [Freedom Planet 2 character design and pixel-perspective analysis](https://tysontan.com/gallery/gallery-others/freedom-planet-2-main4/)
+
+The article and its comparison artwork are CC BY-SA, but we do not need to copy
+the artwork into this repository. It validates static projection and depth
+ordering, not animation timing; Tan explicitly notes that other team members
+produced the animation.
+
+### GandalfHardcore Free Warrior — human-scale locomotion sequence
+
+The user-supplied Warrior sheet is an `800 × 1088` RGBA image arranged as ten
+`80 × 64` columns and seventeen rows. The creator's devlog identifies the rows
+as:
+
+- idle: 5 frames;
+- walk, run, and backward run: 8 frames each;
+- jump, fall, and slide: 4 frames each;
+- the same locomotion set while carrying a sword;
+- attack: 6 frames;
+- death: 8 frames;
+- death with sword: 10 frames.
+
+Alpha-bound inspection shows that the standing and locomotion figures occupy
+approximately `18–24 × 44–49` pixels inside each cell. This is a particularly
+close match for our nominal `32 × 48` humanoid: it preserves recognisable human
+proportions, a visible face, separated near/far limbs, and complete temporal
+sequences without relying on a much larger source sprite.
+
+Visually, this is less front-facing than the Godot robot, but it uses the same
+cheated-profile family. The gait and pelvis are side-on; enough of the face and
+chest remain visible to retain identity; the nearer and farther limbs overlap
+in depth rather than forming a mechanically symmetrical front view. Its quiet
+five-frame idle is also a better neutral-human check than an armed or
+hands-on-hips pose.
+
+Source:
+
+- [Creator's Free Warrior animation inventory](https://gandalfhardcore.itch.io/2d-pixel-art-male-and-female-character/devlog/771411/added-free-warrior-character-)
+
+The asset is advertised as free, but neither the downloaded folder nor the
+Warrior devlog supplies a precise reuse licence. We can measure it as external
+reference material, but must not copy the sheet into this repository or ship
+derived artwork unless the applicable licence is confirmed.
+
 ### Kenney Platformer Characters — CC0 pose catalog
 
 Kenney's sheet provides standing, idle, two walk poses, jump, fall, skid,
@@ -226,15 +296,24 @@ The diagram is retained only as a clearly labelled working hypothesis.
 The production target is an **articulated-minimal three-quarter profile**:
 
 - a single head and torso form the primary mass;
+- gait, pelvis, and direction of travel read side-on;
+- head and chest turn toward the viewer enough to expose the nearer and farther
+  sides;
 - two legs and two arms remain visible for procedural motion;
 - the far-side limbs use lower visual priority and draw before the torso;
 - the near-side limbs draw later with stronger contrast;
+- the near and far sides are deliberately unequal rather than mechanically
+  mirrored inside one facing;
 - neutral poses are almost symmetrical but use layering to communicate depth;
 - action poses may become strongly asymmetric;
 - horizontal facing is still handled by mirroring one canonical pose.
 
-This is closer to Dead Cells structurally, Shovel Knight in idle restraint, and
-Hollow Knight/Celeste in small-scale silhouette discipline.
+Godot is the primary open, frame-addressable pose reference. The GandalfHardcore
+Warrior is the closest human-height temporal comparison. Shantae and Freedom
+Planet 2 confirm the face/chest projection. Dead Cells confirms the articulated
+body and near/far limb depth, although its unconventional head cannot validate
+facial perspective. Shovel Knight supplies idle restraint, and Hollow
+Knight/Celeste supply small-scale silhouette discipline.
 
 ## Normalized neutral-pose rules
 
@@ -309,10 +388,13 @@ Every future humanoid candidate sheet must include:
 
 ## Revised decision
 
-The existing procedural approach remains viable, but pose approval requires a
-new measured frame table based primarily on the Godot run/jump/fall frames and
-the CC0 Kenney and OpenGameArt sequences. Strategy-level observations from
-commercial games remain supporting context only.
+The existing procedural approach remains viable. The projection question is
+now resolved: use the Godot-style cheated three-quarter profile, supported by
+Shantae/Freedom Planet 2 construction evidence and Dead Cells limb depth. Pose
+approval still requires a new measured frame table based primarily on the
+Godot and GandalfHardcore idle/run/jump/fall frames, with the CC0 Kenney and
+OpenGameArt sequences as controls. Strategy-level observations from commercial
+games remain supporting context only.
 
 The corrected neutral feet and arms satisfy the static invariants. Before the
 humanoid is visually complete:

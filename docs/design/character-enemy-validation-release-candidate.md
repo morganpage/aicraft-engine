@@ -4,6 +4,10 @@
 > Status: **NEEDS VISUAL REVISION**
 > Candidate version: `aicraft-engine@0.5.0`
 
+The implementation-ready recovery plan is:
+
+- `docs/design/humanoid-visual-revision-plan.md`
+
 ## Source identity
 
 - Published `0.4.0` baseline:

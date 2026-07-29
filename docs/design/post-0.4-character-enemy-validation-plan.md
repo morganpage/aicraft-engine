@@ -8,6 +8,11 @@
 > Candidate release: `aicraft-engine@0.5.0`
 > Initial validation scope: humanoid player body plan + charger enemy archetype
 
+> Follow-up: the candidate passed architecture, package, and external-consumer
+> gates but requires humanoid visual revision. The remaining work is owned by
+> `docs/design/humanoid-visual-revision-plan.md`; completed phases in this
+> umbrella plan remain historical evidence.
+
 ## Purpose
 
 Validate a reusable procedural-character abstraction and one behaviorally distinct
@@ -1448,9 +1453,11 @@ The review must reference exact PNG paths and concrete visual observations.
 
 `@architect` reviews the actual prototype, not only the proposal.
 
-This is the **sole phase** that may record an approval verdict. Phase 1's
-documentation reconciliation must not mark anything approved — prior proposal
-critiques are historical inputs only.
+This is the sole phase that may record the original prototype architecture
+approval verdict. Phase 1's documentation reconciliation must not mark anything
+approved — prior proposal critiques are historical inputs only. The later
+humanoid visual rejection and its replacement visual gate are recorded in
+`docs/design/humanoid-visual-revision-plan.md`.
 
 Required checks:
 
@@ -1953,10 +1960,11 @@ Remove the temporary project and tarball after verification.
 
 ## Phase 17.5: Release-Candidate Handoff
 
-> Status: **READY FOR USER APPROVAL** (2026-07-29). Exact source/tree and
-> artifact identity are recorded in
-> `character-enemy-validation-release-candidate.md`. No merge, tag, or
-> publication has occurred.
+> Status: **SUPERSEDED — NEEDS HUMANOID VISUAL REVISION** (2026-07-29). The
+> exact source/tree and artifact passed technical gates, but subsequent visual
+> review withheld release approval. Recovery is specified in
+> `docs/design/humanoid-visual-revision-plan.md`. No merge, tag, or publication
+> has occurred.
 
 Publication remains outside this plan, but the plan must end with a candidate
 that can be mapped to one exact source tree and one verified artifact.
