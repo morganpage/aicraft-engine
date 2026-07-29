@@ -11,9 +11,9 @@
 - Development base and current `main`:
   `6d4906624dac359f186fcbc583af96e8e9ffd66e`
 - Release-candidate implementation commit:
-  `2668c044c272ae8ac30a4226267a660b1fb38093`
+  `0663d7fe599bfa3ef4256c247f7e7e5bbbbcadab`
 - Release-candidate implementation tree:
-  `e3970cc4e8c0d2cf5aed486cd8c390f62d705e5b`
+  `f517358ea922209d7ad5cda7dda5a03f40da4786`
 - Branch: `codex/character-enemy-validation`
 - Worktree was clean when the candidate artifact was packed.
 - `package.json` and `package-lock.json` both report `0.5.0`.
@@ -25,12 +25,12 @@ or declaration content.
 ## Exact artifact
 
 - Filename: `aicraft-engine-0.5.0.tgz`
-- Size: 554,432 bytes
-- Unpacked size: 1,843,992 bytes
+- Size: 554,929 bytes
+- Unpacked size: 1,845,909 bytes
 - Entry count: 463
-- SHA-1: `04f481ac26c8986f0c842e1808e8f80037f9da48`
+- SHA-1: `48374f6d6360ac8fa767e77eb940c0ff5fca93c0`
 - SHA-512:
-  `sha512-aSWwJxNu+/llx+Fg49Cow+QlwI0tqox0QdHYbTjtUCfK3iyWMxdGGpiraUdxRdjf5rbU/8Abd9IoJS4/B+V3Ew==`
+  `sha512-Nhyn9CNnaEejHSljf0ufAWHy0oiNvvpqOD82TaAfKjteZVJwdhBjW1BApIKh3VwX8HO1Ui0D6BVhB2juxrwowQ==`
 
 The tarball contains production `dist/character`, collision LOS, charger,
 declarations, README, license, and package metadata. It contains no prototype,
@@ -41,17 +41,19 @@ showcase, benchmark, or test files and has no runtime dependencies.
 Phase 15.5: **CONFIRM**
 
 - Humanoid production and prototype PNG SHA-256:
-  `f259bcae4326eb3cf060224c490eef1008fb1750377760de2e157e85df17ab59`
+  `66f2484f6c8cecebe0696a6e36afcb373fd62ecd874027ea88e7952fd91c5837`
 - Charger production and prototype PNG SHA-256:
   `cad16310317a96be7f5921f5f63eea4bc477455401e4e4fdb69b4b35a4c1911d`
 - Both production sheets are byte-identical to the approved prototypes.
 - Production architecture matches both decision documents.
 - Humanoid idle geometry now enforces grounded feet, left/right foot and knee
   ordering, finite coordinates, exact limb lengths, and non-intersecting legs.
+- Neutral arms hang beside the torso with sided elbows/hands, exact segment
+  lengths, shallow bends, and no centerline crossing.
 
 Phase 16: **PASS**
 
-- 2,802 library tests passed across 143 files.
+- 2,803 library tests passed across 143 files.
 - 222 showcase tests passed across 10 files.
 - Library typecheck, distribution build, showcase typecheck, and showcase build
   passed.
