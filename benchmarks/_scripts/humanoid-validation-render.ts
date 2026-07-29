@@ -16,9 +16,16 @@ import {
   type HumanoidMotionSample,
 } from '../../src/character/humanoid';
 import { drawHumanoid } from '../../src/character/humanoid';
+import {
+  advanceHumanoidVisual as advancePrototypeHumanoidVisual,
+  createHumanoidVisualState as createPrototypeHumanoidVisualState,
+} from '../../showcase/_prototype/character-enemy-validation/humanoid-state';
+import { deriveHumanoidConfig as derivePrototypeHumanoidConfig } from '../../showcase/_prototype/character-enemy-validation/humanoid-config';
+import { drawHumanoid as drawPrototypeHumanoid } from '../../showcase/_prototype/character-enemy-validation/humanoid-draw';
 
 const OUTPUT_DIR = 'benchmarks/character-body-plans';
-const OUTPUT_FILE = join(OUTPUT_DIR, 'humanoid-production.png');
+const PRODUCTION_OUTPUT_FILE = join(OUTPUT_DIR, 'humanoid-production.png');
+const PROTOTYPE_OUTPUT_FILE = join(OUTPUT_DIR, 'humanoid-prototype.png');
 const WIDTH = 960;
 const HEIGHT = 560;
 const BACKGROUND = '#0d0b12';
@@ -36,6 +43,27 @@ interface PoseSpec {
   readonly grayscale?: boolean;
 }
 
+interface HumanoidImplementation {
+  readonly deriveConfig: (seed: number) => HumanoidConfig;
+  readonly createState: typeof createHumanoidVisualState;
+  readonly advanceState: typeof advanceHumanoidVisual;
+  readonly draw: typeof drawHumanoid;
+}
+
+const productionImplementation: HumanoidImplementation = {
+  deriveConfig: deriveHumanoidConfig,
+  createState: createHumanoidVisualState,
+  advanceState: advanceHumanoidVisual,
+  draw: drawHumanoid,
+};
+
+const prototypeImplementation: HumanoidImplementation = {
+  deriveConfig: derivePrototypeHumanoidConfig,
+  createState: createPrototypeHumanoidVisualState,
+  advanceState: advancePrototypeHumanoidVisual,
+  draw: drawPrototypeHumanoid,
+};
+
 function ctx2d(canvas: Canvas): CanvasRenderingContext2D {
   return canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
 }
@@ -43,8 +71,9 @@ function ctx2d(canvas: Canvas): CanvasRenderingContext2D {
 function sample(
   config: HumanoidConfig,
   spec: PoseSpec,
+  implementation: HumanoidImplementation,
 ): ReturnType<typeof createHumanoidVisualState> {
-  let state = createHumanoidVisualState(config);
+  let state = implementation.createState(config);
   const base: HumanoidMotionSample = {
     dx: 0,
     facing: spec.facing ?? 1,
@@ -58,7 +87,7 @@ function sample(
   };
   const steps = spec.phaseSteps ?? 1;
   for (let index = 0; index < steps; index += 1) {
-    state = advanceHumanoidVisual(config, state, base, 1 / 60);
+    state = implementation.advanceState(config, state, base, 1 / 60);
   }
   return state;
 }
@@ -83,6 +112,7 @@ function panel(
   width: number,
   height: number,
   spec: PoseSpec,
+  implementation: HumanoidImplementation,
 ): void {
   ctx.fillStyle = PANEL;
   ctx.fillRect(x, y, width, height);
@@ -100,10 +130,10 @@ function panel(
   ctx.lineTo(x + width - 15, y + height - 20.5);
   ctx.stroke();
 
-  let config = deriveHumanoidConfig(spec.seed);
+  let config = implementation.deriveConfig(spec.seed);
   if (spec.grayscale) config = grayscale(config);
-  const state = sample(config, spec);
-  drawHumanoid(
+  const state = sample(config, spec, implementation);
+  implementation.draw(
     ctx,
     {
       x: x + width / 2 - 16,
@@ -121,7 +151,7 @@ function panel(
   );
 }
 
-function renderSheet(): Canvas {
+function renderSheet(implementation: HumanoidImplementation): Canvas {
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = ctx2d(canvas);
   ctx.fillStyle = BACKGROUND;
@@ -180,6 +210,7 @@ function renderSheet(): Canvas {
       cellWidth,
       cellHeight,
       spec,
+      implementation,
     );
   });
 
@@ -188,12 +219,12 @@ function renderSheet(): Canvas {
   ctx.font = 'bold 11px sans-serif';
   ctx.fillText('small-scale silhouettes', 20, y);
   for (let index = 0; index < 3; index += 1) {
-    const config = deriveHumanoidConfig([1, 42, 99][index]);
-    drawHumanoid(
+    const config = implementation.deriveConfig([1, 42, 99][index]);
+    implementation.draw(
       ctx,
       { x: 165 + index * 34, y: y - 18, width: 8, height: 12, facing: 1 },
       config,
-      createHumanoidVisualState(config),
+      implementation.createState(config),
       0,
     );
   }
@@ -211,10 +242,17 @@ function renderSheet(): Canvas {
 }
 
 mkdirSync(OUTPUT_DIR, { recursive: true });
-const first = renderSheet().toBuffer('image/png');
-const second = renderSheet().toBuffer('image/png');
-if (!first.equals(second)) {
+const production = renderSheet(productionImplementation).toBuffer('image/png');
+const productionRepeat = renderSheet(productionImplementation).toBuffer('image/png');
+const prototype = renderSheet(prototypeImplementation).toBuffer('image/png');
+if (!production.equals(productionRepeat)) {
   throw new Error('humanoid benchmark is not byte-deterministic');
 }
-writeFileSync(OUTPUT_FILE, first);
-console.log(`ok ${OUTPUT_FILE} ${(first.byteLength / 1024).toFixed(1)} KB`);
+if (!production.equals(prototype)) {
+  throw new Error('production humanoid does not match the validated prototype');
+}
+writeFileSync(PRODUCTION_OUTPUT_FILE, production);
+writeFileSync(PROTOTYPE_OUTPUT_FILE, prototype);
+console.log(
+  `ok humanoid prototype/production ${(production.byteLength / 1024).toFixed(1)} KB each`,
+);

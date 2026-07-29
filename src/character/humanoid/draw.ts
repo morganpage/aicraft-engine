@@ -7,10 +7,25 @@ import {
   HUMANOID_BASE_HEIGHT,
   HUMANOID_BASE_WIDTH,
   HUMANOID_EYE_RADIUS,
+  HUMANOID_IDLE_HIP_Y,
+  HUMANOID_IDLE_STANCE_WIDTH,
   HUMANOID_OUTLINE_WIDTH,
   HUMANOID_TARGET_ARM_BLEND,
 } from './constants';
 import type { HumanoidConfig, HumanoidVisualState } from './types';
+
+export interface HumanoidLegPose {
+  readonly hip: Readonly<Vec2>;
+  readonly knee: Readonly<Vec2>;
+  readonly foot: Readonly<Vec2>;
+}
+
+export interface HumanoidLowerBodyPose {
+  readonly torsoTop: number;
+  readonly torsoBottom: number;
+  readonly leftLeg: HumanoidLegPose;
+  readonly rightLeg: HumanoidLegPose;
+}
 
 function drawBone(
   ctx: CanvasRenderingContext2D,
@@ -38,6 +53,80 @@ function poseYOffset(state: HumanoidVisualState): number {
   return state.landingBlend * 1.2 - state.launchBlend * 0.8;
 }
 
+function mix(from: number, to: number, amount: number): number {
+  return from + (to - from) * amount;
+}
+
+/**
+ * Resolve lower-body geometry independently from canvas rendering so neutral
+ * stance invariants can be verified without relying on pixel snapshots.
+ */
+export function evaluateHumanoidLowerBodyPose(
+  config: HumanoidConfig,
+  state: HumanoidVisualState,
+): HumanoidLowerBodyPose {
+  const gait = evaluateLocomotion(state.locomotion, config.gait);
+  const activeBlend = 1 - state.idleBlend;
+  const hipOffset = {
+    x: gait.hipOffset.x * activeBlend,
+    y: gait.hipOffset.y * activeBlend,
+  };
+  const torsoBottom = mix(
+    -9 + gait.hipOffset.y,
+    HUMANOID_IDLE_HIP_Y,
+    state.idleBlend,
+  );
+  const torsoTop = torsoBottom - config.torsoHeight;
+  const hipLeft = { x: -2 + hipOffset.x, y: torsoBottom };
+  const hipRight = { x: 2 + hipOffset.x, y: torsoBottom };
+  const airTuck = state.airPose === 'grounded' ? 0 : 2.3;
+  const movingLeftFoot = {
+    x: -2 + gait.leftFootOffset.x,
+    y: -gait.leftFootOffset.y - airTuck,
+  };
+  const movingRightFoot = {
+    x: 2 + gait.rightFootOffset.x,
+    y: -gait.rightFootOffset.y - airTuck,
+  };
+  const leftFoot = {
+    x: mix(movingLeftFoot.x, -HUMANOID_IDLE_STANCE_WIDTH / 2, state.idleBlend),
+    y: mix(movingLeftFoot.y, 0, state.idleBlend),
+  };
+  const rightFoot = {
+    x: mix(movingRightFoot.x, HUMANOID_IDLE_STANCE_WIDTH / 2, state.idleBlend),
+    y: mix(movingRightFoot.y, 0, state.idleBlend),
+  };
+  const leftLeg = solveLimb(
+    hipLeft,
+    leftFoot,
+    config.thighLength,
+    config.shinLength,
+    { bendDir: 1 },
+  );
+  const rightLeg = solveLimb(
+    hipRight,
+    rightFoot,
+    config.thighLength,
+    config.shinLength,
+    { bendDir: -1 },
+  );
+
+  return {
+    torsoTop,
+    torsoBottom,
+    leftLeg: {
+      hip: hipLeft,
+      knee: leftLeg.jointPos,
+      foot: leftLeg.endPos,
+    },
+    rightLeg: {
+      hip: hipRight,
+      knee: rightLeg.jointPos,
+      foot: rightLeg.endPos,
+    },
+  };
+}
+
 /**
  * Draw a procedural humanoid inside a consumer-owned body frame.
  *
@@ -55,46 +144,20 @@ export function drawHumanoid(
     0.05,
     Math.min(body.width / HUMANOID_BASE_WIDTH, body.height / HUMANOID_BASE_HEIGHT),
   );
-  const gait = evaluateLocomotion(state.locomotion, config.gait);
   const breathScale = breathe(tick, config.breath);
   const palette = config.palette;
+  const lowerBody = evaluateHumanoidLowerBodyPose(config, state);
 
   ctx.save();
   ctx.translate(body.x + body.width / 2, body.y + body.height);
   ctx.scale(body.facing * scale, scale);
   ctx.translate(0, poseYOffset(state));
 
-  const torsoBottom = -9 + gait.hipOffset.y;
-  const torsoTop = torsoBottom - config.torsoHeight;
-  const hipLeft = { x: -2 + gait.hipOffset.x, y: torsoBottom };
-  const hipRight = { x: 2 + gait.hipOffset.x, y: torsoBottom };
-  const airTuck = state.airPose === 'grounded' ? 0 : 2.3;
-  const leftFoot = {
-    x: -2 + gait.leftFootOffset.x,
-    y: -gait.leftFootOffset.y - airTuck,
-  };
-  const rightFoot = {
-    x: 2 + gait.rightFootOffset.x,
-    y: -gait.rightFootOffset.y - airTuck,
-  };
-  const leftLeg = solveLimb(
-    hipLeft,
-    leftFoot,
-    config.thighLength,
-    config.shinLength,
-    { bendDir: -1 },
-  );
-  const rightLeg = solveLimb(
-    hipRight,
-    rightFoot,
-    config.thighLength,
-    config.shinLength,
-    { bendDir: 1 },
-  );
-  drawBone(ctx, hipRight, rightLeg.jointPos, rightLeg.endPos, palette.outline, 3.4);
-  drawBone(ctx, hipRight, rightLeg.jointPos, rightLeg.endPos, palette.accent, 1.8);
-  drawBone(ctx, hipLeft, leftLeg.jointPos, leftLeg.endPos, palette.outline, 3.4);
-  drawBone(ctx, hipLeft, leftLeg.jointPos, leftLeg.endPos, palette.base, 1.8);
+  const { torsoBottom, torsoTop, leftLeg, rightLeg } = lowerBody;
+  drawBone(ctx, rightLeg.hip, rightLeg.knee, rightLeg.foot, palette.outline, 3.4);
+  drawBone(ctx, rightLeg.hip, rightLeg.knee, rightLeg.foot, palette.accent, 1.8);
+  drawBone(ctx, leftLeg.hip, leftLeg.knee, leftLeg.foot, palette.outline, 3.4);
+  drawBone(ctx, leftLeg.hip, leftLeg.knee, leftLeg.foot, palette.base, 1.8);
 
   const shoulderY = torsoTop + 2.2;
   const shoulderHalf = config.shoulderWidth / 2;

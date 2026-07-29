@@ -21,6 +21,9 @@ export const HUMANOID_POSE_DECAY_PER_SECOND = 7;
 export const HUMANOID_OUTLINE_WIDTH = 1;
 export const HUMANOID_EYE_RADIUS = 1;
 export const HUMANOID_TARGET_ARM_BLEND = 0.72;
+export const HUMANOID_IDLE_STANCE_WIDTH = 5.2;
+export const HUMANOID_IDLE_HIP_Y = -10.6;
+export const HUMANOID_IDLE_BLEND_PER_SECOND = 10;
 
 export const CHARGER_WIDTH = 16;
 export const CHARGER_HEIGHT = 16;

@@ -1,5 +1,8 @@
 import { advanceLocomotionByDisplacement } from '../../animation/locomotion';
-import { HUMANOID_POSE_DECAY_PER_SECOND } from './constants';
+import {
+  HUMANOID_IDLE_BLEND_PER_SECOND,
+  HUMANOID_POSE_DECAY_PER_SECOND,
+} from './constants';
 import type {
   HumanoidAirPose,
   HumanoidConfig,
@@ -14,6 +17,7 @@ export function createHumanoidVisualState(
   return {
     locomotion: { phase: 0 },
     facing: 1,
+    idleBlend: 1,
     airPose: 'grounded',
     launchBlend: 0,
     landingBlend: 0,
@@ -49,10 +53,17 @@ export function advanceHumanoidVisual(
       ? 'ascent'
       : relativeVertical > 0.5
         ? 'descent'
-        : 'apex';
+      : 'apex';
+  const idleTarget = motion.supported && Math.abs(dx) < 1e-6 ? 1 : 0;
+  const idleStep = safeDt * HUMANOID_IDLE_BLEND_PER_SECOND;
+  const idleBlend =
+    idleTarget > state.idleBlend
+      ? Math.min(idleTarget, state.idleBlend + idleStep)
+      : Math.max(idleTarget, state.idleBlend - idleStep);
   return {
     locomotion,
     facing: motion.facing,
+    idleBlend,
     airPose,
     launchBlend: motion.justLaunched ? 1 : decay(state.launchBlend, safeDt),
     landingBlend: motion.justLanded ? 1 : decay(state.landingBlend, safeDt),

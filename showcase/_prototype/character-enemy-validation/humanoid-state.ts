@@ -1,7 +1,10 @@
 import type { LocomotionState } from '../../../src/animation/locomotion';
 import { advanceLocomotionByDisplacement } from '../../../src/animation/locomotion';
 import type { Vec2 } from '../../../src/animation/types';
-import { HUMANOID_POSE_DECAY_PER_SECOND } from './constants';
+import {
+  HUMANOID_IDLE_BLEND_PER_SECOND,
+  HUMANOID_POSE_DECAY_PER_SECOND,
+} from './constants';
 import type { HumanoidConfig } from './humanoid-config';
 
 export type HumanoidAirPose = 'grounded' | 'ascent' | 'apex' | 'descent';
@@ -21,6 +24,7 @@ export interface HumanoidMotionSample {
 export interface HumanoidVisualState {
   readonly locomotion: LocomotionState;
   readonly facing: 1 | -1;
+  readonly idleBlend: number;
   readonly airPose: HumanoidAirPose;
   readonly launchBlend: number;
   readonly landingBlend: number;
@@ -34,6 +38,7 @@ export function createHumanoidVisualState(
   return {
     locomotion: { phase: 0 },
     facing: 1,
+    idleBlend: 1,
     airPose: 'grounded',
     launchBlend: 0,
     landingBlend: 0,
@@ -71,10 +76,17 @@ export function advanceHumanoidVisual(
       : relativeVertical > 0.5
         ? 'descent'
         : 'apex';
+  const idleTarget = motion.supported && Math.abs(dx) < 1e-6 ? 1 : 0;
+  const idleStep = safeDt * HUMANOID_IDLE_BLEND_PER_SECOND;
+  const idleBlend =
+    idleTarget > state.idleBlend
+      ? Math.min(idleTarget, state.idleBlend + idleStep)
+      : Math.max(idleTarget, state.idleBlend - idleStep);
 
   return {
     locomotion,
     facing: motion.facing,
+    idleBlend,
     airPose,
     launchBlend: motion.justLaunched ? 1 : decay(state.launchBlend, safeDt),
     landingBlend: motion.justLanded ? 1 : decay(state.landingBlend, safeDt),

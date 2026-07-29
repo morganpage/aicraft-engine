@@ -47,6 +47,8 @@ export interface HumanoidMotionSample {
 export interface HumanoidVisualState {
   readonly locomotion: LocomotionState;
   readonly facing: 1 | -1;
+  /** `1` at neutral rest, blending toward `0` while moving. */
+  readonly idleBlend: number;
   readonly airPose: HumanoidAirPose;
   readonly launchBlend: number;
   readonly landingBlend: number;
