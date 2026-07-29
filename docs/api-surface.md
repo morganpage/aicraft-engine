@@ -983,7 +983,7 @@ dependency; material normalization and drawing are Phase 2.
 | `drawBuiltinTerrainEdgeDetail(ctx, detail)` | function | Chipped stone, rocky, beveled, and grass edge dispatcher | `src/terrain/edge-detail.ts` |
 | `drawTerrainTiles(ctx, grid, options)` | function | Culled seamless connected-tile renderer with exposed caps, undersides, and stable edge treatments | `src/terrain/tile-renderer.ts` |
 | `TerrainRectRole` | type | `solid`, `passthrough`, `moving`, or `hazard` rectangle role | `src/terrain/types.ts` |
-| `drawTerrainRect(ctx, rect, options)` | function | Span-aware role renderer, including mechanical and pointed hazard silhouettes | `src/terrain/rect-renderer.ts` |
+| `drawTerrainRect(ctx, rect, options)` | function | Leaf, span-aware role renderer with optional consumer-injected detail callback; includes mechanical and pointed hazard silhouettes without importing built-in themes, tiles, or the detail catalog | `src/terrain/rect-renderer.ts` |
 
 ### `src/platformer/`
 
@@ -1009,6 +1009,10 @@ dependency; material normalization and drawing are Phase 2.
 | `drawRuinsDust` | layer callback | Sparse stateless dust recipe with fixed reduced-motion output | `src/platformer/atmosphere-recipes.ts` |
 | `drawCavernDrips` | layer callback | Stateless cavern drips with reduced-motion simplification | `src/platformer/atmosphere-recipes.ts` |
 | `drawMechanicalSparks` | layer callback | Stateless warning sparks with static reduced-motion state | `src/platformer/atmosphere-recipes.ts` |
+| `LevelThemeOption` | interface | Consumer-owned theme id, label, and direct theme value | `src/platformer/theme-preview.ts` |
+| `resolveLevelThemeOption(options, requestedId?, fallbackId?)` | function | Exact → configured fallback → first-option resolution without a registry | `src/platformer/theme-preview.ts` |
+| `drawLevelThumbnail(ctx, scene, level, options)` | function | Deterministic fit-to-box thumbnail using tick 0 and reduced-motion mode | `src/platformer/theme-preview.ts` |
+| `DrawLevelThumbnailOptions` | interface | Thumbnail target dimensions, padding, and DPR | `src/platformer/theme-preview.ts` |
 
 > Decision: `docs/design/platformer-kernel-decision.md`.
 > Proposal: `docs/design/platformer-kernel-proposal.md` (Approach B: Composable Ability Processors).

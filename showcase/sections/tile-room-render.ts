@@ -76,6 +76,8 @@ export interface TileRoomFrame {
   readonly treatment: TileRoomTreatment;
   /** When `true`, marker entities (spawn, trigger) are drawn — the edit/debug view (§5.6). */
   readonly showMarkers: boolean;
+  /** Collected entity ids omitted from every entity-rendering pass. */
+  readonly collectedEntityIds?: ReadonlySet<number>;
   /** Stable seed for coordinate-addressed visual detail. */
   readonly worldSeed: number;
   /**
@@ -135,9 +137,11 @@ export function resolveTileRoomEntities(
   level: LevelData,
   movingRects: ReadonlyMap<number, LevelRect>,
   showMarkers: boolean,
+  collectedEntityIds: ReadonlySet<number> = new Set(),
 ): readonly LevelEntity[] {
   const out: LevelEntity[] = [];
   for (const entity of level.entities) {
+    if (collectedEntityIds.has(entity.id)) continue;
     if (!showMarkers && MARKER_KINDS.has(entity.kind)) continue;
     const runtime = movingRects.get(entity.id);
     out.push(runtime === undefined ? entity : withRuntimeRect(entity, runtime));
@@ -225,10 +229,12 @@ function themedEntities(
   level: LevelData,
   movingRects: ReadonlyMap<number, LevelRect>,
   showMarkers: boolean,
+  collectedEntityIds: ReadonlySet<number>,
 ): readonly ResolvedLevelEntity[] {
   const out: ResolvedLevelEntity[] = [];
   let hasSpawn = false;
   for (const entity of level.entities) {
+    if (collectedEntityIds.has(entity.id)) continue;
     if (!showMarkers && MARKER_KINDS.has(entity.kind)) continue;
     let rect = movingRects.get(entity.id) ?? entity.rect;
     if (entity.kind === 'spawn') {
@@ -276,7 +282,13 @@ export function drawTileRoomFrame(
 ): void {
   const { level } = scene;
   const terrainTreatment = frame.treatment !== 'fallback';
-  const resolved = resolveTileRoomEntities(level, frame.movingRects, frame.showMarkers);
+  const collectedEntityIds = frame.collectedEntityIds ?? new Set<number>();
+  const resolved = resolveTileRoomEntities(
+    level,
+    frame.movingRects,
+    frame.showMarkers,
+    collectedEntityIds,
+  );
   const { terrain, other } = partitionTileRoomEntities(resolved);
 
   if (terrainTreatment) {
@@ -285,7 +297,12 @@ export function drawTileRoomFrame(
       level,
       devicePixelRatio: frame.dpr,
       view: { x: frame.camera.x, y: frame.camera.y, width: frame.viewW, height: frame.viewH },
-      entities: themedEntities(level, frame.movingRects, frame.showMarkers),
+      entities: themedEntities(
+        level,
+        frame.movingRects,
+        frame.showMarkers,
+        collectedEntityIds,
+      ),
       tick: 0,
       mode: frame.showMarkers ? 'edit' : 'play',
     } as const;

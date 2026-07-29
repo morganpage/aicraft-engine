@@ -239,6 +239,7 @@ const [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity: 0.5 });
             <span class="kbd">Space</span> to jump ·
             <span class="kbd">R</span> to reset ·
             toggle <strong>✎ Edit</strong> to modify the level ·
+            switch between <strong>Collision</strong> and themed <strong>Art</strong> previews ·
             click-drag to draw platforms ·
             click a moving platform to drag its waypoints
           </p>
@@ -269,6 +270,13 @@ next = exitPlaytest(next, snapshot);</code></pre>
             <span class="playground-toolbar-sep" aria-hidden="true"></span>
             <button class="playground-btn" data-mode="select" type="button" aria-pressed="false">Select</button>
             <button class="playground-btn playground-undo" type="button">↶ Undo</button>
+            <span class="playground-toolbar-sep" aria-hidden="true"></span>
+            <button class="playground-btn" data-preview="collision" type="button" aria-pressed="true">Collision</button>
+            <button class="playground-btn" data-preview="art" type="button" aria-pressed="false">Art</button>
+            <span class="playground-toolbar-sep" aria-hidden="true"></span>
+            <button class="playground-btn" data-theme="ruins" type="button" aria-pressed="false">Ruins</button>
+            <button class="playground-btn" data-theme="cavern" type="button" aria-pressed="true">Cavern</button>
+            <button class="playground-btn" data-theme="mechanical" type="button" aria-pressed="false">Mechanical</button>
           </div>
           <!--
             Canvas + touch controls are wrapped together in
@@ -524,9 +532,11 @@ drawSpider(ctx, pose, config);</code></pre>
             available for direct comparison.
           </p>
           <p class="tile-room-hint">
+            Choose <strong>Play room</strong> below, then
             <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> to move ·
             <span class="kbd">Space</span> to jump ·
-            <span class="kbd">R</span> to reset
+            <span class="kbd">R</span> to reset ·
+            <span class="kbd">Esc</span> to stop
           </p>
           <pre class="tile-room-snippet"><code>// A generated level, a camera, and one draw pass
 const { level, tileSemantics } = generateLevel(1337, { cols: 60, rows: 34 });
@@ -552,8 +562,15 @@ drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
             <button class="tile-room-btn tile-room-markers" type="button" aria-pressed="false">Markers</button>
           </div>
           <div class="tile-room-canvas-wrap">
-            <canvas class="tile-room-canvas" width="600" height="400"
-              aria-label="Scrolling generated tile room with a playable character"></canvas>
+            <canvas class="tile-room-canvas" width="600" height="400" tabindex="-1"
+              aria-label="Paused scrolling tile room. Activate Play room to use keyboard controls."></canvas>
+            <div class="tile-room-play-overlay">
+              <button class="tile-room-play" type="button">
+                <span class="tile-room-play-icon" aria-hidden="true">▶</span>
+                Play room
+              </button>
+              <span class="tile-room-play-help">Activates keyboard controls</span>
+            </div>
             <button class="tile-room-touch-btn tile-room-touch-btn--left" type="button" aria-label="Move left">◀</button>
             <button class="tile-room-touch-btn tile-room-touch-btn--right" type="button" aria-label="Move right">▶</button>
             <button class="tile-room-touch-btn tile-room-touch-btn--jump" type="button" aria-label="Jump">Jump</button>

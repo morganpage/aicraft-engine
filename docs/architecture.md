@@ -14,6 +14,26 @@ A consumer's deterministic core (e.g. Spitekeep's `src/core/`) may freely import
 
 **Renderer-output buffer exception.** Renderer-adjacent code may mutate its own rendering-output buffers (e.g., the world-space transform / position / rotation caches in `src/animation/rig.ts`) in place, provided those buffers are never read by deterministic simulation logic. Authoritative simulation state remains pure-clone per the pure-progression-ops discipline below. This is the only relaxation of "no state mutation" and applies solely to derived/cached rendering data that is recomputed from authoritative input each frame — not to authoritative pose or simulation state.
 
+### Terrain and level-theme boundary
+
+`src/terrain/` owns reusable visual geometry: prepared tile connectivity,
+visible ranges, rectangle exposure, normalized materials, and leaf tile/rectangle
+draw functions. It knows nothing about cameras, editor modes, level entities, or
+built-in theme families.
+
+`src/platformer/level-theme.ts` is the composition boundary. A
+`LevelRenderTheme` is normalized once, then `prepare(level)` captures the
+level-dependent connection table and static exposure. Each frame supplies the
+authoritative world view and resolved runtime entity rectangles. Drawing never
+mutates or advances simulation state.
+
+The facade exposes separate background, terrain-tile, terrain-rectangle, entity,
+decoration, foreground, and tint passes. `drawPreparedLevelFrame` supplies the
+standard ordering and a snapped world transform, while consumers retain explicit
+hooks for actors, projectiles, effects, and HUD. Leaf imports remain valid:
+consumers may use `drawTerrainRect` without importing the theme facade, tile
+renderer, surface-detail catalog, or built-in themes.
+
 ## Determinism rules
 
 1. **No `Math.random`** in any function whose output influences game state, save data, or cosmetic manifests. Use `src/rng/mulberry32.ts` instead.
@@ -81,7 +101,7 @@ src/
 ├── iap/                  # IAP bridge + adapters + entitlements
 ├── level/                # versioned platformer level schema, migration, validation, tile queries
 ├── terrain/              # connectivity/exposure preparation, materials, surface detail, tile/rect renderers
-├── platformer/           # kernel/runtime, theme facade/layers, semantic entity art, atmosphere recipes, leaf themes, enemies
+├── platformer/           # kernel/runtime, theme facade/layers, semantic art, preview/thumbnail helpers, leaf themes, enemies
 ├── editor/               # headless level-editor core (ops, history, selection, snapping, clipboard, catalog, playtest)
 ├── collectibles/         # pure-progression CollectibleSave + deterministic derivePickups
 ├── replay/               # record/playback + 32-bit replayHash fingerprint

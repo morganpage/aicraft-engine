@@ -6,11 +6,13 @@ dist/
 coverage/
 .playwright-mcp/
 
-# Regenerable Phase 0 visual outputs. Keep the small review references.
+# Regenerable level-visual outputs. Keep the gallery index and small references.
 benchmarks/visual/*
+!benchmarks/visual/README.md
 !benchmarks/visual/reference/
 benchmarks/visual/reference/*
 !benchmarks/visual/reference/phase0-generated-cave.png
+!benchmarks/visual/reference/phase6-role-sheet.png
 
 # Secrets — never commit. The showcase OpenAI image-gen workflow reads
 # OPENAI_API_KEY from here at dev time; the key must never enter git history.

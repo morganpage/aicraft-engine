@@ -15,6 +15,7 @@ import {
 
 function render(
   treatment: 'fallback' | 'ruins' | 'cavern' | 'mechanical' | 'outdoor',
+  collectedEntityIds?: ReadonlySet<number>,
 ): Uint8Array {
   const scene = createTopologyRoomScene();
   const canvas = createCanvas(TILE_ROOM_VIEW_W, TILE_ROOM_VIEW_H);
@@ -32,6 +33,7 @@ function render(
       movingRects: new Map(),
       treatment,
       showMarkers: false,
+      collectedEntityIds,
       worldSeed: TILE_ROOM_SEED,
     },
   );
@@ -59,6 +61,12 @@ describe('tile-room frame composition', () => {
       for (let b = a + 1; b < themed.length; b++) {
         expect(themed[a]).not.toEqual(themed[b]);
       }
+    }
+  });
+
+  it('removes collected pickups from fallback and themed frames', () => {
+    for (const treatment of ['fallback', 'cavern'] as const) {
+      expect(render(treatment, new Set([3]))).not.toEqual(render(treatment));
     }
   });
 
@@ -114,6 +122,19 @@ describe('marker visibility follows the edit/play split (§5.6)', () => {
         (entity) => entity.kind === 'spawn' || entity.kind === 'trigger',
       ).length,
     );
+  });
+
+  it('omits collected entities while leaving uncollected pickups visible', () => {
+    const scene = createTopologyRoomScene();
+    const resolved = resolveTileRoomEntities(
+      scene.level,
+      new Map(),
+      false,
+      new Set([3]),
+    );
+
+    expect(resolved.some((entity) => entity.id === 3)).toBe(false);
+    expect(resolved.some((entity) => entity.id === 4)).toBe(true);
   });
 
   it('routes terrain roles to the terrain pass and everything else to the other pass', () => {

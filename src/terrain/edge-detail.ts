@@ -90,53 +90,6 @@ function drawGrassTuft(
   }
 }
 
-function drawSubtleRockCapShade(
-  ctx: CanvasRenderingContext2D,
-  detail: Readonly<TerrainEdgeDetailContext>,
-  rng: () => number,
-): void {
-  const { material: m, x, y, width, height } = detail;
-  const capHeight = Math.max(1, Math.min(height, Math.round(m.topThickness)));
-  const unit = Math.max(1, Math.round(m.edgeScale));
-  const attempts = 2;
-  const shadeChance = m.edgeDensity * 0.3;
-
-  ctx.save();
-  for (let i = 0; i < attempts; i++) {
-    if (rng() > shadeChance) continue;
-    const shadeWidth = Math.min(
-      width - 2,
-      unit * (4 + Math.floor(rng() * 4)),
-    );
-    const shadeX = randomSpan(rng, x + 1, width - 2, shadeWidth);
-    const leftInset = capHeight > 1 ? Math.floor(rng() * 2) : 1;
-    const middleInset = capHeight > 1 ? Math.floor(rng() * 2) : 1;
-
-    // Broad translucent facets stay entirely inside the existing lit cap.
-    // They suggest uneven stone without creating a second silhouette.
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = m.palette.detail;
-    ctx.beginPath();
-    ctx.moveTo(shadeX, y + capHeight);
-    ctx.lineTo(shadeX + unit, y + Math.min(capHeight - 1, leftInset));
-    ctx.lineTo(
-      shadeX + shadeWidth * 0.58,
-      y + Math.min(capHeight - 1, middleInset),
-    );
-    ctx.lineTo(shadeX + shadeWidth, y + capHeight);
-    ctx.closePath();
-    ctx.fill();
-
-    if (rng() < 0.4) {
-      const highlightWidth = Math.max(unit, Math.floor(shadeWidth * 0.42));
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = m.palette.accent;
-      ctx.fillRect(shadeX + unit, y, highlightWidth, unit);
-    }
-  }
-  ctx.restore();
-}
-
 /** Draw restrained, deterministic decoration on exposed terrain edges. */
 export const drawBuiltinTerrainEdgeDetail: TerrainEdgeDetailRenderer = (
   ctx,
@@ -178,7 +131,8 @@ export const drawBuiltinTerrainEdgeDetail: TerrainEdgeDetailRenderer = (
     }
 
     case 'rocky': {
-      if (!n.north) drawSubtleRockCapShade(ctx, detail, rng);
+      // Rocky facets are drawn across the complete terrain body by the tile
+      // renderer so their placement cannot restart at cell boundaries.
       break;
     }
 

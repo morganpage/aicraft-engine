@@ -648,7 +648,7 @@ describe('terrain renderers', () => {
   });
 
   it(
-    'keeps rocky treatment as sparse shading inside the lit cap',
+    'keeps rocky silhouettes shallow and adds sparse outline-free facets',
     () => {
       const width = 128;
       const surfaceY = 12;
@@ -695,20 +695,20 @@ describe('terrain renderers', () => {
       expect(abovePixels).toBeGreaterThan(0);
       expect(maxLift).toBeLessThanOrEqual(2);
 
-      const capHeight = 3;
-      const cap = ctx.getImageData(0, surfaceY, width, capHeight).data;
-      let shaded = 0;
-      for (let i = 0; i < cap.length; i += 4) {
-        if (
-          cap[i] !== 180 ||
-          cap[i + 1] !== 152 ||
-          cap[i + 2] !== 114
-        ) {
-          shaded++;
-        }
+      const body = ctx.getImageData(0, surfaceY + 4, width, 8).data;
+      const colors = new Map<string, number>();
+      let outlinePixels = 0;
+      for (let i = 0; i < body.length; i += 4) {
+        const color = `${body[i]},${body[i + 1]},${body[i + 2]}`;
+        colors.set(color, (colors.get(color) ?? 0) + 1);
+        if (color === '36,27,28') outlinePixels++;
       }
-      expect(shaded).toBeGreaterThan(0);
-      expect(shaded).toBeLessThan(width * capHeight * 0.35);
+      const dominantPixels = Math.max(...colors.values());
+      const facetPixels = width * 8 - dominantPixels;
+      expect(colors.size).toBeGreaterThan(2);
+      expect(facetPixels).toBeGreaterThan(0);
+      expect(facetPixels).toBeLessThan(width * 8 * 0.5);
+      expect(outlinePixels).toBe(0);
 
       const below = ctx.getImageData(0, surfaceY + 16, width, 4).data;
       let belowPixels = 0;
@@ -725,6 +725,75 @@ describe('terrain renderers', () => {
       expect(maxDrop).toBeLessThanOrEqual(2);
     },
   );
+
+  it('continues rocky facets through stacked rows without grid lines', () => {
+    const tileSize = 16;
+    const cols = 6;
+    const rows = 4;
+    const width = cols * tileSize;
+    const height = rows * tileSize;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    const wall: TileGrid = {
+      cols,
+      rows,
+      tileSize,
+      data: new Array<number>(cols * rows).fill(1),
+    };
+    drawTerrainTiles(ctx as unknown as CanvasRenderingContext2D, wall, {
+      visualSeed: 73,
+      view: { x: 0, y: 0, width, height },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({
+        1: {
+          id: 'stacked-rocky',
+          palette: {
+            fill: '#808080',
+            top: '#c0c0c0',
+            side: '#606060',
+            outline: '#202020',
+            detail: '#404040',
+            accent: '#d0d0d0',
+          },
+          edgeDetail: 'rocky',
+          edgeDensity: 1,
+        },
+      }),
+      connections: createTerrainConnectionTable(wall, (a, b) => a === b),
+    });
+
+    const image = ctx.getImageData(0, 0, width, height).data;
+    let facetPixels = 0;
+    for (let y = tileSize + 2; y < tileSize * 3 - 2; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const i = (y * width + x) * 4;
+        if (
+          image[i] !== 128 ||
+          image[i + 1] !== 128 ||
+          image[i + 2] !== 128
+        ) {
+          facetPixels++;
+        }
+      }
+    }
+    expect(facetPixels).toBeGreaterThan(0);
+    expect(facetPixels).toBeLessThan(width * tileSize * 2 * 0.5);
+
+    for (const boundaryY of [tileSize, tileSize * 2]) {
+      let outlinePixels = 0;
+      for (let x = 0; x < width; x++) {
+        const i = (boundaryY * width + x) * 4;
+        if (
+          image[i] === 32 &&
+          image[i + 1] === 32 &&
+          image[i + 2] === 32
+        ) {
+          outlinePixels++;
+        }
+      }
+      expect(outlinePixels).toBe(0);
+    }
+  });
 
   it('isolates a throwing detail renderer per tile', () => {
     const canvas = createCanvas(48, 32);
@@ -754,6 +823,23 @@ describe('terrain renderers', () => {
       drawEdgeDetail: detail,
     });
     expect(detail).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps rectangle details opt-in and isolates an injected failure', () => {
+    const canvas = createCanvas(64, 32);
+    const ctx = canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
+    const detail = vi.fn(() => { throw new Error('rect detail'); });
+
+    expect(() => drawTerrainRect(ctx, { x: 0, y: 0, width: 32, height: 16 }, {
+      visualSeed: 9,
+      devicePixelRatio: 1,
+      entityKey: 3,
+      role: 'solid',
+      material: CAVERN_TERRAIN_MATERIAL,
+      drawDetail: detail,
+    })).not.toThrow();
+
+    expect(detail).toHaveBeenCalledOnce();
   });
 
   it('honors partial rect exposure and gives hazards a pointed silhouette', () => {

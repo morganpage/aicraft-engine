@@ -70,6 +70,14 @@ const WARMUP_FRAMES = 30;
 /** Frames measured per fixture per treatment. */
 const MEASURED_FRAMES = 120;
 
+/**
+ * Portable Phase 6 regression budget. Each production cell is compared with
+ * its fallback measurement from the same process/host, avoiding brittle
+ * absolute CI timings while still rejecting the 20–90× regression that the
+ * dense-facet implementation briefly exposed.
+ */
+const MAX_PRODUCTION_TO_FALLBACK_RATIO = 5;
+
 function ctx2d(canvas: Canvas): CanvasRenderingContext2D {
   return canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
 }
@@ -306,9 +314,10 @@ const host = {
 };
 
 const payload = {
-  capturedFor: 'level-visual-rendering-plan Phase 2 (§13.3)',
+  capturedFor: 'level-visual-rendering-plan Phase 6 (§13.3 release gate)',
   warmupFrames: WARMUP_FRAMES,
   measuredFrames: MEASURED_FRAMES,
+  maxProductionToFallbackRatio: MAX_PRODUCTION_TO_FALLBACK_RATIO,
   host,
   results,
 };
@@ -336,7 +345,28 @@ for (const r of results) {
       `${num(r.productionTerrain.medianMs)}    ${num(r.productionTerrain.p95Ms)}`,
   );
 }
+const regressions = results.flatMap((result) => {
+  const checks = [
+    ['median', result.productionTerrain.medianMs, result.fallback.medianMs],
+    ['p95', result.productionTerrain.p95Ms, result.fallback.p95Ms],
+  ] as const;
+  return checks
+    .filter(([, production, fallback]) =>
+      fallback > 0 && production / fallback > MAX_PRODUCTION_TO_FALLBACK_RATIO
+    )
+    .map(([metric, production, fallback]) =>
+      `${result.name} ${metric}: ${(production / fallback).toFixed(2)}× fallback`
+    );
+});
 console.log(
   `\nWritten to ${join(OUTPUT_DIR, 'level-visual-bench.json')}.` +
-    '\nThis records the Phase 4 Cavern theme and semantic entities beside the Phase 0 fallback.',
+    `\nPhase 6 budget: production median and p95 <= ${MAX_PRODUCTION_TO_FALLBACK_RATIO}× ` +
+    'the same-host fallback.',
 );
+if (regressions.length > 0) {
+  console.error('\nLevel-visual benchmark budget exceeded:');
+  for (const regression of regressions) console.error(`- ${regression}`);
+  process.exitCode = 1;
+} else {
+  console.log('All benchmark cells are inside the Phase 6 regression budget.');
+}

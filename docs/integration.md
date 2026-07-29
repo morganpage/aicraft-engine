@@ -686,7 +686,129 @@ loop.start();
 
 ---
 
-## 9. Save / load
+## 9. Level visuals
+
+Themes are consumer-owned presentation state. They do not belong in
+`LevelData`, do not affect collision, and do not enter editor undo history.
+
+### Render tile-authored and rectangle-authored levels
+
+The same prepared scene handles both paths. Tile terrain comes from
+`level.tiles`; rectangle terrain comes from resolved platform, passthrough,
+moving-platform, and hazard entities.
+
+```ts
+import {
+  CAVERN_LEVEL_THEME,
+  createLevelThemeRenderer,
+  drawPreparedLevelFrame,
+  resolveLevelEntities,
+} from './lib/aicraft-engine/src/platformer';
+import type { LevelData } from './lib/aicraft-engine/src/level';
+
+const renderer = createLevelThemeRenderer(CAVERN_LEVEL_THEME);
+let prepared = renderer.prepare(level);
+
+function renderLevel(
+  ctx: CanvasRenderingContext2D,
+  level: LevelData,
+  runtimeRects: ReadonlyMap<number, { x: number; y: number; width: number; height: number }>,
+): void {
+  drawPreparedLevelFrame(ctx, prepared, {
+    level,
+    devicePixelRatio: dpr,
+    view: { x: camera.x, y: camera.y, width: 600, height: 400 },
+    entities: resolveLevelEntities(level.entities, runtimeRects),
+    tick,
+    mode: 'play',
+  }, {
+    drawWorld(worldCtx) {
+      drawPlayer(worldCtx, player);
+    },
+    drawHud(hudCtx) {
+      drawHud(hudCtx, score);
+    },
+  });
+}
+
+// Structural edit: prepare the new LevelData reference once.
+prepared = renderer.prepare(editedLevel);
+// Theme/collision preview toggles are presentation-only; do not edit LevelData.
+```
+
+### Define a custom material and deterministic surface detail
+
+Normalize loose authoring data once. Direct rectangle users pass the normalized
+material and opt into exactly the detail callback they need.
+
+```ts
+import {
+  drawTerrainRect,
+  normalizeTerrainMaterial,
+} from './lib/aicraft-engine/src/terrain';
+import type { TerrainDetailRenderer } from './lib/aicraft-engine/src/terrain';
+
+const ice = normalizeTerrainMaterial({
+  id: 'blue-ice',
+  palette: {
+    fill: '#4d84a8',
+    top: '#bcecff',
+    side: '#31536d',
+    outline: '#132532',
+    detail: '#e7faff',
+  },
+  topThickness: 3,
+  cornerSize: 2,
+});
+
+const drawIceBubbles: TerrainDetailRenderer = (ctx, detail) => {
+  // `detail.seed` is derived from the theme seed + entity/tile address.
+  const offset = detail.seed % Math.max(1, Math.floor(detail.width - 4));
+  ctx.fillStyle = detail.material.palette.detail;
+  ctx.fillRect(detail.x + 2 + offset, detail.y + 5, 2, 2);
+};
+
+drawTerrainRect(ctx, platformRect, {
+  visualSeed: 0x1ce5eed,
+  devicePixelRatio: dpr,
+  entityKey: platformId,
+  role: 'solid',
+  material: ice,
+  drawDetail: drawIceBubbles,
+});
+```
+
+### Use raster art in an asset-backed layer
+
+Layer callbacks are Canvas2D callbacks, so procedural paths and loaded images
+share the same contract. Asset loading remains consumer-owned.
+
+```ts
+import type { LevelRenderTheme } from './lib/aicraft-engine/src/platformer';
+
+const skyline = new Image();
+skyline.src = '/art/skyline.png';
+
+const theme: LevelRenderTheme = {
+  ...CAVERN_LEVEL_THEME,
+  id: 'city-cavern',
+  farBackground(ctx, frame) {
+    if (!skyline.complete) return;
+    const x = -((frame.view.x * 0.12) % skyline.width);
+    ctx.drawImage(skyline, x, 0);
+    ctx.drawImage(skyline, x + skyline.width, 0);
+  },
+};
+```
+
+For editor previews, expose consumer-owned `LevelThemeOption[]` and resolve IDs
+with `resolveLevelThemeOption`. For deterministic sharing thumbnails, call
+`drawLevelThumbnail`; it uses tick `0`, reduced-motion mode, and never mutates
+the level.
+
+---
+
+## 10. Save / load
 
 Level JSON persists to `localStorage` via the defensive save helpers.
 
@@ -738,7 +860,7 @@ function loadLevel(id: string): LevelData | null {
 
 ---
 
-## 10. Synchronization strategy
+## 11. Synchronization strategy
 
 When `aicraft-engine` evolves, consumers update via:
 

@@ -30,8 +30,9 @@
  * - **Fallback** — the current renderer, unchanged. The baseline.
  * - **Terrain materials** — the Phase 2 production connected-terrain renderer.
  *
- * Reduced motion: a single static frame at a fixed camera is rendered and the
- * loop is never started, matching `hero.ts` and `parallax.ts`.
+ * Gameplay is explicitly activated from the canvas overlay. This keeps page
+ * keyboard shortcuts inert until the reviewer chooses to play, while allowing
+ * user-driven simulation even when reduced motion is preferred.
  */
 
 import { createGameLoop, type GameLoop } from '../../src/game-loop';
@@ -52,6 +53,12 @@ import {
 import { DEFAULT_JUMP } from '../../src/animation/jump';
 import type { Solid } from '../../src/collision';
 import {
+  collect,
+  derivePickups,
+  type CollectibleEntity,
+  type CollectibleSave,
+} from '../../src/collectibles';
+import {
   createKeyboardAdapter,
   createTouchButtonSet,
   orEdges,
@@ -61,7 +68,6 @@ import {
 } from '../../src/input';
 import { resizeCanvasToBackingStore, getDevicePixelRatio } from '../../src/primitives';
 import type { LevelRect } from '../../src/level/types';
-import { shouldAnimate } from '../helpers/motion-gate';
 import type { Store } from '../store';
 import type { GlobalState } from '../main';
 import {
@@ -177,6 +183,8 @@ export function initTileRoom(
   ctx.scale(dpr, dpr);
 
   const statusPanel = container.querySelector<HTMLElement>('.tile-room-status')!;
+  const playOverlay = container.querySelector<HTMLElement>('.tile-room-play-overlay')!;
+  const playBtn = container.querySelector<HTMLButtonElement>('.tile-room-play')!;
   const sceneBtns = Array.from(
     container.querySelectorAll<HTMLButtonElement>('.tile-room-btn[data-scene]'),
   );
@@ -196,6 +204,10 @@ export function initTileRoom(
   let runtime: SceneRuntime = createSceneRuntime(scenes.generated);
   let treatment: TileRoomTreatment = 'fallback';
   let showMarkers = false;
+  let playing = false;
+  let collectibleSave: CollectibleSave = { collected: [] };
+  let collectedEntityIds = new Set<number>();
+  let collectedValue = 0;
 
   const keyboard: KeyboardAdapter = createKeyboardAdapter({
     codeToAction: {
@@ -228,7 +240,12 @@ export function initTileRoom(
   observer.observe(container);
 
   const onKeyDownSuppress = (e: KeyboardEvent): void => {
-    if (!onscreen) return;
+    if (!onscreen || !playing) return;
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      deactivateGameplay();
+      return;
+    }
     if (SUPPRESSED_CODES.has(e.code)) e.preventDefault();
   };
   window.addEventListener('keydown', onKeyDownSuppress, { capture: true });
@@ -245,6 +262,7 @@ export function initTileRoom(
       movingRects: movingRectsOf(runtime.platforms),
       treatment,
       showMarkers,
+      collectedEntityIds,
       worldSeed: TILE_ROOM_SEED,
     });
   };
@@ -252,9 +270,14 @@ export function initTileRoom(
   const updateStatus = (): void => {
     const { level } = runtime.scene;
     const cells = level.tiles.cols * level.tiles.rows;
+    const collectibleCount = level.entities.filter(
+      (entity) => entity.kind === 'collectible',
+    ).length;
     statusPanel.textContent =
+      `${playing ? 'Playing · Esc to stop' : 'Paused · choose Play room'} · ` +
       `${runtime.scene.label} · ${level.tiles.cols}×${level.tiles.rows} tiles ` +
       `(${cells} cells, ${level.width}×${level.height} px) · ` +
+      `pickups ${collectedEntityIds.size}/${collectibleCount} (value ${collectedValue}) · ` +
       `camera ${Math.round(runtime.camera.x)}, ${Math.round(runtime.camera.y)} · ` +
       `${treatment === 'fallback' ? 'Fallback renderer' : `${treatment[0].toUpperCase()}${treatment.slice(1)} theme`}`;
   };
@@ -278,6 +301,9 @@ export function initTileRoom(
   const selectScene = (id: keyof typeof scenes): void => {
     if (runtime.scene.id === id) return;
     runtime = createSceneRuntime(scenes[id]);
+    collectibleSave = { collected: [] };
+    collectedEntityIds = new Set();
+    collectedValue = 0;
     runtime.camera = {
       ...clampCameraToLevel(STATIC_CAMERA_X, STATIC_CAMERA_Y, scenes[id].level),
     };
@@ -321,9 +347,14 @@ export function initTileRoom(
 
   // --- Simulation ----------------------------------------------------------
 
-  const resetPlayer = (): void => {
+  const resetPlayer = (resetPickups = false): void => {
     runtime.state = runtime.compiled.initialState;
     runtime.platforms = runtime.compiled.movingPlatforms;
+    if (resetPickups) {
+      collectibleSave = { collected: [] };
+      collectedEntityIds = new Set();
+      collectedValue = 0;
+    }
   };
 
   const loop: GameLoop = createGameLoop({
@@ -335,7 +366,7 @@ export function initTileRoom(
       const right = orEdges(kb['right'] ?? IDLE_EDGE, t[1] ?? IDLE_EDGE);
       const jump = orEdges(kb['jump'] ?? IDLE_EDGE, t[2] ?? IDLE_EDGE);
 
-      if (kb['reset']?.pressed) resetPlayer();
+      if (kb['reset']?.pressed) resetPlayer(true);
 
       const moveX: -1 | 0 | 1 = !onscreen
         ? 0
@@ -373,9 +404,20 @@ export function initTileRoom(
         displacement,
       ).state;
 
+      const collectibles = runtime.scene.level.entities.filter(
+        (entity): entity is CollectibleEntity => entity.kind === 'collectible',
+      );
+      const pickups = derivePickups(runtime.state.core, collectibles, collectibleSave);
+      for (const id of pickups.collected) {
+        const entity = collectibles.find((item) => item.id === id);
+        collectibleSave = collect(collectibleSave, String(id));
+        collectedEntityIds.add(id);
+        collectedValue += entity?.props.value ?? 1;
+      }
+
       // A player who falls out of the world (the generated room has gaps that
       // drop to nothing) returns to spawn rather than accelerating forever.
-      if (runtime.state.core.y > runtime.scene.level.height + 64) resetPlayer();
+      if (runtime.state.core.y > runtime.scene.level.height + 64) resetPlayer(true);
 
       const core = runtime.state.core;
       runtime.camera = updateCamera(
@@ -393,18 +435,41 @@ export function initTileRoom(
 
   // --- Boot ----------------------------------------------------------------
 
+  const activateGameplay = (): void => {
+    if (playing) return;
+    playing = true;
+    playOverlay.hidden = true;
+    canvas.setAttribute('aria-label', 'Playable scrolling tile room. Press Escape to stop.');
+    // Drain key edges gathered while the room was inactive before accepting
+    // gameplay input.
+    keyboard.poll();
+    loop.start();
+    updateStatus();
+    canvas.focus({ preventScroll: true });
+  };
+
+  function deactivateGameplay(): void {
+    if (!playing) return;
+    playing = false;
+    loop.stop();
+    keyboard.poll();
+    playOverlay.hidden = false;
+    canvas.setAttribute(
+      'aria-label',
+      'Paused scrolling tile room. Activate Play room to use keyboard controls.',
+    );
+    updateStatus();
+    playBtn.focus({ preventScroll: true });
+  }
+
+  const onPlay = (): void => activateGameplay();
+  playBtn.addEventListener('click', onPlay);
+
   runtime.camera = {
     ...clampCameraToLevel(STATIC_CAMERA_X, STATIC_CAMERA_Y, runtime.scene.level),
   };
   updateChrome();
   render();
-
-  // Motion gate: if reduced motion is preferred, the static frame rendered
-  // above is the final paint — do NOT start the loop. Mirrors hero.ts,
-  // lava-pool.ts, and parallax.ts.
-  if (shouldAnimate()) {
-    loop.start();
-  }
 
   let disposed = false;
   return (): void => {
@@ -414,6 +479,7 @@ export function initTileRoom(
     keyboard.dispose();
     touch.dispose();
     observer.disconnect();
+    playBtn.removeEventListener('click', onPlay);
     window.removeEventListener('keydown', onKeyDownSuppress, { capture: true });
     for (const { btn, handler } of sceneHandlers) btn.removeEventListener('click', handler);
     for (const { btn, handler } of treatmentHandlers) {

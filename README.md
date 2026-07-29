@@ -43,6 +43,7 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **2. Terrain rendering** | Prepared connectivity and exposure, normalized materials, seamless connected tiles, deterministic exposed-edge treatments, and role-aware rectangle rendering | **Shipped** |
 | **3. Level themes** | Two-stage theme/level preparation, ordered render passes, resolved runtime entities, and Ruins/Cavern/Mechanical/Outdoor examples | **Shipped** |
 | **4. Semantic level art** | Themed exits, coin/gem/key silhouettes, warning-form traps, edit-only markers, and stateless reduced-motion atmosphere recipes | **Shipped** |
+| **5. Visual authoring** | Art/Collision editor previews, consumer-supplied theme selection and fallback, structural re-preparation, and deterministic thumbnails | **Shipped** |
 | **2. Collectibles** | First-class `'collectible'` `EntityKind`, pure-progression-ops `CollectibleSave` mirroring `cosmetics/ownership.ts` (`collect`/`hasCollected`), pure `derivePickups` (deterministic AABB collision — kernel unaware, zero replay impact); per-level scoping is consumer-owned via `Record<levelId, CollectibleSave>` | **Shipped** |
 | **2. Editor core** | Headless level-editor operations: serializable ops + snapshot undo/redo, transactions, multi-select, grid + edge snapping, in-memory clipboard, sandbox playtest boundary, prefab catalog. `applyOp`, `undo`, `beginTransaction`, `selectInRect`, `snapToEdges`, `enterPlaytest`, `DEFAULT_CATALOG` | **Shipped** |
 | **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (Poki/Jest/StoreKit/Play Billing deferred to Phase 5) | **Shipped** |
@@ -157,12 +158,16 @@ npm install        # devDependencies only (typescript, vite, vitest, canvas for 
 npm test           # vitest run
 npm run test:watch # vitest watch mode
 npm run build      # tsc --noEmit (typecheck gate)
+npm run visual:sheets                 # deterministic level-art review gallery
+npm run bench:level-visual             # same-host fallback/production benchmark gate
+npm run check:terrain-tree-shaking     # leaf renderer bundle-isolation gate
 ```
 
 The npm publish build is separate from the typecheck gate:
 
 ```bash
 npm run build:dist # tsc -p tsconfig.build.json → emits dist/ (.js + .d.ts)
+npm run check:level-visual-size # Phase 0-relative dist ceiling
 npm publish        # prepack hook auto-runs build:dist, so the tarball is always fresh
 ```
 

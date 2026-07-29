@@ -148,6 +148,15 @@ import {
   drawEnemies,
   drawProjectiles,
   createEnemyBehaviorRegistry,
+  CAVERN_LEVEL_THEME,
+  MECHANICAL_LEVEL_THEME,
+  RUINS_LEVEL_THEME,
+  createLevelThemeRenderer,
+  drawPreparedLevelFrame,
+  resolveLevelEntities,
+  resolveLevelThemeOption,
+  type LevelThemeOption,
+  type PreparedLevelScene,
   type CompiledLevel,
   type CompiledMovingPlatform,
   type DrawLevelEntityOptions,
@@ -647,6 +656,12 @@ export function initPlayground(
   const kindBtns = Array.from(
     container.querySelectorAll<HTMLButtonElement>('.playground-btn[data-kind]'),
   );
+  const previewBtns = Array.from(
+    container.querySelectorAll<HTMLButtonElement>('.playground-btn[data-preview]'),
+  );
+  const themeBtns = Array.from(
+    container.querySelectorAll<HTMLButtonElement>('.playground-btn[data-theme]'),
+  );
 
   // --- Editor state (reassigned on each op — the reducer is pure) ---
   let editorState: EditorState = createEditorState(PLAYGROUND_LEVEL);
@@ -660,6 +675,41 @@ export function initPlayground(
 
   /** Top-level section mode: Play (kernel running) vs Edit (editor active). */
   let mode: 'play' | 'edit' = 'play';
+
+  // Presentation-only editor state. These values never enter LevelData or the
+  // editor reducer, so switching previews cannot create undo history.
+  let previewMode: 'collision' | 'art' = 'collision';
+  let selectedThemeId = 'cavern';
+  const themeOptions: readonly LevelThemeOption[] = [
+    { id: 'ruins', label: 'Ruins', theme: RUINS_LEVEL_THEME },
+    { id: 'cavern', label: 'Cavern', theme: CAVERN_LEVEL_THEME },
+    { id: 'mechanical', label: 'Mechanical', theme: MECHANICAL_LEVEL_THEME },
+  ];
+  const themeRenderers = new Map(
+    themeOptions.map((option) => [option.id, createLevelThemeRenderer(option.theme)] as const),
+  );
+  let preparedPreview: {
+    readonly themeId: string;
+    readonly level: LevelData;
+    readonly scene: PreparedLevelScene;
+  } | null = null;
+
+  const previewScene = (): PreparedLevelScene => {
+    const resolved = resolveLevelThemeOption(themeOptions, selectedThemeId, 'cavern')!;
+    selectedThemeId = resolved.option.id;
+    if (
+      preparedPreview === null ||
+      preparedPreview.themeId !== resolved.option.id ||
+      preparedPreview.level !== editorState.level
+    ) {
+      preparedPreview = {
+        themeId: resolved.option.id,
+        level: editorState.level,
+        scene: themeRenderers.get(resolved.option.id)!.prepare(editorState.level),
+      };
+    }
+    return preparedPreview.scene;
+  };
 
   // --- Edit-mode transient state ---
   /** Entity being dragged (select mode), or null. */
@@ -1073,13 +1123,25 @@ export function initPlayground(
 
   /** Editor view: grid + entities + selection + ghost + path widget. */
   const renderEdit = (): void => {
-    ctx.fillStyle = COLOR_BG;
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    renderGrid();
-
-    // Entities — drawn via the library's dispatcher with the playground palette.
-    for (const entity of editorState.level.entities) {
-      drawLevelEntity(ctx, entity, PLAYGROUND_DRAW_OPTIONS);
+    if (previewMode === 'art') {
+      drawPreparedLevelFrame(ctx, previewScene(), {
+        level: editorState.level,
+        devicePixelRatio: dpr,
+        view: { x: 0, y: 0, width: VIEW_W, height: VIEW_H },
+        entities: resolveLevelEntities(editorState.level.entities),
+        tick: renderTick,
+        reducedMotion: shouldAnimate(),
+        mode: 'edit',
+      });
+      // The grid remains an editor affordance, drawn above the art.
+      renderGrid();
+    } else {
+      ctx.fillStyle = COLOR_BG;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      renderGrid();
+      for (const entity of editorState.level.entities) {
+        drawLevelEntity(ctx, entity, PLAYGROUND_DRAW_OPTIONS);
+      }
     }
 
     // Path widget for the selected entity with a path (movingPlatform or enemy).
@@ -1467,7 +1529,10 @@ export function initPlayground(
     const errs = errors.filter((e) => e.severity === 'error');
     const warns = errors.filter((e) => e.severity === 'warning');
     if (errors.length === 0) {
-      statusPanel.textContent = 'Level valid.';
+      const preview = previewMode === 'art'
+        ? `Art preview · ${selectedThemeId}`
+        : 'Collision preview';
+      statusPanel.textContent = `Level valid · ${preview}.`;
       statusPanel.classList.remove('playground-status--invalid');
     } else {
       const first = errors[0];
@@ -1496,6 +1561,17 @@ export function initPlayground(
     selectBtn.classList.toggle('playground-btn--active', selectActive);
     selectBtn.setAttribute('aria-pressed', String(selectActive));
     undoBtn.disabled = editorState.undoStack.length === 0;
+    for (const btn of previewBtns) {
+      const active = btn.dataset.preview === previewMode;
+      btn.classList.toggle('playground-btn--active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    }
+    for (const btn of themeBtns) {
+      const active = btn.dataset.theme === selectedThemeId;
+      btn.classList.toggle('playground-btn--active', active);
+      btn.setAttribute('aria-pressed', String(active));
+      btn.disabled = previewMode !== 'art';
+    }
   };
 
   /** Update the section-level data-mode attribute + the toggle button label.
@@ -1930,6 +2006,32 @@ export function initPlayground(
   modeToggleBtn.addEventListener('click', () => {
     if (mode === 'play') enterEdit();
     else enterPlay();
+  });
+  const previewHandlers = previewBtns.map((btn) => {
+    const handler = (): void => {
+      if (mode !== 'edit') return;
+      const next = btn.dataset.preview;
+      if (next !== 'collision' && next !== 'art') return;
+      previewMode = next;
+      updateToolbar();
+      updateStatus();
+      render();
+    };
+    btn.addEventListener('click', handler);
+    return { btn, handler };
+  });
+  const themeHandlers = themeBtns.map((btn) => {
+    const handler = (): void => {
+      if (mode !== 'edit' || previewMode !== 'art') return;
+      const resolved = resolveLevelThemeOption(themeOptions, btn.dataset.theme, 'cavern');
+      if (resolved === null) return;
+      selectedThemeId = resolved.option.id;
+      updateToolbar();
+      updateStatus();
+      render();
+    };
+    btn.addEventListener('click', handler);
+    return { btn, handler };
   });
 
   // =========================================================================
@@ -2402,6 +2504,8 @@ export function initPlayground(
     canvas.removeEventListener('mousedown', onMouseDown);
     canvas.removeEventListener('mouseenter', onMouseEnter);
     canvas.removeEventListener('mouseleave', onMouseLeave);
+    for (const { btn, handler } of previewHandlers) btn.removeEventListener('click', handler);
+    for (const { btn, handler } of themeHandlers) btn.removeEventListener('click', handler);
   };
 
   // =========================================================================

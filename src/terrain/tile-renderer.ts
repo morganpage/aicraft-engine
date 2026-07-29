@@ -726,6 +726,89 @@ function drawRuinsSquareShading(
   ctx.restore();
 }
 
+/**
+ * Scatter sparse angular facets across connected Cavern terrain. Facets are
+ * larger and less regular than Ruins squares, use no strokes, and are anchored
+ * in world space so stacked tiles read as a single rock face.
+ */
+function drawCavernFacetShading(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  tileSize: number,
+  exposedLeft: boolean,
+  exposedRight: boolean,
+  exposedTop: boolean,
+  visualSeed: number,
+  material: Readonly<NormalizedTerrainMaterial>,
+): void {
+  const unit = Math.max(1, Math.round(tileSize / 16));
+  const insetLeft = exposedLeft ? unit : 0;
+  const insetRight = exposedRight ? unit : 0;
+  const leftX = x + insetLeft;
+  const rightX = x + width - insetRight;
+  const topY = y + (exposedTop ? unit : 0);
+  const bottomY = y + height;
+  if (rightX <= leftX || bottomY <= topY) return;
+
+  // One address per tile keeps the hot path O(visible cells), with no clip or
+  // nested world-lattice scan. The facet is bounded inside the cell, so it
+  // cannot overwrite a neighbour or reveal an internal grid edge.
+  const col = Math.floor(x / tileSize);
+  const row = Math.floor(y / tileSize);
+  const coordinate = col * 12289 + row;
+  const presenceChance = 0.38 + material.edgeDensity * 0.3;
+  const presence = organicNoise(visualSeed, material, coordinate, 0x43415650);
+  if (presence > presenceChance) return;
+
+  const widthNoise = organicNoise(visualSeed, material, coordinate, 0x43415657);
+  const heightNoise = organicNoise(visualSeed, material, coordinate, 0x43415648);
+  const xNoise = organicNoise(visualSeed, material, coordinate, 0x43415658);
+  const yNoise = organicNoise(visualSeed, material, coordinate, 0x43415659);
+  const toneNoise = organicNoise(visualSeed, material, coordinate, 0x43415654);
+  const availableWidth = rightX - leftX;
+  const availableHeight = bottomY - topY;
+  const facetWidth = Math.min(
+    availableWidth,
+    unit * (3 + Math.floor(widthNoise * 5)),
+  );
+  const facetHeight = Math.min(
+    availableHeight,
+    unit * (2 + Math.floor(heightNoise * 3)),
+  );
+  const facetX = leftX + Math.round(xNoise * Math.max(0, availableWidth - facetWidth));
+  const facetY = topY + Math.round(yNoise * Math.max(0, availableHeight - facetHeight));
+  const cut = Math.min(
+    facetWidth / 3,
+    facetHeight / 2,
+    unit * (1 + Math.floor(toneNoise * 2)),
+  );
+  const nearExposedTop = exposedTop
+    && facetY + facetHeight / 2 < y + tileSize * 0.34;
+
+  ctx.save();
+  ctx.fillStyle = nearExposedTop && toneNoise > 0.46
+    ? material.palette.top
+    : toneNoise > 0.68
+      ? material.palette.side
+      : material.palette.detail;
+  ctx.globalAlpha = nearExposedTop
+    ? 0.07 + toneNoise * 0.08
+    : 0.09 + toneNoise * 0.11;
+  ctx.beginPath();
+  ctx.moveTo(facetX + cut, facetY);
+  ctx.lineTo(facetX + facetWidth - unit, facetY);
+  ctx.lineTo(facetX + facetWidth, facetY + cut);
+  ctx.lineTo(facetX + facetWidth - cut, facetY + facetHeight);
+  ctx.lineTo(facetX + unit, facetY + facetHeight);
+  ctx.lineTo(facetX, facetY + facetHeight - cut);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawConnectedTerrainBands(
   ctx: CanvasRenderingContext2D,
   tiles: readonly Readonly<TerrainTileDrawRecord>[],
@@ -927,24 +1010,39 @@ export function drawTerrainTiles(
     }
   }
 
-  // Ruins texture is drawn after every base tile exists, so a world-space
-  // square crossing an internal boundary cannot be overwritten by the next
+  // Terrain textures are drawn after every base tile exists, so a world-space
+  // shape crossing an internal boundary cannot be overwritten by the next
   // tile's overlap. The exact tile clips meet without sharing pixels.
   for (const tile of tiles) {
-    if (tile.material.edgeDetail !== 'stonework') continue;
-    drawRuinsSquareShading(
-      ctx,
-      tile.x,
-      tile.y,
-      size,
-      size,
-      size,
-      !tile.neighborhood.west,
-      !tile.neighborhood.east,
-      !tile.neighborhood.north,
-      options.visualSeed,
-      tile.material,
-    );
+    if (tile.material.edgeDetail === 'stonework') {
+      drawRuinsSquareShading(
+        ctx,
+        tile.x,
+        tile.y,
+        size,
+        size,
+        size,
+        !tile.neighborhood.west,
+        !tile.neighborhood.east,
+        !tile.neighborhood.north,
+        options.visualSeed,
+        tile.material,
+      );
+    } else if (tile.material.edgeDetail === 'rocky') {
+      drawCavernFacetShading(
+        ctx,
+        tile.x,
+        tile.y,
+        size,
+        size,
+        size,
+        !tile.neighborhood.west,
+        !tile.neighborhood.east,
+        !tile.neighborhood.north,
+        options.visualSeed,
+        tile.material,
+      );
+    }
   }
 
   // Caps and undersides are deliberately emitted as one primitive per

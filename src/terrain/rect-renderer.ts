@@ -3,7 +3,7 @@
 import type { LevelRect } from '../level/types';
 import { finalizeSeed, mixChannel, mixNumber } from '../rng/visual-seed';
 import type { NormalizedTerrainMaterial } from './material';
-import { drawBuiltinTerrainDetail, type TerrainDetailRenderer } from './surface-detail';
+import type { TerrainDetailRenderer } from './surface-detail';
 import type { TerrainRectExposure, TerrainRectRole } from './types';
 
 export interface DrawTerrainRectOptions {
@@ -67,14 +67,16 @@ export function drawTerrainRect(
       ctx.beginPath(); ctx.moveTo(x, span.start); ctx.lineTo(x, Math.min(span.end, rect.y + bodyHeight)); ctx.stroke();
     }
   }
-  let seed = mixChannel(options.visualSeed, m.channelId);
-  seed = mixNumber(seed, options.entityKey);
-  try {
-    (options.drawDetail ?? drawBuiltinTerrainDetail)(ctx, {
-      x: rect.x, y: rect.y, width: rect.width, height: bodyHeight,
-      seed: finalizeSeed(seed), material: m,
-    });
-  } catch {
-    // Isolate consumer detail failures per entity.
+  if (options.drawDetail !== undefined) {
+    let seed = mixChannel(options.visualSeed, m.channelId);
+    seed = mixNumber(seed, options.entityKey);
+    try {
+      options.drawDetail(ctx, {
+        x: rect.x, y: rect.y, width: rect.width, height: bodyHeight,
+        seed: finalizeSeed(seed), material: m,
+      });
+    } catch {
+      // Isolate consumer detail failures per entity.
+    }
   }
 }

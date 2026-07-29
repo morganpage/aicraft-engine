@@ -122,6 +122,12 @@ export {
   drawCavernDrips,
   drawMechanicalSparks,
 } from './atmosphere-recipes';
+export type {
+  LevelThemeOption,
+  ResolvedLevelThemeOption,
+  DrawLevelThumbnailOptions,
+} from './theme-preview';
+export { resolveLevelThemeOption, drawLevelThumbnail } from './theme-preview';
 
 export {
   PRECISION_PLATFORMER,

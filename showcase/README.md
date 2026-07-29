@@ -17,7 +17,7 @@ Commands are run from the **repo root** (`aicraft-engine/`):
 | `npm run showcase:typecheck` | tsc gate for the showcase (separate tsconfig) |
 | `npm run showcase:test` | Vitest run of the showcase's DOM-free pure-logic suites (`showcase/tests/*.test.ts`) — CI / pre-commit |
 | `npm run showcase:test:watch` | Same suite in watch mode |
-| `npm run visual:sheets` | Regenerate Phase 0 tile-room comparison sheets and timing baseline |
+| `npm run visual:sheets` | Regenerate the deterministic nine-sheet level-visual review gallery |
 
 The showcase has its own `showcase/tsconfig.json` that excludes `showcase/_scripts/` (Node-only generators) from the browser typecheck. The `vite/client` ambient types provide `.png` import typing.
 
@@ -31,7 +31,7 @@ The showcase also has its own Vitest config (`showcase/vitest.config.ts`) separa
 |---|---|---|
 | **Hero** | `#hero` | Seeded slime-knight character: rng, animation, IK, locomotion, jump |
 | **Lava pool** | `#lava-pool` | Gerstner wave surface + heterogeneous particle emitters (wave-line, particles) |
-| **Playground** | `#playground` | Playable platformer with integrated level editor: Edit/Play toggle, click-drag to draw platforms, click-to-place for fixed-size kinds, multi-select + drag to move, moving-platform path widget with draggable waypoints, undo/redo, playtest sandbox via `enterPlaytest`/`exitPlaytest`. Composes the editor core (`applyOp`, `undo`, `select`, `snapToGrid`, `entityAtPoint`, `findCatalogEntry`), the platformer kernel (`compileLevel`, `stepPlatformer`, `advanceMovingPlatform`, `createMovingPlatformDisplacementProvider`), the renderer helpers (`drawLevelEntity`, `drawActor`), enemy archetypes with behavior registry (`compileEnemies`, `stepEnemies`, `stepProjectile`, `drawEnemies`, `drawProjectiles`), turret shootTo direction+range with zero-overshoot clamping, and all game-feel polish (death feedback lifecycle, squash/stretch, dust, hit-stop, screen shake, locomotion, audio) |
+| **Playground** | `#playground` | Playable platformer with integrated level editor: Edit/Play and Art/Collision toggles, consumer-supplied Ruins/Cavern/Mechanical previews, structural scene re-preparation, click-drag placement, selection, moving paths, undo/redo, and sandbox playtesting. Preview selection remains presentation-only and never enters editor history. |
 | **Tile room** | `#tile-room` | Scrolling 60×34 generated and topology rooms; fallback/Ruins/Cavern/Mechanical/Outdoor comparison, seamless terrain, semantic entities, camera, compiled tile collision, moving-platform runtime rectangles, and deterministic visual-QA fixtures |
 | **Parallax** | `#parallax` | 4-layer IMP underworld background: `drawTiledParallax` with AI-generated raster art (primitives/parallax) |
 | **Spider** | `#spider` | Multi-legged IK gait, terrain sampling, anatomical sectors, breathing, and spring-rod pedipalps |
@@ -46,7 +46,11 @@ The parallax section consumes raster PNGs, validating that
 
 `main.ts` bootstraps a global store (`createStore<GlobalState>`) and initializes each section via `init<Name>(container, store)`. Sections are independent canvases with local state. The store currently holds only `heroSeed` and `heroSpeed` -- other sections accept `_store` to match the uniform section-init signature but do not use it.
 
-`prefers-reduced-motion` is gated via `showcase/helpers/motion-gate.ts`, which probes `matchMedia` once at module load and caches the result. When reduced motion is preferred, each section renders a single static frame and never starts its `requestAnimationFrame` loop.
+`prefers-reduced-motion` is gated via `showcase/helpers/motion-gate.ts`, which
+probes `matchMedia` once at module load and caches the result. Decorative
+sections render a readable static frame instead of starting their animation
+loop. The Tile Room is explicitly user-activated: reduced motion suppresses
+nonessential presentation but does not disable player-controlled simulation.
 
 The showcase tsconfig (`showcase/tsconfig.json`) excludes `showcase/_scripts/` from the browser typecheck, since those scripts are Node-only (depend on `canvas`, `fs`, `path`).
 

@@ -1,7 +1,16 @@
 # Level Visual Rendering — Detailed Implementation Plan
 
-> **Status:** PROPOSED IMPLEMENTATION PLAN
+> **Status:** COMPLETE — Phases 0–6 accepted. See
+> [`level-visual-rendering-completion.md`](./level-visual-rendering-completion.md).
 > **Date:** 2026-07-28
+> **Completed:** 2026-07-29
+> **Revision:** rev 6 — implementation closeout. Phase 6 adds the leaf-bundle
+> tree-shaking smoke test, Phase 0-relative distribution ceilings, portable
+> same-host benchmark ratios, the complete nine-sheet review gallery, custom
+> material/detail/asset-layer integration examples, and the final acceptance
+> record. Theme persistence remains deliberately deferred by decision, not as
+> unfinished work.
+>
 > **Revision:** rev 5 — fourth review pass. Changes: connection preparation is
 > sparse over observed neighbor pairs rather than quadratic over tile values
 > (§7.1); seam coverage uses a one-device-pixel internal body overlap and tests a

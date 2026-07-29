@@ -1174,6 +1174,66 @@ main {
   cursor: default;
 }
 
+.tile-room-play-overlay {
+  position: absolute;
+  inset: var(--outline-width);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: calc(var(--radius) - var(--outline-width));
+  background: rgba(14, 14, 18, 0.48);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.tile-room-play-overlay[hidden] {
+  display: none;
+}
+
+.tile-room-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border: 2px solid #fff;
+  border-radius: var(--radius);
+  background: var(--palette-base);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+.tile-room-play:hover {
+  background: #ff7320;
+}
+
+.tile-room-play:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.tile-room-play:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 3px;
+}
+
+.tile-room-play-icon {
+  font-size: 13px;
+}
+
+.tile-room-play-help {
+  padding: 3px 7px;
+  border-radius: 3px;
+  background: rgba(14, 14, 18, 0.78);
+  color: #fff;
+  font-size: 12px;
+}
+
 .tile-room-status {
   width: 100%;
   padding: 8px 12px;

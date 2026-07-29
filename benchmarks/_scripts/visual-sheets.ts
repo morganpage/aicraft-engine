@@ -11,6 +11,10 @@
  * | `scale-sheet.png`       | The topology room at 8px, 16px, and 32px tiles |
  * | `treatment-compare.png` | Same geometry, same camera, only the treatment varies |
  * | `snapping-junction.png` | The playground's wall/floor junction under a fractional shake offset, at DPR 1, 1.25, 1.5, 2 |
+ * | `theme-thumbnails.png`  | Deterministic reduced-motion thumbnail output for all three themes |
+ * | `material-samples.png`  | Every built-in surface-detail treatment |
+ * | `role-sheet.png`        | Terrain roles, exit, and collectibles across the three themes |
+ * | `editor-play.png`       | Play presentation beside edit/debug marker presentation |
  *
  * Contact-sheet review is **advisory** (§14.6 "What blocks a merge"): these
  * inform a reviewer, they do not mechanically fail a PR. The blocking gate is
@@ -41,11 +45,24 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { createPlatformerState } from '../../src/platformer';
+import {
+  CAVERN_LEVEL_THEME,
+  MECHANICAL_LEVEL_THEME,
+  RUINS_LEVEL_THEME,
+  createLevelThemeRenderer,
+  createPlatformerState,
+  drawLevelThumbnail,
+} from '../../src/platformer';
 import type { ActorCore } from '../../src/platformer';
 import { sineShake } from '../../src/animation/oscillators';
 import type { LevelData, LevelRect } from '../../src/level/types';
 import { PLAYGROUND_LEVEL } from '../../showcase/sections/playground';
+import {
+  createTerrainConnectionTable,
+  createTerrainMaterialTable,
+  drawTerrainTiles,
+} from '../../src/terrain';
+import type { BuiltinSurfaceDetail } from '../../src/terrain';
 import {
   createGeneratedRoomScene,
   createTopologyRoomLevel,
@@ -523,6 +540,199 @@ function renderSnappingJunction(): Canvas {
   return canvas;
 }
 
+// --- Sheet 6: deterministic theme thumbnails -------------------------------
+
+function renderThemeThumbnails(): Canvas {
+  const thumbW = 240;
+  const thumbH = 136;
+  const themes = [
+    ['Ruins', RUINS_LEVEL_THEME],
+    ['Cavern', CAVERN_LEVEL_THEME],
+    ['Mechanical', MECHANICAL_LEVEL_THEME],
+  ] as const;
+  const width = GUTTER * (themes.length + 1) + thumbW * themes.length;
+  const height = HEADER_H + GUTTER + LABEL_H + thumbH + GUTTER;
+  const canvas = createCanvas(width, height);
+  const ctx = ctx2d(canvas);
+  const level = createTopologyRoomLevel();
+  ctx.fillStyle = SHEET_BG;
+  ctx.fillRect(0, 0, width, height);
+  drawSheetHeader(
+    ctx,
+    width,
+    'Theme thumbnails — same level, deterministic reduced-motion frame',
+    'Phase 5 fit-to-box output: tick 0, authored entities, no schema mutation.',
+  );
+  themes.forEach(([label, theme], index) => {
+    const x = GUTTER + index * (thumbW + GUTTER);
+    const y = HEADER_H + GUTTER;
+    drawPanelLabel(ctx, x, y, thumbW, label, theme.id);
+    ctx.save();
+    ctx.translate(x, y + LABEL_H);
+    drawLevelThumbnail(
+      ctx,
+      createLevelThemeRenderer(theme).prepare(level),
+      level,
+      { width: thumbW, height: thumbH, padding: 4 },
+    );
+    ctx.restore();
+  });
+  return canvas;
+}
+
+// --- Sheet 7: built-in surface details -------------------------------------
+
+function renderMaterialSamples(): Canvas {
+  const details: readonly BuiltinSurfaceDetail[] = [
+    'none',
+    'mortar',
+    'cracks',
+    'rivulets',
+    'rivets',
+    'crystal',
+  ];
+  const panelW = 128;
+  const panelH = 96;
+  const width = GUTTER * (details.length + 1) + panelW * details.length;
+  const height = HEADER_H + GUTTER + LABEL_H + panelH + GUTTER;
+  const canvas = createCanvas(width, height);
+  const ctx = ctx2d(canvas);
+
+  ctx.fillStyle = SHEET_BG;
+  ctx.fillRect(0, 0, width, height);
+  drawSheetHeader(
+    ctx,
+    width,
+    'Material samples — every built-in surface-detail treatment',
+    'Identical isolated 64px cells, density 1. Only the normalized surface-detail dispatcher changes.',
+  );
+
+  details.forEach((detail, index) => {
+    const x = GUTTER + index * (panelW + GUTTER);
+    const y = HEADER_H + GUTTER;
+    drawPanelLabel(ctx, x, y, panelW, detail, '64px isolated cell');
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y + LABEL_H, panelW, panelH);
+    ctx.clip();
+    ctx.translate(x + 32, y + LABEL_H + 16);
+    const grid = {
+      cols: 1,
+      rows: 1,
+      tileSize: 64,
+      data: [1],
+    };
+    drawTerrainTiles(ctx, grid, {
+      visualSeed: 0x5a4d504c,
+      view: { x: 0, y: 0, width: 64, height: 64 },
+      devicePixelRatio: 1,
+      materials: createTerrainMaterialTable({
+        1: {
+          id: `sample-${detail}`,
+          palette: {
+            fill: '#65506f',
+            top: '#b69bc0',
+            side: '#44364d',
+            outline: '#1d1722',
+            detail: '#d8c3df',
+            accent: '#f1d67a',
+          },
+          surfaceDetail: detail,
+          detailDensity: 1,
+          detailScale: 2,
+        },
+      }),
+      connections: createTerrainConnectionTable(grid, (a, b) => a === b),
+    });
+    ctx.restore();
+    ctx.strokeStyle = PANEL_BORDER;
+    ctx.strokeRect(x - 0.5, y + LABEL_H - 0.5, panelW + 1, panelH + 1);
+  });
+  return canvas;
+}
+
+// --- Sheet 8: semantic roles -----------------------------------------------
+
+function renderRoleSheet(): Canvas {
+  const panelW = 320;
+  const panelH = 200;
+  const themes = [
+    ['Ruins', RUINS_LEVEL_THEME],
+    ['Cavern', CAVERN_LEVEL_THEME],
+    ['Mechanical', MECHANICAL_LEVEL_THEME],
+  ] as const;
+  const width = GUTTER * (themes.length + 1) + panelW * themes.length;
+  const height = HEADER_H + GUTTER + LABEL_H + panelH + GUTTER;
+  const canvas = createCanvas(width, height);
+  const ctx = ctx2d(canvas);
+  const level = createTopologyRoomLevel();
+
+  ctx.fillStyle = SHEET_BG;
+  ctx.fillRect(0, 0, width, height);
+  drawSheetHeader(
+    ctx,
+    width,
+    'Role sheet — terrain roles, portal exit, coin, and gem',
+    'Same topology fixture in Ruins, Cavern, and Mechanical. Reduced-motion thumbnail composition.',
+  );
+  themes.forEach(([label, theme], index) => {
+    const x = GUTTER + index * (panelW + GUTTER);
+    const y = HEADER_H + GUTTER;
+    drawPanelLabel(ctx, x, y, panelW, label, 'solid · passthrough · moving · hazard · exit · pickups');
+    ctx.save();
+    ctx.translate(x, y + LABEL_H);
+    drawLevelThumbnail(
+      ctx,
+      createLevelThemeRenderer(theme).prepare(level),
+      level,
+      { width: panelW, height: panelH, padding: 4 },
+    );
+    ctx.restore();
+  });
+  return canvas;
+}
+
+// --- Sheet 9: editor/play presentation ------------------------------------
+
+function renderEditorPlayComparison(): Canvas {
+  const panelW = TILE_ROOM_VIEW_W;
+  const panelH = TILE_ROOM_VIEW_H;
+  const width = GUTTER * 3 + panelW * 2;
+  const height = HEADER_H + GUTTER + LABEL_H + panelH + GUTTER;
+  const canvas = createCanvas(width, height);
+  const ctx = ctx2d(canvas);
+  const camera = sheetCamera(playground.level, panelW, panelH);
+
+  ctx.fillStyle = SHEET_BG;
+  ctx.fillRect(0, 0, width, height);
+  drawSheetHeader(
+    ctx,
+    width,
+    'Editor/play comparison — shared geometry, presentation-only markers',
+    'Play hides spawn/trigger authoring markers. Edit/debug retains them without changing LevelData.',
+  );
+  [false, true].forEach((showMarkers, index) => {
+    const x = GUTTER + index * (panelW + GUTTER);
+    const y = HEADER_H + GUTTER;
+    drawPanelLabel(
+      ctx,
+      x,
+      y,
+      panelW,
+      showMarkers ? 'Edit/debug presentation' : 'Play presentation',
+      showMarkers ? 'spawn + trigger markers visible' : 'authoring markers hidden',
+    );
+    drawScenePanel(ctx, x, y + LABEL_H, playground, {
+      viewW: panelW,
+      viewH: panelH,
+      camera,
+      treatment: 'cavern',
+      showMarkers,
+    });
+  });
+  return canvas;
+}
+
 // --- Emit -------------------------------------------------------------------
 
 interface Sheet {
@@ -536,6 +746,10 @@ const SHEETS: readonly Sheet[] = [
   { file: 'scale-sheet.png', render: renderScaleSheet },
   { file: 'treatment-compare.png', render: renderTreatmentCompare },
   { file: 'snapping-junction.png', render: renderSnappingJunction },
+  { file: 'theme-thumbnails.png', render: renderThemeThumbnails },
+  { file: 'material-samples.png', render: renderMaterialSamples },
+  { file: 'role-sheet.png', render: renderRoleSheet },
+  { file: 'editor-play.png', render: renderEditorPlayComparison },
 ];
 
 let allDeterministic = true;
@@ -584,6 +798,10 @@ drawScenePanel(
 writeFileSync(
   join(REFERENCE_DIR, 'phase0-generated-cave.png'),
   reference.toBuffer('image/png'),
+);
+writeFileSync(
+  join(REFERENCE_DIR, 'phase6-role-sheet.png'),
+  renderRoleSheet().toBuffer('image/png'),
 );
 
 function directorySize(path: string): number {
