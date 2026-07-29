@@ -26,6 +26,9 @@ aicraft-engine/
 │   ├── cosmetics/             # versioned manifest, seeded variant generation, multi-slot ownership
 │   ├── iap/                   # IAP bridge + memory/localStorage dev adapters + entitlements
 │   ├── level/                 # versioned platformer level schema, migration, validation, tile queries
+│   ├── levelgen/              # procedural level generator: route graph, rhythm/pacing, motif catalog, physics-constrained realization, candidate search, quality scoring, diversity, calibration
+│   ├── leveltest/             # platformer level verification: jump-arc trajectory, reachability BFS, bot policies, win conditions, tri-state verifyLevel
+│   ├── simtest/               # generic deterministic simulation-test core: fixed-tick orchestration, policies, traces, playback, hash
 │   ├── platformer/            # composable kernel + ability pipeline + signed gravity + level-runtime + renderer + presets + enemy archetypes
 │   ├── editor/                # headless level-editor core (ops, history, selection, snapping, clipboard, catalog, playtest)
 │   ├── collectibles/          # pure-progression CollectibleSave + deterministic derivePickups
@@ -57,13 +60,17 @@ aicraft-engine/
 
 ## Pillar Model
 
-The library is organised into pillars that ship incrementally. See `README.md` for the live status table. Every module listed under `src/` above is **shipped** except `fake3d/` (planned) and `_prototype/` (scratch).
+The library is organised into pillars that ship incrementally. See `README.md` for
+the live status table. `levelgen/`, `leveltest/`, and `simtest/` are shipped;
+`fake3d/` is planned; `_prototype/` is scratch.
 
 | Pillar | Modules | What it provides |
 |---|---|---|
 | **1. Primitives** | `primitives/`, `rng/`, `particles/`, `animation/`, `easing/`, `collision/`, `camera/`, `input/`, `game-loop/`, `game-state/`, `audio/`, `music/`, `save/`, `blend/` | Rendering helpers, seeded determinism, deterministic FX, motion, audio, music, FSM, replay-safe fixed-step loop |
 | **2. Cosmetics** | `palette/`, `cosmetics/`, `level/`, `collectibles/` | Palettes, skins, versioned level schema + validation, collectible ownership |
+| **2. Level Generation** | `levelgen/` | Deterministic route graph, rhythm/pacing, motif-based realization, candidate search with quality scoring, targeted repair, diversity tracking, and difficulty calibration |
 | **2. Platformer** | `platformer/`, `editor/` | Composable kernel + abilities, signed gravity, level runtime, renderer, presets, enemy archetypes, headless editor core |
+| **Cross-cutting simulation testing** | `simtest/`, `leveltest/` | Generic deterministic scenario verification plus the standard platformer/LevelData adapter. `simtest` is the generic core (zero platformer imports); `leveltest` is the platformer adapter built on top |
 | **3. IAP** | `iap/` | Bridge adapter interface, entitlement store, memory + localStorage dev adapters |
 | **4. Fake-3D** | `fake3d/` (planned) | Billboarding, isometric, orthographic cube, heightmap |
 | **5. Platform adapters** | (extends `iap/`) | Jest SDK, Poki SDK — on-demand |

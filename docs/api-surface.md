@@ -1404,91 +1404,160 @@ Pure progression ops. Mirrors Spitekeep's `platform/progress.ts`: immutable in �
 
 ---
 
-## Pillar 2: Level Generation (PROPOSED)
+## Pillar 2: Level Generation (shipped)
 
-> Proposal: `docs/design/procedural-level-generation-proposal.md` (Approach C: Physics-Constrained Editor-Ops Generator recommended; Approach A and B also proposed).
+> Decision: `docs/design/procedural-level-generation-decision.md`.
+> Proposal: `docs/design/procedural-level-generation-proposal.md`.
+> Implementation plan: `docs/design/level-generation-quality-implementation-plan.md`.
 > Research: `docs/research/procedural-level-generation.md`.
-> Canonical plan: `docs/design/level-generation-quality-implementation-plan.md`.
-> Status: **APPROVED DIRECTION; API UNDER REVISION; NOT SHIPPED**.
+> Status: **SHIPPED**.
 >
-> **Authority note:** the detailed proposal inventory below predates the canonical
-> plan and is retained for design history. Its exact signatures are non-canonical
-> where they conflict with the plan, especially tile semantics, editor replacement,
-> scaffold validity, verification, and quality reporting.
+> Module: `src/levelgen/` — procedural level generator combining route-graph generation,
+> rhythm/pacing planning, motif-based geometry construction, physics-constrained realization,
+> candidate search with quality scoring, targeted repair, diversity tracking, and difficulty
+> calibration into a deterministic pipeline that produces complete, valid `GeneratedLevel`
+> from a seed.
 
-### `src/levelgen/` (PROPOSED)
+**Determinism & purity contract (non-negotiable):** every export is never-throw, no-mutate,
+and pure. All random variation uses `mulberry32` (seeded PRNG). No `Math.random`, no
+`Date.now()`, no global mutable state. Non-finite inputs degrade to defaults; out-of-range
+inputs clamp; missing fields fall back to `DEFAULT_LEVEL_GEN_CONFIG` or `src/level/constants.ts`
+defaults. Same `(seed, config)` → same output, forever.
 
-The historical proposal describes deterministic seeded generation and analytic placement constraints. The canonical plan evolves this into path-first layout, rhythm/pacing, physics-aware realization, explicit tile semantics, replay verification, quality scoring, repair, and deterministic candidate selection. Construction constraints reduce invalid output but do not independently prove beatability.
-
-**Determinism & purity contract (non-negotiable):** every export is never-throw, no-mutate, and pure. Non-finite inputs degrade to defaults (never `NaN`, never `Infinity`); out-of-range inputs clamp; missing fields fall back to `DEFAULT_GEN_CONFIG` or `src/level/constants.ts` defaults. See `docs/design/procedural-level-generation-proposal.md` §Determinism & Purity Contract for the full contract.
-
-**Three proposed approaches (choose one to prototype):**
-
-- **Approach A: Path-First Chunk Assembler** (Spelunky pattern) — `generateLevel(seed, config) → LevelData`. Simplest surface. One call, one return.
-- **Approach B: Composable Rhythm-Group Pipeline** (Launchpad pattern) — `pickRhythm(rng, ...) → realizeRhythm(rng, ...) → assembleLevel(...)`. Most customizable. Each stage independently replaceable. Both rhythm stages take an `rng: () => number` (NOT a `seed`) — the consumer creates the RNG once with `mulberry32(seed)` and threads it through both stages.
-- **Approach C: Physics-Constrained Editor-Ops Generator** (recommended) — `generateLevel(seed, config) → { level, ops }` where `ops` is a single `batch` op wrapping the full op sequence. Best editor integration + physics guarantees. Dual output.
-
-#### `src/levelgen/index.ts`
-
-Barrel re-export of every public export from the module sub-files. Consumers import from `aicraft-engine/src/levelgen` for the full surface, or from individual sub-files (`aicraft-engine/src/levelgen/physics`) for tree-shaken bundles. Tree-shaking is preserved because each sub-file has its own barrel.
+**Pipeline overview:** route graph (macro path layout) → rhythm/pacing plan → motif selection
+→ physics-constrained tile realization → candidate search (multiple seeds, quality-scored,
+hard-gate filtered) → optional targeted repair → diversity/novelty scoring → difficulty
+band calibration. The recommended one-shot entry point is `generateLevel(seed, config)`,
+which returns a `GeneratedLevel` with tile data, tile semantics, an editor `replaceLevel`
+operation, and a full generation report.
 
 #### `src/levelgen/types.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `LevelGenConfig` | type | Generation parameters: `cols`, `rows`, `tileSize`, `difficulty` (0..1), `solidTile`, optional `platformerConfig` override, optional `entityIdStart` (defaults to `DEFAULT_ENTITY_ID_START` = 1) | `src/levelgen/types.ts` |
-| `GeneratedLevel` | type | `{ level: LevelData, ops: readonly EditorOperation[] }` — dual output: direct level + editor operations. `ops` is a single-element array containing one `{ type: 'batch', ops: [...], label: 'Generate level (seed N)' }` op | `src/levelgen/types.ts` |
-| `PhysicsConstraints` | type | Derived physics bounds from `PlatformerConfig`: `maxJumpDistance` (px), `maxStepUp` (px), `maxGapWidth` (tiles), `maxStepUpTiles` (tiles) | `src/levelgen/types.ts` |
-| `Beat` | type | `{ type: 'move' \| 'jump' \| 'wait' }` — single rhythm beat (Approach B) | `src/levelgen/types.ts` |
-| `Rhythm` | type | `{ beats: readonly Beat[], density: number }` — generated rhythm sequence (Approach B) | `src/levelgen/types.ts` |
-| `RhythmConfig` | type | Rhythm generation params: `length`, `jumpFrequency`, `waitFrequency` (Approach B) | `src/levelgen/types.ts` |
-| `RealizedSegment` | type | Geometry output from rhythm interpretation: `platforms`, `hazards`, `advanceTiles`, `heightOffset` (Approach B) | `src/levelgen/types.ts` |
-| `EmptyLevelOptions` | type | Optional overrides for `emptyLevel`: `id?`, `name?`, `width?`, `height?`, `tileSize?` (all default to `src/level/constants.ts` defaults) | `src/levelgen/types.ts` |
+| `LevelGenConfig` | type | Generation parameters: `cols`, `rows`, `tileSize`, `difficulty` (0..1), `candidateCount`, `maxRepairPasses`, `entityIdStart`, `tileSemantics`, `platformerConfig`, `playerWidth`, `playerHeight`, `fixedDt`, quality weight overrides | `src/levelgen/types.ts` |
+| `RouteNode` | type | `{ id, x, y, kind }` — macro route node in tile space (`'start' \| 'exit' \| 'checkpoint' \| 'branch' \| 'reward'`) | `src/levelgen/types.ts` |
+| `RouteEdge` | type | `{ from, to, kind }` — directed edge (`'main' \| 'branch' \| 'secret'`) | `src/levelgen/types.ts` |
+| `RouteGraph` | type | `{ version: 1, nodes, edges }` — macro route graph, guaranteed connected | `src/levelgen/types.ts` |
+| `PacingBeat` | type | `'introduce' \| 'run' \| 'jump' \| 'precisionJump' \| 'dash' \| 'rest' \| 'reward' \| 'branch' \| 'climax' \| 'release'` | `src/levelgen/types.ts` |
+| `RequiredMechanic` | type | `{ name: 'jump' \| 'dash' \| 'doubleJump' \| 'wallJump' \| 'wallSlide', enabled: boolean }` | `src/levelgen/types.ts` |
+| `LevelBlueprint` | type | `{ version: 1, route, pacing, requiredMechanics, targetDifficulty }` — intermediate representation between macro design and geometry | `src/levelgen/types.ts` |
+| `RepairRecord` | type | `{ version: 1, diagnostic, repair, tick }` — targeted repair applied during generation | `src/levelgen/types.ts` |
+| `GenerationDiagnostic` | type | `{ severity, code, message }` — pipeline diagnostic (`'info' \| 'warning' \| 'error'`) | `src/levelgen/types.ts` |
+| `QualityWeights` | type | Six weights (pacing, variety, fairness, exploration, difficultyFit, readability) each in [0, 1] | `src/levelgen/types.ts` |
+| `LevelQualityReport` | type | `{ version: 1, score, pacing, variety, fairness, exploration, difficultyFit, readability, measuredDifficulty, criticalPathTicks?, safetyMargins, diagnostics }` — all scores in [0, 1] | `src/levelgen/types.ts` |
+| `JumpSafetyMetric` | type | `{ from, to, margin, feasible }` — safety margin for a jump edge | `src/levelgen/types.ts` |
+| `QualityDiagnostic` | type | `{ severity, code, message }` | `src/levelgen/types.ts` |
+| `ReachabilityConfidence` | type | `'sound-over-approximation' \| 'heuristic' \| 'unsupported'` | `src/levelgen/types.ts` |
+| `ReachabilityResult` | type | `{ confidence, reachable, nodeCount, summary }` — stub from static analysis | `src/levelgen/types.ts` |
+| `VerificationStatus` | type | `'proven-beatable' \| 'proven-unreachable' \| 'inconclusive'` | `src/levelgen/types.ts` |
+| `VerificationDiagnostic` | type | `{ severity, code, message }` | `src/levelgen/types.ts` |
+| `VerificationResult` | type | `{ version: 1, status, structural, reachability, scenario, winningReplay?, winningReplayHash?, diagnostics }` | `src/levelgen/types.ts` |
+| `GenerationReport` | type | `{ version: 1, seed, candidateIndex, repairs, verification, quality, diagnostics }` | `src/levelgen/types.ts` |
+| `GeneratedLevel` | type | `{ level: LevelData, editorOp: replaceLevel, tileSemantics, report: GenerationReport }` — complete output with editor operation | `src/levelgen/types.ts` |
 
 #### `src/levelgen/constants.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `DEFAULT_GEN_CONFIG` | const | Default generation config: 60×15 tiles, tileSize 16, difficulty 0.3, solidTile 1 | `src/levelgen/constants.ts` |
-| `DEFAULT_RHYTHM_CONFIG` | const | Default rhythm config: 12 beats, 40% jump, 20% wait | `src/levelgen/constants.ts` |
-| `MIN_DIFFICULTY` | const | `0` — minimum difficulty value | `src/levelgen/constants.ts` |
-| `MAX_DIFFICULTY` | const | `1` — maximum difficulty value | `src/levelgen/constants.ts` |
-| `DEFAULT_SOLID_TILE` | const | `1` — tile value for solid ground | `src/levelgen/constants.ts` |
-
-#### `src/levelgen/generate.ts`
-
-| Export | Kind | Summary | Source |
-|---|---|---|---|
-| `generateLevel(seed, config?)` | function | Deterministic level generation. Returns `GeneratedLevel` with both `level` (complete `LevelData`) and `ops` (single-element array containing one `batch` op). Same `(seed, config)` → same output forever. Uses `mulberry32` internally. Never throws, no-mutate, pure | `src/levelgen/generate.ts` |
+| `DEFAULT_LEVEL_GEN_CONFIG` | const | Default generation config: 60×15 tiles, tileSize 16, difficulty 0.5, 8 candidates, 2 repair passes | `src/levelgen/constants.ts` |
+| `DEFAULT_TILE_SEMANTICS` | const | `{ solid: [1], passthrough: [2] }` — default tile value meanings | `src/levelgen/constants.ts` |
+| `DEFAULT_QUALITY_WEIGHTS` | const | Default quality weights: pacing 0.2, variety 0.15, fairness 0.2, exploration 0.15, difficultyFit 0.2, readability 0.1 | `src/levelgen/constants.ts` |
+| `MAX_GENERATED_CELLS` | const | `1_000_000` — maximum tile cells before generation is clamped | `src/levelgen/constants.ts` |
+| `DEFAULT_CANDIDATE_COUNT` | const | `8` — default number of candidates to evaluate | `src/levelgen/constants.ts` |
+| `DEFAULT_MAX_REPAIR_PASSES` | const | `2` — default maximum targeted repair passes | `src/levelgen/constants.ts` |
+| `MIN_SAFETY_MARGIN` | const | `2` — minimum jump safety margin in pixels | `src/levelgen/constants.ts` |
 
 #### `src/levelgen/physics.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `derivePhysicsConstraints(config)` | function | Analytic derivation of placement bounds from `PlatformerConfig`. Returns `PhysicsConstraints` (`{ maxJumpDistance, maxStepUp, maxGapWidth, maxStepUpTiles }`). O(1). Pure, never throws, no-mutate | `src/levelgen/physics.ts` |
-| `deriveMaxJumpDistance(config)` | function | Maximum traversable horizontal distance in **pixels** for a single flat-ground jump. Closed-form: `2 × moveSpeed × timeToApex`. Returns `number` (finite, non-negative; non-finite inputs degrade to `0`). Pure, never throws, no-mutate | `src/levelgen/physics.ts` |
-| `deriveMaxStepUp(config)` | function | Maximum reachable step-up height in **pixels** (= `config.jump.apexHeight`). Returns `number` (finite, non-negative; non-finite `apexHeight` degrades to `0`). Pure, never throws, no-mutate | `src/levelgen/physics.ts` |
+| `PhysicsConstraints` | type | Derived physics bounds from `PlatformerConfig`: `maxJumpDistance`, `maxStepUp`, `maxGapWidth`, `maxStepUpTiles`, `dashBoost` (all in pixels except tiles) | `src/levelgen/physics.ts` |
+| `deriveMaxJumpDistance(config)` | function | Maximum traversable horizontal distance for a flat-ground jump: `2 × moveSpeed × timeToApex`. Pure, never throws | `src/levelgen/physics.ts` |
+| `deriveMaxStepUp(config)` | function | Maximum reachable step-up height in pixels (= `config.jump.apexHeight`). Pure, never throws | `src/levelgen/physics.ts` |
+| `derivePhysicsConstraints(config, tileSize)` | function | Derive all physics constraints from config + tile size in one call. Pure, never throws | `src/levelgen/physics.ts` |
 
-#### `src/levelgen/empty-level.ts`
-
-| Export | Kind | Summary | Source |
-|---|---|---|---|
-| `emptyLevel(opts?)` | function | Pure factory: returns a minimal valid `LevelData` with empty tile grid, no entities, `nextEntityId: DEFAULT_ENTITY_ID_START`. Used as the starting point for `createEditorState` when loading a freshly generated level into the editor. Never throws, no-mutate, pure. Non-finite numeric opts degrade to defaults | `src/levelgen/empty-level.ts` |
-
-#### `src/levelgen/rhythm.ts` (Approach B only)
+#### `src/levelgen/route.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `pickRhythm(rng, config)` | function | Deterministic rhythm generation. Returns `Rhythm`. Receives consumer's `rng: () => number` (NOT a seed) — the consumer creates the RNG once with `mulberry32(seed)` and threads it through both `pickRhythm` and `realizeRhythm`. Pure, never throws | `src/levelgen/rhythm.ts` |
-| `realizeRhythm(rng, rhythm, config)` | function | Interpret rhythm as geometry segments. Receives the same `rng` instance as `pickRhythm`. Returns `readonly RealizedSegment[]`. Pure, never throws | `src/levelgen/rhythm.ts` |
-| `assembleLevel(segments, config)` | function | Assemble `RealizedSegment[]` into a complete `LevelData`. Pure, never throws | `src/levelgen/rhythm.ts` |
+| `generateRoute(seed, config)` | function | Generate a connected route graph (start → exit with optional branches/rewards). Pure, never throws | `src/levelgen/route.ts` |
+
+#### `src/levelgen/rhythm.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `generateRhythm(seed, config)` | function | Generate a deterministic pacing/rhythm sequence following an intensity curve. Pure, never throws | `src/levelgen/rhythm.ts` |
+
+#### `src/levelgen/motifs.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Motif` | type | `{ id, compatibleBeats, requiredMechanics, intensityRange, minSafetyMargin }` — reusable geometry pattern | `src/levelgen/motifs.ts` |
+| `MOTIF_CATALOG` | const | The 11 initial curated motifs (safe-intro-jump, stair-ascent, stair-descent, short-gap-series, wide-landing, drop-with-recovery, hazard-corridor, moving-platform-transfer, optional-risky-collectible, key-detour, pre-exit-climax) | `src/levelgen/motifs.ts` |
+| `findMotif(id)` | function | Look up a motif by id; returns `undefined` if not found | `src/levelgen/motifs.ts` |
+| `findCompatibleMotifs(beat, intensity)` | function | Filter catalog by compatible beat + intensity range | `src/levelgen/motifs.ts` |
+
+#### `src/levelgen/realize.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `realizeBlueprint(seed, blueprint, config?)` | function | Realize a `LevelBlueprint` into a complete `GeneratedLevel` with tile geometry, entities, editor op, and report. Pure, never throws | `src/levelgen/realize.ts` |
+
+#### `src/levelgen/generate.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `generateBlueprint(seed, config?)` | function | Generate a `LevelBlueprint` (route + rhythm, no geometry). Pure, never throws | `src/levelgen/generate.ts` |
+| `generateLevel(seed, config?)` | function | **Recommended one-shot entry point.** Generates a complete `GeneratedLevel` from seed + config. Internally calls `generateBlueprint` → `realizeBlueprint`. Same `(seed, config)` → same output forever. Pure, never throws | `src/levelgen/generate.ts` |
+
+#### `src/levelgen/quality.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `QualityConfig` | type | Optional weight overrides for quality evaluation | `src/levelgen/quality.ts` |
+| `evaluateLevelQuality(level, verification, config?)` | function | Compute six-component quality report (pacing, variety, fairness, exploration, difficultyFit, readability) with normalized weighted mean. Pure, never throws | `src/levelgen/quality.ts` |
+
+#### `src/levelgen/candidates.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `CandidateSearchConfig` | type | `{ candidateCount?, maxRepairPasses?, seedSalt? }` — search parameters | `src/levelgen/candidates.ts` |
+| `CandidateResult` | type | `{ index, seed, generated, quality, repairs, passed }` — single candidate result | `src/levelgen/candidates.ts` |
+| `CandidateSearchResult` | type | `{ version: 1, rootSeed, candidates, selected, diagnostics }` — complete search result with selected best candidate | `src/levelgen/candidates.ts` |
+| `generateCandidates(seed, config?, searchConfig?)` | function | Full pipeline: derive N sub-seeds, generate, verify, score, repair, rank, select. Pure, never throws | `src/levelgen/candidates.ts` |
+
+#### `src/levelgen/diversity.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `LevelFingerprint` | type | `{ version: 1, seed, hash, motifHistogram, heightProfile, entityCount, tileCount }` — deterministic structural summary | `src/levelgen/diversity.ts` |
+| `NoveltyArchive` | type | `{ version: 1, fingerprints, maxSize }` — FIFO archive of recent fingerprints | `src/levelgen/diversity.ts` |
+| `computeLevelFingerprint(level, seed)` | function | Compute a deterministic FNV-1a fingerprint from canonicalized level JSON + height profile + entity histogram. Pure, never throws | `src/levelgen/diversity.ts` |
+| `createNoveltyArchive(maxSize?)` | function | Create an empty FIFO novelty archive. Pure, never throws | `src/levelgen/diversity.ts` |
+| `addToArchive(archive, fingerprint)` | function | Append fingerprint to archive (FIFO eviction at maxSize). Returns new archive, never mutates input. Pure, never throws | `src/levelgen/diversity.ts` |
+| `noveltyScore(fingerprint, archive)` | function | Score novelty in [0, 1] as distance-to-closest using Hamming (height) + Jaccard (motif). 1 = completely novel. Pure, never throws | `src/levelgen/diversity.ts` |
+
+#### `src/levelgen/calibration.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `DifficultyBand` | type | `{ version: 1, label, minDifficulty, maxDifficulty, targetDifficulty }` | `src/levelgen/calibration.ts` |
+| `CalibrationConfig` | type | Optional custom difficulty bands | `src/levelgen/calibration.ts` |
+| `CalibrationResult` | type | `{ version: 1, band, measuredDifficulty, withinBand, diagnostics }` | `src/levelgen/calibration.ts` |
+| `PerturbationConfig` | type | Low-skill bot perturbation params: `reactionDelayTicks`, `jumpDelayTicks`, `jumpHoldReduction`, `missedDashChance` | `src/levelgen/calibration.ts` |
+| `PerturbationResult` | type | `{ version: 1, originalDifficulty, perturbedDifficulty, stillBeatable, diagnostics }` | `src/levelgen/calibration.ts` |
+| `LOW_DIFFICULTY_BAND` | const | `[0, 0.33]`, target 0.15 | `src/levelgen/calibration.ts` |
+| `MEDIUM_DIFFICULTY_BAND` | const | `[0.33, 0.67]`, target 0.5 | `src/levelgen/calibration.ts` |
+| `HIGH_DIFFICULTY_BAND` | const | `[0.67, 1.0]`, target 0.85 | `src/levelgen/calibration.ts` |
+| `calibrateDifficulty(level, verification, quality, config?)` | function | Classify a level's measured difficulty into a band. Pure, never throws | `src/levelgen/calibration.ts` |
+| `runLowSkillPerturbation(level, config?)` | function | Run verification with degraded bot params (reaction delay, missed dashes) to assess robustness. Pure, never throws | `src/levelgen/calibration.ts` |
 
 - _proposal: `docs/design/procedural-level-generation-proposal.md`_
+- _decision: `docs/design/procedural-level-generation-decision.md`_
+- _implementation plan: `docs/design/level-generation-quality-implementation-plan.md`_
 - _research: `docs/research/procedural-level-generation.md`_
-- _test plan: §Test Plan in the proposal (determinism, solvability, difficulty, edge cases, editor integration, cross-pillar composition, snapshot tests)_
-- _benchmarks: `benchmarks/levelgen/` (runtime, diversity, solvability, ops count)_
-- _composes with: `src/rng/mulberry32.ts` (seeded PRNG), `src/level/types.ts` (`LevelData`, `LevelEntity`, `TileGrid`, `LevelRect`), `src/level/constants.ts` (`LEVEL_VERSION`, `DEFAULT_TILE_SIZE`, `DEFAULT_LEVEL_WIDTH`, `DEFAULT_LEVEL_HEIGHT`, `DEFAULT_ENTITY_ID_START`), `src/level/entity-id.ts` (`allocateEntityId`), `src/level/validate.ts` (`validateLevel`), `src/editor/types.ts` (`EditorOperation`), `src/editor/operations.ts` (`applyBatch`), `src/editor/factory.ts` (`createEditorState`), `src/platformer/types.ts` (`PlatformerConfig`), `src/platformer/constants.ts` (`DEFAULT_PLATFORMER_CONFIG`), `src/platformer/level-runtime.ts` (`compileLevel`)_
-- _resolved open questions: `ops` wrapped in a single `batch` op (Q1); entity IDs start from `DEFAULT_ENTITY_ID_START` with `entityIdStart` override (Q2); `derivePhysicsConstraints` lives in `src/levelgen/` for v1 (Q3). Chunk template library (Q4) and vertical levels (Q5) deferred to v2._
+- _composes with: `src/rng/mulberry32.ts`, `src/level/types.ts`, `src/level/constants.ts`, `src/level/validate.ts`, `src/level/serialize.ts`, `src/editor/types.ts`, `src/platformer/types.ts`, `src/platformer/constants.ts`, `src/platformer/level-runtime.ts`, `src/leveltest/verify.ts`, `src/leveltest/policies.ts`_
 
 ---
 
@@ -2019,110 +2088,154 @@ The original proposal (Approach A) included a `DeathFeedbackConfig` type, `Death
 
 ---
 
-## Pillar 2: Level Testing (PROPOSED)
+## Pillar 2: Level Testing (shipped)
 
+> Decision: `docs/design/automated-level-playtesting-decision.md`.
 > Proposal: `docs/design/automated-level-playtesting-proposal.md`.
 > Research: `docs/research/automated-level-playtesting.md`.
-> Canonical plan: `docs/design/level-generation-quality-implementation-plan.md`.
-> Status: **APPROVED DIRECTION; API UNDER REVISION; NOT SHIPPED**.
->
-> **Authority note:** the detailed proposal inventory below predates the canonical
-> plan and is retained for design history. Its exact signatures are non-canonical
-> where they conflict with required-save win conditions, compile options, a single
-> physics source, tri-state verification, and unsupported-mechanic handling.
+> Status: **SHIPPED**.
 
-Automated playability verification: "is this level beatable, and what does a winning run look like?" Extends `validateLevel` (structural) with two complementary analyses: **static reachability BFS** (sub-ms, catches obvious bugs) and **simulation seek-bot** (produces a `Replay` for CI golden-fixture verification). The hybrid entry point composes both.
+### Architecture note
 
-The canonical plan places generic deterministic orchestration in planned
-`src/simtest/`; this historical `src/leveltest/` surface becomes its standard
-`LevelData`/platformer adapter. Consumer-specific actions and state remain outside
-the engine adapter.
+Level testing is split into two layers:
 
-### `src/leveltest/jump-arc.ts`
+- **`src/simtest/`** — the generic deterministic simulation-test core. Has **zero imports**
+  from `platformer/`, `level/`, `editor/`, or any consumer game. It only knows how to
+  drive a generic `SimulationAdapter<TState, TAction>`: fixed-tick orchestration, policy
+  execution, trace recording/playback, fingerprints, and honest "proven-success" vs
+  "inconclusive" semantics.
 
-Jump-arc precomputer. Analytic parabolic trajectory computation from `JumpConfig` physics. Shared foundation for both the reachability BFS (generates jump-arc edges) and the bot (validates "can I make this jump?").
-
-| Export | Kind | Summary | Status |
-|---|---|---|---|
-| `JumpArc` | type | `{ reachable: boolean; airtime: number; difficulty: number; requiresDash: boolean }` — analytic jump-arc result | PROPOSED |
-| `computeJumpArc(src, dst, jumpConfig, platformerConfig?, playerWidth?)` | function | Pure: compute whether a jump from src surface to dst surface is reachable. Returns `JumpArc`. Parabolic trajectory math: gravity = 2H/T², launchVelocity = 2H/T. `difficulty` = `clamp(horizontal_distance / maxHorizontalJumpDistance, 0, 1)`. `requiresDash = horizontal_distance > maxNoDashDistance`. `airtime` = exact formula per `to.y` vs `from.y` (see proposal). Never throws | PROPOSED |
-
-- _composes with: `src/animation/jump.ts` (`JumpConfig`, `DEFAULT_JUMP`), `src/platformer/constants.ts` (`DEFAULT_PLATFORMER_CONFIG`, `DEFAULT_PLAYER_WIDTH`, `DEFAULT_PLAYER_HEIGHT`)_
-
-### `src/leveltest/reachability.ts`
-
-Static reachability BFS over compiled standing surfaces with jump-arc edges. No simulation — pure analytic geometry. Catches: spawn-in-wall, unreachable exit, floating exit, unreachable collectibles. Optional backward BFS for softlock detection (forward-reachable but not backward-reachable from exit).
-
-**Surface.id format:** matches `compileLevel`'s `Solid.id` exactly so Surface↔Solid correspondence is verifiable by string equality — entity-derived: `entity-<id>` (id is `EntityId` / number); tile-derived: `tile-<x>-<y>-<width>-<height>` (world-space px, 4 components).
-
-**BFS visit order:** surfaces are visited in lexicographic order of `Surface.id`. The graph builder sorts `CompiledLevel.staticSolids` by `solid.id` before extracting surfaces, so `ReachGraph.surfaces` is sorted. The BFS is reproducible across machines.
-
-| Export | Kind | Summary | Status |
-|---|---|---|---|
-| `Surface` | type | `{ id, x, y, width, passthrough, entityId? }` — standing surface extracted from compiled geometry. `id` matches `Solid.id` format (entity: `entity-<n>`; tile: `tile-<x>-<y>-<w>-<h>`) | PROPOSED |
-| `JumpEdge` | type | `{ from, to, requiresDash, airtime, difficulty }` — jump arc between surfaces. `requiresDash` = `horizontal_distance > maxNoDashDistance`. `difficulty` = `clamp(horizontal_distance / maxHorizontalJumpDistance, 0, 1)`. `airtime` = exact formula (see proposal) | PROPOSED |
-| `ReachGraph` | type | `{ surfaces, edges }` — complete reachability graph. `surfaces` is sorted by `id` (lexicographic) | PROPOSED |
-| `ReachabilityConfig` | type | `{ jumpConfig?, platformerConfig?, playerWidth?, playerHeight? }` — graph construction params. Defaults: `DEFAULT_JUMP`, `DEFAULT_PLATFORMER_CONFIG`, `DEFAULT_PLAYER_WIDTH` (16), `DEFAULT_PLAYER_HEIGHT` (24) | PROPOSED |
-| `ReachabilityResult` | type | `{ version: 1, reachable, graph, spawnSurface, exitSurfaces, reachableSurfaces, softlockSurfaces, diagnostics }` — analysis outcome. `version: 1` pins the schema | PROPOSED |
-| `buildReachGraph(compiled, config?)` | function | Pure: build reachability graph from `CompiledLevel`. Sorts `staticSolids` by `id` before extraction. O(surfaces²) edge construction + O(surfaces + edges) BFS. Never throws | PROPOSED |
-| `analyzeReachability(level, config?)` | function | Pure: full reachability analysis of `LevelData`. Calls `compileLevel` internally. Returns `ReachabilityResult`. Never throws | PROPOSED |
-| `validatePlayability(level, config?)` | function | Convenience: returns `ValidationResult`-shaped diagnostics (extends `validateLevel` with playability errors). Never throws | PROPOSED |
-
-- _composes with: `src/leveltest/jump-arc.ts` (`computeJumpArc`), `src/platformer/level-runtime.ts` (`compileLevel`, `CompiledLevel`), `src/platformer/constants.ts` (`DEFAULT_PLAYER_WIDTH`, `DEFAULT_PLAYER_HEIGHT`), `src/level/validate.ts` (`ValidationResult`)_
-
-### `src/leveltest/bot.ts`
-
-Simulation seek-bot. Drives `stepPlatformer` with a heuristic policy, produces a `Replay` for `replayHash` CI golden-fixture verification. Ships a default greedy exit-seeker; consumers supply custom `BotPolicy` callbacks for complex levels.
-
-**Bot RNG seed:** default = `fnv1a(level.id) XOR BOT_SEED_SALT` (where `BOT_SEED_SALT` is a fixed 32-bit constant in `src/leveltest/constants.ts`). Reproducible across machines — same `level.id` → same seed. Consumers override via `LevelTestConfig.seed` for fuzz-testing.
-
-**Collectibles:** the bot's `collectiblesReached` field is populated each tick by calling `derivePickups(playerRect, collectibles, save)` from `src/collectibles/derive-pickups.ts` — the same deterministic AABB derivation the consumer's game loop uses. Zero replay impact.
-
-| Export | Kind | Summary | Status |
-|---|---|---|---|
-| `BotContext` | type | `{ entities, solids, movingPlatforms, tick, dt, jumpConfig }` — read-only per-tick context for the bot policy. `dt` is the fixed timestep; `movingPlatforms` lets the bot reason about platform carry | PROPOSED |
-| `BotPolicy` | type | `(state, ctx) => PlatformerInput` — consumer-supplied bot decision callback. Pure, deterministic, never throws | PROPOSED |
-| `LevelTestConfig` | type | `{ maxTicks?, policy?, platformerConfig?, seed?, winCondition? }` — bot test parameters. `maxTicks` defaults to `DEFAULT_MAX_TICKS` (3600); `seed` defaults to `fnv1a(level.id) XOR BOT_SEED_SALT`; `winCondition` defaults to `reachedExit` | PROPOSED |
-| `WinCondition` | type | `(state, entities) => boolean` — consumer-supplied win predicate. Library ships three built-in combinators (`reachedExit`, `collectedAll`, `reachedExitWithKey`) | PROPOSED |
-| `reachedExit(state, entities)` | function | Built-in `WinCondition`: true when player AABB overlaps a non-trap, non-locked exit entity. Pure, never throws | PROPOSED |
-| `collectedAll(state, entities, save)` | function | Built-in `WinCondition`: true when every `kind: 'collectible'` entity id is in `save.collected`. Pure, never throws | PROPOSED |
-| `reachedExitWithKey(state, entities, save)` | function | Built-in `WinCondition`: true when a `kind: 'key'` collectible is in `save.collected` AND player overlaps a beatable exit. Pure, never throws | PROPOSED |
-| `LevelTestResult` | type | `{ version: 1, beatable, replay?, replayHash?, winTicks?, failTicks?, deaths, collectiblesReached, failureReason? }` — simulation outcome. `version: 1` pins the schema | PROPOSED |
-| `testLevel(level, config?)` | function | Pure: run bot simulation against level. Returns `LevelTestResult`. Default policy: `DEFAULT_BOT_POLICY`. Default maxTicks: `DEFAULT_MAX_TICKS` (3600, 60s at 60Hz). Default seed: `fnv1a(level.id) XOR BOT_SEED_SALT`. Never throws | PROPOSED |
-| `DEFAULT_BOT_POLICY` | const | Greedy exit-seeker policy: always move toward nearest non-trap exit, jump when blocked, dash when stuck | PROPOSED |
-
-- _composes with: `src/platformer/kernel.ts` (`stepPlatformer`, `createPlatformerState`), `src/platformer/level-runtime.ts` (`compileLevel`, `CompiledMovingPlatform`), `src/replay/recorder.ts` (`createReplayRecorder`), `src/replay/hash.ts` (`replayHash`), `src/leveltest/jump-arc.ts` (`computeJumpArc`), `src/collectibles/derive-pickups.ts` (`derivePickups`), `src/collision/aabb.ts` (`aabbOverlap`)_
-
-### `src/leveltest/constants.ts`
-
-Named tunables. No magic numbers in the level-test hot path.
-
-| Export | Kind | Summary | Status |
-|---|---|---|---|
-| `DEFAULT_MAX_TICKS` | const | `3600` — default max bot ticks before declaring failure (60s at 60Hz). Consumers override via `LevelTestConfig.maxTicks` | PROPOSED |
-| `BOT_SEED_SALT` | const | Fixed 32-bit constant XORed with `fnv1a(level.id)` to produce the default bot RNG seed. Ensures reproducibility across machines | PROPOSED |
-
-### `src/leveltest/index.ts`
-
-Barrel export. Re-exports all public level-testing APIs.
-
-| Export | Kind | Summary | Status |
-|---|---|---|---|
-| `HybridTestConfig` | type | `{ maxTicks?, policy?, winCondition?, jumpConfig?, platformerConfig?, seed?, verifySoftlocks? }` — combined test params. Defaults match `LevelTestConfig` | PROPOSED |
-| `HybridSimulation` | type | Discriminated union: `{ kind: 'skipped', reason }` (static check failed, bot not run) \| `{ kind: 'ran', winTicks?, deaths, collectiblesReached, failureReason? }` (bot ran) | PROPOSED |
-| `HybridTestResult` | type | `{ version: 1, structurallyBeatable, botBeatable, replay?, replayHash?, reachability, simulation, validation }` — layered outcome. `simulation` is a `HybridSimulation` discriminated union (NOT optional). `version: 1` pins the schema | PROPOSED |
-| `testLevelHybrid(level, config?)` | function | Pure: static BFS pre-filter + simulation bot. Fast-fail on unreachable exit (sets `simulation.kind = 'skipped'`); bot verifies when reachable (sets `simulation.kind = 'ran'`). Returns `HybridTestResult`. Never throws | PROPOSED |
-
-- _composes with: `src/leveltest/reachability.ts` (`analyzeReachability`), `src/leveltest/bot.ts` (`testLevel`), `src/level/validate.ts` (`validateLevel`)_
-
-- _proposal: `docs/design/automated-level-playtesting-proposal.md`_
-- _research: `docs/research/automated-level-playtesting.md`_
-- _composes with: `src/platformer/kernel.ts` (`stepPlatformer`), `src/platformer/level-runtime.ts` (`compileLevel`), `src/animation/jump.ts` (`JumpConfig`, `DEFAULT_JUMP`), `src/replay/recorder.ts` (`createReplayRecorder`), `src/replay/player.ts` (`playReplay`), `src/replay/hash.ts` (`replayHash`), `src/level/validate.ts` (`validateLevel`, `ValidationResult`), `src/collision/aabb.ts` (`aabbOverlap`), `src/collectibles/derive-pickups.ts` (`derivePickups`), `src/editor/playtest.ts` (`enterPlaytest`, `exitPlaytest`)_
-- _test fixtures: `src/tests/fixtures/levels/<level-id>.json` (committed `LevelData`) + `src/tests/fixtures/replays/<level-id>.json` (committed golden replay with expected `replayHash`)_
-- _property-based tests: BFS reachability is reflexive; backward BFS is the reverse of forward BFS; edge symmetry for flat jumps; Surface.id matches Solid.id (string equality)_
-- _performance bounds: `analyzeReachability` <0.1 ms for 100 surfaces; `testLevel` <60 ms for 3600 ticks; `testLevelHybrid` <60 ms worst case (fast-fail makes the typical case <0.5 ms)_
+- **`src/leveltest/`** — the platformer/`LevelData` adapter built on top of `src/simtest/`.
+  Provides jump-arc trajectory sampling, static reachability analysis, a platformer
+  `SimulationAdapter`, three bot policies (cautious, direct, collector), win conditions,
+  and the tri-state `verifyLevel`/`verifyCompiledLevel` entry points.
 
 ---
+
+### `src/leveltest/` (shipped)
+
+Jump-arc trajectory sampling, reachability graph BFS, platformer simulation adapter, bot
+policies, win conditions, and tri-state verification for platformer levels.
+
+**Determinism & purity contract:** every export is never-throw, no-mutate, pure. No
+`Math.random`, no `Date.now()`, no DOM reads, no global mutable state. BFS visit order is
+pinned by lexicographic `Surface.id`. Same `(level, config)` → same output, forever.
+
+#### `src/leveltest/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `ReachabilityConfidence` | type | `'sound-over-approximation' \| 'heuristic' \| 'unsupported'` | `src/leveltest/types.ts` |
+| `Surface` | type | `{ id, x, y, width, passthrough, entityId? }` — standing surface from compiled geometry. `id` matches `Solid.id` format | `src/leveltest/types.ts` |
+| `JumpEdge` | type | `{ from, to, requiresDash, airtime, difficulty }` — feasible jump edge in reachability graph | `src/leveltest/types.ts` |
+| `ReachGraph` | type | `{ surfaces, edges }` — surfaces sorted by id (lexicographic) | `src/leveltest/types.ts` |
+| `ReachabilityResult` | type | `{ version: 1, confidence, reachable, graph, spawnSurface, exitSurfaces, reachableSurfaces, softlockSurfaces, diagnostics }` | `src/leveltest/types.ts` |
+| `ReachabilityConfig` | type | `{ jumpArc?, verifySoftlocks? }` | `src/leveltest/types.ts` |
+
+#### `src/leveltest/trajectory.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `JumpArcConfig` | type | `{ playerWidth, playerHeight, platformerConfig, safetyMargin? }` | `src/leveltest/trajectory.ts` |
+| `JumpArcResult` | type | `{ feasible, horizontalDistance, verticalDistance, airtime, difficulty, requiresDash, marginRemaining }` | `src/leveltest/trajectory.ts` |
+| `computeJumpArc(from, to, config)` | function | Evaluate jump feasibility between two surfaces using apex-parameterized physics. Pure, never throws | `src/leveltest/trajectory.ts` |
+
+#### `src/leveltest/reachability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `buildReachGraph(compiled, config?)` | function | Build reachability graph from `CompiledLevel`. Extracts surfaces, computes jump edges. Pure, never throws | `src/leveltest/reachability.ts` |
+| `analyzeReachability(level, config?)` | function | Full static reachability analysis of `LevelData`. Compiles, builds graph, runs BFS, detects softlocks. Pure, never throws | `src/leveltest/reachability.ts` |
+
+#### `src/leveltest/verify.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `VerificationStatus` | type | `'proven-beatable' \| 'proven-unreachable' \| 'inconclusive'` | `src/leveltest/verify.ts` |
+| `LevelTestConfig` | type | `{ compileOptions?, fixedDt?, maxTicks?, policies?, seed?, winCondition?, verifySoftlocks? }` | `src/leveltest/verify.ts` |
+| `VerificationResult` | type | `{ version: 1, status, structural, reachability, scenario, winningReplay?, winningReplayHash?, diagnostics }` | `src/leveltest/verify.ts` |
+| `VerificationDiagnostic` | type | `{ severity, code, message }` | `src/leveltest/verify.ts` |
+| `verifyLevel(level, config?)` | function | **Canonical entry point.** Full pipeline: validate → compile → reachability analysis → scenario verification → map winning trace to Replay → tri-state verdict. Pure, never throws | `src/leveltest/verify.ts` |
+| `verifyCompiledLevel(level, compiled, config?)` | function | Same pipeline but skips compilation (consumer provides pre-compiled level). Pure, never throws | `src/leveltest/verify.ts` |
+
+#### `src/leveltest/adapter.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `PlatformerSimulationState` | type | `{ platformerState, save, tick }` — internal simulation state maintained by the adapter | `src/leveltest/adapter.ts` |
+| `createPlatformerAdapter(compiled, level, config)` | function | Create a `SimulationAdapter` for a compiled platformer level. Handles kernel stepping, moving platform advancement, collectible pickups, and win-condition checking. Pure factory, never throws | `src/leveltest/adapter.ts` |
+
+#### `src/leveltest/policies.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `BotPolicy` | type | `(state: PlatformerState, ctx: BotContext) => PlatformerInput` — pure, deterministic, never throws | `src/leveltest/policies.ts` |
+| `BotContext` | type | `{ entities, solids, movingPlatforms, tick, dt, jumpConfig, save }` — per-tick bot context | `src/leveltest/policies.ts` |
+| `cautiousPolicy` | function | Prefers wide landings, avoids hazards, only jumps when blocked. Pure, never throws | `src/leveltest/policies.ts` |
+| `directPolicy` | function | Aggressive shortest-route to exit, jumps at obstacles, dashes when available. Pure, never throws | `src/leveltest/policies.ts` |
+| `collectorPolicy` | function | Detours to uncollected collectibles, falls back to direct policy. Pure, never throws | `src/leveltest/policies.ts` |
+| `DEFAULT_BOT_POLICIES` | const | `[cautiousPolicy, directPolicy, collectorPolicy]` — default set used by `verifyLevel` | `src/leveltest/policies.ts` |
+
+#### `src/leveltest/win-conditions.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `WinCondition` | type | `(state, entities, save) => boolean` — pure win predicate, never throws | `src/leveltest/win-conditions.ts` |
+| `reachedExit(state, entities, save)` | function | Win when player AABB overlaps a non-trap, non-locked exit. Pure, never throws | `src/leveltest/win-conditions.ts` |
+| `collectedAll(state, entities, save)` | function | Win when every collectible entity id is in `save.collected`. Pure, never throws | `src/leveltest/win-conditions.ts` |
+| `reachedExitWithKey(state, entities, save)` | function | Win when a key collectible is collected AND player reaches a beatable exit. Pure, never throws | `src/leveltest/win-conditions.ts` |
+| `DEFAULT_WIN_CONDITION` | const | Alias for `reachedExit` | `src/leveltest/win-conditions.ts` |
+
+---
+
+### `src/simtest/` (shipped)
+
+Generic deterministic simulation-test core. Zero imports from `platformer/`, `level/`,
+`editor/`, `collectibles/`, or any consumer game. Provides fixed-tick orchestration,
+policy execution, trace recording/playback, and honest "proven-success" vs "inconclusive"
+semantics.
+
+**Determinism & purity contract:** All adapter callbacks and policy callbacks must be
+pure for the determinism contract to hold. The runner wraps every callback defensively:
+thrown errors are caught and converted to diagnostics — they never propagate.
+
+**Honesty:** A successful run is evidence of scenario success. Bot exhaustion, tick-budget
+exhaustion, or callback errors are never turned into proof of impossibility. The result is
+always `'proven-success'` or `'inconclusive'`.
+
+#### `src/simtest/types.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SimulationOutcome` | type | `'running' \| 'success' \| 'failure'` | `src/simtest/types.ts` |
+| `SimulationTermination` | type | `'success' \| 'failure' \| 'tick-budget' \| 'policy-stop' \| 'adapter-error'` | `src/simtest/types.ts` |
+| `SimulationPolicyContext<TAction>` | type | `{ tick, fixedDt, seed, actions }` — context passed to a policy each tick | `src/simtest/types.ts` |
+| `SimulationPolicy<TState, TAction>` | type | `(state, context) => TAction \| undefined` — deterministic policy, returns `undefined` to stop | `src/simtest/types.ts` |
+| `SimulationTrace<TAction>` | type | `{ version: 1, adapterId, adapterVersion, scenarioFingerprint, seed, fixedDt, actions }` — recorded action trace | `src/simtest/types.ts` |
+| `SimulationRunResult<TAction>` | type | `{ version: 1, termination, ticks, trace, summary?, diagnostics }` — single policy run | `src/simtest/types.ts` |
+| `ScenarioVerificationResult<TAction>` | type | `{ version: 1, status, runs, winningTrace?, winningTraceHash?, diagnostics }` — aggregated result. `status` is `'proven-success' \| 'inconclusive'` | `src/simtest/types.ts` |
+| `ScenarioTestConfig<TState, TAction>` | type | `{ seed?, fixedDt?, maxTicks?, policies }` — scenario configuration | `src/simtest/types.ts` |
+| `SimulationPlaybackResult<TState>` | type | `{ valid, state?, outcome?, diagnostics }` — replay playback result | `src/simtest/types.ts` |
+| `SimulationDiagnostic` | type | `{ severity, code, message, tick? }` | `src/simtest/types.ts` |
+| `SimulationAdapter<TState, TAction>` | interface | `{ id, version, scenarioFingerprint, createInitialState, actions, step, outcome, stateKey?, summarize? }` — generic simulation world adapter | `src/simtest/types.ts` |
+
+#### `src/simtest/runner.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `verifyScenario(adapter, config)` | function | Evaluate policies against a scenario. Never throws. At least one policy required | `src/simtest/runner.ts` |
+| `playSimulationTrace(adapter, trace)` | function | Replay a recorded trace against an adapter to verify byte-level reproducibility. Never throws | `src/simtest/runner.ts` |
+
+#### `src/simtest/trace.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `simulationTraceHash(trace)` | function | 32-bit FNV-1a deterministic hash of a trace's canonical JSON. Never throws | `src/simtest/trace.ts` |
+
+- _proposal: `docs/design/automated-level-playtesting-proposal.md`_
+- _decision: `docs/design/automated-level-playtesting-decision.md`_
+- _research: `docs/research/automated-level-playtesting.md`_
+- _composes with: `src/level/serialize.ts` (`canonicalize`, `fnv1a`)_
 
 ## Pillar 5: Fake-3D (planned, Phase 4)
 
