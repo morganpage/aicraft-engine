@@ -233,11 +233,11 @@ ctx.fillStyle = colors.background;
 ctx.fillRect(0, 0, WIDTH, HEIGHT);
 ctx.fillStyle = colors.text;
 ctx.font = 'bold 24px sans-serif';
-ctx.fillText('Humanoid platformer visual-reference study', 24, 34);
+ctx.fillText('Humanoid visual-strategy study · pose hypotheses', 24, 34);
 ctx.fillStyle = colors.muted;
 ctx.font = '12px sans-serif';
 ctx.fillText(
-  'Original analytical diagrams · reference strategies, selected grammar, key-pose acceptance baseline',
+  'Strategy observations are sourced · skeleton poses below are unmeasured working hypotheses',
   24,
   54,
 );
@@ -259,7 +259,7 @@ strategies.forEach(([title, kind, note], index) => {
 
 ctx.fillStyle = colors.text;
 ctx.font = 'bold 17px sans-serif';
-ctx.fillText('Selected grammar: articulated-minimal three-quarter profile', 24, 254);
+ctx.fillText('Working grammar hypothesis: articulated-minimal three-quarter profile', 24, 254);
 ctx.fillStyle = colors.muted;
 ctx.font = '11px sans-serif';
 ctx.fillText(
@@ -278,7 +278,7 @@ const keyPoses = [
 ] as const;
 keyPoses.forEach(([label, pose], index) => {
   const x = 24 + index * 192;
-  panel(ctx, x, 292, 176, 196, label, index < 4 ? 'grounded key pose' : 'airborne key pose');
+  panel(ctx, x, 292, 176, 196, label, 'unvalidated pose hypothesis');
   ctx.strokeStyle = colors.ground;
   ctx.beginPath();
   ctx.moveTo(x + 16, 466.5);
@@ -287,7 +287,7 @@ keyPoses.forEach(([label, pose], index) => {
   drawFigure(ctx, x + 88, 466, pose);
 });
 
-panel(ctx, 24, 512, 730, 278, 'Acceptance baseline', 'geometry and silhouette rules');
+panel(ctx, 24, 512, 730, 278, 'Provisional checks', 'not a source-derived pose baseline');
 const rules = [
   'Idle uses a dedicated neutral pose; gait phase never defines zero-speed anatomy.',
   'Feet and knees remain on their own sides; body center stays inside the support interval.',
@@ -343,4 +343,3 @@ if (!first.equals(repeat)) {
 }
 writeFileSync(OUTPUT, first);
 console.log(`ok ${OUTPUT} ${(first.byteLength / 1024).toFixed(1)} KB`);
-

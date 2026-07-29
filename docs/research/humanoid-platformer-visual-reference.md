@@ -1,7 +1,7 @@
 # Humanoid Visual Reference for 2D Platformers
 
 > Investigated: 2026-07-29  
-> Status: **COMPLETE — validation baseline selected**
+> Status: **REVISED — strategy baseline selected; measured pose baseline pending**
 
 ## Question
 
@@ -14,9 +14,10 @@ standard. As a result, the first validation sheet compared the generated
 humanoid mainly against itself and failed to reject crossed idle legs and
 hands-on-hips arms.
 
-This note supplies the missing visual baseline. The accompanying
+This note supplies a visual-strategy baseline. The accompanying
 `benchmarks/character-body-plans/humanoid-reference-study.png` contains
-original analytical diagrams, not copied game sprites.
+original analytical diagrams, not copied game sprites. Those diagrams are pose
+hypotheses, not traced or measured reference poses.
 
 ## Evidence standard
 
@@ -115,6 +116,111 @@ What we do not adopt:
 
 - Collapsing the base humanoid into an opaque sprite-like mass at 32 × 48.
 
+## Pose-specific original examples acquired
+
+These sources expose complete or named source frames and are therefore more
+useful for pose validation than promotional screenshots.
+
+### Godot 2D Platformer robot — open source, state-mapped sheet
+
+The Godot demo repository includes an `8 × 8` robot sheet and the scene file
+that assigns exact frames:
+
+- run: frames `0–9`;
+- idle: frames `30–33`;
+- jump: frame `45`;
+- fall: frame `48`;
+- separate weapon variants are also named.
+
+This is the strongest current source for identifying real contact/passing
+frames and comparing jump against fall. The run leans into travel, separates
+the feet strongly, and uses opposing arm/leg motion. Jump and fall are different
+silhouettes rather than a walking pose lifted off the floor.
+
+Sources:
+
+- [Godot robot sheet](https://github.com/godotengine/godot-demo-projects/blob/master/2d/platformer/player/robot.webp)
+- [Godot frame assignments](https://github.com/godotengine/godot-demo-projects/blob/master/2d/platformer/player/player.tscn)
+- [Godot demo repository and MIT license](https://github.com/godotengine/godot-demo-projects)
+
+### Kenney Platformer Characters — CC0 pose catalog
+
+Kenney's sheet provides standing, idle, two walk poses, jump, fall, skid,
+crouch, climb, and action poses. The individual soldier images are `80 × 110`,
+so they are proportion references rather than direct pixel-scale references.
+
+Useful observations:
+
+- standing keeps both feet visibly grounded;
+- jump gathers and angles the legs while raising one arm;
+- fall opens the arms and extends/separates the legs;
+- action poses are deliberately more asymmetric than neutral poses.
+
+Sources:
+
+- [Original Kenney platformer character sheet](https://commons.wikimedia.org/wiki/File:Kenney.nl_platformer_characters_-_player_vector.svg)
+- [CC0 license record](https://commons.wikimedia.org/wiki/File:Kenney.nl_platformer_characters_-_player_vector.svg#Licensing)
+
+### Phaser tutorial character — exact `32 × 48` scale
+
+Phaser's official introductory platformer uses a nine-frame `288 × 48` sheet:
+four frames walking left, one front-facing idle, and four walking right. This
+is an unusually direct scale comparison because every frame is exactly our
+nominal `32 × 48`.
+
+The character demonstrates how little anatomy survives at that size: the torso
+and head carry identity, while each limb is only a few pixels. It is useful as
+a minimum-readability control, not as an anatomical model. The tutorial does
+not assign distinct jump/fall artwork, so it is also an example of the visual
+ambiguity we should avoid.
+
+Source:
+
+- [Official Phaser tutorial and frame mapping](https://docs.phaser.io/phaser/getting-started/making-your-first-phaser-game)
+
+The Phaser examples repository explicitly warns that its example assets are not
+generally licensed for reuse. The sheet may be inspected but must not be copied
+into this repository.
+
+### OpenGameArt articulated cyborg — CC0 temporal sequences
+
+This side-view/three-quarter humanoid includes 15 idle frames, 15 run frames,
+and 15 jump frames as separate PNGs. It provides a genuine temporal sequence
+for studying torso lean and leg recovery. Its gun arm makes it unsuitable as a
+neutral-arm reference.
+
+Source:
+
+- [CC0 articulated cyborg sequences](https://opengameart.org/content/cc0-2d-douche-cyborg-jump-run-shoot-idle)
+
+### OpenGameArt James — CC0 `16 × 16` control
+
+This sheet includes idle, four-frame side walk, jump, fall, crouch, climb,
+action, hit, and death at `16 × 16`. It is useful for the smallest-scale
+silhouette test: most joint-level anatomy disappears entirely.
+
+Source:
+
+- [CC0 16-pixel character sheet](https://opengameart.org/content/pixel-character-02-james)
+
+## What the new examples invalidate
+
+The six analytical figures in the first study image were synthesized from
+general walk-cycle conventions. They were not derived frame-by-frame from
+Celeste, Shovel Knight, Hollow Knight, or Dead Cells. They therefore cannot be
+used as approval targets.
+
+In particular:
+
+- the proposed passing pose has not been measured against a real source frame;
+- the ascent/descent pair lacks a source-backed landing transition;
+- the diagrams imply exposed anatomy that Hollow Knight and Celeste do not
+  actually provide;
+- the Shovel Knight source was an asymmetric NPC-with-tool idle, not a neutral
+  player pose.
+
+The diagram is retained only as a clearly labelled working hypothesis.
+
 ## Selected visual grammar
 
 The production target is an **articulated-minimal three-quarter profile**:
@@ -201,13 +307,19 @@ Every future humanoid candidate sheet must include:
 - production/prototype byte comparison;
 - geometry-level neutral-pose tests.
 
-## Decision
+## Revised decision
 
-The existing procedural approach remains viable, but approval is now against
-this reference baseline rather than against a self-generated sheet.
+The existing procedural approach remains viable, but pose approval requires a
+new measured frame table based primarily on the Godot run/jump/fall frames and
+the CC0 Kenney and OpenGameArt sequences. Strategy-level observations from
+commercial games remain supporting context only.
 
-The corrected neutral feet and arms satisfy the static invariants. The current
-permanent sheet still needs to be expanded from two arbitrary stride samples
-to named contact/passing/opposite-contact poses and to add an explicit landing
-panel before the humanoid should be considered visually complete.
+The corrected neutral feet and arms satisfy the static invariants. Before the
+humanoid is visually complete:
 
+1. identify contact, recoil, passing, and high-point frames in at least two
+   source sequences;
+2. record normalized head, shoulder, hip, knee, foot, elbow, and hand positions;
+3. derive target ranges from those observations;
+4. replace the hypothesis diagrams with measured overlays;
+5. expand the permanent sheet with named gait phases and landing.
