@@ -8,7 +8,10 @@ import {
   DEFAULT_HUMANOID,
   deriveHumanoidConfig,
 } from '../character/humanoid/config';
-import { evaluateHumanoidLowerBodyPose } from '../character/humanoid/draw';
+import {
+  evaluateHumanoidLowerBodyPose,
+  evaluateHumanoidUpperBodyPose,
+} from '../character/humanoid/draw';
 import {
   advanceHumanoidVisual,
   createHumanoidVisualState,
@@ -122,6 +125,51 @@ describe('production humanoid', () => {
         pose.leftLeg.foot,
         pose.rightLeg.knee,
         pose.rightLeg.foot,
+      ),
+    ).toBe(false);
+  });
+
+  it('hangs neutral arms beside the torso with a slight valid bend', () => {
+    const config = deriveHumanoidConfig(1);
+    const state = createHumanoidVisualState(config);
+    const lowerBody = evaluateHumanoidLowerBodyPose(config, state);
+    const pose = evaluateHumanoidUpperBodyPose(
+      config,
+      state,
+      lowerBody.torsoTop,
+    );
+    const points = [
+      pose.leftArm.shoulder,
+      pose.leftArm.elbow,
+      pose.leftArm.hand,
+      pose.rightArm.shoulder,
+      pose.rightArm.elbow,
+      pose.rightArm.hand,
+    ];
+
+    expect(points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
+    expect(pose.leftArm.elbow.x).toBeLessThan(0);
+    expect(pose.leftArm.hand.x).toBeLessThan(0);
+    expect(pose.rightArm.elbow.x).toBeGreaterThan(0);
+    expect(pose.rightArm.hand.x).toBeGreaterThan(0);
+    expect(pose.leftArm.hand.y).toBeGreaterThan(lowerBody.torsoBottom);
+    expect(pose.rightArm.hand.y).toBeGreaterThan(lowerBody.torsoBottom);
+    expect(distance(pose.leftArm.shoulder, pose.leftArm.elbow)).toBeCloseTo(config.upperArmLength);
+    expect(distance(pose.leftArm.elbow, pose.leftArm.hand)).toBeCloseTo(config.lowerArmLength);
+    expect(distance(pose.rightArm.shoulder, pose.rightArm.elbow)).toBeCloseTo(config.upperArmLength);
+    expect(distance(pose.rightArm.elbow, pose.rightArm.hand)).toBeCloseTo(config.lowerArmLength);
+    expect(distance(pose.leftArm.shoulder, pose.leftArm.hand)).toBeGreaterThan(
+      (config.upperArmLength + config.lowerArmLength) * 0.9,
+    );
+    expect(distance(pose.rightArm.shoulder, pose.rightArm.hand)).toBeGreaterThan(
+      (config.upperArmLength + config.lowerArmLength) * 0.9,
+    );
+    expect(
+      segmentsCross(
+        pose.leftArm.shoulder,
+        pose.leftArm.hand,
+        pose.rightArm.shoulder,
+        pose.rightArm.hand,
       ),
     ).toBe(false);
   });

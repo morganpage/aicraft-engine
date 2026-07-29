@@ -6,6 +6,8 @@ import {
   HUMANOID_BASE_HEIGHT,
   HUMANOID_BASE_WIDTH,
   HUMANOID_EYE_RADIUS,
+  HUMANOID_IDLE_ARM_EXTENSION,
+  HUMANOID_IDLE_HAND_OUTSET,
   HUMANOID_IDLE_HIP_Y,
   HUMANOID_IDLE_STANCE_WIDTH,
   HUMANOID_OUTLINE_WIDTH,
@@ -29,6 +31,17 @@ export interface HumanoidLowerBodyPose {
   readonly torsoBottom: number;
   readonly leftLeg: HumanoidLegPose;
   readonly rightLeg: HumanoidLegPose;
+}
+
+export interface HumanoidArmPose {
+  readonly shoulder: Readonly<Vec2>;
+  readonly elbow: Readonly<Vec2>;
+  readonly hand: Readonly<Vec2>;
+}
+
+export interface HumanoidUpperBodyPose {
+  readonly leftArm: HumanoidArmPose;
+  readonly rightArm: HumanoidArmPose;
 }
 
 function drawBone(
@@ -127,6 +140,72 @@ export function evaluateHumanoidLowerBodyPose(
   };
 }
 
+export function evaluateHumanoidUpperBodyPose(
+  config: HumanoidConfig,
+  state: HumanoidVisualState,
+  torsoTop: number,
+  rightHandTarget: Readonly<Vec2> | null = null,
+): HumanoidUpperBodyPose {
+  const shoulderY = torsoTop + 2.2;
+  const shoulderHalf = config.shoulderWidth / 2;
+  const swing =
+    Math.sin(state.locomotion.phase) * 3.2 * (1 - state.idleBlend);
+  const relaxedDrop =
+    (config.upperArmLength + config.lowerArmLength) *
+    HUMANOID_IDLE_ARM_EXTENSION;
+  const leftShoulder = { x: -shoulderHalf, y: shoulderY };
+  const rightShoulder = { x: shoulderHalf, y: shoulderY };
+  const leftHand = {
+    x: -shoulderHalf - HUMANOID_IDLE_HAND_OUTSET - swing,
+    y: shoulderY + relaxedDrop,
+  };
+  const passiveRightHand = {
+    x: shoulderHalf + HUMANOID_IDLE_HAND_OUTSET + swing,
+    y: shoulderY + relaxedDrop,
+  };
+  const rightHand = rightHandTarget
+    ? {
+        x: mix(
+          passiveRightHand.x,
+          rightHandTarget.x,
+          HUMANOID_TARGET_ARM_BLEND,
+        ),
+        y: mix(
+          passiveRightHand.y,
+          rightHandTarget.y,
+          HUMANOID_TARGET_ARM_BLEND,
+        ),
+      }
+    : passiveRightHand;
+  const leftArm = solveLimb(
+    leftShoulder,
+    leftHand,
+    config.upperArmLength,
+    config.lowerArmLength,
+    { bendDir: 1 },
+  );
+  const rightArm = solveLimb(
+    rightShoulder,
+    rightHand,
+    config.upperArmLength,
+    config.lowerArmLength,
+    { bendDir: -1 },
+  );
+
+  return {
+    leftArm: {
+      shoulder: leftShoulder,
+      elbow: leftArm.jointPos,
+      hand: leftArm.endPos,
+    },
+    rightArm: {
+      shoulder: rightShoulder,
+      elbow: rightArm.jointPos,
+      hand: rightArm.endPos,
+    },
+  };
+}
+
 export function drawHumanoid(
   ctx: CanvasRenderingContext2D,
   body: CharacterBodyFrame,
@@ -154,14 +233,6 @@ export function drawHumanoid(
   drawBone(ctx, leftLeg.hip, leftLeg.knee, leftLeg.foot, palette.outline, 3.4);
   drawBone(ctx, leftLeg.hip, leftLeg.knee, leftLeg.foot, palette.base, 1.8);
 
-  const shoulderY = torsoTop + 2.2;
-  const shoulderHalf = config.shoulderWidth / 2;
-  const phase = state.locomotion.phase;
-  const passiveSwing = Math.sin(phase) * 3.2;
-  const leftShoulder = { x: -shoulderHalf, y: shoulderY };
-  const rightShoulder = { x: shoulderHalf, y: shoulderY };
-  const defaultLeftHand = { x: -shoulderHalf - passiveSwing, y: torsoBottom - 0.5 };
-  const defaultRightHand = { x: shoulderHalf + passiveSwing, y: torsoBottom - 0.5 };
   const target = state.armTarget ?? options?.lookTarget;
   const localTarget = target
     ? {
@@ -171,33 +242,28 @@ export function drawHumanoid(
         y: (target.y - (body.y + body.height)) / scale,
       }
     : null;
-  const rightHand = localTarget
-    ? {
-        x:
-          defaultRightHand.x +
-          (localTarget.x - defaultRightHand.x) * HUMANOID_TARGET_ARM_BLEND,
-        y:
-          defaultRightHand.y +
-          (localTarget.y - defaultRightHand.y) * HUMANOID_TARGET_ARM_BLEND,
-      }
-    : defaultRightHand;
-  const leftArm = solveLimb(
-    leftShoulder,
-    defaultLeftHand,
-    config.upperArmLength,
-    config.lowerArmLength,
-    { bendDir: -1 },
+  const upperBody = evaluateHumanoidUpperBodyPose(
+    config,
+    state,
+    torsoTop,
+    localTarget,
   );
-  const rightArm = solveLimb(
-    rightShoulder,
-    rightHand,
-    config.upperArmLength,
-    config.lowerArmLength,
-    { bendDir: 1 },
+  drawBone(
+    ctx,
+    upperBody.leftArm.shoulder,
+    upperBody.leftArm.elbow,
+    upperBody.leftArm.hand,
+    palette.outline,
+    3,
   );
-
-  drawBone(ctx, leftShoulder, leftArm.jointPos, leftArm.endPos, palette.outline, 3);
-  drawBone(ctx, leftShoulder, leftArm.jointPos, leftArm.endPos, palette.accent, 1.5);
+  drawBone(
+    ctx,
+    upperBody.leftArm.shoulder,
+    upperBody.leftArm.elbow,
+    upperBody.leftArm.hand,
+    palette.accent,
+    1.5,
+  );
 
   ctx.save();
   ctx.translate(0, (torsoTop + torsoBottom) / 2);
@@ -217,8 +283,22 @@ export function drawHumanoid(
   ctx.stroke();
   ctx.restore();
 
-  drawBone(ctx, rightShoulder, rightArm.jointPos, rightArm.endPos, palette.outline, 3);
-  drawBone(ctx, rightShoulder, rightArm.jointPos, rightArm.endPos, palette.feature, 1.5);
+  drawBone(
+    ctx,
+    upperBody.rightArm.shoulder,
+    upperBody.rightArm.elbow,
+    upperBody.rightArm.hand,
+    palette.outline,
+    3,
+  );
+  drawBone(
+    ctx,
+    upperBody.rightArm.shoulder,
+    upperBody.rightArm.elbow,
+    upperBody.rightArm.hand,
+    palette.feature,
+    1.5,
+  );
 
   const headY = torsoTop - config.headRadius + 0.4;
   ctx.fillStyle = palette.accent;

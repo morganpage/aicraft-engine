@@ -26,6 +26,10 @@ export const HUMANOID_POSE_DECAY_PER_SECOND = 7;
 export const HUMANOID_OUTLINE_WIDTH = 1;
 export const HUMANOID_EYE_RADIUS = 1;
 export const HUMANOID_TARGET_ARM_BLEND = 0.72;
+/** Small lateral separation keeps relaxed hands clear of the torso. */
+export const HUMANOID_IDLE_HAND_OUTSET = 0.55;
+/** Fraction of total arm length used by a relaxed, slightly bent arm. */
+export const HUMANOID_IDLE_ARM_EXTENSION = 0.94;
 /** Neutral distance between idle feet in local pixels. */
 export const HUMANOID_IDLE_STANCE_WIDTH = 5.2;
 /** Neutral hip height keeps idle legs nearly straight instead of crouched. */
