@@ -1784,6 +1784,10 @@ returns `CONFIRM`.
 
 ## Phase 16: Verification
 
+> Status: **PASS** (2026-07-29). The canonical matrix passed at `0.5.0`;
+> the exact tarball contains 463 entries and excludes prototypes, showcase,
+> benchmarks, and tests.
+
 Run the [Canonical Verification Matrix](#canonical-verification-matrix).
 
 This is the first phase that runs `npm pack --dry-run` for the new code.
@@ -1811,6 +1815,11 @@ Confirm:
 - Existing `0.4.0` exports remain present.
 
 ## Phase 17: External Package Smoke Test
+
+> Status: **PASS** (2026-07-29). A fresh strict Vite project installed the
+> exact tarball, built the root-only API wiring, executed bundled Node ESM
+> runtime assertions, and confirmed a collision-only graph excludes humanoid
+> and charger modules.
 
 Create a temporary strict Vite TypeScript project outside the repository.
 
@@ -1943,6 +1952,11 @@ Verify:
 Remove the temporary project and tarball after verification.
 
 ## Phase 17.5: Release-Candidate Handoff
+
+> Status: **READY FOR USER APPROVAL** (2026-07-29). Exact source/tree and
+> artifact identity are recorded in
+> `character-enemy-validation-release-candidate.md`. No merge, tag, or
+> publication has occurred.
 
 Publication remains outside this plan, but the plan must end with a candidate
 that can be mapped to one exact source tree and one verified artifact.
