@@ -44,7 +44,7 @@
     "api-designer": {
       "description": "Public API designer for the library. Proposes 2-3 alternative TypeScript interface approaches per technique with explicit trade-offs. Maintains docs/api-surface.md (the export map by pillar). Writes design proposals to docs/design/. Reviews implementations against the agreed API.",
       "mode": "subagent",
-      "model": "xiaomi-token-plan-ams/mimo-v2.5",
+      "model": "opencode/deepseek-v4-flash-free",
       "temperature": 0.7,
       "steps": 40,
       "color": "#9B59B6",
@@ -66,7 +66,7 @@
     "architect": {
       "description": "Adversarial READ-ONLY critic of API and architecture changes. Reviews proposals and implementations against docs/architecture.md and docs/conventions.md. Catches determinism violations, layering leaks, adapter indiscipline, magic numbers/colors, missing JSDoc, convention drift. Never proposes changes — only critiques.",
       "mode": "subagent",
-      "model": "xiaomi-token-plan-ams/mimo-v2.5-pro",
+      "model": "opencode/minimax-m3",
       "temperature": 0.5,
       "steps": 30,
       "color": "#5D6D7E",
