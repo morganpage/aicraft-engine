@@ -20,6 +20,7 @@ import type {
   EnemyUpdateContext,
   ProjectileState,
 } from './types';
+import { CHARGER_HEIGHT, CHARGER_WIDTH } from '../../level/enemy-schema';
 
 /**
  * Compile all `'enemy'` entities from a `LevelData` into `CompiledEnemy[]`.
@@ -63,6 +64,12 @@ export function compileEnemies(level: LevelData): readonly CompiledEnemy[] {
 
       const props = entity.props;
       const archetype = typeof props.archetype === 'string' ? props.archetype : 'spinny';
+      if (
+        archetype === 'charger' &&
+        (rw !== CHARGER_WIDTH || rh !== CHARGER_HEIGHT)
+      ) {
+        continue;
+      }
       const params = props.params && typeof props.params === 'object'
         ? props.params as Record<string, unknown>
         : {};

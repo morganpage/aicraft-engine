@@ -1441,6 +1441,11 @@ The review must reference exact PNG paths and concrete visual observations.
 
 ## Phase 10: Architecture Review
 
+> Status: **APPROVED** (2026-07-29). The typed registry preserves concrete
+> built-in/custom handlers with safe unknown lookup; humanoid ownership,
+> capped supercover LOS, bounded charger sweep/tick ordering, strict TypeScript,
+> determinism, root-only API direction, and prototype package exclusion passed.
+
 `@architect` reviews the actual prototype, not only the proposal.
 
 This is the **sole phase** that may record an approval verdict. Phase 1's
@@ -1491,6 +1496,10 @@ Maximum two critique loops before escalating unresolved design choices to the
 user.
 
 ## Phase 11: Decision Gate
+
+> Outcome: **Promote** (2026-07-29). Both decision documents were filed and
+> package metadata was advanced to `0.5.0` with
+> `npm version 0.5.0 --no-git-tag-version`. No tag or publication occurred.
 
 Write:
 
@@ -1720,6 +1729,10 @@ Documentation rules:
 - No showcase-local constants appear as public library exports.
 
 ## Phase 15.5: Post-Production Conformance Gate
+
+> Verdict: **CONFIRM** (2026-07-29). The production humanoid and charger sheets
+> are byte-identical to the approved prototype sheets. The production
+> architecture audit confirmed the decision contracts survived promotion.
 
 The prototype approval recorded in Phase 10 covers only the prototype. This
 gate re-runs visual and architecture review against the **production** code in

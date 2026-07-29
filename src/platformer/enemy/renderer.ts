@@ -21,6 +21,10 @@ import type { SpiderConfig } from '../../animation/spider/types';
 import { createSpiderState } from '../../animation/spider/spider-state';
 import { splitSpiderConfig, DEFAULT_SPIDER, DEFAULT_SPIDER_PALETTE } from '../../animation/spider/types';
 import { evaluateSpiderPose, drawSpider } from '../../animation/spider/spider';
+import {
+  DEFAULT_CHARGER_PALETTE,
+  drawCharger,
+} from './archetypes/charger';
 
 /**
  * Default enemy body width (px) for drawing.
@@ -63,6 +67,8 @@ export interface EnemyPalette {
   readonly spinny?: string;
   /** Turret enemy fill color. */
   readonly turret?: string;
+  /** Charger body fill color. */
+  readonly charger?: string;
   /** Default fill for unknown archetypes. */
   readonly default?: string;
   /** Direction indicator color for turrets. */
@@ -77,6 +83,7 @@ export interface EnemyPalette {
 const DEFAULT_ENEMY_PALETTE: Readonly<EnemyPalette> = {
   spinny: '#ff3a3a',
   turret: '#ff6a00',
+  charger: DEFAULT_CHARGER_PALETTE.body,
   default: '#ff3a3a',
   indicator: '#ffffff',
   projectile: '#ffaa00',
@@ -221,6 +228,11 @@ export function drawEnemies(
       ctx.moveTo(cx, cy);
       ctx.lineTo(cx + indDirX * TURRET_INDICATOR_LENGTH, cy + indDirY * TURRET_INDICATOR_LENGTH);
       ctx.stroke();
+    } else if (enemy.archetype === 'charger') {
+      drawCharger(ctx, enemy.state, {
+        ...DEFAULT_CHARGER_PALETTE,
+        body: pal.charger ?? DEFAULT_CHARGER_PALETTE.body,
+      });
     } else if (enemy.archetype === 'spider') {
       try {
         // Read or lazily-initialise spider state

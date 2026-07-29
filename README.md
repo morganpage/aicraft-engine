@@ -22,8 +22,9 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Primitives** | `outlineRect`, `shade`, color guards, device-pixel camera snapping, motion probe, surface ripple (`waveDisplacement`, `generateWaveLine`), hit-stop (freeze-frame game-feel), additive glow (`drawGlow`), parallax scroll (`parallaxOffset`, `drawTiledParallax`) | **Shipped** |
 | **1. RNG** | Seeded mulberry32, distribution helpers, stateless typed visual-address folding | **Shipped** |
 | **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | **Shipped** |
-| **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators, procedural spider enemy (multi-legged IK gait, segmented body) | **Shipped** |
-| **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms (`gapSolids`, `advanceGapMotion`, `gapTileQuery`) | **Shipped** |
+| **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators, procedural spider enemy, and seeded visual-only humanoid body plan | **Shipped** |
+| **1. Character body plans** | Typed body-plan registry plus deterministic humanoid config, displacement-driven visual state, signed-gravity poses, and Canvas2D renderer | **Shipped** |
+| **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms, capped supercover line of sight | **Shipped** |
 | **1. Camera** | Follow camera (lerp, clamp, snap-to-target) | **Shipped** |
 | **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, multi-touch button set, gamepad adapter (Standard Gamepad, axial deadzone), OR-merge | **Shipped** |
 | **1. Game loop** | Fixed-step accumulator, defensive RAF adapter, spiral-of-death guard, visibilitychange pause | **Shipped** |
@@ -36,7 +37,7 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Easing & tween** | Penner easing curves (`linear`, `easeOutCubic`, `easeOutBack`, `easeOutElastic`, `easeOutBounce`, …), generic `powOut`, inversion helpers (`easeIn`, `easeInOut`), fixed-step tween driver (`createTweenState`, `advanceTween`) | **Shipped** |
 | **1. Bitmap text** | Asset-less 5×7 pixel font (full printable ASCII, MIT-sourced glyph data), pure `measureText`, `drawText` / `drawTextOutlined`, font registry (`createFont`, `addGlyph`, `DEFAULT_FONT`) | **Shipped** |
 | **1. Platformer kernel** | Composable character controller + ability pipeline, signed gravity with gravity-relative support/carry, stable physical contact identity, deterministic tick | **Shipped** |
-| **1. Enemy archetypes** | Enemy compile/step pipeline + behavior registry (`spinny`, `turret`, `spider`), projectiles, renderer, custom-handler dispatch via `EnemyBehaviorHandler` | **Shipped** |
+| **1. Enemy archetypes** | Enemy compile/step pipeline + behavior registry (`spinny`, `turret`, `spider`, telegraphed `charger`), projectiles, renderer, custom-handler dispatch via `EnemyBehaviorHandler` | **Shipped** |
 | **2. Palette** | OKLCH substitution, harmonic generation, WCAG AA contrast repair | **Shipped** |
 | **2. Cosmetics** | Versioned manifest, seeded variant generation, multi-slot ownership | **Shipped** |
 | **2. Level schema** | Versioned platformer levels, migration and validation, standalone tile queries, and unified `compileLevel` output combining captured tile collision with entity geometry | **Shipped** |

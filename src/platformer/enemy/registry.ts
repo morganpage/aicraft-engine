@@ -28,6 +28,9 @@ import type { SpiderState } from '../../animation/spider/spider-state';
 import type { TileSolidityQuery } from '../../collision/types';
 import { createSpiderState, stepSpider } from '../../animation/spider/spider-state';
 import { DEFAULT_SPIDER, DEFAULT_SPIDER_PALETTE } from '../../animation/spider/constants';
+import { chargerBehavior } from './archetypes/charger';
+
+export { chargerBehavior };
 
 // ─── Built-in: spinny ───────────────────────────────────────────────
 
@@ -642,11 +645,12 @@ const BUILT_IN_HANDLERS: Readonly<Record<string, EnemyBehaviorHandler>> = {
   spinny: spinnyBehavior,
   turret: turretBehavior,
   spider: spiderBehavior,
+  charger: chargerBehavior,
 };
 
 /**
  * Create an {@link EnemyBehaviorRegistry} with the built-in archetypes
- * (`'spinny'`, `'turret'`, and `'spider'`) plus any custom handlers the
+ * (`'spinny'`, `'turret'`, `'spider'`, and `'charger'`) plus any custom handlers the
  * consumer supplies. Custom handlers merge on top of built-ins — a custom
  * handler with the same name overrides the built-in.
  *

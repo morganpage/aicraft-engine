@@ -111,6 +111,32 @@ describe('compileEnemies', () => {
     // Input not mutated
     expect(level.entities.length).toBe(1);
   });
+
+  it('compiles fixed-size chargers and skips mismatched built-in dimensions', () => {
+    const entities: LevelEntity[] = [
+      {
+        id: 20,
+        kind: 'enemy',
+        rect: { x: 10, y: 20, width: 16, height: 16 },
+        props: { archetype: 'charger', params: { speed: 40 } },
+      },
+      {
+        id: 21,
+        kind: 'enemy',
+        rect: { x: 30, y: 20, width: 32, height: 16 },
+        props: { archetype: 'charger', params: {} },
+      },
+      {
+        id: 22,
+        kind: 'enemy',
+        rect: { x: 50, y: 20, width: 32, height: 16 },
+        props: { archetype: 'custom-large', params: {} },
+      },
+    ];
+    const result = compileEnemies(makeLevel(entities));
+    expect(result.map((enemy) => enemy.id)).toEqual([20, 22]);
+    expect(result[0].archetype).toBe('charger');
+  });
 });
 
 function makeDefaultContext(overrides?: Partial<EnemyUpdateContext>): EnemyUpdateContext {

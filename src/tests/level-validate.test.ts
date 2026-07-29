@@ -41,6 +41,33 @@ function errorsOnly(r: ValidationResult): ValidationError[] {
   return r.errors.filter((e) => e.severity === 'error');
 }
 
+function addCharger(level: unknown, overrides: {
+  readonly width?: number;
+  readonly height?: number;
+  readonly params?: Record<string, unknown>;
+} = {}): unknown {
+  const copy = clone(level) as {
+    entities: Array<Record<string, unknown>>;
+    nextEntityId: number;
+  };
+  copy.entities.push({
+    id: copy.nextEntityId,
+    kind: 'enemy',
+    rect: {
+      x: 30,
+      y: 30,
+      width: overrides.width ?? 16,
+      height: overrides.height ?? 16,
+    },
+    props: {
+      archetype: 'charger',
+      params: overrides.params ?? {},
+    },
+  });
+  copy.nextEntityId += 1;
+  return copy;
+}
+
 describe('validateLevel — valid input', () => {
   it('passes a complete valid level', () => {
     const result = validateLevel(baseLevel());
@@ -73,6 +100,42 @@ describe('validateLevel — valid input', () => {
     level.flags = { lookahead: true, foreground: false };
     const result = validateLevel(level);
     expect(result.valid).toBe(true);
+  });
+});
+
+describe('validateLevel — charger contract', () => {
+  it('accepts valid charger dimensions and parameters', () => {
+    const result = validateLevel(addCharger(baseLevel(), {
+      params: {
+        speed: 40,
+        dashSpeed: 300,
+        windupDuration: 0.5,
+        recoveryDuration: 0.8,
+        dashMaxDistance: 128,
+        detectionRadius: 160,
+        verticalTolerance: 12,
+        ledgeTurnAround: true,
+      },
+    }));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects mismatched dimensions and invalid parameter ranges/types', () => {
+    const result = validateLevel(addCharger(baseLevel(), {
+      width: 32,
+      params: {
+        speed: -1,
+        dashSpeed: 0,
+        windupDuration: 61,
+        ledgeTurnAround: 'yes',
+      },
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((entry) => entry.path.endsWith('.rect'))).toBe(true);
+    expect(result.errors.some((entry) => entry.path.endsWith('.speed'))).toBe(true);
+    expect(result.errors.some((entry) => entry.path.endsWith('.dashSpeed'))).toBe(true);
+    expect(result.errors.some((entry) => entry.path.endsWith('.windupDuration'))).toBe(true);
+    expect(result.errors.some((entry) => entry.path.endsWith('.ledgeTurnAround'))).toBe(true);
   });
 });
 

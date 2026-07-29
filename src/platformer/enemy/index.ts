@@ -27,7 +27,20 @@ export {
   spinnyBehavior,
   turretBehavior,
   spiderBehavior,
+  chargerBehavior,
 } from './registry';
+
+export {
+  CHARGER_HEIGHT,
+  CHARGER_WIDTH,
+  DEFAULT_CHARGER_PALETTE,
+  drawCharger,
+  resolveChargerParams,
+  sweepChargerX,
+  type ChargerPalette,
+  type ChargerParams,
+  type ChargerPhase,
+} from './archetypes/charger';
 
 export { stepProjectile } from './projectile';
 

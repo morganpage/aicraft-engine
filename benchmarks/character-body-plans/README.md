@@ -10,3 +10,6 @@ Regenerate with:
 ```bash
 npm run benchmark:humanoid
 ```
+
+`humanoid-production.png` is rendered from `src/character/`. It is
+byte-identical to the approved prototype sheet.

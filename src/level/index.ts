@@ -64,4 +64,16 @@ export { canonicalize, fnv1a } from './serialize';
 
 export { createLevelScaffold, createMinimalValidLevel } from './factory';
 
+export {
+  CHARGER_HEIGHT,
+  CHARGER_NUMERIC_RULES,
+  CHARGER_WIDTH,
+  isValidChargerNumber,
+  resolveChargerNumber,
+} from './enemy-schema';
+export type {
+  ChargerNumericParam,
+  ChargerNumericRule,
+} from './enemy-schema';
+
 export type { LevelScaffoldOptions, MinimalLevelOptions } from './factory';

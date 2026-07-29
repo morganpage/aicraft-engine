@@ -141,6 +141,9 @@ export {
   spinnyBehavior,
   turretBehavior,
   spiderBehavior,
+  chargerBehavior,
+  CHARGER_HEIGHT,
+  CHARGER_WIDTH,
   stepProjectile,
   compileEnemies,
   stepEnemies,
@@ -157,4 +160,6 @@ export {
   type ProjectileStepResult,
   type CompiledEnemy,
   type EnemyBehaviorRegistry,
+  type ChargerParams,
+  type ChargerPhase,
 } from './enemy';

@@ -9,16 +9,16 @@ import {
 import {
   deriveHumanoidConfig,
   type HumanoidConfig,
-} from '../../showcase/_prototype/character-enemy-validation/humanoid-config';
+} from '../../src/character/humanoid';
 import {
   advanceHumanoidVisual,
   createHumanoidVisualState,
   type HumanoidMotionSample,
-} from '../../showcase/_prototype/character-enemy-validation/humanoid-state';
-import { drawHumanoid } from '../../showcase/_prototype/character-enemy-validation/humanoid-draw';
+} from '../../src/character/humanoid';
+import { drawHumanoid } from '../../src/character/humanoid';
 
 const OUTPUT_DIR = 'benchmarks/character-body-plans';
-const OUTPUT_FILE = join(OUTPUT_DIR, 'humanoid-prototype.png');
+const OUTPUT_FILE = join(OUTPUT_DIR, 'humanoid-production.png');
 const WIDTH = 960;
 const HEIGHT = 560;
 const BACKGROUND = '#0d0b12';

@@ -18,9 +18,9 @@ import type { EnemyProps } from '../../level/types';
 /**
  * Built-in enemy archetype identifiers. Consumers may register additional
  * archetypes via `createEnemyBehaviorRegistry` — the type is a free string
- * for extensibility, but these three are the shipped built-ins.
+ * for extensibility, but these four are the shipped built-ins.
  */
-export type EnemyArchetype = 'spinny' | 'turret' | 'spider';
+export type EnemyArchetype = 'spinny' | 'turret' | 'spider' | 'charger';
 
 /**
  * Props for the `'enemy'` entity kind. Stored on `LevelEntity.props` when

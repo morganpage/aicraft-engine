@@ -13,6 +13,7 @@
 
 import type { EntityKind, LevelRect } from '../level/types';
 import type { CatalogEntry, EditorOperation, EntityCatalog } from './types';
+import { CHARGER_HEIGHT, CHARGER_WIDTH } from '../level/enemy-schema';
 
 /**
  * Sensible default rect (in pixels) for each {@link EntityKind} when
@@ -158,6 +159,29 @@ export const DEFAULT_CATALOG: EntityCatalog = {
       label: 'Spider Enemy',
       defaultRect: { x: 0, y: 0, width: 16, height: 16 },
       defaultProps: { archetype: 'spider', params: { speed: 50, gaitMode: 'coordinated', ledgeTurnAround: true } },
+    },
+    charger: {
+      kind: 'enemy',
+      label: 'Charger Enemy',
+      defaultRect: {
+        x: 0,
+        y: 0,
+        width: CHARGER_WIDTH,
+        height: CHARGER_HEIGHT,
+      },
+      defaultProps: {
+        archetype: 'charger',
+        params: {
+          speed: 40,
+          dashSpeed: 300,
+          windupDuration: 0.5,
+          recoveryDuration: 0.8,
+          dashMaxDistance: 128,
+          detectionRadius: 160,
+          verticalTolerance: 12,
+          ledgeTurnAround: true,
+        },
+      },
     },
     // Collectible sub-kind prefabs (all share `kind: 'collectible'`; the
     // sub-kind lives on `defaultProps.kind` and is dispatched by the

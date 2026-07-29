@@ -34,6 +34,24 @@ hooks for actors, projectiles, effects, and HUD. Leaf imports remain valid:
 consumers may use `drawTerrainRect` without importing the theme facade, tile
 renderer, surface-detail catalog, or built-in themes.
 
+### Character/platformer ownership boundary
+
+`src/character/` is a visual-animation layer and never imports
+`src/platformer/`. A consumer passes `PlatformerState.core` structurally as a
+`CharacterBodyFrame`, then builds a `HumanoidMotionSample` from the previous and
+next core plus single-tick platformer events. The platformer remains the sole
+authority for world position, velocity, collision, support, gravity, and jump.
+
+Immutable `HumanoidConfig` is passed explicitly to visual advancement and
+drawing. `HumanoidVisualState` stores only evolving presentation state. Gait
+phase advances from actual supported displacement, preventing an independent
+time-based animation clock from drifting away from collision-resolved movement.
+
+General tile line of sight belongs to `src/collision/`; the charger consumes it
+from the higher platformer/enemy layer. Canonical charger dimensions and
+parameter bounds live in `src/level/enemy-schema.ts`, below validation,
+compilation, editor, behavior, and renderer consumers.
+
 ## Determinism rules
 
 1. **No `Math.random`** in any function whose output influences game state, save data, or cosmetic manifests. Use `src/rng/mulberry32.ts` instead.
@@ -86,8 +104,9 @@ src/
 ├── rng/                  # seeded mulberry32 PRNG, distributions, stateless visual addresses
 ├── particles/            # deterministic spawn/advance/cull/step + emitters + presets
 ├── animation/            # skeletal rig, IK (limb/ccd/fabrik), locomotion, squash/stretch, springs, spring-rod, spider
+├── character/            # typed body-plan registry + visual-only humanoid
 ├── easing/               # Penner curves + stateless tween driver
-├── collision/            # AABB, per-axis resolve, tile-grid, moving-gap platforms
+├── collision/            # AABB, per-axis resolve, tile-grid, LOS, moving-gap platforms
 ├── camera/               # follow camera (lerp, clamp, snap)
 ├── input/                # edge accumulator, keyboard/touch/gamepad adapters, OR-merge
 ├── game-loop/            # fixed-step accumulator, defensive RAF adapter

@@ -808,7 +808,77 @@ the level.
 
 ---
 
-## 10. Save / load
+## 10. Humanoid visuals and charger enemies
+
+The humanoid consumes platformer results without becoming a second physics
+authority. With the npm package, all symbols come from the package root:
+
+```ts
+import {
+  DEFAULT_PLATFORMER_CONFIG,
+  advanceHumanoidVisual,
+  createHumanoidVisualState,
+  deriveHumanoidConfig,
+  drawHumanoid,
+  stepPlatformer,
+  type HumanoidVisualState,
+  type PlatformerInput,
+  type Solid,
+} from 'aicraft-engine';
+
+const humanoidConfig = deriveHumanoidConfig(42);
+let humanoidVisual: HumanoidVisualState =
+  createHumanoidVisualState(humanoidConfig);
+
+function stepCharacter(
+  dt: number,
+  input: PlatformerInput,
+  solids: readonly Solid[],
+): void {
+  const previous = platformerState;
+  const result = stepPlatformer(
+    previous,
+    input,
+    solids,
+    dt,
+    DEFAULT_PLATFORMER_CONFIG,
+  );
+  platformerState = result.state;
+  humanoidVisual = advanceHumanoidVisual(
+    humanoidConfig,
+    humanoidVisual,
+    {
+      dx: platformerState.core.x - previous.core.x,
+      facing: platformerState.core.facing,
+      supported: platformerState.core.onGround,
+      gravityDirection: DEFAULT_PLATFORMER_CONFIG.gravity < 0 ? -1 : 1,
+      verticalVelocity: platformerState.core.vy,
+      justLaunched: platformerState.events.justLaunched,
+      justLanded: platformerState.events.justLanded,
+      hitCeiling: platformerState.events.hitCeiling,
+    },
+    dt,
+  );
+}
+
+function drawCharacter(ctx: CanvasRenderingContext2D, tick: number): void {
+  drawHumanoid(
+    ctx,
+    platformerState.core,
+    humanoidConfig,
+    humanoidVisual,
+    tick,
+  );
+}
+```
+
+Author a charger as an enemy with a fixed `16 × 16` rect. `validateLevel`
+rejects other dimensions and invalid built-in parameter ranges. At runtime,
+`createEnemyBehaviorRegistry()` includes `chargerBehavior`; its windup and
+recovery are observable states, while damage/contact consequences remain
+consumer-owned.
+
+## 11. Save / load
 
 Level JSON persists to `localStorage` via the defensive save helpers.
 

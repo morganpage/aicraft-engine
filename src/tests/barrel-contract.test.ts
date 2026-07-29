@@ -70,6 +70,7 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.resolveAxisX).toBe('function');
     expect(typeof aicraft.resolveAxisY).toBe('function');
     expect(typeof aicraft.aabbOverlap).toBe('function');
+    expect(typeof aicraft.checkLineOfSight).toBe('function');
   });
 
   it('camera: createCamera and updateCamera are functions', () => {
@@ -131,6 +132,17 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.DEFAULT_PLATFORMER_CONFIG).toBe('object');
     expect(aicraft.DEFAULT_PLATFORMER_CONFIG).not.toBeNull();
     expect(typeof aicraft.createPlatformerController).toBe('function');
+  });
+
+  it('character and charger validation exports are available from the root', () => {
+    expect(typeof aicraft.deriveHumanoidConfig).toBe('function');
+    expect(typeof aicraft.createHumanoidVisualState).toBe('function');
+    expect(typeof aicraft.advanceHumanoidVisual).toBe('function');
+    expect(typeof aicraft.drawHumanoid).toBe('function');
+    expect(typeof aicraft.createBodyPlanRegistry).toBe('function');
+    expect(typeof aicraft.chargerBehavior).toBe('object');
+    expect(aicraft.CHARGER_WIDTH).toBe(16);
+    expect(aicraft.CHARGER_HEIGHT).toBe(16);
   });
 
   it('platformer glue: compileLevel is a function, drawLevelEntity is a function, PRECISION_PLATFORMER is an object', () => {

@@ -19,6 +19,8 @@ export type { Rect, Solid, ResolveXResult, ResolveYResult, TileType, TileSolidit
 
 export { aabbOverlap } from './aabb';
 
+export { checkLineOfSight, LOS_MAX_VISITED_TILES } from './los';
+
 export { resolveAxisX, resolveAxisY } from './resolve';
 
 export { worldToTile, tileToWorld, tileRect, resolveTileX, resolveTileY } from './tiles';

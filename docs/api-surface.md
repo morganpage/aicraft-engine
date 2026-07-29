@@ -613,16 +613,16 @@ Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gai
 - _benchmark: `benchmarks/spider/sample-sheet.png`_
 - _composes with: `src/animation/spider/geometry.ts` (`solveThreeSegmentLeg`, `computeHipPosition`, `computeCoxaEndpoint`, `computeFemurTibiaAnnuli`, `projectTargetIntoWorkspace`, `projectGroundedTargetIntoWorkspace`, `computeLegStepRequest`), `src/animation/spring-rod.ts` (`createSpringRod`, `advanceSpringRod`), `src/animation/squash-stretch.ts` (`breathe`), `src/collision/types.ts` (`TileSolidityQuery`), `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/rng/mulberry32.ts` (seeded body jitter)_
 
-### `src/character/` (ACTIVE VALIDATION: HUMANOID ONLY)
+### `src/character/` (SHIPPED: HUMANOID)
 
 > Proposal: `docs/design/character-body-plans-proposal.md` (Approach C: Registry Pattern).
 > Research: `docs/research/character-body-plans.md`.
-> Status: **VALIDATION IN PROGRESS; NOT SHIPPED OR APPROVED**.
+> Status: **SHIPPED IN 0.5.0** — prototype and production conformance approved.
 
 The active candidate is a visual-only humanoid plan. Floater, serpentine, and
 slime migration remain deferred research. Direct humanoid exports are required;
-`createBodyPlanRegistry` ships only if the strict typing spike preserves
-concrete handler types without consumer-facing casts or fake index signatures.
+`createBodyPlanRegistry` preserves concrete handler types for the built-in and
+custom keys without consumer-facing casts or fake index signatures.
 
 Each body plan lives in its own subdirectory under `src/character/` with dedicated `types.ts`, `config.ts`, `state.ts`, `draw.ts`, `constants.ts`, and `index.ts`. The registry layer is plan-agnostic — it never inspects config or state shapes.
 
@@ -640,7 +640,7 @@ Each body plan lives in its own subdirectory under `src/character/` with dedicat
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `createBodyPlanRegistry(customPlans?)` | function | Candidate factory with typed built-in retrieval and custom registration. Ships only if the Phase 3 spike passes | `src/character/registry.ts` |
+| `createBodyPlanRegistry(customPlans?)` | function | Typed factory with `'humanoid'` built in; custom keys retain their concrete handler types and override same-named built-ins | `src/character/registry.ts` |
 
 #### `src/character/slime/` (DEFERRED RESEARCH)
 
@@ -659,7 +659,7 @@ Slime-knight body plan. Migrated from `showcase/helpers/slime-knight.ts`; showca
 | `HERO_GROUND_Y` | const | `HERO_CANVAS_SIZE * 0.82` — foot-plant line. **Showcase-local** | `src/character/slime/constants.ts` |
 | `DEFAULT_SLIME` | const | Default SlimeConfig matching the showcase hero | `src/character/slime/constants.ts` |
 
-#### `src/character/humanoid/` (PROPOSED)
+#### `src/character/humanoid/` (SHIPPED)
 
 Humanoid biped body plan. Head + torso + 2 arms + 2 legs, driven by existing `evaluateLocomotion` + `solveLimb` + skeletal rig.
 
@@ -1918,12 +1918,12 @@ Runtime types for the enemy archetype system. `EnemyProps` is re-exported from `
 - _research: `docs/research/platformer-enemy-archetypes.md`_
 - _composes with: `src/collision/types.ts` (`Solid`, `Rect`), `src/collision/aabb.ts` (`aabbOverlap`), `src/collision/tiles.ts` (`worldToTile`), `src/primitives/outline-rect.ts` (`outlineRect`)_
 
-### `src/platformer/enemy/` — ACTIVE VALIDATION: CHARGER ONLY
+### `src/platformer/enemy/` — SHIPPED CHARGER EXTENSION
 
 > Proposal: `docs/design/enemy-archetype-catalog-proposal.md` (Approach C: Per-Archetype Modules + Registry-Driven Renderer).
 > Research: `docs/research/enemy-archetype-catalog.md`.
 > Prior decision: `docs/design/platformer-enemy-archetypes-decision.md`.
-> Status: **VALIDATION IN PROGRESS; NOT SHIPPED OR APPROVED**.
+> Status: **SHIPPED IN 0.5.0** — charger-only scope approved.
 
 The active candidate adds only the charger plus a general collision-owned LOS
 primitive. Chaser, burster, flyer, crawler, projectile changes, and general
@@ -1934,17 +1934,17 @@ and the unknown-archetype rendering fallback remain unchanged.
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `EnemyArchetype` | type | Candidate adds `'charger'`; this closed alias documents built-ins and is not module-augmentable. `EnemyProps.archetype` remains `string` | VALIDATION |
+| `EnemyArchetype` | type | Adds `'charger'`; this closed alias documents built-ins and is not module-augmentable. `EnemyProps.archetype` remains `string` | SHIPPED |
 | `ProjectileState.lifetime` | field | Optional `number` — remaining lifetime in seconds. When `> 0`, decremented by `dt` each tick; deactivates when `<= 0`. `undefined` = no limit (legacy turrets). Enables burster explosion (zero-velocity, short-lived) | PROPOSED |
 | `EnemyStepResult.projectiles` | field | Optional `readonly ProjectileState[]` — all projectiles spawned this tick (may be 0, 1, or many). `stepEnemies` merges with legacy `projectile?` for backward compat | PROPOSED |
 | `EnemyUpdateContext.playerVelocity` | field | Optional `{readonly vx: number; readonly vy: number} \| null` — player's velocity this tick. Used by chaser to predict movement, by flyer to lead targets | PROPOSED |
 | `EnemyUpdateContext.tick` | field | Optional `number` — current world tick count (monotonic integer). Used for visual timing (flash frequency, shake phase), NOT simulation decisions | PROPOSED |
 
-#### `src/collision/los.ts` (CANDIDATE AFTER PROMOTION)
+#### `src/collision/los.ts` (SHIPPED)
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `checkLineOfSight(x1, y1, x2, y2, tileQuery, tileSize)` | function | Defensive capped supercover traversal with reversible corner handling; only solid tiles block | VALIDATION |
+| `checkLineOfSight(x1, y1, x2, y2, tileQuery, tileSize)` | function | Defensive capped supercover traversal with reversible corner handling; only solid tiles block | SHIPPED |
 
 #### `src/platformer/enemy/crawler-stepper.ts` (NEW)
 
@@ -1957,7 +1957,7 @@ and the unknown-archetype rendering fallback remain unchanged.
 
 | Export | Kind | Summary | Source | Status |
 |---|---|---|---|---|
-| `chargerBehavior` | const | Charger: 4-phase state machine (patrol → windup → dash → recovery). Telegraphed high-speed dash with wall-stun. Params: `speed`, `windupDuration`, `dashSpeed`, `dashMaxDistance`, `recoveryDuration`, `detectionRadius` | `archetypes/charger.ts` | PROPOSED |
+| `chargerBehavior` | const | Charger: 4-phase state machine (patrol → windup → dash → recovery), fixed 16×16 body, bounded swept movement, composed support sensing | `archetypes/charger.ts` | SHIPPED |
 | `chaserBehavior` | const | Chaser: 2-phase (patrol → chase). Active ground pursuit with LOS detection, lost-timer, optional ledge-turnaround. Params: `patrolSpeed`, `chaseSpeed`, `detectionRadius`, `lostTimer`, `ledgeTurnAround` | `archetypes/chaser.ts` | PROPOSED |
 | `bursterBehavior` | const | Burster: 3-phase (seek → fuse → exploded). Kamikaze with proximity trigger, fuse countdown, zero-velocity explosion projectile. Params: `seekSpeed`, `fuseDuration`, `explosionRadius`, `explosionLifetime`, `detectionRadius`, `proximityThreshold` | `archetypes/burster.ts` | PROPOSED |
 | `flyerBehavior` | const | Flyer: 2-phase (sinePatrol → seek). Aerial patrol with sine-wave offset, player seek in 2D space. Ignores gravity. Params: `patrolSpeed`, `seekSpeed`, `sineAmplitude`, `sineFrequency`, `detectionRadius` | `archetypes/flyer.ts` | PROPOSED |
@@ -1967,7 +1967,7 @@ and the unknown-archetype rendering fallback remain unchanged.
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `chargerBehavior` | const (re-export) | Re-exported from `archetypes/charger.ts` | PROPOSED |
+| `chargerBehavior` | const (re-export) | Re-exported from `archetypes/charger.ts` | SHIPPED |
 | `chaserBehavior` | const (re-export) | Re-exported from `archetypes/chaser.ts` | PROPOSED |
 | `bursterBehavior` | const (re-export) | Re-exported from `archetypes/burster.ts` | PROPOSED |
 | `flyerBehavior` | const (re-export) | Re-exported from `archetypes/flyer.ts` | PROPOSED |
@@ -1978,8 +1978,8 @@ and the unknown-archetype rendering fallback remain unchanged.
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `EnemyPalette` | type | Extended with optional per-archetype colors: `charger?`, `chaser?`, `burster?`, `flyer?`, `crawler?` | PROPOSED |
-| `drawEnemies` | function | Adds built-in charger drawing while preserving internal dispatch and the outlined fallback for unknown archetypes | VALIDATION |
+| `EnemyPalette` | type | Extended with optional built-in `charger?` body color | SHIPPED |
+| `drawEnemies` | function | Adds built-in charger drawing while preserving internal dispatch and the outlined fallback for unknown archetypes | SHIPPED |
 
 #### `src/platformer/enemy/index.ts` — additive exports
 
@@ -1988,7 +1988,7 @@ and the unknown-archetype rendering fallback remain unchanged.
 | `checkLineOfSight` | function (re-export) | Re-exported from `los.ts` | PROPOSED |
 | `stepCrawler` | function (re-export) | Re-exported from `crawler-stepper.ts` | PROPOSED |
 | `AttachmentSide` | type (re-export) | Re-exported from `crawler-stepper.ts` | PROPOSED |
-| `chargerBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
+| `chargerBehavior` | const (re-export) | Re-exported from `registry.ts` | SHIPPED |
 | `chaserBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
 | `bursterBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
 | `flyerBehavior` | const (re-export) | Re-exported from `registry.ts` | PROPOSED |
@@ -1998,7 +1998,7 @@ and the unknown-archetype rendering fallback remain unchanged.
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `DEFAULT_CATALOG.entries.charger` | CatalogEntry | Charger prefab: `{archetype: 'charger', params: {speed: 40, windupDuration: 0.5, dashSpeed: 300, dashMaxDistance: 128, recoveryDuration: 0.8, detectionRadius: 160}}` | PROPOSED |
+| `DEFAULT_CATALOG.entries.charger` | CatalogEntry | Fixed 16×16 charger prefab with named default behavior parameters | SHIPPED |
 | `DEFAULT_CATALOG.entries.chaser` | CatalogEntry | Chaser prefab: `{archetype: 'chaser', params: {patrolSpeed: 50, chaseSpeed: 90, detectionRadius: 160, lostTimer: 2.0, ledgeTurnAround: true}}` | PROPOSED |
 | `DEFAULT_CATALOG.entries.burster` | CatalogEntry | Burster prefab: `{archetype: 'burster', params: {seekSpeed: 60, fuseDuration: 0.6, explosionRadius: 32, explosionLifetime: 0.3, detectionRadius: 200, proximityThreshold: 32}}` | PROPOSED |
 | `DEFAULT_CATALOG.entries.flyer` | CatalogEntry | Flyer prefab: `{archetype: 'flyer', params: {patrolSpeed: 40, seekSpeed: 70, sineAmplitude: 20, sineFrequency: 2, detectionRadius: 160}}` | PROPOSED |

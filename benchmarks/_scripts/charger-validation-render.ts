@@ -5,10 +5,10 @@ import type { EnemyState } from '../../src/platformer/enemy/types';
 import {
   drawCharger,
   DEFAULT_CHARGER_PALETTE,
-} from '../../showcase/_prototype/character-enemy-validation/charger-draw';
+} from '../../src/platformer/enemy/archetypes/charger';
 
 const OUTPUT_DIR = 'benchmarks/enemy-archetype-catalog';
-const OUTPUT_FILE = join(OUTPUT_DIR, 'charger-prototype.png');
+const OUTPUT_FILE = join(OUTPUT_DIR, 'charger-production.png');
 const WIDTH = 960;
 const HEIGHT = 440;
 const BACKGROUND = '#0d0b12';

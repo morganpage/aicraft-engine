@@ -13,6 +13,13 @@
  */
 
 import type { ValidationError, ValidationResult } from './types';
+import {
+  CHARGER_HEIGHT,
+  CHARGER_NUMERIC_RULES,
+  CHARGER_WIDTH,
+  isValidChargerNumber,
+  type ChargerNumericParam,
+} from './enemy-schema';
 
 /** Truthy narrow for a plain non-null object record (not an array). */
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -212,7 +219,7 @@ function validateEntities(
     if (!isPlainObject(props)) {
       errors.push(err(propsBase, 'entity props must be a plain object'));
     } else {
-      validatePropsByKind(kind, props, propsBase, base, errors);
+      validatePropsByKind(kind, props, propsBase, base, entity.rect, errors);
     }
 
     if (kind === 'spawn') spawnCount++;
@@ -267,6 +274,7 @@ function validatePropsByKind(
   props: Record<string, unknown>,
   base: string,
   entityBase: string,
+  rect: unknown,
   errors: ValidationError[],
 ): void {
   switch (kind) {
@@ -352,6 +360,8 @@ function validatePropsByKind(
         validateSpinnyParams(params, paramsBase, errors);
       } else if (props.archetype === 'turret') {
         validateTurretParams(params, paramsBase, errors);
+      } else if (props.archetype === 'charger') {
+        validateChargerParams(params, paramsBase, rect, entityBase, errors);
       }
       break;
     }
@@ -392,6 +402,53 @@ function validatePropsByKind(
     default:
       errors.push(err(entityBase, `unknown entity kind "${kind}"`));
       break;
+  }
+}
+
+function validateChargerParams(
+  params: Record<string, unknown>,
+  base: string,
+  rect: unknown,
+  entityBase: string,
+  errors: ValidationError[],
+): void {
+  if (
+    !isPlainObject(rect) ||
+    rect.width !== CHARGER_WIDTH ||
+    rect.height !== CHARGER_HEIGHT
+  ) {
+    errors.push(
+      err(
+        `${entityBase}.rect`,
+        `built-in charger rect must be exactly ${CHARGER_WIDTH}x${CHARGER_HEIGHT}`,
+      ),
+    );
+  }
+  const numericKeys = Object.keys(CHARGER_NUMERIC_RULES) as ChargerNumericParam[];
+  for (const key of numericKeys) {
+    const value = params[key];
+    if (value === undefined) continue;
+    if (!isValidChargerNumber(key, value)) {
+      const rule = CHARGER_NUMERIC_RULES[key];
+      const left = rule.minExclusive ? '(' : '[';
+      errors.push(
+        err(
+          `${base}.${key}`,
+          `charger.params.${key} must be a finite number in ${left}${rule.min}, ${rule.max}] or undefined`,
+        ),
+      );
+    }
+  }
+  if (
+    params.ledgeTurnAround !== undefined &&
+    typeof params.ledgeTurnAround !== 'boolean'
+  ) {
+    errors.push(
+      err(
+        `${base}.ledgeTurnAround`,
+        'charger.params.ledgeTurnAround must be a boolean or undefined',
+      ),
+    );
   }
 }
 

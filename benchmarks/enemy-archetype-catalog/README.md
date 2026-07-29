@@ -9,3 +9,6 @@ Regenerate with:
 ```bash
 npm run benchmark:charger
 ```
+
+`charger-production.png` is rendered from the production charger module. It is
+byte-identical to the approved prototype sheet.
