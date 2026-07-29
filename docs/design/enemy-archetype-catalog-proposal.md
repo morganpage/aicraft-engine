@@ -3,7 +3,30 @@
 > Target pillar: 4 (Platformer / Level Loading / Editor). Module: `src/platformer/enemy/`.
 > Builds on research: `docs/research/enemy-archetype-catalog.md`.
 > Builds on prior decision: `docs/design/platformer-enemy-archetypes-decision.md` (Approach A shipped).
-> Status: DRAFT.
+> Status: HISTORICAL DESIGN INPUT — active validation is limited to the
+> charger by `post-0.4-character-enemy-validation-plan.md`. No catalog-extension
+> API is approved until that plan's Phase 10 architecture review.
+
+## Active validation contract
+
+Only the charger is an active candidate. Chaser, burster, flyer, crawler, and
+their supporting systems remain deferred research. The charger keeps
+`EnemyProps.archetype: string`, uses fixed `16 × 16` dimensions, and remains a
+contact hazard without combat, damage, knockback, or i-frames.
+
+General line of sight belongs to `src/collision/los.ts` after promotion. Public
+npm examples import charger, LOS, registry, compile, step, and draw exports from
+`'aicraft-engine'`; source-relative examples below are only for internal or
+git-submodule use.
+
+`EnemyArchetype` is a type alias and cannot be extended through interface
+module augmentation. Runtime custom behavior remains supported through the
+free-string `EnemyProps.archetype` field and
+`createEnemyBehaviorRegistry(customHandlers)`.
+
+The v1 renderer continues to own built-in drawing and preserves the existing
+unknown-archetype fallback. The internal draw table is not a consumer
+registration API.
 
 ## Executive Summary
 
@@ -532,7 +555,7 @@ drawEnemies(ctx, result.enemies, tick);
 
 **Source pattern:** The `src/character/` proposal (character-body-plans-proposal.md) uses a `BodyPlanHandler<TConfig, TState>` generic handler with a registry that maps plan names to handlers. Each body plan lives in its own subdirectory. We apply the same module-organization principle to enemies, but keep the existing handler interface unchanged for backward compat.
 
-### Key Innovation: Module Augmentation for Type-Safe Archetype Union
+### Historical sketch: closed built-in archetype union
 
 ```ts
 // src/platformer/enemy/types.ts
@@ -542,19 +565,16 @@ drawEnemies(ctx, result.enemies, tick);
  * archetypes via `createEnemyBehaviorRegistry` — the type is a free string
  * for extensibility, but these eight are the shipped built-ins.
  *
- * Consumers can extend this union via module augmentation:
- *
- * ```ts
- * declare module 'aicraft-engine/src/platformer/enemy/types' {
- *   interface EnemyArchetype { 'myCustom': never }
- * }
- * ```
+ * Custom runtime identifiers remain supported through EnemyProps.archetype:
+ * string and createEnemyBehaviorRegistry(customHandlers). This type alias is
+ * not module-augmentable.
  */
 export type EnemyArchetype = 'spinny' | 'turret' | 'spider'
   | 'charger' | 'chaser' | 'burster' | 'flyer' | 'crawler';
 ```
 
-This lets consumers narrow the type for their own game while keeping the library's `string` for external consumers. The union is open (module augmentation), not closed.
+This union documents built-ins only. It is closed; runtime extensibility is
+provided by the free-string schema field and behavior registry.
 
 ### File Layout
 
@@ -781,7 +801,8 @@ export const crawlerBehavior: EnemyBehaviorHandler = {
 
 /**
  * Per-archetype draw function. Each built-in registers here.
- * Consumers can add custom draw functions via the registry.
+ * Built-in draw functions are internal. Custom archetypes retain the existing
+ * outlined-rectangle fallback in v1.
  */
 type ArchetypeDrawFn = (
   ctx: CanvasRenderingContext2D,
@@ -869,13 +890,15 @@ drawEnemies(ctx, result.enemies, tick);
 **What this makes easy:**
 - Adding a 6th archetype: one file + two registry entries.
 - Per-archetype param types: `ChargerParams`, `BursterParams` etc. are importable.
-- Renderer extensibility: `DRAW_REGISTRY` is open — consumers can add draw functions.
+- Renderer dispatch remains internal; consumers cannot register draw functions
+  in the charger-only validation release.
 - The editor form generator reads `param-schemas.ts` directly (same pattern as Spitekeep's `TRAP_SCHEMAS`).
 
 **What this makes hard:**
 - More files to create initially (5 archetype files + `los.ts` + `crawler-stepper.ts` + `param-schemas.ts`).
 - The `DRAW_REGISTRY` in `renderer.ts` must be kept in sync with `BUILT_IN_HANDLERS` in `registry.ts` — but they live in the same module, so this is a local concern.
-- Module augmentation for `EnemyArchetype` requires consumers to write a `declare module` block — advanced TypeScript feature.
+- `EnemyArchetype` is documentation for built-ins, not an augmentable consumer
+  extension point.
 
 ---
 

@@ -2,7 +2,34 @@
 
 > Target pillar: 1 (Animation / Primitives). Module: `src/character/`.
 > Builds on research: `docs/research/character-body-plans.md`.
-> Status: DRAFT.
+> Status: HISTORICAL DESIGN INPUT — active validation is limited to the
+> humanoid plan by `post-0.4-character-enemy-validation-plan.md`. No body-plan
+> API is approved until that plan's Phase 10 architecture review.
+
+## Active validation contract
+
+The older alternatives below are retained for design history. The validation
+spike uses a visual-only humanoid contract:
+
+- `CharacterBodyFrame` supplies consumer-owned `x`, `y`, `width`, `height`, and
+  `facing`; `src/character/` never imports from `src/platformer/`.
+- `HumanoidVisualState` contains only evolving presentation state. It contains
+  no position, velocity, `JumpState`, or copy of `HumanoidConfig`.
+- `HumanoidMotionSample` is assembled by the consumer from platformer core and
+  event data, including `supported`, `gravityDirection`, and
+  `verticalVelocity`.
+- `advanceHumanoidVisual(config, state, motion, dt)` advances gait only through
+  `advanceLocomotionByDisplacement`.
+- `drawHumanoid(ctx, body, config, state, tick, options?)` receives immutable
+  configuration explicitly; `options?.lookTarget` replaces the old bare
+  `look` argument.
+- Direct humanoid exports are the required fallback if a heterogeneous registry
+  cannot be proven without consumer-facing casts or fake index signatures.
+- Floater, serpentine, and slime migration remain deferred research candidates.
+
+All npm examples for a shipping API import from `'aicraft-engine'`. Relative
+`./lib/aicraft-engine/src/...` examples below describe git-submodule consumers
+only.
 
 ## Executive Summary
 
@@ -338,17 +365,25 @@ export interface CharacterInputs {
  * The dispatch layer calls these methods; it never inspects the config or state.
  */
 export interface BodyPlanHandler<
-  TConfig extends CharacterConfig = CharacterConfig,
-  TState extends CharacterFrameState = CharacterFrameState,
+  TConfig,
+  TState,
+  TMotion,
 > {
   /** Derive a complete config from a seed. Same seed → same config forever. */
   deriveConfig(seed: number): TConfig;
   /** Create initial frame state from a config. */
-  createFrameState(config: TConfig): TState;
+  createVisualState(config: TConfig): TState;
   /** Advance state by one fixed timestep. Pure: returns new state. */
-  step(state: TState, dt: number, inputs?: CharacterInputs): TState;
+  advanceVisual(config: TConfig, state: TState, motion: TMotion, dt: number): TState;
   /** Render the character. Renderer-adjacent: takes ctx, may have side effects. */
-  draw(ctx: CanvasRenderingContext2D, state: TState, tick: number, look?: Vec2): void;
+  draw(
+    ctx: CanvasRenderingContext2D,
+    body: CharacterBodyFrame,
+    config: TConfig,
+    state: TState,
+    tick: number,
+    options?: CharacterDrawOptions,
+  ): void;
 }
 
 /**
@@ -541,7 +576,10 @@ src/character/
 
 2. **Each plan's `deriveConfig` is the seed contract.** Same seed → same config → same character, forever. Document the RNG consumption order in JSDoc (the slime's 16-draw order is the precedent).
 
-3. **Each plan's `step` is pure-clone.** Returns a new state; input never mutated. Composes existing library primitives (`advanceLocomotion`, `advanceSpringChain`, `solveLimb`, etc.).
+3. **Each plan's visual advance is pure-clone.** Returns a new state; input never
+   mutated. The humanoid composes `advanceLocomotionByDisplacement`,
+   `evaluateLocomotion`, and `solveLimb`; it never imports `advanceJump` or
+   `JumpState`.
 
 4. **Each plan's `draw` is renderer-adjacent.** Takes `CanvasRenderingContext2D`, may have canvas side effects. Must not read/write deterministic simulation state.
 

@@ -362,7 +362,7 @@ Success criteria:
 
 ## Phase 0.5: Record Release and Development Bases; Create a Clean Worktree
 
-> Status: **IN PROGRESS** (2026-07-29).
+> Status: **COMPLETE** (2026-07-29).
 >
 > Recorded evidence:
 > - Published integrity:
@@ -375,6 +375,11 @@ Success criteria:
 >   `6d4906624dac359f186fcbc583af96e8e9ffd66e`
 > - The ancestry check from the published baseline to the development base
 >   passed.
+> - Clean development worktree:
+>   `/Users/morganpage/Documents/VSCODE/OPENCODE/aicraft-engine-character-enemy-validation`
+> - Development-base verification: 2,777 engine tests and 199 showcase tests
+>   passed; library typecheck, distribution build, showcase typecheck, showcase
+>   build, and `npm pack --dry-run` all passed with package metadata at `0.4.0`.
 
 The 0.4.0 baseline is already committed and published — no user approval is
 needed to "commit the baseline" (that step from earlier revisions is obsolete).

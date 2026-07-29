@@ -1,8 +1,18 @@
 # Roadmap: Character & Enemy Variety
 
-> Status: **PROPOSED — awaiting user approval to begin Phase 1**
+> Status: **VALIDATION IN PROGRESS — humanoid + charger only**
 > Created: 2026-07-27.
 > Owner: `@team` (orchestrator).
+
+The active work is governed by
+`docs/design/post-0.4-character-enemy-validation-plan.md`. Earlier proposal
+critiques are historical inputs only; promotion remains unapproved until the
+Phase 10 architecture verdict. Floater, serpentine, chaser, burster, flyer, and
+crawler are deferred.
+
+The current API hypothesis is a heterogeneous typed registry with direct
+humanoid exports as the required fallback. A closed discriminated-union
+dispatcher is no longer the active direction.
 
 ## Purpose
 

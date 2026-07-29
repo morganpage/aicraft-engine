@@ -613,13 +613,16 @@ Procedural multi-legged spider locomotion. Deterministic core: gait solver (`gai
 - _benchmark: `benchmarks/spider/sample-sheet.png`_
 - _composes with: `src/animation/spider/geometry.ts` (`solveThreeSegmentLeg`, `computeHipPosition`, `computeCoxaEndpoint`, `computeFemurTibiaAnnuli`, `projectTargetIntoWorkspace`, `projectGroundedTargetIntoWorkspace`, `computeLegStepRequest`), `src/animation/spring-rod.ts` (`createSpringRod`, `advanceSpringRod`), `src/animation/squash-stretch.ts` (`breathe`), `src/collision/types.ts` (`TileSolidityQuery`), `src/collision/tiles.ts` (`worldToTile`, `tileToWorld`), `src/rng/mulberry32.ts` (seeded body jitter)_
 
-### `src/character/` (PROPOSED)
+### `src/character/` (ACTIVE VALIDATION: HUMANOID ONLY)
 
 > Proposal: `docs/design/character-body-plans-proposal.md` (Approach C: Registry Pattern).
 > Research: `docs/research/character-body-plans.md`.
-> Status: **PROPOSED** — awaiting `@architect` critique and benchmark.
+> Status: **VALIDATION IN PROGRESS; NOT SHIPPED OR APPROVED**.
 
-Character body-plan catalog. Provides the registry-based abstraction for seeding, stepping, and rendering distinct character archetypes (slime-knight, humanoid biped, floater/drone, serpentine/multi-segment). Mirrors the `createEnemyBehaviorRegistry` pattern: a `BodyPlanHandler` interface encapsulates per-plan state, step, and draw; consumers register custom plans via `createBodyPlanRegistry`.
+The active candidate is a visual-only humanoid plan. Floater, serpentine, and
+slime migration remain deferred research. Direct humanoid exports are required;
+`createBodyPlanRegistry` ships only if the strict typing spike preserves
+concrete handler types without consumer-facing casts or fake index signatures.
 
 Each body plan lives in its own subdirectory under `src/character/` with dedicated `types.ts`, `config.ts`, `state.ts`, `draw.ts`, `constants.ts`, and `index.ts`. The registry layer is plan-agnostic — it never inspects config or state shapes.
 
@@ -629,20 +632,17 @@ Each body plan lives in its own subdirectory under `src/character/` with dedicat
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `BodyPlanName` | type | `string` — free-string plan identifier for extensibility. Built-ins: `'slime'`, `'humanoid'`, `'floater'`, `'serpentine'` | `src/character/types.ts` |
-| `CharacterConfig` | type | `Readonly<Record<string, unknown>>` — opaque config produced by `deriveConfig`. Plan-specific shape; registry never inspects | `src/character/types.ts` |
-| `CharacterFrameState` | type | `Readonly<Record<string, unknown>>` — opaque per-frame state. Plan-specific shape; registry never inspects | `src/character/types.ts` |
-| `CharacterInputs` | type | `{ walkDx?, facing?, jumpPressed?, jumpHeld?, [key: string]: unknown }` — shared input base + plan-specific extensions via index signature | `src/character/types.ts` |
-| `BodyPlanHandler<TConfig, TState>` | interface | `{ deriveConfig(seed), createFrameState(config), step(state, dt, inputs?), draw(ctx, state, tick, look?) }` — plan handler contract. Generic over config and state types | `src/character/types.ts` |
-| `BodyPlanRegistry` | type | `{ get(plan: string): BodyPlanHandler \| undefined }` — registry lookup. Same shape as `EnemyBehaviorRegistry` | `src/character/types.ts` |
+| `CharacterBodyFrame` | interface | Consumer-owned world frame `{x, y, width, height, facing}`. `ActorCore` is structurally assignable; character code does not import platformer code | `src/character/types.ts` |
+| `CharacterDrawOptions` | interface | Optional renderer inputs `{lookTarget?: Vec2}` | `src/character/types.ts` |
+| `BodyPlanHandler<TConfig, TState, TMotion>` | interface | Explicit-config visual contract: derive config, create visual state, advance visual state, and draw using a `CharacterBodyFrame` | `src/character/types.ts` |
 
 #### `src/character/registry.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `createBodyPlanRegistry(customPlans?)` | function | Factory: creates registry with `'slime'`, `'humanoid'`, `'floater'`, `'serpentine'` pre-registered, plus any custom handlers. Custom handlers merge on top of built-ins (same-name overrides). Mirrors `createEnemyBehaviorRegistry` | `src/character/registry.ts` |
+| `createBodyPlanRegistry(customPlans?)` | function | Candidate factory with typed built-in retrieval and custom registration. Ships only if the Phase 3 spike passes | `src/character/registry.ts` |
 
-#### `src/character/slime/` (PROPOSED — migrated from showcase)
+#### `src/character/slime/` (DEFERRED RESEARCH)
 
 Slime-knight body plan. Migrated from `showcase/helpers/slime-knight.ts`; showcase retains canvas-sizing, ground-line, blink, emotion, and leg-style toggle as showcase-local concerns.
 
@@ -666,15 +666,15 @@ Humanoid biped body plan. Head + torso + 2 arms + 2 legs, driven by existing `ev
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `HumanoidConfig` | type | Seed-derived config: seed, palette, torsoWidth/Height, headRadius, arm/leg bone lengths, gaitConfig, breathConfig, speed | `src/character/humanoid/types.ts` |
-| `HumanoidFrameState` | type | Per-frame state: config, locomotion, jump, armSwingPhase, x, facing | `src/character/humanoid/types.ts` |
-| `HumanoidInputs` | type | `{ walkDx?, facing?, jumpPressed?, jumpHeld?, armTarget?: Vec2 }` — optional IK arm-target override | `src/character/humanoid/types.ts` |
+| `HumanoidVisualState` | type | Evolving presentation only: locomotion, idle/landing pose, arm state; no config, position, velocity, or jump authority | `src/character/humanoid/types.ts` |
+| `HumanoidMotionSample` | type | Consumer-built displacement/facing/support/gravity/vertical-event sample with optional arm target | `src/character/humanoid/types.ts` |
 | `deriveHumanoidConfig(seed)` | function | Deterministic config from seed. Same mulberry32 + palette pattern as slime | `src/character/humanoid/config.ts` |
-| `createHumanoidFrameState(config)` | function | Initial frame state at rest | `src/character/humanoid/state.ts` |
-| `stepHumanoid(state, dt, inputs?)` | function | Pure: advance jump, locomotion, arm-swing phase. Returns new HumanoidFrameState | `src/character/humanoid/state.ts` |
-| `drawHumanoid(ctx, state, tick, look?)` | function | Renderer-adjacent: draw humanoid head + torso + arms + legs | `src/character/humanoid/draw.ts` |
+| `createHumanoidVisualState(config)` | function | Initial visual-only state at rest | `src/character/humanoid/state.ts` |
+| `advanceHumanoidVisual(config, state, motion, dt)` | function | Pure: displacement-driven gait and pose response; never integrates vertical physics | `src/character/humanoid/state.ts` |
+| `drawHumanoid(ctx, body, config, state, tick, options?)` | function | Renderer-adjacent: draw humanoid at consumer-owned body frame | `src/character/humanoid/draw.ts` |
 | `DEFAULT_HUMANOID` | const | Default HumanoidConfig | `src/character/humanoid/constants.ts` |
 
-#### `src/character/floater/` (PROPOSED)
+#### `src/character/floater/` (DEFERRED RESEARCH)
 
 Floater/drone body plan. Hovering core + trailing tentacles, driven by `breathe` + `advanceSpringChain`.
 
@@ -689,7 +689,7 @@ Floater/drone body plan. Hovering core + trailing tentacles, driven by `breathe`
 | `drawFloater(ctx, state, tick, look?)` | function | Renderer-adjacent: draw core + dome + tentacles + thruster | `src/character/floater/draw.ts` |
 | `DEFAULT_FLOATER` | const | Default FloaterConfig | `src/character/floater/constants.ts` |
 
-#### `src/character/serpentine/` (PROPOSED)
+#### `src/character/serpentine/` (DEFERRED RESEARCH)
 
 Serpentine/multi-segment body plan. Head + N body segments + tail, driven by `advanceSpringChain`.
 
@@ -706,7 +706,7 @@ Serpentine/multi-segment body plan. Head + N body segments + tail, driven by `ad
 
 - _proposal: `docs/design/character-body-plans-proposal.md`_
 - _research: `docs/research/character-body-plans.md`_
-- _composes with: `src/animation/locomotion.ts` (`advanceLocomotion`, `evaluateLocomotion`), `src/animation/ik/limb.ts` (`solveLimb`), `src/animation/spring.ts` (`advanceSpringChain`), `src/animation/squash-stretch.ts` (`breathe`), `src/animation/jump.ts` (`advanceJump`), `src/palette/generate.ts` (`generatePalette`), `src/rng/mulberry32.ts` (seeded variant generation)_
+- _active candidate composes with: `src/animation/locomotion.ts` (`advanceLocomotionByDisplacement`, `evaluateLocomotion`), `src/animation/ik/limb.ts` (`solveLimb`), `src/animation/squash-stretch.ts` (`breathe`), `src/palette/generate.ts` (`generatePalette`), `src/rng/mulberry32.ts` (seeded variant generation). The platformer kernel remains the sole jump/position authority._
 
 ### `src/collision/`
 
@@ -1918,30 +1918,33 @@ Runtime types for the enemy archetype system. `EnemyProps` is re-exported from `
 - _research: `docs/research/platformer-enemy-archetypes.md`_
 - _composes with: `src/collision/types.ts` (`Solid`, `Rect`), `src/collision/aabb.ts` (`aabbOverlap`), `src/collision/tiles.ts` (`worldToTile`), `src/primitives/outline-rect.ts` (`outlineRect`)_
 
-### `src/platformer/enemy/` — PROPOSED: Archetype Catalog Extension (Phase 2)
+### `src/platformer/enemy/` — ACTIVE VALIDATION: CHARGER ONLY
 
 > Proposal: `docs/design/enemy-archetype-catalog-proposal.md` (Approach C: Per-Archetype Modules + Registry-Driven Renderer).
 > Research: `docs/research/enemy-archetype-catalog.md`.
 > Prior decision: `docs/design/platformer-enemy-archetypes-decision.md`.
-> Status: **PROPOSED** — awaiting `@architect` critique and benchmark.
+> Status: **VALIDATION IN PROGRESS; NOT SHIPPED OR APPROVED**.
 
-Extends the shipped 3-archetype system with 5 new behavior archetypes (`charger`, `chaser`, `burster`, `flyer`, `crawler`). Adds per-archetype modules, line-of-sight helper, surface-hugging stepper, projectile lifetime, and registry-driven renderer. All changes are additive-only — no existing type signatures change.
+The active candidate adds only the charger plus a general collision-owned LOS
+primitive. Chaser, burster, flyer, crawler, projectile changes, and general
+renderer registration remain deferred research. Existing registry signatures
+and the unknown-archetype rendering fallback remain unchanged.
 
 #### `src/platformer/enemy/types.ts` — additive changes
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `EnemyArchetype` | type | Extended to `'spinny' \| 'turret' \| 'spider' \| 'charger' \| 'chaser' \| 'burster' \| 'flyer' \| 'crawler'`. Still a free string at runtime for consumer extensibility | PROPOSED |
+| `EnemyArchetype` | type | Candidate adds `'charger'`; this closed alias documents built-ins and is not module-augmentable. `EnemyProps.archetype` remains `string` | VALIDATION |
 | `ProjectileState.lifetime` | field | Optional `number` — remaining lifetime in seconds. When `> 0`, decremented by `dt` each tick; deactivates when `<= 0`. `undefined` = no limit (legacy turrets). Enables burster explosion (zero-velocity, short-lived) | PROPOSED |
 | `EnemyStepResult.projectiles` | field | Optional `readonly ProjectileState[]` — all projectiles spawned this tick (may be 0, 1, or many). `stepEnemies` merges with legacy `projectile?` for backward compat | PROPOSED |
 | `EnemyUpdateContext.playerVelocity` | field | Optional `{readonly vx: number; readonly vy: number} \| null` — player's velocity this tick. Used by chaser to predict movement, by flyer to lead targets | PROPOSED |
 | `EnemyUpdateContext.tick` | field | Optional `number` — current world tick count (monotonic integer). Used for visual timing (flash frequency, shake phase), NOT simulation decisions | PROPOSED |
 
-#### `src/platformer/enemy/los.ts` (NEW)
+#### `src/collision/los.ts` (CANDIDATE AFTER PROMOTION)
 
 | Export | Kind | Summary | Status |
 |---|---|---|---|
-| `checkLineOfSight(x1, y1, x2, y2, tileQuery, tileSize)` | function | DDA tile-grid raycast: returns `true` if the line between two world-space points is unobstructed by solid tiles. Pure, O(max(|dx|, |dy|)), never throws. Used by chaser/charger for player detection | PROPOSED |
+| `checkLineOfSight(x1, y1, x2, y2, tileQuery, tileSize)` | function | Defensive capped supercover traversal with reversible corner handling; only solid tiles block | VALIDATION |
 
 #### `src/platformer/enemy/crawler-stepper.ts` (NEW)
 
@@ -1976,7 +1979,7 @@ Extends the shipped 3-archetype system with 5 new behavior archetypes (`charger`
 | Export | Kind | Summary | Status |
 |---|---|---|---|
 | `EnemyPalette` | type | Extended with optional per-archetype colors: `charger?`, `chaser?`, `burster?`, `flyer?`, `crawler?` | PROPOSED |
-| `drawEnemies` | function | Refactored: registry-driven dispatch via `DRAW_REGISTRY` lookup instead of `if/else if` chain. Same signature, same behavior. Fallback: outlined rect for unknown archetypes | PROPOSED |
+| `drawEnemies` | function | Adds built-in charger drawing while preserving internal dispatch and the outlined fallback for unknown archetypes | VALIDATION |
 
 #### `src/platformer/enemy/index.ts` — additive exports
 
