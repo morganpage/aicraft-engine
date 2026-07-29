@@ -19,6 +19,11 @@ The common contract every prompt here enforces:
   manual AABB, and duplicate tile-grid traversal). Renderer callbacks required
   by APIs such as `drawTileGrid` and `drawTiledParallax` are explicitly allowed.
 
+> **New: [SHOWCASE.md](./SHOWCASE.md)** — a skim-friendly landing page with a
+> comparison table, four curated learning paths, a reverse-index of
+> "which prompt shows off which feature?", overlap warnings, and the Batch 4
+> candidate list. Start there if you're picking which prompt to build first.
+
 ## Prompts
 
 | Game | File | Genre | Engine pillars exercised |
@@ -27,6 +32,9 @@ The common contract every prompt here enforces:
 | **Celerock** | [celerock.md](./celerock.md) | Single-screen precision platformer | **platformer kernel** (`defaultPrecisionPipeline`: jump + wall-slide + dash), `compileLevel` + `drawTileGrid` + `drawActor`, **collectibles** (`collect`/`hasCollected`), `save`, bitmap text, hit-stop + sineShake, tween, parallax |
 | **World 1-1** | [world-1-1.md](./world-1-1.md) | Horizontal-scrolling classic platformer | **platformer kernel** (`CLASSIC_PLATFORMER`: jump, no double-jump), hand-authored `LevelData` + `validateLevel`, unified `compileLevel`, moving platforms, parallax, collectibles + save |
 | **Flipside** | [flipside.md](./flipside.md) | No-jump gravity-flip explorer | Signed-gravity controllers with empty ability pipelines, unified tile compilation, and fixed-step `advanceSequencer` events rendered by `createNoteFirePlayer` |
+| **Spin Loop** | [spin-loop.md](./spin-loop.md) | Momentum-speed horizontal act | **Signed-gravity two-controller pattern** for the loop-de-loop (`PRECISION_PLATFORMER` + `gravity: ±magnitude`), `sampleConeVelocity` for the **lost-rings burst**, speed-scaled camera + `sineShake`, `compileLevel` + `tileTypeMap`, 3-layer `drawTiledParallax`, `collectibles` + `save`, `replay` stretch |
+| **Bosscard** | [bosscard.md](./bosscard.md) | Single-screen bullet-hell boss | `sampleConeVelocity` bullet patterns (radial / spiral / aimed), **custom boss behavior** in `createEnemyBehaviorRegistry`, `hit-stop` + `sineShake` + `shakeEnvelope`, `compileLevel` arena, **cosmetics + IAP** for 3 boss skins, parry mechanic |
+| **Doodle Knight** | [doodle-knight.md](./doodle-knight.md) | Mobile endless vertical climber | **Procedural spawn via `mulberry32`** (the only procedural-level prompt), `PUZZLE_PLATFORMER` + `jumpEnabled: false` (auto-bounce on landing), **`createNoteFirePlayer` music-drives-difficulty** (lead-track note density feeds spawn density), vertical-clamp camera, **3-character cosmetics + IAP**, `replay` stretch |
 
 _More to come — see "Adding a new prompt" below._
 
