@@ -187,4 +187,6 @@ This research note surveys player character and enemy body-plan variety to expan
 - `docs/research/inverse-kinematics.md` (analytical 2-bone limb solver and fixed iteration counts)
 - `docs/research/procedural-spider-locomotion.md` (alternating tetrapod gaits and comfort-radius step triggers)
 - `docs/research/algorithmic-skin-variation.md` (cosmetic skin presets and defensive parsing)
+- `docs/research/humanoid-platformer-visual-reference.md` (pose-specific
+  platformer references and the permanent humanoid validation baseline)
 - `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (Sokpop's primitive-stack character construction)

@@ -1,7 +1,7 @@
 # Character/Enemy Validation Release-Candidate Handoff
 
 > Date: 2026-07-29  
-> Status: **READY FOR USER APPROVAL**  
+> Status: **NEEDS VISUAL REVISION**
 > Candidate version: `aicraft-engine@0.5.0`
 
 ## Source identity
@@ -38,7 +38,7 @@ showcase, benchmark, or test files and has no runtime dependencies.
 
 ## Gate results
 
-Phase 15.5: **CONFIRM**
+Phase 15.5: **NEEDS REVISION**
 
 - Humanoid production and prototype PNG SHA-256:
   `66f2484f6c8cecebe0696a6e36afcb373fd62ecd874027ea88e7952fd91c5837`
@@ -50,6 +50,10 @@ Phase 15.5: **CONFIRM**
   ordering, finite coordinates, exact limb lengths, and non-intersecting legs.
 - Neutral arms hang beside the torso with sided elbows/hands, exact segment
   lengths, shallow bends, and no centerline crossing.
+- The later platformer-specific reference study found that the permanent sheet
+  still uses arbitrary mid-stride samples rather than named contact, passing,
+  and opposite-contact poses, and does not show an explicit landing pose.
+  Those visual gates must be added before approval.
 
 Phase 16: **PASS**
 
@@ -74,6 +78,7 @@ Phase 17: **PASS**
 
 ## Handoff
 
-`main` has not advanced beyond the recorded development base, so the candidate
-does not need synchronization. No merge, tag, or npm publication has occurred.
-Those actions require explicit user approval.
+`main` has not advanced beyond the recorded development base, so the branch
+does not need synchronization. The exact artifact still passes its technical
+gates, but visual approval is paused pending the named gait and landing
+evidence above. No merge, tag, or npm publication has occurred.

@@ -13,3 +13,12 @@ npm run benchmark:humanoid
 
 `humanoid-production.png` is rendered from `src/character/`. It is
 byte-identical to the approved prototype sheet.
+
+`humanoid-reference-study.png` is an original analytical diagram derived from
+the researched platformer strategies in
+`docs/research/humanoid-platformer-visual-reference.md`. It contains no copied
+game sprites. Regenerate it with:
+
+```bash
+npx tsx benchmarks/_scripts/humanoid-reference-study-render.ts
+```
