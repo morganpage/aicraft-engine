@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aabbOverlap } from '../collision/aabb';
+import { aabbOverlap, overlapsLadder } from '../collision/aabb';
 import { resolveAxisX, resolveAxisY } from '../collision/resolve';
 import type { Rect, Solid } from '../collision/types';
 
@@ -64,6 +64,41 @@ describe('aabbOverlap', () => {
     aabbOverlap(a, b);
     expect(a).toEqual(sa);
     expect(b).toEqual(sb);
+  });
+});
+
+describe('overlapsLadder', () => {
+  it('returns false when there are no ladder solids', () => {
+    const body = rect(0, 0, 10, 10);
+    const wall = solid(0, 0, 10, 10);
+    expect(overlapsLadder(body, [wall])).toBe(false);
+    expect(overlapsLadder(body, [])).toBe(false);
+  });
+
+  it('returns true when the body overlaps a ladder solid', () => {
+    const body = rect(5, 5, 10, 10);
+    const ladder = solid(0, 0, 10, 10, false, true);
+    expect(overlapsLadder(body, [ladder])).toBe(true);
+  });
+
+  it('returns false when the body is adjacent but not overlapping (strict AABB)', () => {
+    const body = rect(10, 0, 10, 10);
+    const ladder = solid(0, 0, 10, 10, false, true);
+    // body's left edge touches ladder's right edge — not an overlap.
+    expect(overlapsLadder(body, [ladder])).toBe(false);
+  });
+
+  it('ignores non-ladder solids that overlap', () => {
+    const body = rect(0, 0, 10, 10);
+    const wall = solid(0, 0, 10, 10);
+    expect(overlapsLadder(body, [wall])).toBe(false);
+  });
+
+  it('finds a ladder among a mix of solids', () => {
+    const body = rect(5, 5, 10, 10);
+    const wall = solid(50, 50, 10, 10);
+    const ladder = solid(0, 0, 10, 10, false, true);
+    expect(overlapsLadder(body, [wall, ladder])).toBe(true);
   });
 });
 
