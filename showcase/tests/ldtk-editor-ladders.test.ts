@@ -173,6 +173,37 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     expect(state.core.y).toBeLessThan(startY - 40);
   });
 
+  it('does not bounce when holding Up at the top of a ladder', () => {
+    // Regression guard for the top-of-ladder bounce. Holding Up at the top of
+    // a ladder must let the player climb to the top and STICK there — not
+    // oscillate (original bounce) and not fall back down (cooldown-induced).
+    // The signature of both bugs is vy going positive (falling) while the
+    // player is still holding Up on a ladder; a correct climb-up never flips
+    // vy positive. Ladder occupies rows 0–1 with open air above, so once the
+    // player reaches the top there is no ladder above to climb into.
+    const openTopSolids: Solid[] = [
+      { id: 'wall-l', x: 0, y: 0, width: TILE, height: 8 * TILE },
+      { id: 'wall-r', x: 2 * TILE, y: 0, width: TILE, height: 8 * TILE },
+      { id: 'ladder', x: TILE, y: 0, width: TILE, height: 2 * TILE, ladder: true },
+    ];
+    let state = playerInShaft(0, CLIMB_CONFIG); // starts inside the 2-tall ladder
+
+    // Hold Up for half a second. Track whether vy ever goes positive (falling)
+    // — that's the bounce signature.
+    let bounced = false;
+    for (let i = 0; i < 30; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        openTopSolids,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+      if (state.core.vy > 0) bounced = true;
+    }
+    expect(bounced).toBe(false);
+  });
+
   it('jumping on a ladder does not stick (jump wins over climb)', () => {
     let state = playerInShaft(4, CLIMB_CONFIG);
     const startY = state.core.y;

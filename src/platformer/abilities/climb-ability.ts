@@ -19,6 +19,11 @@
  *   - mark the state `climbing: true`.
  * Otherwise: `climbing: false`, no change (jump/kernel own vertical motion).
  *
+ * Top-of-ladder guard: when climbing up, upward velocity is only applied if a
+ * ladder cell exists above the body. At the top there is none, so vy stays 0
+ * and the player sticks at the top cleanly — no bouncing (the ProjectJumper
+ * approach, rather than a re-grab cooldown which trades the bounce for a fall).
+ *
  * Pure: never mutates input. Never throws. When `climbEnabled === false`,
  * returns the input state unchanged with no events.
  *
@@ -80,7 +85,20 @@ export const climbAbility: AbilityProcessor<ClimbAbilityState> = {
     if (climbing) {
       const climbIntent = input.climb ?? 0;
       // climbIntent: -1 = up, +1 = down. vy: negative = up, positive = down.
-      nextCore = { ...core, vy: climbIntent * config.climbSpeed, onGround: true };
+      let vy = climbIntent * config.climbSpeed;
+      if (climbIntent < 0 && solids !== undefined) {
+        // Top-of-ladder guard (ProjectJumper approach): only rise if there's a
+        // ladder cell at the player's midline. At the top there isn't, so upward
+        // vy is suppressed to 0 — the player sticks cleanly at the top instead
+        // of climbing past the last cell, falling back in, re-grabbing, and
+        // bouncing. Probing the midline (not the head or feet) balances the
+        // stop height: high enough to step off onto an adjacent floor, not so
+        // high it overshoots. Probing the head stops a body-height too low;
+        // probing the feet flickers at the boundary.
+        const mid = { x: core.x, y: core.y + core.height / 2, width: core.width, height: 1 };
+        if (!overlapsLadder(mid, solids)) vy = 0;
+      }
+      nextCore = { ...core, vy, onGround: true };
     }
 
     return { core: nextCore, state: { kind: 'climb', climbing }, events };
