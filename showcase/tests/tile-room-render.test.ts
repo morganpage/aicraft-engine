@@ -12,14 +12,49 @@ import {
   createGeneratedRoomScene,
   createTopologyRoomScene,
 } from '../sections/tile-room-fixtures';
+import {
+  createTileRoomTerrainArtAtlas,
+  createTileRoomTerrainArtProject,
+  prepareTileRoomTerrainArt,
+} from '../sections/tile-room-dual-grid';
+import type { LevelEntity } from '../../src/level/types';
 
 function render(
-  treatment: 'fallback' | 'ruins' | 'cavern' | 'mechanical' | 'outdoor',
+  treatment: 'fallback' | 'ruins' | 'cavern' | 'mechanical' | 'outdoor' | 'dual-grid',
   collectedEntityIds?: ReadonlySet<number>,
+  paintPreview?: {
+    readonly cells: readonly { readonly col: number; readonly row: number }[];
+    readonly behavior: 'paint' | 'erase';
+    readonly cursor: { readonly col: number; readonly row: number };
+  },
+  movingPlatformPreview?: {
+    readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+    readonly path: readonly { readonly x: number; readonly y: number }[];
+    readonly mode: 'create' | 'move';
+  },
+  spikePreview?: {
+    readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+    readonly mode: 'create' | 'delete';
+    readonly targets: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
+  },
+  entityPreview?: { readonly entity: Readonly<LevelEntity>; readonly mode: 'place' | 'move' | 'delete' },
+  movingPlatformWidget?: {
+    readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+    readonly path: readonly { readonly x: number; readonly y: number }[];
+    readonly activeWaypoint?: number;
+  },
+  selectedEntity?: Readonly<LevelEntity>,
 ): Uint8Array {
   const scene = createTopologyRoomScene();
   const canvas = createCanvas(TILE_ROOM_VIEW_W, TILE_ROOM_VIEW_H);
   const context = canvas.getContext('2d');
+  const project = createTileRoomTerrainArtProject();
+  const atlas = createTileRoomTerrainArtAtlas(project);
+  const atlasCanvas = createCanvas(atlas.width, atlas.height);
+  const atlasContext = atlasCanvas.getContext('2d');
+  const image = atlasContext.createImageData(atlas.width, atlas.height);
+  image.data.set(atlas.pixels);
+  atlasContext.putImageData(image, 0, 0);
 
   drawTileRoomFrame(
     context as unknown as CanvasRenderingContext2D,
@@ -35,6 +70,18 @@ function render(
       showMarkers: false,
       collectedEntityIds,
       worldSeed: TILE_ROOM_SEED,
+      dualGrid: {
+        prepared: prepareTileRoomTerrainArt(scene.level, project),
+        atlas,
+        image: atlasCanvas as unknown as CanvasImageSource,
+        selection: null,
+        paintPreview,
+        movingPlatformPreview,
+        movingPlatformWidget,
+        selectedEntity,
+        spikePreview,
+        entityPreview,
+      },
     },
   );
 
@@ -48,6 +95,48 @@ describe('tile-room frame composition', () => {
 
   it('keeps the fallback and cave treatments visibly distinct', () => {
     expect(render('fallback')).not.toEqual(render('cavern'));
+  });
+
+  it('renders the generated dual-grid atlas as a distinct deterministic treatment', () => {
+    expect(render('dual-grid')).toEqual(render('dual-grid'));
+    expect(render('dual-grid')).not.toEqual(render('fallback'));
+    expect(render('dual-grid')).not.toEqual(render('outdoor'));
+  });
+
+  it('renders an observable live level-paint preview before cells are committed', () => {
+    const paint = { cells: [{ col: 16, row: 12 }, { col: 17, row: 12 }], behavior: 'paint' as const, cursor: { col: 17, row: 12 } };
+    const erase = { ...paint, behavior: 'erase' as const };
+    expect(render('dual-grid', undefined, paint)).not.toEqual(render('dual-grid'));
+    expect(render('dual-grid', undefined, erase)).not.toEqual(render('dual-grid', undefined, paint));
+  });
+
+  it('renders a live moving-platform rectangle and travel path before commit', () => {
+    const preview = { rect: { x: 352, y: 240, width: 64, height: 16 }, path: [{ x: 352, y: 240 }, { x: 416, y: 240 }], mode: 'create' as const };
+    expect(render('dual-grid', undefined, undefined, preview)).not.toEqual(render('dual-grid'));
+  });
+
+  it('renders the selected moving-platform route and active destination handle', () => {
+    const widget = { rect: { x: 352, y: 240, width: 64, height: 16 }, path: [{ x: 352, y: 240 }, { x: 448, y: 176 }], activeWaypoint: 1 };
+    expect(render('dual-grid', undefined, undefined, undefined, undefined, undefined, widget)).not.toEqual(render('dual-grid'));
+  });
+
+  it('renders a persistent object-selection outline', () => {
+    const selected = createTopologyRoomScene().level.entities.find((entity) => entity.kind === 'movingPlatform')!;
+    expect(render('dual-grid', undefined, undefined, undefined, undefined, undefined, undefined, selected)).not.toEqual(render('dual-grid'));
+  });
+
+  it('renders distinct spike creation and deletion previews before commit', () => {
+    const create = { rect: { x: 352, y: 240, width: 64, height: 16 }, mode: 'create' as const, targets: [] };
+    const remove = { ...create, mode: 'delete' as const, targets: [create.rect] };
+    expect(render('dual-grid', undefined, undefined, undefined, create)).not.toEqual(render('dual-grid'));
+    expect(render('dual-grid', undefined, undefined, undefined, remove)).not.toEqual(render('dual-grid', undefined, undefined, undefined, create));
+  });
+
+  it('renders distinct object placement and deletion feedback', () => {
+    const entity = { id: 99, kind: 'collectible', rect: { x: 352, y: 240, width: 12, height: 12 }, props: { kind: 'coin', value: 1 } } satisfies LevelEntity;
+    const place = { entity, mode: 'place' as const }; const remove = { entity, mode: 'delete' as const };
+    expect(render('dual-grid', undefined, undefined, undefined, undefined, place)).not.toEqual(render('dual-grid'));
+    expect(render('dual-grid', undefined, undefined, undefined, undefined, remove)).not.toEqual(render('dual-grid', undefined, undefined, undefined, undefined, place));
   });
 
   it('renders the four production themes distinctly', () => {

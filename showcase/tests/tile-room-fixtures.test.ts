@@ -12,6 +12,23 @@ import {
   createGeneratedRoomScene,
   createTopologyRoomLevel,
   createTopologyRoomScene,
+  addTileRoomEntity,
+  addTileRoomMovingPlatform,
+  addTileRoomMovingPlatformWaypoint,
+  addTileRoomSpikes,
+  deleteTileRoomEntity,
+  deleteTileRoomSpikes,
+  isTileRoomPlayerDead,
+  isTileRoomExitReached,
+  moveTileRoomEntity,
+  moveTileRoomMovingPlatform,
+  moveTileRoomMovingPlatformWaypoint,
+  moveTileRoomSceneSpawn,
+  duplicateTileRoomEntity,
+  removeTileRoomMovingPlatformWaypoint,
+  updateTileRoomCollectible,
+  updateTileRoomExit,
+  updateTileRoomMovingPlatform,
   parseTileArt,
 } from '../sections/tile-room-fixtures';
 
@@ -71,6 +88,121 @@ describe('tile-room fixtures', () => {
       x: -140,
       y: -100,
     });
+  });
+
+  it('moves the canonical spawn immutably and keeps the runtime spawn entity in sync', () => {
+    const source = createGeneratedRoomScene(); const before = source.level.spawn;
+    const moved = moveTileRoomSceneSpawn(source, 240, 144);
+    expect(moved.level.spawn).toEqual({ x: 240, y: 144 });
+    expect(moved.level.entities.find((entity) => entity.kind === 'spawn')?.rect).toMatchObject({ x: 240, y: 144 });
+    expect(source.level.spawn).toEqual(before);
+    expect(() => compileGeneratedLevel(moved)).not.toThrow();
+  });
+
+  it('draws and repositions moving platforms with their path and undo-safe source left immutable', () => {
+    const source = createGeneratedRoomScene();
+    const added = addTileRoomMovingPlatform(source, { x: 160, y: 128, width: 48, height: 16 });
+    const platform = added.level.entities.find((entity) => entity.id === source.level.nextEntityId);
+    expect(platform).toMatchObject({ kind: 'movingPlatform', rect: { x: 160, y: 128, width: 48, height: 16 }, props: { loopMode: 'pingpong', speed: 60 } });
+    if (platform?.kind !== 'movingPlatform') throw new Error('moving platform was not created');
+    const moved = moveTileRoomMovingPlatform(added, platform.id, { ...platform.rect, x: 224, y: 176 });
+    const movedPlatform = moved.level.entities.find((entity) => entity.id === platform.id);
+    expect(movedPlatform).toMatchObject({ rect: { x: 224, y: 176 } });
+    if (movedPlatform?.kind !== 'movingPlatform') throw new Error('moving platform was not moved');
+    expect(movedPlatform.props.path[0]).toEqual({ x: 224, y: 176 });
+    expect(moveTileRoomMovingPlatform(moved, platform.id, movedPlatform.rect)).toBe(moved);
+    expect(source.level.entities.some((entity) => entity.id === platform.id)).toBe(false);
+    expect(() => compileGeneratedLevel(moved)).not.toThrow();
+  });
+
+  it('moves only a moving-platform destination and clamps it inside the level', () => {
+    const source = createGeneratedRoomScene();
+    const added = addTileRoomMovingPlatform(source, { x: 160, y: 128, width: 48, height: 16 });
+    const platform = added.level.entities.find((entity) => entity.id === source.level.nextEntityId);
+    if (platform?.kind !== 'movingPlatform') throw new Error('moving platform was not created');
+    const changed = moveTileRoomMovingPlatformWaypoint(added, platform.id, 1, { x: 9999, y: 176 });
+    const edited = changed.level.entities.find((entity) => entity.id === platform.id);
+    if (edited?.kind !== 'movingPlatform') throw new Error('moving platform destination was not edited');
+    expect(edited.rect).toEqual(platform.rect);
+    expect(edited.props.path[0]).toEqual(platform.props.path[0]);
+    expect(edited.props.path[1]).toEqual({ x: source.level.width - platform.rect.width, y: 176 });
+    expect(moveTileRoomMovingPlatformWaypoint(changed, platform.id, 0, { x: 240, y: 240 })).toBe(changed);
+    expect(moveTileRoomMovingPlatformWaypoint(changed, platform.id, 1, edited.props.path[1]!)).toBe(changed);
+    expect(() => compileGeneratedLevel(changed)).not.toThrow();
+  });
+
+  it('edits moving-platform settings and route length immutably', () => {
+    const source = createGeneratedRoomScene();
+    const added = addTileRoomMovingPlatform(source, { x: 160, y: 128, width: 48, height: 16 });
+    const id = source.level.nextEntityId;
+    const configured = updateTileRoomMovingPlatform(added, id, { speed: 95, loopMode: 'loop' });
+    const extended = addTileRoomMovingPlatformWaypoint(configured, id);
+    const platform = extended.level.entities.find((entity) => entity.id === id);
+    expect(platform).toMatchObject({ kind: 'movingPlatform', props: { speed: 95, loopMode: 'loop' } });
+    if (platform?.kind !== 'movingPlatform') throw new Error('missing edited moving platform');
+    expect(platform.props.path).toHaveLength(3);
+    expect(removeTileRoomMovingPlatformWaypoint(extended, id).level.entities.find((entity) => entity.id === id)).toEqual(configured.level.entities.find((entity) => entity.id === id));
+    expect(removeTileRoomMovingPlatformWaypoint(configured, id)).toBe(configured);
+    expect(added.level.entities.find((entity) => entity.id === id)).not.toEqual(platform);
+  });
+
+  it('updates and duplicates contextual object properties', () => {
+    const source = createTopologyRoomScene();
+    const exit = source.level.entities.find((entity) => entity.kind === 'exit')!;
+    const pickup = source.level.entities.find((entity) => entity.kind === 'collectible')!;
+    const editedExit = updateTileRoomExit(source, exit.id, { locked: true, isTrap: true });
+    expect(editedExit.level.entities.find((entity) => entity.id === exit.id)).toMatchObject({ props: { locked: true, isTrap: true } });
+    const editedPickup = updateTileRoomCollectible(editedExit, pickup.id, { kind: 'key', value: 7, persists: true });
+    expect(editedPickup.level.entities.find((entity) => entity.id === pickup.id)).toMatchObject({ props: { kind: 'key', value: 7, persists: true } });
+    const duplicated = duplicateTileRoomEntity(editedPickup, pickup.id);
+    expect(duplicated.level.nextEntityId).toBe(editedPickup.level.nextEntityId + 1);
+    expect(duplicated.level.entities.find((entity) => entity.id === editedPickup.level.nextEntityId)).toMatchObject({ kind: 'collectible', props: { kind: 'key', value: 7, persists: true } });
+    expect(source.level.entities.find((entity) => entity.id === pickup.id)).not.toEqual(duplicated.level.entities.find((entity) => entity.id === pickup.id));
+    expect(() => compileGeneratedLevel(duplicated)).not.toThrow();
+  });
+
+  it('draws and deletes spike strips without changing the terrain grid', () => {
+    const source = createGeneratedRoomScene();
+    const added = addTileRoomSpikes(source, { x: 160, y: 128, width: 48, height: 48 });
+    const spikes = added.level.entities.find((entity) => entity.id === source.level.nextEntityId);
+    expect(spikes).toMatchObject({ kind: 'hazard', rect: { x: 160, y: 128, width: 48, height: source.level.tileSize } });
+    expect(added.level.tiles).toBe(source.level.tiles);
+    const untouched = deleteTileRoomSpikes(added, { x: 0, y: 0, width: 16, height: 16 });
+    expect(untouched).toBe(added);
+    const deleted = deleteTileRoomSpikes(added, { x: 176, y: 128, width: 16, height: 16 });
+    expect(deleted.level.entities.some((entity) => entity.id === spikes?.id)).toBe(false);
+    expect(() => compileGeneratedLevel(deleted)).not.toThrow();
+  });
+
+  it('places, moves, and deletes exits and pickups while protecting the required exit', () => {
+    const source = createGeneratedRoomScene();
+    const withCoin = addTileRoomEntity(source, 'coin', 160, 128);
+    const coin = withCoin.level.entities.find((entity) => entity.id === source.level.nextEntityId);
+    expect(coin).toMatchObject({ kind: 'collectible', props: { kind: 'coin', value: 1 } });
+    const moved = moveTileRoomEntity(withCoin, coin!.id, 208, 160);
+    expect(moved.level.entities.find((entity) => entity.id === coin!.id)?.rect).toMatchObject({ x: 208, y: 160 });
+    const removed = deleteTileRoomEntity(moved, coin!.id);
+    expect(removed.level.entities.some((entity) => entity.id === coin!.id)).toBe(false);
+    const onlyExit = source.level.entities.find((entity) => entity.kind === 'exit')!;
+    expect(deleteTileRoomEntity(source, onlyExit.id)).toBe(source);
+    const withAnotherExit = addTileRoomEntity(source, 'exit', 320, 192);
+    expect(deleteTileRoomEntity(withAnotherExit, onlyExit.id).level.entities.filter((entity) => entity.kind === 'exit')).toHaveLength(1);
+    expect(() => compileGeneratedLevel(removed)).not.toThrow();
+  });
+
+  it('treats hazards, bottom lava, and falling out of bounds as deaths', () => {
+    const scene = createTopologyRoomScene(); const hazard = scene.level.entities.find((entity) => entity.kind === 'hazard')!;
+    expect(isTileRoomPlayerDead(scene.level, hazard.rect)).toBe(true);
+    expect(isTileRoomPlayerDead({ ...scene.level, bottomLava: { surfaceY: 300 } }, { x: 10, y: 290, width: 10, height: 20 })).toBe(true);
+    expect(isTileRoomPlayerDead(scene.level, { x: 10, y: scene.level.height + 65, width: 10, height: 20 })).toBe(true);
+    expect(isTileRoomPlayerDead(scene.level, { x: 10, y: 10, width: 10, height: 10 })).toBe(false);
+  });
+
+  it('recognizes only unlocked non-trap exits as a clear', () => {
+    const scene = createGeneratedRoomScene(); const exit = scene.level.entities.find((entity) => entity.kind === 'exit')!;
+    expect(isTileRoomExitReached(scene.level, exit.rect)).toBe(true);
+    const locked = { ...scene.level, entities: scene.level.entities.map((entity) => entity.kind === 'exit' ? { ...entity, props: { ...entity.props, locked: true } } : entity) };
+    expect(isTileRoomExitReached(locked, exit.rect)).toBe(false);
   });
 });
 

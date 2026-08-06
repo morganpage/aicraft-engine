@@ -30,8 +30,9 @@
  */
 
 import { generateLevel } from '../../src/levelgen';
+import { aabbOverlap } from '../../src/collision';
 import type { GeneratedTileSemantics } from '../../src/level';
-import type { LevelData, LevelEntity } from '../../src/level/types';
+import type { CollectibleKind, LevelData, LevelEntity, LevelRect } from '../../src/level/types';
 
 // --- Scene constants -------------------------------------------------------
 
@@ -441,6 +442,295 @@ export interface TileRoomScene {
   readonly level: LevelData;
   /** Tile-value classification for `compileGeneratedLevel`. */
   readonly tileSemantics: Readonly<GeneratedTileSemantics>;
+}
+
+/** Return a scene with its one canonical player-spawn record moved immutably. */
+export function moveTileRoomSceneSpawn(scene: Readonly<TileRoomScene>, x: number, y: number): TileRoomScene {
+  const level = scene.level;
+  const spawnX = Math.max(0, Math.min(level.width, Number.isFinite(x) ? x : level.spawn.x));
+  const spawnY = Math.max(0, Math.min(level.height, Number.isFinite(y) ? y : level.spawn.y));
+  let foundSpawn = false;
+  const entities: LevelEntity[] = level.entities.map((entity) => {
+    if (entity.kind !== 'spawn') return entity;
+    foundSpawn = true;
+    return { ...entity, rect: { ...entity.rect, x: spawnX, y: spawnY } };
+  });
+  let nextEntityId = level.nextEntityId;
+  if (!foundSpawn) {
+    entities.push({ id: nextEntityId, kind: 'spawn', rect: { x: spawnX, y: spawnY, width: level.tileSize, height: level.tileSize }, props: {} });
+    nextEntityId++;
+  }
+  return { ...scene, level: { ...level, spawn: { x: spawnX, y: spawnY }, entities, nextEntityId } };
+}
+
+function clampMovingPlatformRect(level: Readonly<LevelData>, rect: Readonly<LevelRect>): LevelRect {
+  const width = Math.max(level.tileSize, Math.min(level.width, rect.width));
+  const height = Math.max(level.tileSize, Math.min(level.height, rect.height));
+  return {
+    x: Math.max(0, Math.min(level.width - width, rect.x)),
+    y: Math.max(0, Math.min(level.height - height, rect.y)),
+    width,
+    height,
+  };
+}
+
+/** Add a moving platform with a useful four-cell horizontal ping-pong path. */
+export function addTileRoomMovingPlatform(scene: Readonly<TileRoomScene>, requestedRect: Readonly<LevelRect>): TileRoomScene {
+  const level = scene.level; const rect = clampMovingPlatformRect(level, requestedRect);
+  const maxX = level.width - rect.width; const travel = level.tileSize * 4;
+  const otherX = rect.x + travel <= maxX ? rect.x + travel : Math.max(0, rect.x - travel);
+  const entity: LevelEntity = {
+    id: level.nextEntityId,
+    kind: 'movingPlatform',
+    rect,
+    props: { speed: 60, path: [{ x: rect.x, y: rect.y }, { x: otherX, y: rect.y }], loopMode: 'pingpong' },
+  };
+  return { ...scene, level: { ...level, entities: [...level.entities, entity], nextEntityId: level.nextEntityId + 1 } };
+}
+
+/** Move an authored moving platform and translate its complete path by the same delta. */
+export function moveTileRoomMovingPlatform(scene: Readonly<TileRoomScene>, entityId: number, requestedRect: Readonly<LevelRect>): TileRoomScene {
+  const level = scene.level;
+  let changed = false;
+  const entities = level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'movingPlatform') return entity;
+    const rect = clampMovingPlatformRect(level, { ...requestedRect, width: entity.rect.width, height: entity.rect.height });
+    const dx = rect.x - entity.rect.x; const dy = rect.y - entity.rect.y;
+    if (dx === 0 && dy === 0) return entity;
+    changed = true;
+    return { ...entity, rect, props: { ...entity.props, path: entity.props.path.map((point) => ({
+      x: Math.max(0, Math.min(level.width - rect.width, point.x + dx)),
+      y: Math.max(0, Math.min(level.height - rect.height, point.y + dy)),
+    })) } };
+  });
+  return changed ? { ...scene, level: { ...level, entities } } : scene;
+}
+
+/** Move one authored destination without moving the platform body or its other waypoints. */
+export function moveTileRoomMovingPlatformWaypoint(
+  scene: Readonly<TileRoomScene>,
+  entityId: number,
+  waypointIndex: number,
+  requestedPoint: Readonly<{ x: number; y: number }>,
+): TileRoomScene {
+  const level = scene.level;
+  let changed = false;
+  const entities = level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'movingPlatform' || waypointIndex <= 0 || waypointIndex >= entity.props.path.length) return entity;
+    const point = {
+      x: Math.max(0, Math.min(level.width - entity.rect.width, requestedPoint.x)),
+      y: Math.max(0, Math.min(level.height - entity.rect.height, requestedPoint.y)),
+    };
+    const previous = entity.props.path[waypointIndex]!;
+    if (point.x === previous.x && point.y === previous.y) return entity;
+    changed = true;
+    const path = entity.props.path.map((candidate, index) => index === waypointIndex ? point : candidate);
+    return { ...entity, props: { ...entity.props, path } };
+  });
+  return changed ? { ...scene, level: { ...level, entities } } : scene;
+}
+
+/** Update simulation settings without disturbing a moving platform's body or route. */
+export function updateTileRoomMovingPlatform(
+  scene: Readonly<TileRoomScene>,
+  entityId: number,
+  values: Readonly<{ speed?: number; loopMode?: 'loop' | 'pingpong' }>,
+): TileRoomScene {
+  let changed = false;
+  const entities = scene.level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'movingPlatform') return entity;
+    const speed = values.speed === undefined ? entity.props.speed : Math.max(1, Math.min(1000, values.speed));
+    const loopMode = values.loopMode ?? entity.props.loopMode ?? 'pingpong';
+    if (speed === entity.props.speed && loopMode === (entity.props.loopMode ?? 'pingpong')) return entity;
+    changed = true; return { ...entity, props: { ...entity.props, speed, loopMode } };
+  });
+  return changed ? { ...scene, level: { ...scene.level, entities } } : scene;
+}
+
+/** Append a reachable, clamped destination to a moving platform route. */
+export function addTileRoomMovingPlatformWaypoint(scene: Readonly<TileRoomScene>, entityId: number): TileRoomScene {
+  const level = scene.level; let changed = false;
+  const entities = level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'movingPlatform') return entity;
+    const last = entity.props.path[entity.props.path.length - 1] ?? { x: entity.rect.x, y: entity.rect.y };
+    const travel = level.tileSize * 4; const maxX = level.width - entity.rect.width; const maxY = level.height - entity.rect.height;
+    const point = last.x + travel <= maxX ? { x: last.x + travel, y: last.y }
+      : last.x - travel >= 0 ? { x: last.x - travel, y: last.y }
+        : { x: last.x, y: last.y + travel <= maxY ? last.y + travel : Math.max(0, last.y - travel) };
+    changed = true; return { ...entity, props: { ...entity.props, path: [...entity.props.path, point] } };
+  });
+  return changed ? { ...scene, level: { ...level, entities } } : scene;
+}
+
+/** Remove the last destination while preserving the required Start + Move to pair. */
+export function removeTileRoomMovingPlatformWaypoint(scene: Readonly<TileRoomScene>, entityId: number): TileRoomScene {
+  let changed = false;
+  const entities = scene.level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'movingPlatform' || entity.props.path.length <= 2) return entity;
+    changed = true; return { ...entity, props: { ...entity.props, path: entity.props.path.slice(0, -1) } };
+  });
+  return changed ? { ...scene, level: { ...scene.level, entities } } : scene;
+}
+
+/** Update the selected exit's gameplay flags. */
+export function updateTileRoomExit(
+  scene: Readonly<TileRoomScene>, entityId: number, values: Readonly<{ locked?: boolean; isTrap?: boolean }>,
+): TileRoomScene {
+  let changed = false;
+  const entities = scene.level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'exit') return entity;
+    const props = { locked: values.locked ?? entity.props.locked, isTrap: values.isTrap ?? entity.props.isTrap };
+    if (props.locked === entity.props.locked && props.isTrap === entity.props.isTrap) return entity;
+    changed = true; return { ...entity, props };
+  });
+  return changed ? { ...scene, level: { ...scene.level, entities } } : scene;
+}
+
+/** Update a pickup's authored type, value, and persistence behavior. */
+export function updateTileRoomCollectible(
+  scene: Readonly<TileRoomScene>, entityId: number,
+  values: Readonly<{ kind?: CollectibleKind; value?: number; persists?: boolean }>,
+): TileRoomScene {
+  let changed = false;
+  const entities = scene.level.entities.map((entity) => {
+    if (entity.id !== entityId || entity.kind !== 'collectible') return entity;
+    const props = {
+      kind: values.kind ?? entity.props.kind,
+      value: values.value === undefined ? entity.props.value : Math.max(0, values.value),
+      persists: values.persists ?? entity.props.persists,
+    };
+    if (props.kind === entity.props.kind && props.value === entity.props.value && props.persists === entity.props.persists) return entity;
+    changed = true; return { ...entity, props };
+  });
+  return changed ? { ...scene, level: { ...scene.level, entities } } : scene;
+}
+
+/** Duplicate an editable object with a one-cell offset and a fresh stable id. */
+export function duplicateTileRoomEntity(scene: Readonly<TileRoomScene>, entityId: number): TileRoomScene {
+  const source = scene.level.entities.find((entity) => entity.id === entityId);
+  if (source === undefined || source.kind === 'spawn' || source.kind === 'trigger' || source.kind === 'platform' || source.kind === 'passthrough') return scene as TileRoomScene;
+  const clone: LevelEntity = { ...source, id: scene.level.nextEntityId };
+  const staged = { ...scene, level: { ...scene.level, entities: [...scene.level.entities, clone], nextEntityId: scene.level.nextEntityId + 1 } };
+  const x = source.rect.x + scene.level.tileSize <= scene.level.width - source.rect.width ? source.rect.x + scene.level.tileSize : Math.max(0, source.rect.x - scene.level.tileSize);
+  return moveTileRoomEntity(staged, clone.id, x, source.rect.y);
+}
+
+function clampSpikeRect(level: Readonly<LevelData>, requestedRect: Readonly<LevelRect>): LevelRect {
+  const size = level.tileSize;
+  const width = Math.max(size, Math.min(level.width, requestedRect.width));
+  return {
+    x: Math.max(0, Math.min(level.width - width, requestedRect.x)),
+    y: Math.max(0, Math.min(level.height - size, requestedRect.y)),
+    width,
+    height: size,
+  };
+}
+
+/** Add a horizontal strip of spike hazards without changing the terrain grid below it. */
+export function addTileRoomSpikes(scene: Readonly<TileRoomScene>, requestedRect: Readonly<LevelRect>): TileRoomScene {
+  const level = scene.level;
+  const entity: LevelEntity = {
+    id: level.nextEntityId,
+    kind: 'hazard',
+    rect: clampSpikeRect(level, requestedRect),
+    props: {},
+  };
+  return { ...scene, level: { ...level, entities: [...level.entities, entity], nextEntityId: level.nextEntityId + 1 } };
+}
+
+function rectsOverlap(a: Readonly<LevelRect>, b: Readonly<LevelRect>): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/** Delete every spike strip touched by a dragged selection rectangle. */
+export function deleteTileRoomSpikes(scene: Readonly<TileRoomScene>, selection: Readonly<LevelRect>): TileRoomScene {
+  const entities = scene.level.entities.filter((entity) => entity.kind !== 'hazard' || !rectsOverlap(entity.rect, selection));
+  if (entities.length === scene.level.entities.length) return scene as TileRoomScene;
+  return { ...scene, level: { ...scene.level, entities } };
+}
+
+export type TileRoomPlaceableEntity = 'exit' | 'coin' | 'gem' | 'key';
+
+/** Place an exit or pickup in the selected logical cell. */
+export function addTileRoomEntity(
+  scene: Readonly<TileRoomScene>,
+  kind: TileRoomPlaceableEntity,
+  cellX: number,
+  cellY: number,
+): TileRoomScene {
+  const level = scene.level; const size = level.tileSize;
+  const id = level.nextEntityId;
+  let entity: LevelEntity;
+  if (kind === 'exit') {
+    const width = size; const height = size * 2;
+    entity = {
+      id, kind: 'exit',
+      rect: {
+        x: Math.max(0, Math.min(level.width - width, cellX)),
+        y: Math.max(0, Math.min(level.height - height, cellY - size)),
+        width, height,
+      },
+      props: { isTrap: false, locked: false },
+    };
+  } else {
+    const edge = Math.max(6, Math.round(size * .65));
+    entity = {
+      id, kind: 'collectible',
+      rect: {
+        x: Math.max(0, Math.min(level.width - edge, cellX + (size - edge) / 2)),
+        y: Math.max(0, Math.min(level.height - edge, cellY + (size - edge) / 2)),
+        width: edge, height: edge,
+      },
+      props: { kind, value: kind === 'coin' ? 1 : kind === 'gem' ? 5 : 0, persists: kind === 'key' },
+    };
+  }
+  return { ...scene, label: level.name, level: { ...level, entities: [...level.entities, entity], nextEntityId: id + 1 } };
+}
+
+/** Move an authored object while preserving moving-platform path offsets. */
+export function moveTileRoomEntity(
+  scene: Readonly<TileRoomScene>,
+  entityId: number,
+  requestedX: number,
+  requestedY: number,
+): TileRoomScene {
+  const entity = scene.level.entities.find((candidate) => candidate.id === entityId);
+  if (entity === undefined || entity.kind === 'spawn') return scene as TileRoomScene;
+  if (entity.kind === 'movingPlatform') return moveTileRoomMovingPlatform(scene, entityId, { ...entity.rect, x: requestedX, y: requestedY });
+  const x = Math.max(0, Math.min(scene.level.width - entity.rect.width, requestedX));
+  const y = Math.max(0, Math.min(scene.level.height - entity.rect.height, requestedY));
+  if (x === entity.rect.x && y === entity.rect.y) return scene as TileRoomScene;
+  return { ...scene, level: { ...scene.level, entities: scene.level.entities.map((candidate) => candidate.id === entityId ? { ...candidate, rect: { ...candidate.rect, x, y } } : candidate) } };
+}
+
+/** Delete an object, protecting the canonical spawn and the final required exit. */
+export function deleteTileRoomEntity(scene: Readonly<TileRoomScene>, entityId: number): TileRoomScene {
+  const target = scene.level.entities.find((entity) => entity.id === entityId);
+  if (target === undefined || target.kind === 'spawn') return scene as TileRoomScene;
+  if (target.kind === 'exit' && scene.level.entities.filter((entity) => entity.kind === 'exit').length <= 1) return scene as TileRoomScene;
+  return { ...scene, level: { ...scene.level, entities: scene.level.entities.filter((entity) => entity.id !== entityId) } };
+}
+
+/** Rename a level without changing its stable scene-tab id. */
+export function renameTileRoomScene(scene: Readonly<TileRoomScene>, name: string): TileRoomScene {
+  const next = name.trim();
+  if (next.length === 0 || next === scene.level.name) return scene as TileRoomScene;
+  return { ...scene, label: next, level: { ...scene.level, name: next } };
+}
+
+/** True when the player touched authored danger, bottom lava, or fell out of bounds. */
+export function isTileRoomPlayerDead(
+  level: Readonly<LevelData>,
+  player: Readonly<LevelRect>,
+): boolean {
+  return player.y > level.height + 64 ||
+    (level.bottomLava !== undefined && player.y + player.height > level.bottomLava.surfaceY) ||
+    level.entities.some((entity) => entity.kind === 'hazard' && aabbOverlap(player, entity.rect));
+}
+
+/** True when the player overlaps an unlocked, non-trap exit. */
+export function isTileRoomExitReached(level: Readonly<LevelData>, player: Readonly<LevelRect>): boolean {
+  return level.entities.some((entity) => entity.kind === 'exit' && !entity.props.locked && !entity.props.isTrap && aabbOverlap(player, entity.rect));
 }
 
 /**
