@@ -860,4 +860,15 @@ describe('terrain renderers', () => {
     });
     expect(canvas.toBuffer('image/png').length).toBeGreaterThan(100);
   });
+
+  it('keeps sharp hazard outlines bounded instead of producing miter needles', () => {
+    const canvas = createCanvas(32, 32);
+    const ctx = canvas.getContext('2d');
+    drawTerrainRect(ctx as unknown as CanvasRenderingContext2D, { x: 4, y: 8, width: 24, height: 16 }, {
+      visualSeed: 1, devicePixelRatio: 1, entityKey: 1, role: 'hazard',
+      material: CAVERN_TERRAIN_MATERIAL,
+    });
+    const clearAboveTips = ctx.getImageData(0, 0, 32, 6).data;
+    expect([...clearAboveTips].some((channel, index) => index % 4 === 3 && channel !== 0)).toBe(false);
+  });
 });

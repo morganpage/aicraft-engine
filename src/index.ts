@@ -24,11 +24,13 @@ export * from './easing';
 export * from './music';
 export * from './platformer';
 export * from './level';
+export * from './ldtk';
 export * from './editor';
 export * from './collectibles';
 export * from './replay';
 export * from './simtest';
 export * from './terrain';
+export * from './terrain-art';
 export * from './character';
 // leveltest — values and types for the verification module
 export type {

@@ -79,6 +79,15 @@ export interface LevelRenderTheme {
   readonly frontDecorations?: LevelLayerRenderer;
   readonly foreground?: LevelLayerRenderer;
   readonly screenTint?: LevelLayerRenderer;
+  /**
+   * Optional terrain-art override. When present, the frame composer
+   * (`drawPreparedLevelFrame`) calls this **instead of** the procedural
+   * `drawTerrainTiles` + `drawTerrainRects` passes. This is the seam
+   * used to render LDtk-authored levels through `drawLdtkLevel`.
+   *
+   * When omitted, the legacy procedural terrain renderer is used.
+   */
+  readonly terrainArt?: LevelLayerRenderer;
 }
 
 export interface TerrainDiagnostic {
@@ -290,6 +299,10 @@ export function createLevelThemeRenderer(
         drawTerrainTiles(ctx, frame) {
           const accepted = accept(frame);
           if (accepted === null) return;
+          if (theme.terrainArt !== undefined) {
+            theme.terrainArt(ctx, accepted);
+            return;
+          }
           drawTerrainTiles(ctx, level.tiles, {
             visualSeed: theme.visualSeed,
             view: accepted.view,
@@ -304,6 +317,10 @@ export function createLevelThemeRenderer(
         drawTerrainRects(ctx, frame) {
           const accepted = accept(frame);
           if (accepted === null) return;
+          // When a terrain-art override is active, the procedural rect pass
+          // is skipped — the override owns all terrain rendering (e.g. an
+          // LDtk level whose tiles + entity rects are both in the tileset).
+          if (theme.terrainArt !== undefined) return;
           for (const resolved of accepted.entities) {
             if (TERRAIN_SET.has(resolved.entity.kind)) drawOne(ctx, resolved, accepted);
           }

@@ -1,0 +1,44 @@
+[
+  {
+    "resolution": 16,
+    "generationMs": 6.576249999999959,
+    "compileMs": 3.990374999999972,
+    "sourceBytes": 3050,
+    "atlasBytes": 16384
+  },
+  {
+    "resolution": 32,
+    "generationMs": 10.302499999999952,
+    "compileMs": 11.368249999999989,
+    "sourceBytes": 3050,
+    "atlasBytes": 65536
+  },
+  {
+    "resolution": 48,
+    "generationMs": 21.827666999999963,
+    "compileMs": 20.103417000000036,
+    "sourceBytes": 3050,
+    "atlasBytes": 147456
+  },
+  {
+    "resolution": 64,
+    "generationMs": 37.902625,
+    "compileMs": 40.10012499999999,
+    "sourceBytes": 3050,
+    "atlasBytes": 262144
+  },
+  {
+    "resolution": 96,
+    "generationMs": 86.50787500000001,
+    "compileMs": 103.656791,
+    "sourceBytes": 3050,
+    "atlasBytes": 589824
+  },
+  {
+    "resolution": 128,
+    "generationMs": 155.19054100000005,
+    "compileMs": 156.809666,
+    "sourceBytes": 3051,
+    "atlasBytes": 1048576
+  }
+]

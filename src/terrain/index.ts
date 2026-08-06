@@ -1,3 +1,20 @@
+/**
+ * Procedural (vector-drawn) terrain renderer.
+ *
+ * @legacy This module draws terrain purely with Canvas 2D vector ops — no
+ * images, no tilesets. It is the original terrain renderer and remains the
+ * fallback for generated levels (`src/levelgen`) that carry no authored art,
+ * and the no-art default when a `LevelRenderTheme` has no `terrainArt`
+ * override. For levels authored in LDtk or carrying a real tileset, prefer
+ * the LDtk pipeline (`src/ldtk/`) via `theme.terrainArt`, which renders
+ * pre-resolved tile bitmaps. The procedural renderer is not being removed —
+ * generated levels and the four built-in themes (Ruins/Cavern/Mechanical/
+ * Outdoor) still depend on it — but new visually-articulated work should
+ * route through LDtk.
+ *
+ * @module
+ */
+
 export type {
   TerrainNeighborMask,
   TerrainNeighborhood,

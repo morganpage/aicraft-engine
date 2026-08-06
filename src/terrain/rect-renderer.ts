@@ -31,15 +31,25 @@ export function drawTerrainRect(
   };
   if (options.role === 'hazard') {
     const spike = Math.max(3, Math.min(rect.height, m.cornerSize * 2 || 6));
+    const spikeCount = Math.max(1, Math.ceil(rect.width / spike));
+    const spikeWidth = rect.width / spikeCount;
+    ctx.save();
     ctx.fillStyle = m.palette.fill;
     ctx.beginPath();
     ctx.moveTo(rect.x, rect.y + rect.height);
-    for (let x = rect.x; x < rect.x + rect.width; x += spike) {
-      ctx.lineTo(x + spike * 0.5, rect.y);
-      ctx.lineTo(Math.min(x + spike, rect.x + rect.width), rect.y + rect.height);
+    for (let index = 0; index < spikeCount; index++) {
+      const x = rect.x + index * spikeWidth;
+      ctx.lineTo(x + spikeWidth * 0.5, rect.y);
+      ctx.lineTo(x + spikeWidth, rect.y + rect.height);
     }
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = m.palette.outline; ctx.lineWidth = m.outlineWidth; ctx.stroke();
+    ctx.strokeStyle = m.palette.outline;
+    ctx.lineWidth = m.outlineWidth;
+    // Acute miter joins grow far beyond the triangle tip and look like dark
+    // needles. A bevel keeps the visible art inside the authored hazard.
+    ctx.lineJoin = 'bevel';
+    ctx.stroke();
+    ctx.restore();
     return;
   }
   const bodyHeight = options.role === 'passthrough'

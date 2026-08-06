@@ -190,4 +190,34 @@ describe('level theme facade', () => {
     expect(CAVERN_LEVEL_THEME.terrain.tiles[1]?.edgeDetail).toBe('rocky');
     expect(OUTDOOR_LEVEL_THEME.terrain.tiles[1]?.edgeDetail).toBe('grass');
   });
+
+  it('routes drawTerrainTiles/drawTerrainRects through theme.terrainArt when present', () => {
+    const calls: string[] = [];
+    const terrainArt = vi.fn((_ctx: CanvasRenderingContext2D, _frame: Readonly<LevelRenderFrame>) => {
+      calls.push('terrainArt');
+    });
+    const scene = createLevelThemeRenderer({
+      ...CAVERN_LEVEL_THEME,
+      terrainArt,
+    }).prepare(level);
+    const ctx = createCanvas(64, 32).getContext('2d') as unknown as CanvasRenderingContext2D;
+    scene.drawTerrainTiles(ctx, frame());
+    scene.drawTerrainRects(ctx, frame());
+    // The override is called once for tiles, and the rect pass is skipped.
+    expect(terrainArt).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['terrainArt']);
+  });
+
+  it('falls back to the procedural renderer when theme.terrainArt is absent', () => {
+    const scene = createLevelThemeRenderer(CAVERN_LEVEL_THEME).prepare(level);
+    // Should not throw and should draw *something* into the tile grid region
+    // (the procedural renderer paints non-empty pixels for solid tile value 1).
+    const canvas = createCanvas(64, 32);
+    const context = canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
+    scene.drawTerrainTiles(context, frame());
+    // The two solid tiles occupy the top row (y=16..32, x=0..32). Sample the
+    // whole region and confirm it isn't entirely empty.
+    const region = context.getImageData(0, 16, 32, 16).data;
+    expect(region.some((c) => c !== 0)).toBe(true);
+  });
 });
