@@ -53,6 +53,8 @@ const MINIMAL_CONFIG: PlatformerConfig = {
   maxDashes: 1,
   doubleJumpEnabled: false,
   maxDoubleJumps: 0,
+  climbEnabled: false,
+  climbSpeed: 120,
 };
 
 /** Wrong config for overwrite-jump test. */

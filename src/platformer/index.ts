@@ -34,6 +34,7 @@ export type {
   WallSlideAbilityState,
   DashAbilityState,
   DoubleJumpAbilityState,
+  ClimbAbilityState,
   AnyAbilityState,
   PlatformerState,
   PlatformerConfig,
@@ -69,6 +70,7 @@ export { jumpAbility } from './abilities/jump-ability';
 export { wallSlideAbility } from './abilities/wall-slide-ability';
 export { dashAbility } from './abilities/dash-ability';
 export { doubleJumpAbility } from './abilities/double-jump-ability';
+export { climbAbility } from './abilities/climb-ability';
 
 export {
   compileLevel,

@@ -6,6 +6,13 @@
  * The art stays LDtk's, drawn by the same `drawLdtkLevel` the editor uses, so
  * play mode is the level as it will actually ship rather than a preview.
  *
+ * Ladder climbing is handled by the engine's climb ability (`climbEnabled` in
+ * the config below). Ladder cells are tagged `ladder: true` on the compiled
+ * solids: the AABB resolvers skip them (non-colliding climb space) and the
+ * climb ability reads them to drive ascent/descent and the stick-to-ladder
+ * feel. This keeps climb and jump from desyncing — the ability owns vertical
+ * motion inside the pipeline rather than fighting it from outside.
+ *
  * The session owns a clone of the level data; nothing it does can write back
  * into the project being edited.
  */
@@ -19,7 +26,7 @@ import {
   type PlatformerInput,
   type PlatformerState,
 } from '../../../src/platformer';
-import { createJumpState, DEFAULT_JUMP } from '../../../src/animation/jump';
+import { DEFAULT_JUMP } from '../../../src/animation/jump';
 import { createCamera, updateCamera, type Camera } from '../../../src/camera';
 import {
   createKeyboardAdapter,
@@ -29,7 +36,6 @@ import {
 import { drawLdtkLevel, type LdtkLevel, type LdtkTilesetBundle } from '../../../src/ldtk';
 import type { LevelData } from '../../../src/level/types';
 import type { GeneratedTileSemantics } from '../../../src/level/tile-semantics';
-import type { Solid } from '../../../src/collision';
 
 /** An edge that is never pressed — the default for an unmapped action. */
 const IDLE_EDGE: PolledEdge = { pressed: false, released: false, held: false };
@@ -42,8 +48,8 @@ const PLAYER_LADDER_COLOR = '#7CFC9E';
 
 /**
  * IntGrid value identifying a ladder in the bundled platformer sample's
- * `Collisions` layer (`{ value: 2, identifier: 'ladder' }`). Used only to tint
- * the player while overlapping — climb itself is key-driven (see `CLIMB_SPEED`).
+ * `Collisions` layer (`{ value: 2, identifier: 'ladder' }`). Used to tag the
+ * compiled solids and to tint the player while overlapping.
  */
 const LADDER_INT_GRID_VALUE = 2;
 
@@ -56,10 +62,8 @@ const LADDER_INT_GRID_VALUE = 2;
 export const PLAYER_WIDTH = 8;
 
 /**
- * Vertical climb speed in px/s used while holding Up or Down on a ladder.
- * Applied by overriding `core.vy` after `stepPlatformer` runs, so gravity and
- * jump still resolve normally but a held vertical direction wins out — keeping
- * the ladder handling deliberately simple (no snap-to-ladder state machine).
+ * Vertical climb speed in px/s (Up/Down on a ladder). Passed to the engine's
+ * climb ability via `PlatformerConfig.climbSpeed`.
  */
 export const CLIMB_SPEED = 120;
 
@@ -68,6 +72,7 @@ export const CLIMB_SPEED = 120;
  * consistent across scenes: gravity 1800 px/s², move 180 px/s, an 81px apex
  * (~5 tiles) over 0.3s. Higher and snappier than the bare `PRECISION_PLATFORMER`
  * default (apex 48px / gravity 980), which felt too weak and floaty here.
+ * `climbEnabled` opts in to the engine's ladder climb.
  */
 export const PLAY_CONFIG: Readonly<PlatformerConfig> = {
   ...PRECISION_PLATFORMER,
@@ -80,18 +85,8 @@ export const PLAY_CONFIG: Readonly<PlatformerConfig> = {
     apexHeight: 81,
     timeToApex: 0.3,
   },
-};
-
-/**
- * Gravity-free config used while the player is on a ladder, so they stick in
- * place while idle and a climb override (see `stepLadderPlay`) is not fought
- * by gravity. Same as `PLAY_CONFIG` but with gravity zeroed; the terminal fall
- * speed is kept at the normal value so the climb override (which sets `vy`
- * directly) is not clamped to zero by the kernel's max-fall clamp.
- */
-export const ZERO_GRAVITY_CONFIG: Readonly<PlatformerConfig> = {
-  ...PLAY_CONFIG,
-  gravity: 0,
+  climbEnabled: true,
+  climbSpeed: CLIMB_SPEED,
 };
 
 /** A running play session. */
@@ -119,8 +114,8 @@ const CLAIMED_KEYS: ReadonlySet<string> = new Set([
  * @param level - Level data translated from the LDtk level.
  * @param semantics - Which IntGrid values are solid or passthrough.
  * @param canvas - Canvas the session draws into; used to size the camera.
- * @param ldtkLevel - Original LDtk level, used to precompute the ladder tile
- *   mask for the stick-to-ladder feel and the overlap tint.
+ * @param ldtkLevel - Original LDtk level, used to tag ladder solids and tint
+ *   the player while overlapping a ladder.
  */
 export function createPlaySession(
   level: LevelData,
@@ -128,21 +123,18 @@ export function createPlaySession(
   canvas: HTMLCanvasElement,
   ldtkLevel: LdtkLevel,
 ): PlaySession {
-  const config: Readonly<PlatformerConfig> = PLAY_CONFIG;
   const compiled: CompiledLevel = compileGeneratedLevel(
     { level, tileSemantics: semantics },
-    { config, playerWidth: PLAYER_WIDTH },
+    { config: PLAY_CONFIG, playerWidth: PLAYER_WIDTH },
   );
 
-  // Precomputed ladder cells (as tile indices into the collision layer), so
-  // both the stick-to-ladder physics and the overlap tint share one source of
-  // truth without re-reading the LDtk level each frame.
+  // Precomputed ladder cells (as tile indices) for tagging solids and tinting.
   const ladders = makeLadderMask(ldtkLevel, level.tileSize);
 
-  // Tag ladder solids rather than removing them. The translator emits ladder
-  // cells as `passthrough` solids; marking them `ladder: true` tells the
-  // engine's AABB resolvers to skip them entirely (non-colliding climb space),
-  // and lets ladder detection read them as data. The solid walls flanking a
+  // Tag any compiled solid that overlaps a ladder cell. The translator emits
+  // ladder cells as `passthrough` solids; marking them `ladder: true` makes the
+  // AABB resolvers skip them (non-colliding climb space) AND lets the climb
+  // ability detect them — both via the one flag. The solid walls flanking a
   // shaft don't overlap ladder cells, so they stay fully solid.
   const solids = compiled.staticSolids.map((s) =>
     isOnLadder(s, ladders) ? { ...s, ladder: true } : s,
@@ -184,22 +176,16 @@ export function createPlaySession(
       if (edges['reset']?.pressed === true) state = compiled.initialState;
 
       const moveX = left.held === right.held ? 0 : left.held ? -1 : 1;
-      const jumpEdge = edges['jump'] ?? IDLE_EDGE;
-      // Climb intent derived from held Up/Down: ±CLIMB_SPEED when one wins,
-      // 0 when both or neither are held.
-      const climbY = up.held === down.held
-        ? 0
-        : up.held
-          ? -CLIMB_SPEED
-          : CLIMB_SPEED;
-      state = stepLadderPlay(
-        state,
-        { moveX, jump: jumpEdge, climbY },
-        solids,
-        ladders,
-        dt,
-        config,
-      );
+      // Vertical climb intent consumed by the climb ability while on a ladder:
+      // -1 (up), +1 (down), 0 (idle / both held).
+      const climb = up.held === down.held ? 0 : up.held ? -1 : 1;
+      const input: PlatformerInput = {
+        moveX,
+        jump: edges['jump'] ?? IDLE_EDGE,
+        dash: null,
+        climb,
+      };
+      state = stepPlatformer(state, input, solids, dt, PLAY_CONFIG).state;
 
       // Falling out of the level is a normal outcome while testing an
       // unfinished room, so respawn rather than letting the actor vanish.
@@ -250,90 +236,9 @@ export function createPlaySession(
 }
 
 /**
- * Per-tick play intent, distilled from polled keyboard edges. This is the
- * testable cut: the real session derives it from `window` keyboard events,
- * but tests (and any future input source) can pass it directly. The vertical
- * `climbY` carries the resolved ladder climb (±{@link CLIMB_SPEED} or 0).
- */
-export interface LadderPlayIntent {
-  /** Horizontal movement: -1 left, 0 idle, +1 right. */
-  readonly moveX: -1 | 0 | 1;
-  /** Polled jump edge. The `held` flag drives variable jump height — collapsing
-   * it to a boolean would cut every jump to its minimum apex. */
-  readonly jump: PolledEdge;
-  /** Resolved vertical climb velocity in px/s (negative = up, positive = down). */
-  readonly climbY: number;
-}
-
-/**
- * Advance the play session one tick, applying the deliberately-simple ladder
- * feel. Pure: no host access, no closures over the session — the same logic
- * the real `step()` runs, factored out so tests can drive it directly.
- *
- * Ladder rules (no snap-to-ladder state machine):
- *   - On a ladder and not jumping → gravity is cancelled (zero-g config) so the
- *     player sticks while idle and `climbY` sets a steady climb with nothing
- *     fighting it. The ladder cells are already removed from `solids`, so they
- *     never act as one-way-platform floors.
- *   - On a ladder and climbing → `vy` is overridden to `climbY`.
- *   - On a ladder and idle → `vy` is zeroed to kill any residual drift.
- *   - Jumping, or off the ladder → normal gravity applies and `climbY` is ignored.
- */
-export function stepLadderPlay(
-  state: PlatformerState,
-  intent: LadderPlayIntent,
-  solids: readonly Solid[],
-  ladders: LadderMask,
-  dt: number,
-  config: Readonly<PlatformerConfig>,
-): PlatformerState {
-  const input: PlatformerInput = {
-    moveX: intent.moveX,
-    jump: intent.jump,
-    dash: null,
-  };
-
-  const onLadder = isOnLadder(state.core, ladders);
-  const startCoreY = state.core.y;
-
-  // When on a ladder and not jumping, the ladder is authoritative for vertical
-  // motion. The jump ability runs its own gravity inside `stepPlatformer`
-  // (independent of the kernel's config.gravity), so zeroing the kernel gravity
-  // is not enough to stop a fall. Instead we run the step (so horizontal move
-  // and collision still resolve), then restore the ladder-authoritative Y:
-  // start Y plus the intended climb delta (0 when idle → sticks in place).
-  const ladderAuthoritative = onLadder && !intent.jump.pressed;
-  const effectiveConfig: Readonly<PlatformerConfig> = ladderAuthoritative
-    ? ZERO_GRAVITY_CONFIG
-    : config;
-  let next = stepPlatformer(state, input, solids, dt, effectiveConfig).state;
-
-  if (ladderAuthoritative) {
-    const targetY = startCoreY + intent.climbY * dt;
-    next = { ...next, core: { ...next.core, y: targetY, vy: intent.climbY } };
-    // The jump ability runs its own gravity inside `stepPlatformer` and writes
-    // it back to `core.vy` from an internal state that drifts while we hold the
-    // ladder-authoritative Y (the cause of the broken jump-off-ladder feel).
-    // Resetting the jump slice to a fresh grounded state each ladder tick stops
-    // the drift, so leaving the ladder or jumping resumes clean physics with no
-    // stale momentum and no slow landing-recovery.
-    next = {
-      ...next,
-      abilities: {
-        ...next.abilities,
-        jump: { kind: 'jump', jump: createJumpState(config.jump) },
-      },
-    };
-  }
-
-  return next;
-}
-
-/**
  * Precomputed ladder cells. Built once from the LDtk IntGrid (the bundled
  * sample marks ladders as value {@link LADDER_INT_GRID_VALUE} on its
- * `Collisions` layer) and queried per-tick by both the stick-to-ladder
- * physics and the overlap tint.
+ * `Collisions` layer) and queried per-tick to tag solids and tint the player.
  */
 export interface LadderMask {
   /** Pixel edge length of one cell. Matches the collision layer's `__gridSize`. */
@@ -373,8 +278,8 @@ export function makeLadderMask(ldtkLevel: LdtkLevel, fallbackTileSize: number): 
 
 /**
  * Whether the body's AABB covers any ladder cell in `mask`. Inclusive tile
- * range, matching the collision query convention. Used by both physics (the
- * stick-to-ladder gravity cancel) and the render tint so they agree.
+ * range, matching the collision query convention. Used to tag solids and to
+ * tint the player while overlapping a ladder.
  */
 export function isOnLadder(
   body: Readonly<{ x: number; y: number; width: number; height: number }>,

@@ -42,6 +42,7 @@ import type {
   AbilityProcessor,
   AnyAbilityState,
   ActorCore,
+  ClimbAbilityState,
   Contacts,
   DashAbilityState,
   DoubleJumpAbilityState,
@@ -130,6 +131,7 @@ export function createPlatformerState(
   };
 
   const abilities: Record<string, AnyAbilityState> = {
+    climb: makeInitialClimbState(),
     jump: makeInitialJumpState(config),
     wallSlide: makeInitialWallSlideState(),
     dash: makeInitialDashState(config),
@@ -196,6 +198,11 @@ export function createPlatformerController(
       // mutated; ability slices are replaced as we iterate.
       let abilities: Record<string, AnyAbilityState> = { ...state.abilities };
 
+      // Capture the pre-pipeline Y so the climb coordination below can restore
+      // the climb-authoritative Y (jump's internal gravity moves Y during the
+      // pipeline; setting only vy would leave the player drifting on a ladder).
+      const startCoreY = core.y;
+
       // Start from empty events; abilities and collision add to this.
       const events: WritablePlatformerEvents = { ...EMPTY_EVENTS };
 
@@ -228,19 +235,34 @@ export function createPlatformerController(
       // Horizontal input → vx (applied AFTER abilities so abilities like dash
       // can override). Per the decision's update order, this is part of
       // "process inputs" but is applied here so dash's velocity override is
-      // not immediately clobbered.
+      // not immediately clobbered. Skipped during dash (dash owns velocity
+      // entirely) but NOT during climb — climb owns only vertical motion, so
+      // the player can still walk off a ladder.
       const dashActive = isDashActive(abilities);
+      const climbActive = isClimbActive(abilities);
       if (!dashActive) {
         core = applyHorizontalInput(core, input, config);
       }
 
-      // Step 5 — Integrate forces (gravity; skip during dash).
-      if (!dashActive) {
+      // Step 5 — Integrate forces (gravity; skip during dash or active climb).
+      if (!dashActive && !climbActive) {
         let nextVy = core.vy + config.gravity * dt;
         const terminalSpeed = Math.abs(config.maxFallSpeed);
         if (config.gravity < 0) nextVy = Math.max(nextVy, -terminalSpeed);
         else nextVy = Math.min(nextVy, terminalSpeed);
         core = { ...core, vy: nextVy };
+      }
+
+      // Climb coordination: while climbing, the ladder is authoritative for
+      // vertical motion. Restore the climb-authoritative Y (the climb ability
+      // already set `core.vy`; jump's internal gravity moved Y during the
+      // pipeline, so the position must be restored too) and reset the jump
+      // state to grounded so it neither accumulates internal falling gravity
+      // nor needs a slow landing→grounded recovery on exit. This mirrors the
+      // dash bypass above and is what keeps climb and jump from desyncing.
+      if (climbActive) {
+        core = { ...core, y: startCoreY + core.vy * dt };
+        abilities = { ...abilities, jump: makeInitialJumpState(config) };
       }
 
       // Step 6 — Resolve actor collision: resolveAxisX then resolveAxisY.
@@ -436,6 +458,14 @@ function makeInitialDoubleJumpState(config: Readonly<PlatformerConfig>): DoubleJ
 }
 
 /**
+ * Build the initial `ClimbAbilityState`. The actor starts off-ladder; the
+ * ability sets `climbing` true on the first tick it detects a ladder overlap.
+ */
+function makeInitialClimbState(): ClimbAbilityState {
+  return { kind: 'climb', climbing: false };
+}
+
+/**
  * Apply horizontal input → core.vx. On the ground: snaps to `±moveSpeed`
  * instantly. In the air: ramps toward target by `airControl` fraction per tick
  * (weighted, not snappy). Updates `facing` only when there is active input.
@@ -468,6 +498,18 @@ function applyHorizontalInput(
 function isDashActive(abilities: Readonly<Record<string, AnyAbilityState>>): boolean {
   const dash = abilities['dash'] as DashAbilityState | undefined;
   return dash !== undefined && dash.timer > 0;
+}
+
+/**
+ * Whether the climb ability is actively climbing this tick (its body overlaps
+ * a ladder and it isn't jumping). The kernel uses this to coordinate: skip
+ * gravity + horizontal input, restore the climb-authoritative Y, and reset the
+ * jump state — mirroring the `isDashActive` bypass above. Read from the
+ * post-ability `climbing` flag.
+ */
+function isClimbActive(abilities: Readonly<Record<string, AnyAbilityState>>): boolean {
+  const climb = abilities['climb'] as ClimbAbilityState | undefined;
+  return climb !== undefined && climb.climbing;
 }
 
 /**

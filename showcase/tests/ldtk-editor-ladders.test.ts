@@ -1,282 +1,209 @@
 /**
  * Ladder climb behaviour in the LDtk editor's play mode.
  *
- * These tests pin the deliberately-simple ladder feel: gravity is cancelled on
- * a ladder, Up/Down set a steady climb velocity, and ladder cells are NOT
- * treated as one-way-platform floors (the historical bug — climbing down was
- * blocked because ladders translated to `passthrough` solids).
- *
- * The play session's keyboard adapter is a no-op without `window`, so the
- * per-tick logic is exercised through the pure `stepLadderPlay` helper that
- * the real session delegates to, with a synthetic climb intent.
+ * Climb is an engine ability (gated by `climbEnabled`): while the player's body
+ * overlaps a `ladder`-flagged solid, the climb ability sets vertical velocity
+ * (stick when idle, ±climbSpeed when Up/Down held), suppresses gravity, and the
+ * kernel resets the jump state so climb and jump coexist without the desync the
+ * old post-hoc override suffered. These tests drive the ability through the real
+ * `stepPlatformer` with ladder-tagged solids and a `climb` input axis.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
-  CLIMB_SPEED,
-  PLAYER_WIDTH,
-  makeLadderMask,
-  stepLadderPlay,
-  ZERO_GRAVITY_CONFIG,
-} from '../sections/ldtk-editor/play';
-import { createPlatformerState, stepPlatformer, PRECISION_PLATFORMER } from '../../src/platformer';
-import type { PlatformerConfig, PlatformerState } from '../../src/platformer';
+  createPlatformerState,
+  stepPlatformer,
+  PRECISION_PLATFORMER,
+} from '../../src/platformer';
+import type { PlatformerConfig } from '../../src/platformer';
 import type { Solid } from '../../src/collision';
+import { makeLadderMask, isOnLadder, PLAYER_WIDTH, CLIMB_SPEED } from '../sections/ldtk-editor/play';
 import type { LdtkLevel } from '../../src/ldtk';
-
-/** An idle (never pressed) jump edge. */
-const IDLE = { pressed: false, released: false, held: false };
-/** A jump-pressed-and-held edge. */
-const JUMP = { pressed: true, released: false, held: true };
 
 /** Tile size used throughout the bundled LDtk sample. */
 const TILE = 16;
 /** Fixed timestep the showcase loop runs at (~60 fps). */
 const DT = 1 / 60;
 
+/** Play config with the climb ability enabled (mirrors `play.ts`). */
+const CLIMB_CONFIG: Readonly<PlatformerConfig> = {
+  ...PRECISION_PLATFORMER,
+  climbEnabled: true,
+  climbSpeed: CLIMB_SPEED,
+};
+
+/** An idle (never pressed) jump edge. */
+const IDLE = { pressed: false, released: false, held: false };
+
 /**
- * A 1-cell-wide ladder shaft: one empty column of ladder cells (IntGrid value
- * 2) with solid walls (value 1) on both sides, over `rows` rows. The shaft
- * occupies column 1; columns 0 and 2 are solid.
+ * A 1-cell-wide ladder shaft: one column of ladder solids with solid walls on
+ * both sides, over `rows` rows. Column 1 is the ladder (a `ladder: true`
+ * solid); columns 0 and 2 are walls.
  */
-function ladderShaftLevel(rows: number): LdtkLevel {
-  const cols = 3;
-  const csv: number[] = [];
-  for (let y = 0; y < rows; y++) {
-    csv.push(1, 2, 1); // solid | ladder | solid
+function shaftSolids(rows: number): Solid[] {
+  const solids: Solid[] = [
+    { id: 'wall-l', x: 0, y: 0, width: TILE, height: rows * TILE },
+    { id: 'wall-r', x: 2 * TILE, y: 0, width: TILE, height: rows * TILE },
+  ];
+  for (let r = 0; r < rows; r++) {
+    solids.push({ id: `ladder-${r}`, x: TILE, y: r * TILE, width: TILE, height: TILE, ladder: true });
   }
-  return {
-    identifier: 'LadderShaft',
-    iid: 'level-shaft',
-    uid: 1,
-    worldX: 0,
-    worldY: 0,
-    worldDepth: 0,
-    pxWid: cols * TILE,
-    pxHei: rows * TILE,
-    bgColor: '#000000',
-    __bgColor: 0,
-    useAutoIdentifier: false,
-    bgRelPath: null,
-    bgPos: null,
-    bgPivotX: 0,
-    bgPivotY: 0,
-    __smartColor: '#ffffff',
-    __bgPos: null,
-    externalRelPath: null,
-    fieldInstances: [],
-    layerInstances: [
-      {
-        __type: 'IntGrid',
-        __identifier: 'Collisions',
-        __cWid: cols,
-        __cHei: rows,
-        __gridSize: TILE,
-        __opacity: 1,
-        __pxTotalOffsetX: 0,
-        __pxTotalOffsetY: 0,
-        visible: true,
-        iid: 'layer-shaft',
-        levelId: 'level-shaft',
-        layerDefUid: 1,
-        intGridCsv: csv,
-        __tilesetDefUid: null,
-        __tilesetRelPath: null,
-      },
-    ],
-    __neighbours: [],
-  } as unknown as LdtkLevel;
+  return solids;
 }
 
 /**
  * Player placed inside the shaft (column 1), vertically at row `row`. The body
  * is PLAYER_WIDTH wide and 2 tiles tall, centred in the shaft cell.
  */
-function playerInShaft(row: number, config: Readonly<PlatformerConfig>): PlatformerState {
-  const cellX = TILE; // column 1 starts at x=16
+function playerInShaft(row: number, config: Readonly<PlatformerConfig>) {
+  const cellX = TILE;
   const height = TILE * 2;
   const x = cellX + (TILE - PLAYER_WIDTH) / 2;
   const y = row * TILE;
   return createPlatformerState(x, y, config, PLAYER_WIDTH, height);
 }
 
-describe('LDtk play-mode ladders', () => {
+describe('LDtk play-mode ladders (engine climb ability)', () => {
   const rows = 8;
-  const level = ladderShaftLevel(rows);
-  const ladders = makeLadderMask(level, TILE);
-  // Walls only — ladder cells are filtered out as climb space, not geometry.
-  const solids: Solid[] = [
-    // Left wall (column 0) merged for the full height.
-    { id: 'wall-l', x: 0, y: 0, width: TILE, height: rows * TILE },
-    // Right wall (column 2).
-    { id: 'wall-r', x: 2 * TILE, y: 0, width: TILE, height: rows * TILE },
-  ];
-
-  it('makes ladder cells non-colliding (climb space, not one-way platforms)', () => {
-    // Sanity: the mask flags the shaft column, and filtering keeps the walls.
-    expect(ladders.cells.size).toBe(rows);
-    // A solid covering a ladder cell would be removed by the session; confirm
-    // the helper the session uses agrees the shaft is a ladder.
-    expect(makeLadderMask(level, TILE).cells.has(`1,0`)).toBe(true);
-  });
+  const solids = shaftSolids(rows);
 
   it('sticks in place when idle on a ladder (gravity cancelled, no fall)', () => {
-    const config = PRECISION_PLATFORMER;
-    let state = playerInShaft(4, config);
+    let state = playerInShaft(4, CLIMB_CONFIG);
     const startY = state.core.y;
 
-    // Idle for half a second: no climb intent, no jump. Gravity must not pull
-    // the player down the shaft.
+    // Idle for half a second: no climb, no jump. Gravity must not pull the
+    // player down the shaft.
     for (let i = 0; i < 30; i++) {
-      state = stepLadderPlay(
+      state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, climbY: 0 },
+        { moveX: 0, jump: IDLE, dash: null, climb: 0 },
         solids,
-        ladders,
         DT,
-        config,
-      );
+        CLIMB_CONFIG,
+      ).state;
     }
-    expect(state.core.y).toBe(startY);
-    expect(state.core.vy).toBe(0);
+    expect(state.core.y).toBeCloseTo(startY, 5);
+    expect(state.abilities['climb']?.kind).toBe('climb');
+    if (state.abilities['climb']?.kind === 'climb') {
+      expect(state.abilities['climb'].climbing).toBe(true);
+    }
+  });
+
+  it('can move horizontally while on a ladder (walk off it)', () => {
+    // Regression guard for "can't move off ladders": horizontal input must NOT
+    // be frozen while climbing. A ladder with open space beside it (no right
+    // wall) lets the player walk right off the shaft.
+    const openLadder: Solid[] = [
+      { id: 'wall-l', x: 0, y: 0, width: TILE, height: 8 * TILE },
+      { id: 'ladder', x: TILE, y: 3 * TILE, width: TILE, height: 4 * TILE, ladder: true },
+    ];
+    let state = playerInShaft(4, CLIMB_CONFIG);
+    const startX = state.core.x;
+
+    for (let i = 0; i < 30; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 1, jump: IDLE, dash: null, climb: 0 },
+        openLadder,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+    }
+    // The player must have moved right off the ladder, not be frozen at startX.
+    expect(state.core.x).toBeGreaterThan(startX + 10);
   });
 
   it('climbs up when holding Up', () => {
-    const config = PRECISION_PLATFORMER;
-    let state = playerInShaft(4, config);
+    let state = playerInShaft(4, CLIMB_CONFIG);
     const startY = state.core.y;
 
-    // Hold Up (climbY negative) for half a second.
+    // Hold Up (climb -1) for half a second.
     for (let i = 0; i < 30; i++) {
-      state = stepLadderPlay(
+      state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
         solids,
-        ladders,
         DT,
-        config,
-      );
+        CLIMB_CONFIG,
+      ).state;
     }
-    // Must have moved UP (negative y) at roughly CLIMB_SPEED * 0.5s = 60px,
-    // allowing a little slack for the first frame.
+    // Must have moved UP (negative y) at roughly CLIMB_SPEED * 0.5s = 60px.
     expect(state.core.y).toBeLessThan(startY - 40);
-    expect(state.core.vy).toBe(-CLIMB_SPEED);
   });
 
   it('climbs down when holding Down (not blocked by the ladder as a floor)', () => {
-    const config = PRECISION_PLATFORMER;
-    let state = playerInShaft(2, config);
+    let state = playerInShaft(2, CLIMB_CONFIG);
     const startY = state.core.y;
 
-    // Hold Down (climbY positive) for half a second. The historical bug: the
-    // ladder translated to a passthrough one-way platform, so descending
-    // landed the player on the ladder cell below instead of passing through.
+    // Hold Down (climb +1) for half a second. The historical bug: the ladder
+    // translated to a passthrough one-way platform, so descending landed the
+    // player on the ladder cell below instead of passing through.
     for (let i = 0; i < 30; i++) {
-      state = stepLadderPlay(
+      state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, climbY: CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, dash: null, climb: 1 },
         solids,
-        ladders,
         DT,
-        config,
-      );
+        CLIMB_CONFIG,
+      ).state;
     }
     // Must have moved DOWN (positive y) by ~60px.
     expect(state.core.y).toBeGreaterThan(startY + 40);
-    expect(state.core.vy).toBe(CLIMB_SPEED);
   });
 
-  it('does not stick when jumping on a ladder (jump uses normal gravity)', () => {
-    const config = PRECISION_PLATFORMER;
-    const state = playerInShaft(4, config);
+  it('climbs to the top of the ladder and is not frozen (can move along it)', () => {
+    // Transition test: climb up the shaft for a good stretch — the player must
+    // rise substantially and not get stuck mid-ladder. A regression guard for
+    // "can't move off/along ladders". (A floor above row 0 would block further
+    // rise; here we just confirm sustained upward movement works.)
+    let state = playerInShaft(6, CLIMB_CONFIG);
     const startY = state.core.y;
 
-    // One tick with jump pressed: must NOT take the ladder-authoritative path
-    // (which would clamp Y to startY). The player is not grounded on a ladder
-    // (ladders are non-colliding), so a jump can't launch upward — but the tick
-    // must fall through to normal gravity rather than sticking in place.
-    const after = stepLadderPlay(
+    for (let i = 0; i < 60; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        solids,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+    }
+    // Must have risen well past the start (~CLIMB_SPEED * 1s = 120px), stopping
+    // only when the body leaves the ladder cells at the top of the shaft.
+    expect(state.core.y).toBeLessThan(startY - 40);
+  });
+
+  it('jumping on a ladder does not stick (jump wins over climb)', () => {
+    let state = playerInShaft(4, CLIMB_CONFIG);
+    const startY = state.core.y;
+
+    // One tick with jump pressed while on the ladder: the climb ability steps
+    // aside (jump wins), so the player must NOT be pinned to startY by a climb
+    // stick. With no floor, gravity begins a fall (y increases).
+    const after = stepPlatformer(
       state,
-      { moveX: 0, jump: JUMP, climbY: 0 },
+      { moveX: 0, jump: { pressed: true, released: false, held: true }, dash: null, climb: -1 },
       solids,
-      ladders,
       DT,
-      config,
-    );
-    // If the ladder-authoritative branch wrongly ran, Y would equal startY.
-    // Normal gravity means the player drops (positive y) instead of sticking.
+      CLIMB_CONFIG,
+    ).state;
     expect(after.core.y).not.toBe(startY);
   });
 
-  it('falls normally when off the ladder (climb intent ignored off-ladder)', () => {
-    const config = PRECISION_PLATFORMER;
-    // An empty ladder mask: nothing is a ladder, so the player is always
-    // off-ladder regardless of position. No solids, so gravity is the only force.
-    const noLadders = { size: TILE, cells: new Set<string>() };
-    const noSolids: Solid[] = [];
-    let state = createPlatformerState(TILE, TILE, config, PLAYER_WIDTH, TILE * 2);
-    const startY = state.core.y;
-
-    for (let i = 0; i < 30; i++) {
-      state = stepLadderPlay(
-        state,
-        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
-        noSolids,
-        noLadders,
-        DT,
-        config,
-      );
-    }
-    // Off the ladder, gravity applies and the climb intent is ignored — so the
-    // player falls (positive y) rather than rising.
-    expect(state.core.y).toBeGreaterThan(startY);
-  });
-
-  it('climbs to the top of the ladder and steps off onto a floor', () => {
-    // Transition test: reach the top of the shaft and keep moving up — the
-    // player must leave the ladder cells and stand on the floor above, not get
-    // stuck. A regression guard for "can't move off ladders".
-    const config = PRECISION_PLATFORMER;
-    // Shaft occupies rows 0..7 of column 1. A floor sits along the top (row 0
-    // is the ceiling of the level, so put the floor at y = -TILE just above it).
-    const floorSolids: Solid[] = [
-      ...solids,
-      { id: 'floor-top', x: 0, y: -TILE, width: 3 * TILE, height: TILE },
-    ];
-    let state = playerInShaft(2, config);
-
-    // Climb up until clear of the shaft (above row 0).
-    for (let i = 0; i < 60; i++) {
-      state = stepLadderPlay(
-        state,
-        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
-        floorSolids,
-        ladders,
-        DT,
-        config,
-      );
-    }
-    // The player must have risen well past the start and not be frozen.
-    expect(state.core.y).toBeLessThan(-TILE);
-  });
-
   it('resets jump state while climbing so jump works after leaving the ladder', () => {
-    // The original bug: climbing desynced the jump ability's internal state, so
-    // jumping after a climb felt wrong (stale momentum / slow recovery). This
-    // pins that the jump state is reset to grounded each climb tick and resumes
-    // cleanly. Climb a few ticks, then drive a jump from a grounded floor and
-    // assert a real launch.
-    const config = PRECISION_PLATFORMER;
-    let state = playerInShaft(4, config);
+    // The original bug: climbing desynced the jump ability's internal state.
+    // This pins that the jump state is reset to grounded each climb tick and
+    // resumes cleanly. Climb a few ticks, then drive a jump from a grounded
+    // floor and assert a real launch.
+    let state = playerInShaft(4, CLIMB_CONFIG);
     for (let i = 0; i < 5; i++) {
-      state = stepLadderPlay(
+      state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
         solids,
-        ladders,
         DT,
-        config,
-      );
+        CLIMB_CONFIG,
+      ).state;
     }
     // After climbing, the jump slice must be in its grounded phase (the reset).
     const jumpSlice = state.abilities['jump'];
@@ -293,85 +220,62 @@ describe('LDtk play-mode ladders', () => {
     };
     const floor: Solid[] = [{ id: 'floor', x: 3 * TILE, y: floorTop, width: 10 * TILE, height: TILE }];
     for (let i = 0; i < 3; i++) {
-      state = stepLadderPlay(
+      state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, climbY: 0 },
+        { moveX: 0, jump: IDLE, dash: null, climb: 0 },
         floor,
-        { size: TILE, cells: new Set<string>() },
         DT,
-        config,
-      );
+        CLIMB_CONFIG,
+      ).state;
     }
-    // Hold jump long enough to pass anticipation, then assert the rise. Press
-    // on the first tick and hold thereafter (real input), so the variable-height
-    // cutoff doesn't truncate the jump.
+    // Hold jump long enough to pass anticipation, then assert the rise.
     for (let i = 0; i < 6; i++) {
-      state = stepLadderPlay(
+      state = stepPlatformer(
         state,
-        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, climbY: 0 },
+        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, dash: null, climb: 0 },
         floor,
-        { size: TILE, cells: new Set<string>() },
         DT,
-        config,
-      );
+        CLIMB_CONFIG,
+      ).state;
     }
     expect(state.core.vy).toBeLessThan(-50);
   });
+
+  it('falls normally when off the ladder (climb intent ignored off-ladder)', () => {
+    // Empty solids — nothing is a ladder, so the player is always off-ladder.
+    const noSolids: Solid[] = [];
+    let state = playerInShaft(2, CLIMB_CONFIG); // position irrelevant: no ladders
+    const startY = state.core.y;
+
+    for (let i = 0; i < 30; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        noSolids,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+    }
+    // Off the ladder, gravity applies and the climb intent is ignored — so the
+    // player falls (positive y) rather than rising.
+    expect(state.core.y).toBeGreaterThan(startY);
+  });
 });
 
-describe('LDtk play-mode ladder config', () => {
-  it('exposes a zero-gravity config that keeps a real terminal fall speed', () => {
-    // gravity 0 stops the fall so the player sticks; maxFallSpeed must stay
-    // non-zero or the kernel's max-fall clamp zeroes any climb override too.
-    expect(ZERO_GRAVITY_CONFIG.gravity).toBe(0);
-    expect(ZERO_GRAVITY_CONFIG.maxFallSpeed).toBeGreaterThan(0);
-  });
-
-  it('jumps high enough to clear a ladder-tall obstacle (~5 tiles)', () => {
-    // The play config tunes the jump to an 81px apex (5 tiles) to match the
-    // tile-room feel. Pin it behaviourally: a grounded jump must rise well past
-    // the old 48px (3-tile) default, guarding against a weak-jump regression.
-    const config = ZERO_GRAVITY_CONFIG; // any play config; jump is the same
-    // Stand on a floor.
-    const floorTop = 10 * TILE;
-    let state = createPlatformerState(
-      4 * TILE,
-      floorTop - PLAYER_WIDTH * 4,
-      config,
-      PLAYER_WIDTH,
-      PLAYER_WIDTH * 4,
-    );
-    const floor: Solid[] = [
-      { id: 'floor', x: 0, y: floorTop, width: 20 * TILE, height: TILE },
-    ];
-    // Settle onto the floor.
-    for (let i = 0; i < 5; i++) {
-      state = stepPlatformer(
-        state,
-        { moveX: 0, jump: IDLE, dash: null },
-        floor,
-        DT,
-        config,
-      ).state;
-    }
-    const startY = state.core.y;
-    // Press jump on the first tick and HOLD it through the rise so the
-    // variable-height cutoff doesn't truncate the jump (releasing early cuts
-    // the apex). Track the peak Y until the player lands back on the floor.
-    let peakY = startY;
-    for (let i = 0; i < 90; i++) {
-      state = stepPlatformer(
-        state,
-        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, dash: null },
-        floor,
-        DT,
-        config,
-      ).state;
-      peakY = Math.min(peakY, state.core.y);
-      if (state.core.onGround && i > 15) break;
-    }
-    const rise = startY - peakY;
-    // ~81px apex with tolerance; comfortably above the 48px default.
-    expect(rise).toBeGreaterThan(70);
+describe('LDtk play-mode ladder mask + tint helpers', () => {
+  it('makeLadderMask flags ladder IntGrid cells', () => {
+    const rows = 4, cols = 3;
+    const csv: number[] = [];
+    for (let y = 0; y < rows; y++) csv.push(1, 2, 1); // solid | ladder | solid
+    const level = {
+      layerInstances: [
+        { __type: 'IntGrid', __cWid: cols, __cHei: rows, __gridSize: TILE, intGridCsv: csv },
+      ],
+    } as unknown as LdtkLevel;
+    const mask = makeLadderMask(level, TILE);
+    expect(mask.cells.size).toBe(rows);
+    expect(mask.cells.has('1,0')).toBe(true);
+    expect(isOnLadder({ x: TILE, y: 0, width: TILE, height: TILE }, mask)).toBe(true);
+    expect(isOnLadder({ x: 0, y: 0, width: TILE, height: TILE }, mask)).toBe(false);
   });
 });

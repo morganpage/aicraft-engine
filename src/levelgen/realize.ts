@@ -460,7 +460,7 @@ export function realizeBlueprint(
   // 8. Compute basic safety margins.
   // -------------------------------------------------------------------
   const physics = derivePhysicsConstraints(
-    (config ?? {}).platformerConfig ?? { gravity: 980, maxFallSpeed: 600, moveSpeed: 200, airControl: 0.65, jump: { apexHeight: 48, timeToApex: 0.28, jumpCutoffFactor: 0.4, fallMultiplier: 2.5, coyoteTime: 0.08, jumpBufferTime: 0.1, landingSquashMin: 0.7, landingSquashStiffness: 180, landingSquashDamping: 12, anticipationDuration: 0.05, anticipationSquash: 0.85, launchStretch: 1.15, airborneBlendRampUp: 4, airborneBlendRampDown: 4 } as any, wallSlideEnabled: true, wallSlideSpeed: 60, wallJumpVx: 220, wallJumpVy: -380, wallJumpLockTime: 0.12, dashEnabled: true, dashSpeed: 420, dashDuration: 0.12, dashCooldown: 0.3, maxDashes: 1, doubleJumpEnabled: false, maxDoubleJumps: 0 },
+    (config ?? {}).platformerConfig ?? { gravity: 980, maxFallSpeed: 600, moveSpeed: 200, airControl: 0.65, jump: { apexHeight: 48, timeToApex: 0.28, jumpCutoffFactor: 0.4, fallMultiplier: 2.5, coyoteTime: 0.08, jumpBufferTime: 0.1, landingSquashMin: 0.7, landingSquashStiffness: 180, landingSquashDamping: 12, anticipationDuration: 0.05, anticipationSquash: 0.85, launchStretch: 1.15, airborneBlendRampUp: 4, airborneBlendRampDown: 4 } as any, wallSlideEnabled: true, wallSlideSpeed: 60, wallJumpVx: 220, wallJumpVy: -380, wallJumpLockTime: 0.12, dashEnabled: true, dashSpeed: 420, dashDuration: 0.12, dashCooldown: 0.3, maxDashes: 1, doubleJumpEnabled: false, maxDoubleJumps: 0, climbEnabled: false, climbSpeed: 120 },
     tileSize,
   );
 

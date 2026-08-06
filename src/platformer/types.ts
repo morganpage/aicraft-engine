@@ -91,6 +91,12 @@ export interface PlatformerInput {
   readonly jump: PolledEdge;
   /** Polled dash edge, or `null` if dash is disabled for this character. */
   readonly dash: PolledEdge | null;
+  /**
+   * Vertical climb intent: -1 (up), 0 (idle), +1 (down). Drives the climb
+   * ability while on a ladder; ignored elsewhere. Optional — defaults to
+   * `null` (climb disabled) so non-climb callers need not supply it.
+   */
+  readonly climb?: -1 | 0 | 1 | null;
 }
 
 /**
@@ -263,6 +269,19 @@ export interface DoubleJumpAbilityState extends AbilityState {
 }
 
 /**
+ * Climb (ladder) ability state. `climbing` is `true` on the tick the body
+ * overlaps a ladder and isn't jumping — the kernel reads it (via
+ * `isClimbActive`) to skip gravity, restore the climb-authoritative Y, and
+ * reset the jump state so climb and jump coexist without desync.
+ */
+export interface ClimbAbilityState extends AbilityState {
+  /** Literal: `'climb'`. */
+  readonly kind: 'climb';
+  /** `true` while the body overlaps a ladder this tick and isn't jumping. */
+  readonly climbing: boolean;
+}
+
+/**
  * Discriminated union of every ability state the kernel ships. Used for
  * serialization (replay round-trip) and for the controller's
  * `Record<string, AnyAbilityState>` store.
@@ -271,7 +290,8 @@ export type AnyAbilityState =
   | JumpAbilityState
   | WallSlideAbilityState
   | DashAbilityState
-  | DoubleJumpAbilityState;
+  | DoubleJumpAbilityState
+  | ClimbAbilityState;
 
 /**
  * Full per-character platformer state — the unit of work the kernel clones
@@ -335,6 +355,10 @@ export interface PlatformerConfig {
   readonly doubleJumpEnabled: boolean;
   /** Max double-jumps per airborne cycle (refills on land; typically 0 or 1). */
   readonly maxDoubleJumps: number;
+  /** Master switch for the climb (ladder) ability. Default off. */
+  readonly climbEnabled: boolean;
+  /** Climb speed in px/s while ascending/descending a ladder. */
+  readonly climbSpeed: number;
 }
 
 /**

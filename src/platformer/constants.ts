@@ -41,6 +41,8 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   maxDashes: 1,
   doubleJumpEnabled: false,
   maxDoubleJumps: 0,
+  climbEnabled: false,
+  climbSpeed: 120,
 };
 
 /** Default player body width in world units (Spitekeep devil scale). */

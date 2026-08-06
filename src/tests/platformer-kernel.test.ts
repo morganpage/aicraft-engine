@@ -86,6 +86,7 @@ describe('createPlatformerState', () => {
     expect(s.tick).toBe(0);
     expect(s.events).toEqual(EMPTY_EVENTS);
     expect(Object.keys(s.abilities).sort()).toEqual([
+      'climb',
       'dash',
       'doubleJump',
       'jump',
