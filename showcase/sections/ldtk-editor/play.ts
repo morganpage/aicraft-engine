@@ -139,11 +139,14 @@ export function createPlaySession(
   // truth without re-reading the LDtk level each frame.
   const ladders = makeLadderMask(ldtkLevel, level.tileSize);
 
-  // Collision solids with ladder cells removed. The translator marks ladders
-  // as `passthrough` (one-way platforms), so without this they act as floors
-  // when climbing down. Ladders are climb space, not geometry — drop any solid
-  // whose rect overlaps a ladder cell; the solid walls flanking the shaft stay.
-  const solids = compiled.staticSolids.filter((s) => !isOnLadder(s, ladders));
+  // Tag ladder solids rather than removing them. The translator emits ladder
+  // cells as `passthrough` solids; marking them `ladder: true` tells the
+  // engine's AABB resolvers to skip them entirely (non-colliding climb space),
+  // and lets ladder detection read them as data. The solid walls flanking a
+  // shaft don't overlap ladder cells, so they stay fully solid.
+  const solids = compiled.staticSolids.map((s) =>
+    isOnLadder(s, ladders) ? { ...s, ladder: true } : s,
+  );
 
   let state: PlatformerState = compiled.initialState;
   let camera: Camera = createCamera();

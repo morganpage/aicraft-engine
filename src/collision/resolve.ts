@@ -56,6 +56,7 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
 
   for (const solid of solids) {
     if (solid.passthrough) continue;
+    if (solid.ladder) continue;
     const moved: Rect = { x: newX, y: body.y, width: body.width, height: body.height };
     if (!aabbOverlap(moved, solid)) continue;
     newX = dir > 0 ? solid.x - body.width : solid.x + solid.width;
@@ -122,6 +123,7 @@ export function resolveAxisY(
   let hitCeiling = false;
 
   for (const solid of solids) {
+    if (solid.ladder) continue;
     if (solid.passthrough) {
       if (!falling || prevBottom > solid.y) continue;
     }

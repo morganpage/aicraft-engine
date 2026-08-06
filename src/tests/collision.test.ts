@@ -4,12 +4,20 @@ import { resolveAxisX, resolveAxisY } from '../collision/resolve';
 import type { Rect, Solid } from '../collision/types';
 
 const rect = (x: number, y: number, w: number, h: number): Rect => ({ x, y, width: w, height: h });
-const solid = (x: number, y: number, w: number, h: number, passthrough = false): Solid => ({
+const solid = (
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  passthrough = false,
+  ladder = false,
+): Solid => ({
   x,
   y,
   width: w,
   height: h,
   passthrough,
+  ...(ladder ? { ladder: true } : {}),
 });
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
@@ -105,6 +113,13 @@ describe('resolveAxisX', () => {
     expect(r).toEqual({ x: 10, vx: 10, hitWall: false });
   });
 
+  it('ladder solids are ignored on the X axis', () => {
+    const body = rect(0, 0, 10, 10);
+    const ladder = solid(5, 0, 10, 10, false, true);
+    const r = resolveAxisX(body, 10, [ladder]);
+    expect(r).toEqual({ x: 10, vx: 10, hitWall: false });
+  });
+
   it('resolves against multiple solids, settling at the nearest blocking wall', () => {
     const body = rect(0, 0, 10, 10);
     const wallA = solid(28, 0, 10, 10);
@@ -182,6 +197,25 @@ describe('resolveAxisY', () => {
     const body = rect(0, 20, 10, 10);
     const platform = solid(0, 15, 10, 4, true);
     const r = resolveAxisY(body, -10, [platform], 30);
+    expect(r.y).toBe(10);
+    expect(r.vy).toBe(-10);
+    expect(r.landed).toBe(false);
+    expect(r.hitCeiling).toBe(false);
+  });
+
+  it('ladder solids are ignored when falling (no landing)', () => {
+    const body = rect(0, 0, 10, 10);
+    const ladder = solid(0, 10, 10, 10, false, true);
+    const r = resolveAxisY(body, 5, [ladder], 10);
+    expect(r.y).toBe(5);
+    expect(r.vy).toBe(5);
+    expect(r.landed).toBe(false);
+  });
+
+  it('ladder solids are ignored when rising (no ceiling)', () => {
+    const body = rect(0, 20, 10, 10);
+    const ladder = solid(0, 15, 10, 10, false, true);
+    const r = resolveAxisY(body, -10, [ladder], 30);
     expect(r.y).toBe(10);
     expect(r.vy).toBe(-10);
     expect(r.landed).toBe(false);

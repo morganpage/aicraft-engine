@@ -43,6 +43,13 @@ export interface Solid extends Rect {
    */
   passthrough?: boolean;
   /**
+   * If `true`, the solid is a ladder cell — climb space, NOT collision
+   * geometry. The AABB resolvers skip ladder solids entirely (they block no
+   * movement in any direction), and a climb ability reads them to detect
+   * "is the body on a ladder?". Default `undefined`/`false`.
+   */
+  ladder?: boolean;
+  /**
    * Optional stable identity string for this solid. The platformer kernel
    * (`src/platformer/`) reads this to populate `Contacts.groundId` /
    * `leftWallId` / `rightWallId` / `ceilingId` — the durable "which solid am
