@@ -30,6 +30,7 @@
 
 import type { JumpState, JumpConfig } from '../animation/jump';
 import type { PolledEdge } from '../input/types';
+import type { Solid } from '../collision/types';
 
 /**
  * Contact identity — which solid the actor is touching, updated each tick by
@@ -142,6 +143,13 @@ export interface AbilityContext {
   readonly dt: number;
   /** Platformer tuning config. */
   readonly config: PlatformerConfig;
+  /**
+   * Collision surfaces for this tick (including any `ladder`-flagged solids),
+   * so an ability can detect geometry — e.g. a climb ability asks
+   * `overlapsLadder(core, solids)`. Optional because most abilities need no
+   * geometry; the kernel always supplies it. Read-only.
+   */
+  readonly solids?: readonly Solid[];
 }
 
 /**

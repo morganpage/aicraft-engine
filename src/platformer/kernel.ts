@@ -205,7 +205,7 @@ export function createPlatformerController(
         const stateSlice = abilities[proc.kind];
         if (stateSlice === undefined) continue;
 
-        const ctx: AbilityContext = { core, input, dt, config };
+        const ctx: AbilityContext = { core, input, dt, config, solids };
         const result = proc.advance(ctx, stateSlice as never);
         core = result.core;
         abilities = { ...abilities, [proc.kind]: result.state };
