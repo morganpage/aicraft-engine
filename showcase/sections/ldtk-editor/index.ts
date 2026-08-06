@@ -508,7 +508,7 @@ export function initLdtkEditor(
       );
       return;
     }
-    play = createPlaySession(translated.level, translated.tileSemantics, canvas);
+    play = createPlaySession(translated.level, translated.tileSemantics, canvas, level);
     section.dataset.mode = 'play';
     setStatus('Playing. Arrows to move, Space to jump, Esc to stop.');
   }
