@@ -985,6 +985,69 @@ dependency; material normalization and drawing are Phase 2.
 | `TerrainRectRole` | type | `solid`, `passthrough`, `moving`, or `hazard` rectangle role | `src/terrain/types.ts` |
 | `drawTerrainRect(ctx, rect, options)` | function | Leaf, span-aware role renderer with optional consumer-injected detail callback; includes mechanical and pointed hazard silhouettes without importing built-in themes, tiles, or the detail catalog | `src/terrain/rect-renderer.ts` |
 
+### `src/terrain-art/`
+
+Versioned source-art foundation for semantic dual-grid terrain authoring. This
+module is DOM-free and keeps editable appearance outside `LevelData`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `TerrainArtProject` | interface | Versioned sidecar containing logical terrain-kind bindings, materials, layers, variants, transitions, and occurrence overrides | `src/terrain-art/types.ts` |
+| `TerrainKindDefinition` | interface | Maps one numeric level tile value to collision meaning, material id, connectivity group, and render priority | `src/terrain-art/types.ts` |
+| `TerrainMaterialDefinition` | interface | Reusable palette, generator, non-destructive layers, and variants for one visual material | `src/terrain-art/types.ts` |
+| `TerrainArtCoverage` | interface | Canonical generated fill silhouette used by contour and later shading/clipping stages | `src/terrain-art/types.ts` |
+| `TERRAIN_ART_PROJECT_VERSION` | constant | Current editable source schema version | `src/terrain-art/constants.ts` |
+| `TERRAIN_ART_RESOLUTION_PRESETS` | constant | Tested 16, 32, 48, 64, 96, and 128 pixel source resolutions | `src/terrain-art/constants.ts` |
+| `createTerrainArtProject(options?)` | function | Create a complete valid project with Empty/Solid terrain kinds, one procedural material, five default layers, and a base variant | `src/terrain-art/factory.ts` |
+| `validateTerrainArtProject(value)` | function | Never-throw structural validation with path-addressed diagnostics | `src/terrain-art/validate.ts` |
+| `serializeTerrainArtProject(project)` | function | Deterministic JSON serialization with sorted object keys | `src/terrain-art/serialize.ts` |
+| `deserializeTerrainArtProject(source)` | function | Parse, validate, and freeze source JSON; invalid input returns `null` | `src/terrain-art/serialize.ts` |
+| `DUAL_GRID_NORTH_WEST`, `DUAL_GRID_NORTH_EAST`, `DUAL_GRID_SOUTH_EAST`, `DUAL_GRID_SOUTH_WEST` | constants | Canonical clockwise mask bits `1, 2, 4, 8` | `src/terrain-art/dual-grid.ts` |
+| `resolveTerrainArtDualTile(grid, kinds, dualX, dualY)` | function | Resolve occupancy and stable ordered material passes from four surrounding logical cells | `src/terrain-art/dual-grid.ts` |
+| `prepareTerrainArtDualGrid(grid, kinds)` | function | Prepare the complete `(cols + 1) × (rows + 1)` visual topology | `src/terrain-art/dual-grid.ts` |
+| `dualGridCellsForLogicalCell(col, row)` | function | Return the four visual cells invalidated by one logical edit | `src/terrain-art/dual-grid.ts` |
+| `generateTerrainArtCoverage(options)` | function | Generate masks `0..15` with true square zero-roundness and shared convex/concave lobe geometry | `src/terrain-art/coverage.ts` |
+| `deriveTerrainArtContour(coverage, width, placement?)` | function | Derive inside, centered, or outside contour coverage from the exact fill silhouette | `src/terrain-art/coverage.ts` |
+| `TerrainArtSourceTile` | interface | Flattened RGBA result for one reusable material/mask/variant source tile | `src/terrain-art/types.ts` |
+| `TerrainArtPixelAtlas` | interface | Deterministic 4×4 RGBA atlas containing masks zero through fifteen | `src/terrain-art/types.ts` |
+| `renderTerrainArtSourceTile(project, materialId, mask, variantId?)` | function | Composite ordered Base, Shading, Contour, Decoration, Manual, and Imported layers without mutating source art | `src/terrain-art/compositor.ts` |
+| `generateTerrainArtMaterialAtlas(project, materialId, variantId?)` | function | Pack all sixteen composed source tiles into a stable preview atlas | `src/terrain-art/atlas.ts` |
+| `TerrainArtVisualHit`, `TerrainArtLogicalCornerHit` | interfaces | Editor hit result identifying one visual tile plus its four ordered logical source cells | `src/terrain-art/types.ts` |
+| `hitTestTerrainArtDualGrid(grid, kinds, worldX, worldY, tileSize)` | function | Map a world-space pointer to the reusable dual-grid tile, material passes, mask, atlas source, and contributing logical cells | `src/terrain-art/hit-test.ts` |
+| `drawPreparedTerrainArtDualGrid(ctx, prepared, atlases, options)` | function | Draw a prepared dual-grid topology from precomposed material atlases with viewport culling and stable pass ordering | `src/terrain-art/runtime-renderer.ts` |
+| `TerrainArtPixelEdit` | interface | One paint, erase, or inherit edit in source-tile pixel coordinates | `src/terrain-art/manual-paint.ts` |
+| `editTerrainArtSourceTile(project, materialId, layerId, mask, variantId, edits)` | function | Immutably apply pixel edits to a sparse, normalized Manual Paint patch | `src/terrain-art/manual-paint.ts` |
+| `clearTerrainArtSourceTileEdits(project, materialId, layerId, mask, variantId)` | function | Revert one source tile to its current procedural composition | `src/terrain-art/manual-paint.ts` |
+| `TerrainGeneratorSettingsUpdate` | type | Partial generator settings accepted by the immutable update helper | `src/terrain-art/generator-settings.ts` |
+| `updateTerrainArtGenerator(project, materialId, update)` | function | Clamp and update procedural settings while preserving manual and imported layers | `src/terrain-art/generator-settings.ts` |
+| `TerrainArtPixelPoint` | interface | Integer source-tile coordinate shared by manual drawing tools | `src/terrain-art/pixel-tools.ts` |
+| `terrainArtLinePixels`, `terrainArtRectanglePixels`, `terrainArtEllipsePixels` | functions | Deterministic raster geometry used by source-tile Line, Rectangle, and Ellipse tools | `src/terrain-art/pixel-tools.ts` |
+| `terrainArtFloodFillPixels(pixels, width, height, start)` | function | Resolve the exact-color four-connected region for the Fill tool | `src/terrain-art/pixel-tools.ts` |
+| `paintTerrainArtLogicalCells`, `terrainArtLogicalLine`, `terrainArtLogicalRectangle`, `terrainArtLogicalFill`, `pickTerrainArtLogicalValue` | functions | Collision-safe logical terrain-kind editing primitives | `src/terrain-art/logical-tools.ts` |
+| `createTerrainArtMaterial`, `addTerrainArtMaterial`, `removeTerrainArtMaterial` | functions | Material creation and replacement-safe lifecycle operations | `src/terrain-art/factory.ts`, `project-operations.ts` |
+| `updateTerrainArtLayer`, `reorderTerrainArtLayer`, `resizeTerrainArtProject` | functions | Non-destructive layer editing and nearest-neighbor resolution migration | `src/terrain-art/project-operations.ts` |
+| `selectTerrainArtVariant`, `terrainArtMaskExposure` | functions | Coordinate-seeded weighted variant selection independent of viewport/draw order | `src/terrain-art/variants.ts` |
+| `addTerrainArtVariant`, `updateTerrainArtVariant`, `removeTerrainArtVariant`, `terrainArtVariantUsage` | functions | Variant lifecycle and pinned usage reporting | `src/terrain-art/variant-operations.ts` |
+| `resolveTerrainArtTransitions`, `setTerrainArtTransitionRule` | functions | Explicit ordered material-boundary transition policy | `src/terrain-art/transitions.ts` |
+| `transformTerrainArtSourceTile`, `moveTerrainArtSourceTile`, `stampTerrainArtSourceTile` | functions | Sparse manual-patch flip, rotate, move, and stamp operations | `src/terrain-art/manual-transform.ts` |
+| `getTerrainArtOccurrenceStatus`, `activeTerrainArtOccurrenceOverrides` | functions | Active/stale/orphaned local-override validation and safe filtering | `src/terrain-art/occurrence-overrides.ts` |
+| `setTerrainArtOccurrenceLayerPatch`, `pinTerrainArtOccurrenceVariant`, `rebindTerrainArtOccurrenceOverride`, `deleteTerrainArtOccurrenceOverride`, `clearTerrainArtOccurrenceOverrides` | functions | Advanced local edit, pinning, recovery, and revert operations | `src/terrain-art/occurrence-overrides.ts` |
+| `renderTerrainArtOccurrenceTile`, `diagnoseTerrainArtExport` | functions | Compose validated local art and warn about safely excluded stale content | `src/terrain-art/occurrence-renderer.ts`, `diagnostics.ts` |
+| `TerrainArtStorageAdapter`, `createMemoryTerrainArtStorage`, `saveTerrainArtProject`, `loadTerrainArtProject` | interface/functions | Never-throw source persistence with an in-memory fallback | `src/terrain-art/storage.ts` |
+| `hashTerrainArtProject`, `migrateTerrainArtProject` | functions | Canonical source identity and migration-ladder entry | `src/terrain-art/storage.ts`, `migrate.ts` |
+| `compileTerrainArtRuntime`, `terrainArtRuntimeSourceRect` | functions | Deterministic variant atlases, extrusion gutters, and runtime manifest | `src/terrain-art/compiler.ts` |
+| `exportTerrainArtContactSheet` | function | Host-encoder adapter for PNG/contact-sheet export | `src/terrain-art/export.ts` |
+| `TerrainArtImportedAssetResolver` | type | Optional host callback for imported RGBA layers | `src/terrain-art/compositor.ts` |
+| `createTerrainArtRenderCache` | function | Explicit bounded source/composite cache with material-scoped invalidation | `src/terrain-art/cache.ts` |
+| `renderResolvedTerrainArtTile` | function | Ordered material composition with one union-world contour | `src/terrain-art/multi-material-compositor.ts` |
+| `drawCompiledTerrainArtDualGrid` | function | Runtime-only gutter-aware renderer with stable variant selection and optional pins | `src/terrain-art/runtime-renderer.ts` |
+| `moveTerrainArtSourceSelection` | function | Move only sparse manual pixels inside an editor selection | `src/terrain-art/manual-transform.ts` |
+| `importTerrainArtTilesetAtlas`, `createTerrainArtTilesetResolver`, `createImportedTerrainArtMaterial`, `createTerrainArtTilesetBinding`, `kenneyPixelPlatformerRoles`, `TERRAIN_TILESET_ROLE_KEYS` | functions/constants | Bridge an edge-based tileset (e.g. Kenney Pixel Platformer) into the dual-grid render path as an `imported` layer resolved per request. Imported materials keep their native tile size — pixel art is never resampled; the renderer draws it 1:1 through nearest-neighbour. | `src/terrain-art/import-tileset.ts` |
+
+Optional editor entrypoint: `aicraft-engine/terrain-art/editor` exports
+`mountTerrainArtReferenceEditor`. It is deliberately absent from the root barrel,
+so runtime-only consumers do not import DOM authoring code.
+
 ### `src/platformer/`
 
 #### Level theme facade
@@ -1715,6 +1778,46 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 - _decision: `docs/design/level-schema-decision.md`_
 - _research: `docs/research/level-schema.md`_
 - _composes with: `src/collision/types.ts` (`TileSolidityQuery`, `TileType`)_
+
+### `src/ldtk/`
+
+Read, **edit**, render and write [LDtk](https://ldtk.io) `.ldtk` level files. Self-contained, zero-dependency.
+
+LDtk resolves auto-tiling at save time, which is enough to *play* a level but not to *draw* one: change a cell and the baked tiles are stale. `runLdtkAutoLayer` re-runs LDtk's own rules, so a level can be painted in-engine and come out looking exactly as LDtk would have painted it. That claim is enforced, not asserted: `src/tests/ldtk-rules-oracle.test.ts` re-derives every tile in the bundled sample projects and demands an exact match against LDtk's own output — **20,046 tiles across 360 rules, including which rule placed each one**.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `parseLdtkProject(json)` | function | Parse a `.ldtk` JSON string → `LdtkProject`. Defensive, never throws; returns `{ ok, project?, errors }` | `src/ldtk/parse.ts` |
+| `parseLdtkLevelFile(json)` | function | Parse a standalone `.ldtkl` level file (for `externalLevels: true` projects) | `src/ldtk/parse.ts` |
+| `ldtkLevelToLevelData(level, opts?)` | function | Translate an LDtk level → `LevelData` + `GeneratedTileSemantics`. IntGrid copies 1:1 into `TileGrid.data`; entities map via `LDTK_DEFAULT_ENTITY_MAP` with a `'trigger'` escape hatch for unknown identifiers | `src/ldtk/translate.ts` |
+| `translateLdtkEntity(entity, id, map, diag)` | function | Translate a single LDtk entity → `LevelEntity` | `src/ldtk/translate.ts` |
+| `LDTK_DEFAULT_ENTITY_MAP` | const | Default LDtk identifier → engine kind resolver (Player→spawn, Coin/Gem/Key→collectible, Exit/Door→exit, Spike→hazard, etc.) | `src/ldtk/translate.ts` |
+| `drawLdtkLayer(ctx, layer, opts)` | function | Draw one tile-bearing layer — blit each tile with flip/alpha, viewport-culled. Rule-driven `IntGrid` layers draw too; only `Entities` layers never do | `src/ldtk/render.ts` |
+| `drawLdtkLevel(ctx, level, opts)` | function | Draw all visible tile layers back-to-front. `layerInstances` is top-most-first, so this iterates in reverse | `src/ldtk/render.ts` |
+| `buildLdtkTilesetBundle(tilesets, loader)` | function | Build a uid→image map from `defs.tilesets[]`, skipping `embedAtlas: 'LdtkIcons'` | `src/ldtk/render.ts` |
+| `runLdtkAutoLayer(source, layerDef, opts)` | function | Resolve an IntGrid into tiles by applying a layer's auto-rules. Takes an abstract grid, so procedurally generated levels can be skinned with an authored ruleset | `src/ldtk/rules.ts` |
+| `ldtkRuleSourceFromCsv(csv, cols, rows, def?)` | function | Wrap a flat row-major IntGrid as a `LdtkRuleGridSource` | `src/ldtk/rules.ts` |
+| `ldtkOpaqueTileLookup(tileset)` | function | Opacity predicate from a tileset's cached flags. Required for correct output: LDtk discards tiles hidden behind an opaque one | `src/ldtk/rules.ts` |
+| `ldtkRandSeedCoords(seed, x, y, max)` | function | LDtk's coordinate-seeded hash. Transcribed literally, 32-bit overflow included — matching it is what reproduces LDtk's `chance` and variant choices | `src/ldtk/rng.ts` |
+| `ldtkPerlin(seed, x, y, octaves)` | function | Heaps' Perlin as LDtk configures it, for `perlinActive` rules | `src/ldtk/rng.ts` |
+| `paintLdtkIntGrid(project, levelIid, layerIid, cells)` | function | Write IntGrid cells. Returns a new project plus the dirty region, already widened by rule reach | `src/ldtk/edit.ts` |
+| `setLdtkLayerTiles`, `addLdtkEntity`, `moveLdtkEntity`, `removeLdtkEntity`, `setLdtkEntityField`, `setLdtkOptionalRuleGroup`, `resizeLdtkLevel` | functions | Pure, never-throw editing ops; each returns `{ project, changed, dirty? }` | `src/ldtk/edit.ts` |
+| `widenDirtyRect(rect, layerDef)` | function | Grow a cell rect by the reach of a layer's widest rule (plus stamp extent) | `src/ldtk/edit.ts` |
+| `readLdtkDocument(json)` | function | Parse into an editable, writable document — keeps the raw JSON so unmodelled fields survive a save | `src/ldtk/write.ts` |
+| `writeLdtkDocument(document, project?)` | function | Serialize back to `.ldtk`. An unmodified document returns its original text byte-for-byte | `src/ldtk/write.ts` |
+| `formatLdtkJson(document)` | function | LDtk-style JSON: tab-indented objects, compact leaf arrays, wrapped IntGrid rows, one tile per line | `src/ldtk/format.ts` |
+| `LDTK_RULE_ANY_VALUE`, `LDTK_RULE_GROUP_STRIDE` | consts | Rule-pattern sentinels: `±1000001` = any/empty, `±(groupUid+1)*1000` = IntGrid value group | `src/ldtk/types.ts` |
+| `LDTK_MAX_PATTERN_SIZE` | const | Largest pattern LDtk allows (9), bounding invalidation radius | `src/ldtk/edit.ts` |
+| `LdtkProject`, `LdtkLevel`, `LdtkLayerInstance`, `LdtkTile`, `LdtkTilesetDef`, `LdtkEntityInstance`, `LdtkAutoRule`, `LdtkAutoRuleGroup`, `LdtkEntityDef` | types | Typed subset of the LDtk JSON schema | `src/ldtk/types.ts` |
+| `LdtkTilesetBundle`, `LdtkTilesetImage`, `DrawLdtkLevelOptions` | types | Renderer inputs | `src/ldtk/render.ts` |
+| `LdtkRuleGridSource`, `LdtkRuleTileset`, `RunLdtkAutoLayerOptions` | types | Auto-tiler inputs | `src/ldtk/rules.ts` |
+| `LdtkDocument`, `LdtkReadResult`, `LdtkCellEdit`, `LdtkCellRect`, `LdtkEditResult` | types | Editing and round-trip surfaces | `src/ldtk/edit.ts`, `src/ldtk/write.ts` |
+
+- _schema reference: <https://ldtk.io/json/>_
+- _bundled CC0/PD tilesets: `assets/ldtk/` (Cavernas, SunnyLand, Inca); LDtk's own sample projects are vendored as test fixtures. See `THIRD_PARTY.md`_
+- _composes with: `src/level/` (`LevelData`, `validateLevel`, `GeneratedTileSemantics`); renders into a `theme.terrainArt` override on `LevelRenderTheme` (`src/platformer/level-theme.ts`)_
+- _three independent leaves, each budgeted by `npm run check:ldtk-runtime-size`: **render ~2.3 KB**, **auto-tiler ~12.7 KB**, **writer ~17.5 KB**. A game that only draws levels pays for none of the authoring code_
+- _additive to `src/terrain-art/`, not a replacement: that module exists for games shipping no tile assets at all, which LDtk by definition cannot serve_
 
 ### `src/editor/`
 

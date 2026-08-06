@@ -938,3 +938,200 @@ When `aicraft-engine` evolves, consumers update via:
 - **Vendored:** re-run the copy command and review the diff
 
 The library's version follows semver. Breaking changes to public APIs bump the major version. The `CHANGELOG.md` (to be added at v1.0) lists migrations required.
+## Embedded dual-grid terrain authoring
+
+Keep editable terrain art beside `LevelData`; collision continues to come only
+from the logical tile values. A development tool or a UGC-enabled game can mount
+the optional reference panel without adding it to runtime-only bundles:
+
+```ts
+import { createTerrainArtProject, compileTerrainArtRuntime } from 'aicraft-engine';
+import { mountTerrainArtReferenceEditor } from 'aicraft-engine/terrain-art/editor';
+
+const editor = mountTerrainArtReferenceEditor(document.querySelector('#terrain-editor')!, {
+  project: createTerrainArtProject({ id: 'forest' }),
+  onSave(source, project) {
+    localStorage.setItem(`terrain:${project.id}`, source);
+  },
+});
+
+// Development-only cleanup or when leaving the authoring screen.
+editor.destroy();
+
+// Build step: ship only the deterministic runtime artifact.
+const baked = compileTerrainArtRuntime(editor.getProject(), 1);
+```
+
+For a development-only editor, omit the editor entrypoint from the production
+application graph and bake `manifest` plus atlas images during the asset build.
+For player-created content, retain the editor, save canonical source through a
+`TerrainArtStorageAdapter`, validate it on load, and compile locally. Stale local
+occurrence overrides are preserved and warned about but excluded from rendering
+until explicitly rebound.
+
+## LDtk pipeline (recommended for tile-authored levels)
+
+Author levels in the free [LDtk editor](https://ldtk.io) (MIT-licensed, by
+Sébastien Bénard) and have the engine parse its `.ldtk` output — or paint into
+that same project **from your own game**, because the engine re-runs LDtk's
+auto-layer rules itself.
+
+That second capability is the load-bearing one. LDtk bakes auto-tiling at save
+time, which is enough to play a level but not to build one: change a cell and
+the baked tiles are stale. `runLdtkAutoLayer` re-derives them from the
+project's own rules and tilesets, reproducing LDtk's output exactly — verified
+tile-for-tile against LDtk's own bake across the bundled sample projects
+(20,046 tiles, 360 rules, including which rule placed each tile).
+
+This is **additive** to the procedural `src/terrain/` and `src/terrain-art/`
+renderers, not a replacement. Those exist for games that ship no tile art at
+all; LDtk by definition cannot serve that case.
+
+### Parse, translate, and render a `.ldtk` file
+
+```ts
+import {
+  parseLdtkProject,
+  ldtkLevelToLevelData,
+  drawLdtkLevel,
+  buildLdtkTilesetBundle,
+} from 'aicraft-engine';
+import { validateLevel } from 'aicraft-engine';
+
+// 1. Parse the .ldtk JSON.
+const { ok, project, errors } = parseLdtkProject(ldtkJsonString);
+if (!ok || !project) throw new Error(errors.map((e) => e.message).join('; '));
+
+// 2. Translate the first level into the engine's LevelData + tile semantics.
+const { level, tileSemantics } = ldtkLevelToLevelData(project.levels[0]);
+if (level) {
+  const result = validateLevel(level);
+  if (!result.valid) console.warn(result.errors);
+}
+
+// 3. Load the tileset PNGs referenced by defs.tilesets[] (by uid).
+const tilesets = buildLdtkTilesetBundle(
+  project.defs.tilesets,
+  (def) => loadImageByPath(def.relPath), // your asset loader
+);
+
+// 4. Render each frame.
+drawLdtkLevel(ctx, project.levels[0], {
+  tilesets,
+  worldOffset: { x: -camera.x, y: -camera.y },
+  view: { x: camera.x, y: camera.y, width, height },
+});
+```
+
+### Wire LDtk rendering into the platformer runtime
+
+A `LevelRenderTheme` accepts an optional `terrainArt` override. When present,
+the frame composer calls it **instead of** the procedural terrain renderer:
+
+```ts
+const theme = {
+  ...RUINS_LEVEL_THEME,
+  terrainArt: (ctx, frame) => {
+    drawLdtkLevel(ctx, ldtkLevel, {
+      tilesets,
+      view: frame.view,
+    });
+  },
+};
+```
+
+Collision comes from the translated `LevelData` (`ldtkLevelToLevelData` writes
+the IntGrid into `tiles.data`), so `compileGeneratedLevel` and the rest of the
+runtime work unchanged.
+
+### Bundled starter tilesets
+
+The engine ships three CC0/public-domain tilesets under `assets/ldtk/`
+(Cavernas by Adam Saltsman, SunnyLand by Ansimuz, Inca by Kronbits). LDtk's own
+sample projects are vendored under `assets/ldtk/samples/` as **test fixtures**
+— they are the auto-tiler's correctness oracle, not shipped art. See
+`assets/ldtk/README.md` and `THIRD_PARTY.md` for attribution. Nuclear Blaze is
+deliberately excluded (CC-BY-SA).
+
+### Entity mapping
+
+`LDTK_DEFAULT_ENTITY_MAP` maps common LDtk identifiers (`Player`, `Coin`,
+`Gem`, `Key`, `Exit`, `Spike`, `Enemy`, …) onto the engine's closed
+`EntityKind` union. Unknown identifiers fall through to `'trigger'` with the
+LDtk identifier and field instances preserved in `params`, so no entity is
+silently dropped. Override the map via the `entityMap` option for
+project-specific identifiers.
+
+### Painting into a project, and saving it back
+
+Editing is a pure pipeline: paint cells, re-run the rules, keep the result.
+Every operation returns a new project, so undo is just keeping the previous
+value.
+
+```ts
+import {
+  readLdtkDocument,
+  writeLdtkDocument,
+  paintLdtkIntGrid,
+  runLdtkAutoLayer,
+  ldtkRuleSourceFromCsv,
+  ldtkOpaqueTileLookup,
+  setLdtkLayerTiles,
+} from 'aicraft-engine';
+
+// Read through `readLdtkDocument`, not `parseLdtkProject`: it keeps the raw
+// JSON so fields the engine does not model survive being saved again.
+const { document } = readLdtkDocument(text);
+
+// 1. Paint. `dirty` is already widened by the reach of the layer's rules.
+const painted = paintLdtkIntGrid(document.project, levelIid, layerIid, [
+  { cx: 12, cy: 7, value: 1 },
+]);
+
+// 2. Re-resolve the art from the IntGrid.
+const source = ldtkRuleSourceFromCsv(csv, cols, rows, layerDef);
+const tiles = runLdtkAutoLayer(source, layerDef, {
+  seed: layer.seed ?? 0,          // LDtk's own seed reproduces LDtk's own bake
+  gridSize: layer.__gridSize,
+  enabledOptionalGroups: layer.optionalRules ?? [],
+  tileset: {
+    cWid: def.__cWid,
+    tileGridSize: def.tileGridSize,
+    padding: def.padding ?? 0,
+    spacing: def.spacing ?? 0,
+    // Required for correct output: LDtk omits tiles hidden behind an opaque
+    // one, so without this the engine emits tiles no .ldtk file contains.
+    isOpaque: ldtkOpaqueTileLookup(def),
+  },
+});
+const next = setLdtkLayerTiles(painted.project, levelIid, layerIid, tiles).project;
+
+// 3. Save. An unmodified document returns its original text byte-for-byte.
+await writeFile(path, writeLdtkDocument(document, next));
+```
+
+Two things are easy to get wrong:
+
+- **A layer's rules may read a different layer's IntGrid** (`autoSourceLayerDefUid`).
+  Painting one collision grid can legitimately restyle several layers — shadows
+  and background textures typically key off it. Re-resolve every layer whose
+  source is the one you painted, not just the layer you painted.
+- **`intGridCsv` is present as `[]` on every layer**, including Entities and
+  Tiles. Test `layer.__type === 'IntGrid'` to decide what is paintable; a
+  presence check marks the whole project paintable.
+
+### Skinning a generated level with an authored ruleset
+
+`runLdtkAutoLayer` takes an abstract grid rather than an LDtk document, so a
+procedurally generated level can be given hand-authored art direction:
+
+```ts
+const { level, tileSemantics } = generateLevel(seed, { cols: 60, rows: 34 });
+const source = {
+  cols: level.tiles.cols,
+  rows: level.tiles.rows,
+  valueAt: (cx, cy) => level.tiles.data[cx + cy * level.tiles.cols] ?? 0,
+  groupOf: () => 0,
+};
+const tiles = runLdtkAutoLayer(source, layerDefFromLdtkProject, opts);
+```

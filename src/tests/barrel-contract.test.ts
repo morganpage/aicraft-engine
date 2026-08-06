@@ -17,6 +17,32 @@ import * as aicraft from '../index';
  * would otherwise slip through an `isDefined` check.
  */
 describe('root barrel re-exports every module', () => {
+  it('terrain art: runtime/compiler APIs are public but optional DOM editor is not in root', () => {
+    expect(typeof aicraft.compileTerrainArtRuntime).toBe('function');
+    expect(typeof aicraft.drawCompiledTerrainArtDualGrid).toBe('function');
+    expect('mountTerrainArtReferenceEditor' in aicraft).toBe(false);
+  });
+  it('ldtk: the parse → auto-tile → edit → write pipeline is public', () => {
+    expect(typeof aicraft.parseLdtkProject).toBe('function');
+    expect(typeof aicraft.drawLdtkLevel).toBe('function');
+    expect(typeof aicraft.ldtkLevelToLevelData).toBe('function');
+    // The auto-tiler and its grid adapter — what makes an LDtk project
+    // editable rather than merely playable.
+    expect(typeof aicraft.runLdtkAutoLayer).toBe('function');
+    expect(typeof aicraft.ldtkRuleSourceFromCsv).toBe('function');
+    expect(typeof aicraft.ldtkOpaqueTileLookup).toBe('function');
+    // Editing and round-tripping.
+    expect(typeof aicraft.paintLdtkIntGrid).toBe('function');
+    expect(typeof aicraft.widenDirtyRect).toBe('function');
+    expect(typeof aicraft.readLdtkDocument).toBe('function');
+    expect(typeof aicraft.writeLdtkDocument).toBe('function');
+    expect(typeof aicraft.formatLdtkJson).toBe('function');
+    // Pattern sentinels are part of the contract: a consumer building rule
+    // patterns cannot encode them without these.
+    expect(aicraft.LDTK_RULE_ANY_VALUE).toBe(1000001);
+    expect(aicraft.LDTK_RULE_GROUP_STRIDE).toBe(1000);
+  });
+
   it('primitives: outlineRect is a function, DEFAULT_OUTLINE_COLOR is a string', () => {
     expect(typeof aicraft.outlineRect).toBe('function');
     expect(typeof aicraft.DEFAULT_OUTLINE_COLOR).toBe('string');

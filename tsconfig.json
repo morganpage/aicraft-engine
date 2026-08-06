@@ -5,6 +5,10 @@
     "module": "ESNext",
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    // Test fixtures read the vendored LDtk samples from disk. Types only —
+    // `tsconfig.build.json` excludes `src/tests`, so nothing Node-shaped
+    // reaches `dist` and the package stays dependency-free at runtime.
+    "types": ["node"],
 
     "moduleResolution": "bundler",
     "resolveJsonModule": true,

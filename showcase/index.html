@@ -503,6 +503,95 @@ drawSpider(ctx, pose, config);</code></pre>
       -->
 
       <!--
+        Section 6.5 — LDtk-native level editor.
+        Open a real .ldtk project, paint its IntGrid, and watch the project's
+        own auto-layer rules re-skin the terrain using its own tilesets. The
+        rule engine reproduces LDtk's output exactly (verified tile-for-tile
+        against every bundled sample), so painting here and painting in LDtk
+        give the same result. Save writes the file back.
+      -->
+      <section id="ldtk-editor" class="section ldtk-section" data-mode="edit">
+        <div class="ldtk-copy">
+          <h2 class="ldtk-title">Draw the level. LDtk&rsquo;s rules paint it.</h2>
+          <p class="ldtk-blurb">
+            This is a real <a href="https://ldtk.io" target="_blank" rel="noopener">LDtk</a>
+            project, edited in place. Paint into the <strong>IntGrid</strong> and the
+            project&rsquo;s own auto-layer rules choose the tiles &mdash; corners, edges,
+            shadows and background all follow, from its own tileset.
+          </p>
+          <p class="ldtk-blurb">
+            The engine re-runs LDtk&rsquo;s rules itself rather than replaying baked
+            output: pattern matching, flips, checker and modulo spacing, opaque-tile
+            occlusion, <code>chance</code>, Perlin gating and stamps. It reproduces
+            LDtk&rsquo;s own bake <strong>tile-for-tile across all 360 rules</strong> in
+            the bundled sample projects &mdash; including which rule placed each tile.
+          </p>
+          <p class="ldtk-hint">
+            Drag to paint &middot; <span class="kbd">Shift</span>-drag to pan &middot;
+            <span class="kbd">Ctrl</span>/<span class="kbd">Cmd</span>+wheel to zoom &middot;
+            <span class="kbd">Ctrl/Cmd+Z</span> to undo
+          </p>
+          <div class="ldtk-controls">
+            <button type="button" class="ldtk-open-folder">Open folder&hellip;</button>
+            <button type="button" class="ldtk-open-files">Open files&hellip;</button>
+            <input type="file" accept=".ldtk,.png,.gif,.jpg,.jpeg" multiple class="ldtk-file-input" hidden />
+            <button type="button" class="ldtk-save">Save .ldtk</button>
+          </div>
+          <p class="ldtk-note">
+            <strong>Open folder</strong> resolves tileset paths the way LDtk means them
+            and saves in place, so LDtk desktop sees your edits. Needs a Chromium
+            browser; elsewhere use <strong>Open files</strong> and pick the
+            <code>.ldtk</code> plus its images together.
+          </p>
+        </div>
+
+        <div class="ldtk-stage">
+          <div class="ldtk-toolbar" role="toolbar" aria-label="Editor controls">
+            <div class="ldtk-tools" role="group" aria-label="Tools">
+              <button type="button" data-tool="pencil" aria-pressed="true">Pencil</button>
+              <button type="button" data-tool="eraser" aria-pressed="false">Eraser</button>
+              <button type="button" data-tool="line" aria-pressed="false">Line</button>
+              <button type="button" data-tool="rectangle" aria-pressed="false">Rect</button>
+              <button type="button" data-tool="rectangleFilled" aria-pressed="false">Filled</button>
+              <button type="button" data-tool="fill" aria-pressed="false">Fill</button>
+              <button type="button" data-tool="picker" aria-pressed="false">Pick</button>
+            </div>
+            <span class="ldtk-toolbar-sep" aria-hidden="true"></span>
+            <button type="button" class="ldtk-undo">Undo</button>
+            <button type="button" class="ldtk-redo">Redo</button>
+            <span class="ldtk-toolbar-sep" aria-hidden="true"></span>
+            <button type="button" class="ldtk-toggle-grid" aria-pressed="true">Grid</button>
+            <button type="button" class="ldtk-toggle-intgrid" aria-pressed="false">IntGrid</button>
+            <span class="ldtk-toolbar-sep" aria-hidden="true"></span>
+            <button type="button" class="ldtk-zoom-out" aria-label="Zoom out">&minus;</button>
+            <output class="ldtk-zoom-value">100%</output>
+            <button type="button" class="ldtk-zoom-in" aria-label="Zoom in">+</button>
+            <button type="button" class="ldtk-fit">Fit</button>
+            <span class="ldtk-toolbar-sep" aria-hidden="true"></span>
+            <label class="ldtk-level-label">Level
+              <select class="ldtk-level-select" aria-label="Level"></select>
+            </label>
+            <button type="button" class="ldtk-play">Play</button>
+          </div>
+
+          <div class="ldtk-workspace">
+            <aside class="ldtk-panel" aria-label="Layers and values">
+              <h3 class="ldtk-panel-title">Layers</h3>
+              <div class="ldtk-layers"></div>
+              <h3 class="ldtk-panel-title">Paint value</h3>
+              <div class="ldtk-values"></div>
+            </aside>
+            <div class="ldtk-canvas-wrap">
+              <canvas class="ldtk-canvas" width="900" height="520" tabindex="0"
+                aria-label="LDtk level editor canvas"></canvas>
+            </div>
+          </div>
+
+          <div class="ldtk-status" role="status" aria-live="polite">Loading bundled sample&hellip;</div>
+        </div>
+      </section>
+
+      <!--
         Section 6 — Tile room.
         The second level-visual validation scene: a generated tile grid from
         src/levelgen, viewed through a camera smaller than the level. The
@@ -513,7 +602,7 @@ drawSpider(ctx, pose, config);</code></pre>
       -->
       <section id="tile-room" class="section tile-room-section">
         <div class="tile-room-copy">
-          <h2 class="tile-room-title">A generated room, seen through a camera.</h2>
+          <h2 class="tile-room-title">Build the whole level. Then play it.</h2>
           <p class="tile-room-blurb">
             A tile grid straight out of <code>generateLevel</code>, compiled by
             <code>compileGeneratedLevel</code> and simulated by the same kernel
@@ -525,18 +614,28 @@ drawSpider(ctx, pose, config);</code></pre>
             staircase.
           </p>
           <p class="tile-room-blurb">
+            The paused room is also a complete level editor: see the whole map,
+            paint terrain, place and move exits, pickups, spikes, spawns, and
+            moving platforms, then save locally or export the authored level as
+            JSON. Playtesting uses the same data; hazards respawn the player and
+            unlocked exits complete the run.
+          </p>
+          <p class="tile-room-blurb">
             <strong>Ruins</strong>, <strong>Cavern</strong>, and
             <strong>Mechanical</strong> use the production theme facade,
             semantic entity silhouettes, and stateless atmosphere recipes.
-            <strong>Fallback</strong> keeps the original collision-style view
-            available for direct comparison.
+            <strong>Dual Grid</strong> uses the new generated, layered terrain-art
+            atlas and lets you click the paused level to identify the reusable
+            source tile. <strong>Fallback</strong> keeps the original collision-style
+            view available for direct comparison.
           </p>
           <p class="tile-room-hint">
             Choose <strong>Play room</strong> below, then
             <span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> to move ·
             <span class="kbd">Space</span> to jump ·
             <span class="kbd">R</span> to reset ·
-            <span class="kbd">Esc</span> to stop
+            <span class="kbd">Esc</span> to stop ·
+            <span class="kbd">Cmd/Ctrl+S</span> to save while editing
           </p>
           <pre class="tile-room-snippet"><code>// A generated level, a camera, and one draw pass
 const { level, tileSemantics } = generateLevel(1337, { cols: 60, rows: 34 });
@@ -553,13 +652,56 @@ drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
             <button class="tile-room-btn" data-scene="generated" type="button" aria-pressed="true">Generated room</button>
             <button class="tile-room-btn" data-scene="topology" type="button" aria-pressed="false">Topology room</button>
             <span class="tile-room-toolbar-sep" aria-hidden="true"></span>
-            <button class="tile-room-btn" data-treatment="fallback" type="button" aria-pressed="true">Fallback</button>
+            <button class="tile-room-btn" data-treatment="dual-grid" type="button" aria-pressed="true">Dual Grid</button>
+            <button class="tile-room-btn" data-treatment="fallback" type="button" aria-pressed="false">Fallback</button>
             <button class="tile-room-btn" data-treatment="ruins" type="button" aria-pressed="false">Ruins</button>
             <button class="tile-room-btn" data-treatment="cavern" type="button" aria-pressed="false">Cavern</button>
             <button class="tile-room-btn" data-treatment="mechanical" type="button" aria-pressed="false">Mechanical</button>
             <button class="tile-room-btn" data-treatment="outdoor" type="button" aria-pressed="false">Outdoor</button>
             <span class="tile-room-toolbar-sep" aria-hidden="true"></span>
             <button class="tile-room-btn tile-room-markers" type="button" aria-pressed="false">Markers</button>
+            <button class="tile-room-btn tile-room-dual-overlay" type="button" aria-pressed="false">Dual grid overlay</button>
+            <button class="tile-room-btn tile-room-logical-overlay" type="button" aria-pressed="false">Logical grid overlay</button>
+          </div>
+          <div class="tile-room-level-project" aria-label="Level file controls">
+            <label>Level name <input class="tile-room-level-name" type="text" maxlength="80" value="Generated room"></label>
+            <button class="tile-room-level-save" type="button">Save level</button>
+            <button class="tile-room-level-load" type="button">Load saved</button>
+            <button class="tile-room-level-export" type="button">Export JSON</button>
+            <button class="tile-room-level-import" type="button">Import JSON</button>
+            <input class="tile-room-level-import-file" type="file" accept="application/json,.json" hidden>
+            <button class="tile-room-level-reset" type="button">Reset level</button>
+            <output class="tile-room-level-save-status">Not saved</output>
+          </div>
+          <div class="tile-room-logical-tools" role="toolbar" aria-label="Logical terrain tools">
+            <strong>Terrain</strong>
+            <button type="button" data-level-tool="inspect" aria-pressed="true">Inspect</button>
+            <button type="button" data-level-tool="paint" aria-pressed="false">Pencil</button>
+            <button type="button" data-level-tool="erase" aria-pressed="false">Erase</button>
+            <button type="button" data-level-tool="line" aria-pressed="false">Line</button>
+            <button type="button" data-level-tool="rectangle" aria-pressed="false">Rectangle</button>
+            <button type="button" data-level-tool="fill" aria-pressed="false">Fill</button>
+            <button type="button" data-level-tool="picker" aria-pressed="false">Picker</button>
+            <button type="button" data-level-tool="spawn" aria-pressed="false">Move spawn</button>
+            <button type="button" data-level-tool="moving-platform" aria-pressed="false">Moving platform</button>
+            <button type="button" data-level-tool="spikes" aria-pressed="false">Draw spikes</button>
+            <button type="button" data-level-tool="erase-spikes" aria-pressed="false">Delete spikes</button>
+            <span class="tile-room-toolbar-sep" aria-hidden="true"></span>
+            <strong>Objects</strong>
+            <button type="button" data-level-tool="select-object" aria-pressed="false">Select object</button>
+            <button type="button" data-level-tool="exit" aria-pressed="false">Place exit</button>
+            <button type="button" data-level-tool="coin" aria-pressed="false">Place coin</button>
+            <button type="button" data-level-tool="gem" aria-pressed="false">Place gem</button>
+            <button type="button" data-level-tool="key" aria-pressed="false">Place key</button>
+            <span class="tile-room-toolbar-sep" aria-hidden="true"></span>
+            <button class="tile-room-level-undo" type="button" disabled>Undo level</button>
+            <button class="tile-room-level-redo" type="button" disabled>Redo level</button>
+            <button class="tile-room-overview" type="button" aria-pressed="true">Whole level</button>
+            <button class="tile-room-zoom-out" type="button" aria-label="Zoom out">−</button>
+            <output class="tile-room-zoom-value">100%</output>
+            <button class="tile-room-zoom-in" type="button" aria-label="Zoom in">+</button>
+            <button class="tile-room-fit" type="button">Fit</button>
+            <label>Paint behavior <select class="tile-room-terrain-kind" aria-label="Paint behavior"></select></label>
           </div>
           <div class="tile-room-canvas-wrap">
             <canvas class="tile-room-canvas" width="600" height="400" tabindex="-1"
@@ -576,6 +718,236 @@ drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
             <button class="tile-room-touch-btn tile-room-touch-btn--jump" type="button" aria-label="Jump">Jump</button>
           </div>
           <div class="tile-room-status" role="status" aria-live="polite">Loading.</div>
+          <div class="tile-room-inspector" role="status" aria-live="polite">
+            <strong class="tile-room-inspector-title">Visual tile inspector</strong>
+            <span class="tile-room-inspector-detail">Click the level to identify its material, mask, and four source cells.</span>
+          </div>
+          <section class="tile-room-object-panel" aria-label="Selected object properties" hidden>
+            <header class="tile-room-object-panel-head">
+              <div><span>Selected object</span><strong class="tile-room-object-title">Object</strong></div>
+              <button class="tile-room-object-close" type="button" aria-label="Deselect object">Done</button>
+            </header>
+            <div class="tile-room-object-grid">
+              <label>X <input class="tile-room-object-x" type="number" step="16"></label>
+              <label>Y <input class="tile-room-object-y" type="number" step="16"></label>
+              <span class="tile-room-object-size"></span>
+            </div>
+            <div class="tile-room-object-fields" data-object-fields="moving-platform" hidden>
+              <label>Speed <input class="tile-room-object-speed" type="number" min="1" max="1000" step="5"></label>
+              <label>Route <select class="tile-room-object-loop"><option value="pingpong">Back and forth</option><option value="loop">Loop to start</option></select></label>
+              <span class="tile-room-object-route-summary"></span>
+              <button class="tile-room-object-add-waypoint" type="button">+ Add destination</button>
+              <button class="tile-room-object-remove-waypoint" type="button">Remove last destination</button>
+            </div>
+            <div class="tile-room-object-fields" data-object-fields="exit" hidden>
+              <label><input class="tile-room-object-exit-locked" type="checkbox"> Locked</label>
+              <label><input class="tile-room-object-exit-trap" type="checkbox"> Trap exit</label>
+            </div>
+            <div class="tile-room-object-fields" data-object-fields="collectible" hidden>
+              <label>Pickup <select class="tile-room-object-pickup-kind"><option value="coin">Coin</option><option value="gem">Gem</option><option value="key">Key</option></select></label>
+              <label>Value <input class="tile-room-object-pickup-value" type="number" min="0" step="1"></label>
+              <label><input class="tile-room-object-pickup-persists" type="checkbox"> Persists after collection</label>
+            </div>
+            <p class="tile-room-object-help">Drag the selected object in the level, or edit its values here. Every change is undoable.</p>
+            <div class="tile-room-object-actions">
+              <button class="tile-room-object-duplicate" type="button">Duplicate</button>
+              <button class="tile-room-object-delete" type="button">Delete</button>
+            </div>
+          </section>
+          <div class="tile-art-editor" hidden>
+            <div class="tile-art-editor-head">
+              <div>
+                <span class="tile-art-eyebrow">Terrain style editor</span>
+                <strong class="tile-art-editor-title">Selected terrain tile</strong>
+              </div>
+              <div class="tile-art-project-actions">
+                <button class="tile-art-save" type="button">Save</button>
+                <button class="tile-art-load" type="button">Reload saved</button>
+                <button class="tile-art-export" type="button">Export PNG</button>
+                <button class="tile-art-restore-all" type="button">Restore everything</button>
+                <output class="tile-art-save-status" aria-live="polite"></output>
+              </div>
+            </div>
+            <p class="tile-art-explainer"><strong>A terrain style is a complete reusable tileset</strong> for one surface, such as meadow, rock, metal, or water. Paint a level with a style; the engine chooses its corner and edge tiles automatically.</p>
+            <div class="tile-art-style-bar">
+              <label><span>Editing style</span><select class="tile-art-material" aria-label="Terrain style"></select></label>
+              <label><span>Style name</span><input class="tile-art-material-name" aria-label="Terrain style name" maxlength="48" type="text"></label>
+              <button class="tile-art-add-material" type="button">+ New terrain style</button>
+            </div>
+            <div class="tile-art-tabs" role="tablist" aria-label="Terrain style editing sections">
+              <button type="button" role="tab" data-art-panel="look" aria-selected="true">1. Automatic look</button>
+              <button type="button" role="tab" data-art-panel="paint" aria-selected="false">2. Paint details</button>
+              <button type="button" role="tab" data-art-panel="import" aria-selected="false">Import tileset</button>
+              <button type="button" role="tab" data-art-panel="advanced" aria-selected="false">Advanced</button>
+            </div>
+
+            <section class="tile-art-panel" data-art-panel-content="look" role="tabpanel">
+              <div class="tile-art-panel-intro">
+                <div><strong>Start here</strong><span>Choose a quick look, then shape every matching tile with a few controls. Manual paint is preserved.</span></div>
+                <label>Quick look
+                  <select class="tile-art-preset" aria-label="Quick terrain look"><option value="meadow">Meadow</option><option value="rock">Rock</option><option value="metal">Metal</option><option value="water">Water</option></select>
+                </label>
+              </div>
+              <div class="tile-art-generator-controls tile-art-generator-controls--primary">
+                <label>Corner roundness <output class="tile-art-roundness-value">0.65</output>
+                  <input class="tile-art-roundness" type="range" min="0" max="1" step="0.01" value="0.65">
+                </label>
+                <label>Outline width <output class="tile-art-contour-value">7 px</output>
+                  <input class="tile-art-contour" type="range" min="0" max="24" step="1" value="7">
+                </label>
+                <label>Top highlight <input class="tile-art-highlight" type="range" min="0" max="16" step="1" value="3"></label>
+                <label>Side shadow <input class="tile-art-side-shade" type="range" min="0" max="16" step="1" value="4"></label>
+                <label>Surface detail <input class="tile-art-detail-density" type="range" min="0" max="1" step="0.01" value="0.035"></label>
+                <label>Detail size <input class="tile-art-detail-scale" type="range" min="1" max="8" step="1" value="1"></label>
+              </div>
+              <button class="tile-art-generator-reset" type="button">Reset these automatic controls</button>
+            </section>
+
+            <section class="tile-art-panel" data-art-panel-content="paint" role="tabpanel" hidden>
+              <div class="tile-art-scope-card">
+                <div><strong class="tile-art-edit-scope">Editing every matching tile</strong><span>Paint once and this shape updates everywhere it appears.</span></div>
+                <button class="tile-art-local-edit" type="button" aria-pressed="false">Paint only this level tile</button>
+                <button class="tile-art-local-revert" type="button">Clear this level-only edit</button>
+              </div>
+              <div class="tile-art-editor-body">
+                <div class="tile-art-canvas-stack">
+                  <canvas class="tile-art-source-canvas" width="256" height="256" aria-label="Editable terrain source tile"></canvas>
+                  <span>Selected source tile</span>
+                </div>
+                <div class="tile-art-canvas-stack tile-art-context-stack">
+                  <canvas class="tile-art-context-canvas" width="192" height="192" aria-label="Seam context preview"></canvas>
+                  <span>Repeat preview</span>
+                </div>
+                <div class="tile-art-tools" role="toolbar" aria-label="Source tile painting tools">
+                  <button type="button" data-art-tool="paint" aria-pressed="true">Pencil</button>
+                  <button type="button" data-art-tool="inherit" aria-pressed="false">Reveal automatic</button>
+                  <button type="button" data-art-tool="line" aria-pressed="false">Line</button>
+                  <button type="button" data-art-tool="rectangle" aria-pressed="false">Rectangle</button>
+                  <button type="button" data-art-tool="ellipse" aria-pressed="false">Ellipse</button>
+                  <button type="button" data-art-tool="fill" aria-pressed="false">Fill</button>
+                  <button type="button" data-art-tool="eyedropper" aria-pressed="false">Eyedropper</button>
+                  <button type="button" data-art-tool="select" aria-pressed="false">Select / Move</button>
+                  <label>Brush
+                    <select class="tile-art-brush-size" aria-label="Brush size">
+                      <option value="1">1 px</option><option value="2">2 px</option>
+                      <option value="3" selected>3 px</option><option value="5">5 px</option>
+                    </select>
+                  </label>
+                  <label>Color <input class="tile-art-color" type="color" value="#f4d35e"></label>
+                  <label>Color link <select class="tile-art-color-link" aria-label="Palette color link"><option value="literal">Exact color</option><option value="fill">Main fill</option><option value="contour">Outline</option><option value="highlight">Highlight</option><option value="shadow">Shadow</option><option value="detail">Detail</option><option value="accent">Accent</option></select></label>
+                  <label><input class="tile-art-onion" type="checkbox"> Show automatic base</label>
+                  <button class="tile-art-undo" type="button" disabled>Undo paint</button>
+                  <button class="tile-art-redo" type="button" disabled>Redo paint</button>
+                  <button class="tile-art-revert" type="button">Clear paint from this source tile</button>
+                  <details class="tile-art-paint-more">
+                    <summary>Transform and stamp tools</summary>
+                    <div>
+                      <button type="button" data-art-transform="flip-horizontal">Flip H</button>
+                      <button type="button" data-art-transform="flip-vertical">Flip V</button>
+                      <button type="button" data-art-transform="rotate-clockwise">Rotate</button>
+                      <button type="button" data-art-move="left">Move ←</button>
+                      <button type="button" data-art-move="right">Move →</button>
+                      <button type="button" data-art-move="up">Move ↑</button>
+                      <button type="button" data-art-move="down">Move ↓</button>
+                      <label>Copy to shape <select class="tile-art-stamp-mask" aria-label="Stamp target mask"></select></label>
+                      <button class="tile-art-stamp" type="button">Copy paint</button>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </section>
+
+            <section class="tile-art-panel tile-art-panel--import" data-art-panel-content="import" role="tabpanel" hidden>
+              <p class="tile-art-import-intro">
+                <strong>Use hand-drawn art instead of the generator.</strong>
+                Load a tileset, say which tile plays each of the nine roles in a
+                3×3 block, and the engine assembles the sixteen corner shapes it
+                needs. Inner corners are not among them — they are never needed here.
+              </p>
+
+              <ol class="tile-art-import-steps">
+                <li class="tile-art-import-step">
+                  <h4>1. Load a tileset image</h4>
+                  <div class="tile-art-import-row">
+                    <label class="tile-art-import-file-label">
+                      <input class="tile-art-import-file" type="file" accept="image/png,image/*">
+                    </label>
+                    <button class="tile-art-import-kenney" type="button">Load bundled Kenney (CC0)</button>
+                    <output class="tile-art-import-sheet-status" aria-live="polite">No tileset loaded.</output>
+                  </div>
+                  <div class="tile-art-import-row">
+                    <label>Tile size <input class="tile-art-import-tile-size" type="number" min="2" max="128" step="1" value="18"></label>
+                    <label>Margin <input class="tile-art-import-margin" type="number" min="0" max="64" step="1" value="0"></label>
+                    <label>Spacing <input class="tile-art-import-spacing" type="number" min="0" max="64" step="1" value="0"></label>
+                  </div>
+                </li>
+
+                <li class="tile-art-import-step">
+                  <h4>2. Assign the nine roles</h4>
+                  <p class="tile-art-import-help">
+                    Pick a role, then click its tile in the sheet. The next
+                    unassigned role is selected automatically.
+                  </p>
+                  <div class="tile-art-import-roles" role="toolbar" aria-label="Tileset roles"></div>
+                  <button class="tile-art-import-preset" type="button">Fill from Kenney Pixel Platformer layout</button>
+                  <div class="tile-art-import-sheet-wrap">
+                    <canvas class="tile-art-import-sheet" width="360" height="162"
+                      aria-label="Tileset sheet. Click a tile to assign it to the selected role."></canvas>
+                  </div>
+                </li>
+
+                <li class="tile-art-import-step">
+                  <h4>3. Check and apply</h4>
+                  <div class="tile-art-import-row">
+                    <canvas class="tile-art-import-preview" width="72" height="72"
+                      aria-label="Preview of the sixteen assembled corner shapes"></canvas>
+                    <output class="tile-art-import-status" aria-live="polite">Assign all nine roles to preview.</output>
+                  </div>
+                  <div class="tile-art-import-row">
+                    <button class="tile-art-import-apply" type="button" disabled>Use this tileset for the current style</button>
+                    <button class="tile-art-import-clear" type="button" hidden>Go back to generated art</button>
+                  </div>
+                </li>
+              </ol>
+            </section>
+
+            <section class="tile-art-panel tile-art-panel--advanced" data-art-panel-content="advanced" role="tabpanel" hidden>
+              <p class="tile-art-advanced-note">These controls are useful for larger tilesets, variation, and shipping. You do not need them for the normal generate → paint workflow.</p>
+              <details open>
+                <summary>Style management and recovery</summary>
+                <div class="tile-art-advanced-grid">
+                  <button class="tile-art-material-reset" type="button">Restore this style to its quick look</button>
+                  <button class="tile-art-remove-material" type="button">Delete this terrain style</button>
+                  <label><input class="tile-art-clip-manual" type="checkbox" checked> Keep manual paint inside the generated shape</label>
+                </div>
+              </details>
+              <details>
+                <summary>Resolution and visual variation</summary>
+                <div class="tile-art-advanced-grid">
+                  <label>Tile resolution <select class="tile-art-resolution" aria-label="Art resolution"><option>16</option><option>32</option><option>48</option><option selected>64</option><option>96</option><option>128</option></select></label>
+                  <span class="tile-art-resolution-confirm" hidden><button class="tile-art-resolution-apply" type="button">Confirm resize</button><button class="tile-art-resolution-cancel" type="button">Cancel</button></span>
+                  <label>Variation seed <input class="tile-art-seed" type="number" value="1337"></label>
+                  <button class="tile-art-reroll" type="button">Reroll decoration</button>
+                  <label>Variation <select class="tile-art-variant" aria-label="Art variant"></select></label>
+                  <button class="tile-art-add-variant" type="button">+ New variation</button>
+                  <label>Frequency <input class="tile-art-variant-weight" type="number" min="0" step="0.1" value="1"></label>
+                  <button class="tile-art-pin-variant" type="button">Use this variation here</button>
+                </div>
+              </details>
+              <details class="tile-art-transition-details">
+                <summary>Transitions between terrain styles</summary>
+                <div class="tile-art-advanced-grid">
+                  <label>Other style <select class="tile-art-transition-background" aria-label="Other terrain style"></select></label>
+                  <label>Join style <select class="tile-art-transition-mode" aria-label="Transition mode"><option value="hard">Clean edge</option><option value="contour">Outlined edge</option></select></label>
+                </div>
+              </details>
+              <details>
+                <summary>Art layers</summary>
+                <div class="tile-art-layers" aria-label="Terrain art layers"></div>
+              </details>
+              <details class="tile-art-overrides"><summary>Level-only edits</summary><div class="tile-art-override-list"></div><button class="tile-art-clear-overrides" type="button">Clear every level-only edit</button></details>
+            </section>
+          </div>
         </div>
       </section>
     </main>

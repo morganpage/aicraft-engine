@@ -15,6 +15,7 @@ import { initPlayground } from './sections/playground';
 import { initParallax } from './sections/parallax';
 import { initSpider } from './sections/spider';
 import { initTileRoom } from './sections/tile-room';
+import { initLdtkEditor } from './sections/ldtk-editor';
 
 /**
  * Global showcase state. The hero fields are populated; the rest of the
@@ -120,4 +121,9 @@ if (spiderSection) {
 const tileRoomSection = document.getElementById('tile-room');
 if (tileRoomSection) {
   initTileRoom(tileRoomSection, store);
+}
+
+const ldtkEditorSection = document.getElementById('ldtk-editor');
+if (ldtkEditorSection) {
+  initLdtkEditor(ldtkEditorSection, store);
 }

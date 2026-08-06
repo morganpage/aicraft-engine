@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./terrain-art/editor": {
+      "types": "./dist/terrain-art/reference-editor.d.ts",
+      "import": "./dist/terrain-art/reference-editor.js"
     }
   },
   "files": [
@@ -41,9 +45,13 @@
     "bench:level-visual": "npx --yes tsx benchmarks/_scripts/level-visual-bench.ts",
     "visual:sheets": "node scripts/run-visual-sheets.mjs",
     "check:terrain-tree-shaking": "node scripts/check-terrain-tree-shaking.mjs",
-    "check:level-visual-size": "node scripts/check-level-visual-size.mjs"
+    "check:level-visual-size": "node scripts/check-level-visual-size.mjs",
+    "benchmark:terrain-art": "npx --yes tsx benchmarks/_scripts/terrain-art-baseline.ts",
+    "check:terrain-art-runtime-size": "node scripts/check-terrain-art-runtime-size.mjs",
+    "check:ldtk-runtime-size": "node scripts/check-ldtk-runtime-size.mjs"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "canvas": "^3.2.3",
     "tsx": "4.23.1",
     "typescript": "^6.0.3",
