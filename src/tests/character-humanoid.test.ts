@@ -8,10 +8,8 @@ import {
   DEFAULT_HUMANOID,
   deriveHumanoidConfig,
 } from '../character/humanoid/config';
-import {
-  evaluateHumanoidLowerBodyPose,
-  evaluateHumanoidUpperBodyPose,
-} from '../character/humanoid/draw';
+import { composePose } from '../character/humanoid/pose';
+import type { PoseComposition } from '../character/humanoid/pose';
 import {
   advanceHumanoidVisual,
   createHumanoidVisualState,
@@ -21,6 +19,7 @@ import type {
   HumanoidMotionSample,
   HumanoidVisualState,
 } from '../character/humanoid/types';
+import type { Vec2 } from '../animation/types';
 
 function motion(
   overrides: Partial<HumanoidMotionSample> = {},
@@ -63,6 +62,26 @@ function segmentsCross(
     && orientation(c, d, a) * orientation(c, d, b) < 0;
 }
 
+function collectLandmarks(pose: PoseComposition): readonly Readonly<Vec2>[] {
+  return [
+    pose.head.centre, pose.head.crown, pose.head.eye,
+    pose.torso.topCentre, pose.torso.bottomCentre,
+    pose.torso.topNear, pose.torso.topFar,
+    pose.torso.bottomNear, pose.torso.bottomFar,
+    pose.farLeg.root, pose.farLeg.joint, pose.farLeg.end,
+    pose.farArm.root, pose.farArm.joint, pose.farArm.end,
+    pose.nearLeg.root, pose.nearLeg.joint, pose.nearLeg.end,
+    pose.nearArm.root, pose.nearArm.joint, pose.nearArm.end,
+  ];
+}
+
+function assertAllFinite(pose: PoseComposition): void {
+  for (const point of collectLandmarks(pose)) {
+    expect(Number.isFinite(point.x)).toBe(true);
+    expect(Number.isFinite(point.y)).toBe(true);
+  }
+}
+
 describe('production humanoid', () => {
   it('derives deterministic bounded variation', () => {
     expect(deriveHumanoidConfig(42)).toEqual(deriveHumanoidConfig(42));
@@ -81,95 +100,93 @@ describe('production humanoid', () => {
 
   it('starts in a grounded, uncrossed, anatomically sided idle stance', () => {
     const config = deriveHumanoidConfig(1);
-    const pose = evaluateHumanoidLowerBodyPose(
-      config,
+    const pose = composePose(
       createHumanoidVisualState(config),
+      config,
     );
-    const points = [
-      pose.leftLeg.hip,
-      pose.leftLeg.knee,
-      pose.leftLeg.foot,
-      pose.rightLeg.hip,
-      pose.rightLeg.knee,
-      pose.rightLeg.foot,
-    ];
+    assertAllFinite(pose);
 
-    expect(points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
-    expect(pose.leftLeg.foot.x).toBeLessThan(0);
-    expect(pose.rightLeg.foot.x).toBeGreaterThan(0);
-    expect(pose.leftLeg.knee.x).toBeLessThan(0);
-    expect(pose.rightLeg.knee.x).toBeGreaterThan(0);
-    expect(pose.leftLeg.knee.x).toBeLessThan(pose.rightLeg.knee.x);
-    expect(pose.leftLeg.foot.x).toBeLessThan(pose.rightLeg.foot.x);
-    expect(pose.leftLeg.foot.y).toBeCloseTo(0);
-    expect(pose.rightLeg.foot.y).toBeCloseTo(0);
-    expect(pose.torsoTop).toBeLessThan(pose.torsoBottom);
-    expect(pose.torsoBottom).toBeLessThan(pose.leftLeg.foot.y);
-    expect(Math.abs(pose.leftLeg.knee.x - pose.leftLeg.hip.x)).toBeLessThan(2.5);
-    expect(Math.abs(pose.rightLeg.knee.x - pose.rightLeg.hip.x)).toBeLessThan(2.5);
-    expect(distance(pose.leftLeg.hip, pose.leftLeg.knee)).toBeCloseTo(config.thighLength);
-    expect(distance(pose.leftLeg.knee, pose.leftLeg.foot)).toBeCloseTo(config.shinLength);
-    expect(distance(pose.rightLeg.hip, pose.rightLeg.knee)).toBeCloseTo(config.thighLength);
-    expect(distance(pose.rightLeg.knee, pose.rightLeg.foot)).toBeCloseTo(config.shinLength);
+    expect(pose.farLeg.end.x).toBeLessThan(0);
+    expect(pose.nearLeg.end.x).toBeGreaterThan(0);
+    expect(pose.farLeg.joint.x).toBeLessThan(0);
+    expect(pose.nearLeg.joint.x).toBeGreaterThan(0);
+    expect(pose.farLeg.joint.x).toBeLessThan(pose.nearLeg.joint.x);
+    expect(pose.farLeg.end.x).toBeLessThan(pose.nearLeg.end.x);
+    expect(pose.farLeg.end.y).toBeCloseTo(0);
+    expect(pose.nearLeg.end.y).toBeCloseTo(0);
+    expect(pose.torso.topCentre.y).toBeLessThan(pose.torso.bottomCentre.y);
+    expect(pose.torso.bottomCentre.y).toBeLessThan(pose.farLeg.end.y);
+    expect(
+      Math.abs(pose.farLeg.joint.x - pose.farLeg.root.x),
+    ).toBeLessThan(2.5);
+    expect(
+      Math.abs(pose.nearLeg.joint.x - pose.nearLeg.root.x),
+    ).toBeLessThan(2.5);
+    expect(distance(pose.farLeg.root, pose.farLeg.joint)).toBeCloseTo(
+      config.thighLength,
+    );
+    expect(distance(pose.farLeg.joint, pose.farLeg.end)).toBeCloseTo(
+      config.shinLength,
+    );
+    expect(distance(pose.nearLeg.root, pose.nearLeg.joint)).toBeCloseTo(
+      config.thighLength,
+    );
+    expect(distance(pose.nearLeg.joint, pose.nearLeg.end)).toBeCloseTo(
+      config.shinLength,
+    );
     expect(
       segmentsCross(
-        pose.leftLeg.hip,
-        pose.leftLeg.knee,
-        pose.rightLeg.hip,
-        pose.rightLeg.knee,
+        pose.farLeg.root,
+        pose.farLeg.joint,
+        pose.nearLeg.root,
+        pose.nearLeg.joint,
       ),
     ).toBe(false);
     expect(
       segmentsCross(
-        pose.leftLeg.knee,
-        pose.leftLeg.foot,
-        pose.rightLeg.knee,
-        pose.rightLeg.foot,
+        pose.farLeg.joint,
+        pose.farLeg.end,
+        pose.nearLeg.joint,
+        pose.nearLeg.end,
       ),
     ).toBe(false);
   });
 
   it('hangs neutral arms beside the torso with a slight valid bend', () => {
     const config = deriveHumanoidConfig(1);
-    const state = createHumanoidVisualState(config);
-    const lowerBody = evaluateHumanoidLowerBodyPose(config, state);
-    const pose = evaluateHumanoidUpperBodyPose(
-      config,
-      state,
-      lowerBody.torsoTop,
-    );
-    const points = [
-      pose.leftArm.shoulder,
-      pose.leftArm.elbow,
-      pose.leftArm.hand,
-      pose.rightArm.shoulder,
-      pose.rightArm.elbow,
-      pose.rightArm.hand,
-    ];
+    const pose = composePose(createHumanoidVisualState(config), config);
+    assertAllFinite(pose);
 
-    expect(points.every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
-    expect(pose.leftArm.elbow.x).toBeLessThan(0);
-    expect(pose.leftArm.hand.x).toBeLessThan(0);
-    expect(pose.rightArm.elbow.x).toBeGreaterThan(0);
-    expect(pose.rightArm.hand.x).toBeGreaterThan(0);
-    expect(pose.leftArm.hand.y).toBeGreaterThan(lowerBody.torsoBottom);
-    expect(pose.rightArm.hand.y).toBeGreaterThan(lowerBody.torsoBottom);
-    expect(distance(pose.leftArm.shoulder, pose.leftArm.elbow)).toBeCloseTo(config.upperArmLength);
-    expect(distance(pose.leftArm.elbow, pose.leftArm.hand)).toBeCloseTo(config.lowerArmLength);
-    expect(distance(pose.rightArm.shoulder, pose.rightArm.elbow)).toBeCloseTo(config.upperArmLength);
-    expect(distance(pose.rightArm.elbow, pose.rightArm.hand)).toBeCloseTo(config.lowerArmLength);
-    expect(distance(pose.leftArm.shoulder, pose.leftArm.hand)).toBeGreaterThan(
+    expect(pose.farArm.joint.x).toBeLessThan(0);
+    expect(pose.farArm.end.x).toBeLessThan(0);
+    expect(pose.nearArm.joint.x).toBeGreaterThan(0);
+    expect(pose.nearArm.end.x).toBeGreaterThan(0);
+    expect(pose.farArm.end.y).toBeGreaterThan(pose.torso.bottomCentre.y);
+    expect(pose.nearArm.end.y).toBeGreaterThan(pose.torso.bottomCentre.y);
+    expect(distance(pose.farArm.root, pose.farArm.joint)).toBeCloseTo(
+      config.upperArmLength,
+    );
+    expect(distance(pose.farArm.joint, pose.farArm.end)).toBeCloseTo(
+      config.lowerArmLength,
+    );
+    expect(distance(pose.nearArm.root, pose.nearArm.joint)).toBeCloseTo(
+      config.upperArmLength,
+    );
+    expect(distance(pose.nearArm.joint, pose.nearArm.end)).toBeCloseTo(
+      config.lowerArmLength,
+    );
+    expect(distance(pose.farArm.root, pose.farArm.end)).toBeGreaterThan(
       (config.upperArmLength + config.lowerArmLength) * 0.9,
     );
-    expect(distance(pose.rightArm.shoulder, pose.rightArm.hand)).toBeGreaterThan(
+    expect(distance(pose.nearArm.root, pose.nearArm.end)).toBeGreaterThan(
       (config.upperArmLength + config.lowerArmLength) * 0.9,
     );
     expect(
       segmentsCross(
-        pose.leftArm.shoulder,
-        pose.leftArm.hand,
-        pose.rightArm.shoulder,
-        pose.rightArm.hand,
+        pose.farArm.root,
+        pose.farArm.end,
+        pose.nearArm.root,
+        pose.nearArm.end,
       ),
     ).toBe(false);
   });
@@ -273,5 +290,190 @@ describe('production humanoid', () => {
     expect(customRegistry.get('custom')).toBe(custom.custom);
     expect(customRegistry.get('missing')).toBeUndefined();
     expectTypeOf(customRegistry.get('custom')).toEqualTypeOf(custom.custom);
+  });
+});
+
+describe('humanoid neutral idle pose geometry (Phase H2)', () => {
+  const SEEDS = [
+    0, 1, 2, 3, 7, 17, 42, 99, 101, 256, 511, 777, 1000, 1234, 4321, 0x48554d41,
+  ];
+
+  function idlePose(seed: number): PoseComposition {
+    const config = deriveHumanoidConfig(seed);
+    return composePose(createHumanoidVisualState(config), config);
+  }
+
+  it('emits only finite landmarks across a seed sweep', () => {
+    for (const seed of SEEDS) {
+      const pose = idlePose(seed);
+      for (const point of collectLandmarks(pose)) {
+        expect(Number.isFinite(point.x)).toBe(true);
+        expect(Number.isFinite(point.y)).toBe(true);
+      }
+      for (const value of Object.values(pose.blendWeights)) {
+        expect(Number.isFinite(value)).toBe(true);
+      }
+    }
+  });
+
+  it('preserves configured limb lengths through the IK solver', () => {
+    for (const seed of SEEDS) {
+      const config = deriveHumanoidConfig(seed);
+      const pose = idlePose(seed);
+      expect(distance(pose.farLeg.root, pose.farLeg.joint)).toBeCloseTo(
+        config.thighLength,
+      );
+      expect(distance(pose.farLeg.joint, pose.farLeg.end)).toBeCloseTo(
+        config.shinLength,
+      );
+      expect(distance(pose.nearLeg.root, pose.nearLeg.joint)).toBeCloseTo(
+        config.thighLength,
+      );
+      expect(distance(pose.nearLeg.joint, pose.nearLeg.end)).toBeCloseTo(
+        config.shinLength,
+      );
+      expect(distance(pose.farArm.root, pose.farArm.joint)).toBeCloseTo(
+        config.upperArmLength,
+      );
+      expect(distance(pose.farArm.joint, pose.farArm.end)).toBeCloseTo(
+        config.lowerArmLength,
+      );
+      expect(distance(pose.nearArm.root, pose.nearArm.joint)).toBeCloseTo(
+        config.upperArmLength,
+      );
+      expect(distance(pose.nearArm.joint, pose.nearArm.end)).toBeCloseTo(
+        config.lowerArmLength,
+      );
+    }
+  });
+
+  it('keeps idle feet grounded, ordered, and non-crossing', () => {
+    for (const seed of SEEDS) {
+      const pose = idlePose(seed);
+      expect(pose.nearLeg.end.x).toBeGreaterThan(pose.farLeg.end.x);
+      expect(pose.nearLeg.end.y).toBeCloseTo(0, 1);
+      expect(pose.farLeg.end.y).toBeCloseTo(0, 1);
+      expect(
+        segmentsCross(
+          pose.farLeg.root,
+          pose.farLeg.joint,
+          pose.nearLeg.root,
+          pose.nearLeg.joint,
+        ),
+      ).toBe(false);
+      expect(
+        segmentsCross(
+          pose.farLeg.joint,
+          pose.farLeg.end,
+          pose.nearLeg.joint,
+          pose.nearLeg.end,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it('keeps each idle knee on its own anatomical side', () => {
+    for (const seed of SEEDS) {
+      const pose = idlePose(seed);
+      expect(pose.nearLeg.joint.x).toBeGreaterThan(0);
+      expect(pose.farLeg.joint.x).toBeLessThan(0);
+    }
+  });
+
+  it('places the centre of mass between the idle support contacts', () => {
+    for (const seed of SEEDS) {
+      const pose = idlePose(seed);
+      const left = Math.min(pose.farLeg.end.x, pose.nearLeg.end.x);
+      const right = Math.max(pose.farLeg.end.x, pose.nearLeg.end.x);
+      expect(pose.torso.bottomCentre.x).toBeGreaterThan(left);
+      expect(pose.torso.bottomCentre.x).toBeLessThan(right);
+    }
+  });
+
+  it('hangs idle hands below the pelvis, above the knees, outside the centreline', () => {
+    for (const seed of SEEDS) {
+      const pose = idlePose(seed);
+      const pelvisY = pose.torso.bottomCentre.y;
+      const kneeY = Math.min(pose.farLeg.joint.y, pose.nearLeg.joint.y);
+      for (const hand of [pose.farArm.end, pose.nearArm.end]) {
+        expect(hand.y).toBeGreaterThan(pelvisY);
+        expect(hand.y).toBeLessThan(kneeY);
+      }
+      expect(pose.farArm.end.x).toBeLessThan(0);
+      expect(pose.nearArm.end.x).toBeGreaterThan(0);
+      expect(pose.farArm.joint.x).toBeLessThan(0);
+      expect(pose.nearArm.joint.x).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps near and far limbs distinguishable via small vertical and horizontal offsets', () => {
+    for (const seed of SEEDS) {
+      const pose = idlePose(seed);
+      expect(pose.nearLeg.end.x).not.toBeCloseTo(pose.farLeg.end.x, 0);
+      expect(pose.nearLeg.joint.y).not.toBeCloseTo(pose.farLeg.joint.y, 1);
+      expect(pose.nearArm.end.x).not.toBeCloseTo(pose.farArm.end.x, 0);
+      expect(pose.nearArm.joint.y).not.toBeCloseTo(pose.farArm.joint.y, 1);
+      expect(pose.torso.topNear.x).not.toBeCloseTo(-pose.torso.topFar.x, 1);
+    }
+  });
+
+  it('keeps the canonical pose independent of facing (mirroring is render-time only)', () => {
+    const config = deriveHumanoidConfig(42);
+    const rightFacing: HumanoidVisualState = {
+      ...createHumanoidVisualState(config),
+      facing: 1,
+    };
+    const leftFacing: HumanoidVisualState = {
+      ...createHumanoidVisualState(config),
+      facing: -1,
+    };
+    expect(composePose(rightFacing, config)).toEqual(composePose(leftFacing, config));
+  });
+
+  it('reports idle gait phase and grounded air pose at rest', () => {
+    const pose = idlePose(1);
+    expect(pose.gaitPhase).toBe('idle');
+    expect(pose.airPose).toBe('grounded');
+    expect(pose.blendWeights.idle).toBe(1);
+  });
+
+  it('derives a named gait phase after walking (H3 geometry pending)', () => {
+    const config = deriveHumanoidConfig(2);
+    let state = createHumanoidVisualState(config);
+    for (let i = 0; i < 200; i += 1) {
+      state = advanceHumanoidVisual(config, state, motion({ dx: 4 }), 1 / 60);
+    }
+    const pose = composePose(state, config);
+    expect(pose.gaitPhase).not.toBe('idle');
+    expect([
+      'contact',
+      'recoil',
+      'passing',
+      'highPoint',
+      'oppositeContact',
+    ]).toContain(pose.gaitPhase);
+  });
+
+  it('never produces non-finite geometry for defensive inputs', () => {
+    const config = deriveHumanoidConfig(7);
+    const cleanState = createHumanoidVisualState(config);
+
+    const nonFiniteState: HumanoidVisualState = {
+      locomotion: { phase: Number.NaN },
+      facing: 1,
+      idleBlend: Number.NaN,
+      airPose: 'ascent',
+      launchBlend: Number.POSITIVE_INFINITY,
+      landingBlend: Number.POSITIVE_INFINITY,
+      ceilingBlend: Number.NEGATIVE_INFINITY,
+      armTarget: null,
+    };
+
+    assertAllFinite(composePose(nonFiniteState, config));
+    assertAllFinite(composePose(cleanState, config, { x: 1e9, y: 1e9 }));
+    assertAllFinite(composePose(cleanState, config, { x: Number.NaN, y: 5 }));
+    assertAllFinite(
+      composePose(cleanState, config, { x: Number.POSITIVE_INFINITY, y: 0 }),
+    );
   });
 });

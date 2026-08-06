@@ -5,6 +5,7 @@ dist/
 .vite/
 coverage/
 .playwright-mcp/
+.zcode/
 
 # Regenerable level-visual outputs. Keep the gallery index and small references.
 benchmarks/visual/*

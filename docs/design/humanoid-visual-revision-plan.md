@@ -2,7 +2,7 @@
 
 > Date: 2026-07-29
 > Status: **READY FOR IMPLEMENTATION**
-> Branch: `codex/character-enemy-validation`
+> Branch: to be cut from `main` as `codex/character-enemy-validation` (worktree is currently on `main`)
 > Candidate release: `aicraft-engine@0.5.0`
 > Trigger: the 0.5.0 candidate passed its technical gates but did not pass
 > humanoid visual review
@@ -63,14 +63,17 @@ original analytical diagrams.
 
 1. Keep procedural Canvas2D rendering. Do not replace `drawHumanoid` with a
    sprite-sheet renderer.
-2. Keep the public `0.5.0` humanoid API stable:
-   - `HumanoidConfig`
-   - `HumanoidVisualState`
-   - `HumanoidMotionSample`
-   - `deriveHumanoidConfig`
-   - `createHumanoidVisualState`
-   - `advanceHumanoidVisual`
-   - `drawHumanoid`
+2. Keep the public `0.5.0` humanoid API stable. The authority is the current
+   barrel at `src/character/humanoid/index.ts`, which exports:
+   - types: `HumanoidAirPose`, `HumanoidConfig`, `HumanoidHeadStyle`,
+     `HumanoidMotionSample`, `HumanoidVisualState`;
+   - constants: `HUMANOID_BASE_HEIGHT`, `HUMANOID_BASE_WIDTH`,
+     `HUMANOID_BREATH`, `HUMANOID_GAIT`;
+   - config: `deriveHumanoidConfig`, `DEFAULT_HUMANOID`;
+   - state: `advanceHumanoidVisual`, `createHumanoidVisualState`;
+   - draw: `drawHumanoid`.
+   If the barrel drifts between now and implementation, the barrel is the
+   compatibility surface — not this enumerated list.
 3. Do not add a runtime dependency.
 4. Do not move world position, velocity, collision, support, or jump simulation
    into `src/character/`.
@@ -355,6 +358,52 @@ Exit criteria:
   defensible source or are explicitly marked as a remaining gap.
 - No approval target depends only on the old analytical hypotheses.
 
+Contingency:
+
+The GandalfHardcore Warrior is "external measurement only until a precise reuse
+licence is confirmed." If that licence cannot be confirmed during H1, do not
+block the phase: proceed on the Godot MIT robot plus the Shantae / Freedom
+Planet 2 CC BY-SA analysis, and mark every Warrior-sourced range as **inferred**
+rather than measured. H1 is not allowed to stall on a licence that may never
+arrive.
+
+### Phase H1.5 — Design and critique the internal pose contract
+
+Deliverables:
+
+- `@api-designer` proposes 2 alternative shapes for the internal pose evaluator
+  in `src/character/humanoid/pose.ts` (for example: a single
+  `evaluatePose(state, config)` returning a flat landmark record, vs. a layered
+  `composePose(...)` returning typed near/far limb groups), each with a usage
+  sketch and explicit trade-offs. Written to
+  `docs/design/humanoid-pose-contract-proposal.md`.
+- `@architect` critiques both against `docs/architecture.md` and
+  `docs/conventions.md`: determinism (no `Math.random` / `Date.now` / canvas),
+  layer separation (no `src/platformer/` import, no host access), finite-output
+  discipline, file naming, and JSDoc. Returns `APPROVED` or `NEEDS REVISION`.
+- Orchestrator records the chosen shape and rationale in
+  `docs/design/humanoid-pose-contract-decision.md`.
+
+Scope:
+
+- This is an **internal** contract only. The public API from decision #2 is not
+  reopened, and `pose.ts` is not re-exported from
+  `src/character/humanoid/index.ts`.
+- The named-gait-phase derivation strategy (typed phase enum vs. derived
+  continuous value, referenced under "Implementation shape / Pure pose layer")
+  is settled here, not improvised during H2.
+
+Exit criteria:
+
+- A chosen, architect-approved pose-evaluator shape exists before `@coder`
+  starts H2.
+
+Rationale:
+
+- The public API is frozen, but `pose.ts` is a new internal seam shared by
+  `state.ts`, `draw.ts`, and the H6 tests. Getting it wrong means reworking
+  three files. A short design pass is cheap insurance.
+
 ### Phase H2 — Implement and review neutral projection first
 
 Deliverables:
@@ -376,6 +425,43 @@ Review gate:
 Do not implement the full run cycle until the idle sheet is visually reviewed.
 The idle must no longer show crossed legs, a front-facing torso with side-facing
 feet, drooping shoulders, hands-on-hips, or unexplained arm gestures.
+
+### Phase H2.5 — Render-fidelity pass (read as a character, not a wireframe)
+
+Trigger: the H2 idle sheet passed the geometry and depth checks, but the human
+reviewer flagged that the renderer draws the measured skeleton as minimal
+primitives — line "bones", a flat torso quad, a circle head, a dot eye, a
+rectangle cap — so it reads as a debug/wireframe figure, not a believable
+human. The measured pose geometry (H1 / H1.5 / H2) is the foundation and is
+retained unchanged; this phase raises only the render layer to match.
+
+Locked: keep procedural Canvas2D (decision #1 unchanged) and the zero-dep
+invariant. This is **not** a switch to sprite-sheet rendering. The realistic
+target is a clean, readable minimalist procedural character (polished vector /
+chunky-retro-sprite feel), not hand-drawn or photoreal art.
+
+Deliverables (renderer-only; `pose.ts` geometry and the public API are
+unchanged):
+
+- Filled tapered limbs (a polygon per bone segment, wider at the root and
+  narrower at the end) with outline, replacing the line-based `drawBone`. Near
+  limbs slightly thicker / brighter; far limbs slightly thinner / darker, to
+  reinforce depth.
+- Hand and foot shapes at the limb ends (small rounded forms; feet point in the
+  travel direction).
+- A real face instead of a floating dot eye: the eye set within a face
+  indication on the travel-facing side (brow / nose / jaw contour as
+  appropriate at `32 × 48`), preserving the three-quarter turn.
+- Nicer head treatment: the `cap` rendered as a curved cap following the head
+  arc (not a flat rectangle) and the `crest` as a cleaner shape.
+- Consistent outline weight; no subpixel artefacts; deterministic output.
+
+Out of scope: locomotion / airborne / landing geometry (still H3 / H4), public
+API changes, new dependencies, sprite assets.
+
+Review gate (human): the idle sheet is re-rendered and must read as a
+character — not sticks, a flat block, a dot eye, or a hat-block. Only after
+this gate does H3 (locomotion) begin.
 
 ### Phase H3 — Implement measured grounded locomotion
 
@@ -471,6 +557,17 @@ Required sweeps:
 Tests should assert structural invariants and measured ranges. Pixel hashes are
 reserved for deterministic artifacts, not used as a substitute for anatomical
 tests.
+
+Test-type discipline:
+
+- H6 tests are **canvas-free property/unit assertions**. They run under
+  `vitest` in the node environment with no `canvas` import, so they stay fast
+  and deterministic regardless of seed / phase / facing / gravity / head-style
+  combinatorics.
+- Any test that needs to render pixels belongs in H7's benchmark scripts, not
+  in `src/tests/character-humanoid.test.ts`.
+- The large sweep counts (100 seeds, 64 phase samples) are acceptable only
+  because each assertion is a cheap numeric invariant, not a render.
 
 ### Phase H7 — Rebuild visual evidence
 
