@@ -226,6 +226,90 @@ describe('LDtk play-mode ladders', () => {
     // player falls (positive y) rather than rising.
     expect(state.core.y).toBeGreaterThan(startY);
   });
+
+  it('climbs to the top of the ladder and steps off onto a floor', () => {
+    // Transition test: reach the top of the shaft and keep moving up — the
+    // player must leave the ladder cells and stand on the floor above, not get
+    // stuck. A regression guard for "can't move off ladders".
+    const config = PRECISION_PLATFORMER;
+    // Shaft occupies rows 0..7 of column 1. A floor sits along the top (row 0
+    // is the ceiling of the level, so put the floor at y = -TILE just above it).
+    const floorSolids: Solid[] = [
+      ...solids,
+      { id: 'floor-top', x: 0, y: -TILE, width: 3 * TILE, height: TILE },
+    ];
+    let state = playerInShaft(2, config);
+
+    // Climb up until clear of the shaft (above row 0).
+    for (let i = 0; i < 60; i++) {
+      state = stepLadderPlay(
+        state,
+        { moveX: 0, jump: false, climbY: -CLIMB_SPEED },
+        floorSolids,
+        ladders,
+        DT,
+        config,
+      );
+    }
+    // The player must have risen well past the start and not be frozen.
+    expect(state.core.y).toBeLessThan(-TILE);
+  });
+
+  it('resets jump state while climbing so jump works after leaving the ladder', () => {
+    // The original bug: climbing desynced the jump ability's internal state, so
+    // jumping after a climb felt wrong (stale momentum / slow recovery). This
+    // pins that the jump state is reset to grounded each climb tick and resumes
+    // cleanly. Climb a few ticks, then drive a jump from a grounded floor and
+    // assert a real launch.
+    const config = PRECISION_PLATFORMER;
+    let state = playerInShaft(4, config);
+    for (let i = 0; i < 5; i++) {
+      state = stepLadderPlay(
+        state,
+        { moveX: 0, jump: false, climbY: -CLIMB_SPEED },
+        solids,
+        ladders,
+        DT,
+        config,
+      );
+    }
+    // After climbing, the jump slice must be in its grounded phase (the reset).
+    const jumpSlice = state.abilities['jump'];
+    if (jumpSlice && jumpSlice.kind === 'jump') {
+      expect(jumpSlice.jump.phase).toBe('grounded');
+    }
+
+    // Place on a floor and jump: must launch (strongly negative vy) after the
+    // anticipation delay, proving no stale climb momentum carried over.
+    const floorTop = 6 * TILE;
+    state = {
+      ...state,
+      core: { ...state.core, x: 4 * TILE, y: floorTop - state.core.height, vx: 0, vy: 0, onGround: true },
+    };
+    const floor: Solid[] = [{ id: 'floor', x: 3 * TILE, y: floorTop, width: 10 * TILE, height: TILE }];
+    for (let i = 0; i < 3; i++) {
+      state = stepLadderPlay(
+        state,
+        { moveX: 0, jump: false, climbY: 0 },
+        floor,
+        { size: TILE, cells: new Set<string>() },
+        DT,
+        config,
+      );
+    }
+    // Hold jump long enough to pass anticipation, then assert the rise.
+    for (let i = 0; i < 6; i++) {
+      state = stepLadderPlay(
+        state,
+        { moveX: 0, jump: true, climbY: 0 },
+        floor,
+        { size: TILE, cells: new Set<string>() },
+        DT,
+        config,
+      );
+    }
+    expect(state.core.vy).toBeLessThan(-50);
+  });
 });
 
 describe('LDtk play-mode ladder config', () => {

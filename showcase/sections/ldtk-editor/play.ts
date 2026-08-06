@@ -19,6 +19,7 @@ import {
   type PlatformerInput,
   type PlatformerState,
 } from '../../../src/platformer';
+import { createJumpState } from '../../../src/animation/jump';
 import { createCamera, updateCamera, type Camera } from '../../../src/camera';
 import {
   createKeyboardAdapter,
@@ -290,6 +291,19 @@ export function stepLadderPlay(
   if (ladderAuthoritative) {
     const targetY = startCoreY + intent.climbY * dt;
     next = { ...next, core: { ...next.core, y: targetY, vy: intent.climbY } };
+    // The jump ability runs its own gravity inside `stepPlatformer` and writes
+    // it back to `core.vy` from an internal state that drifts while we hold the
+    // ladder-authoritative Y (the cause of the broken jump-off-ladder feel).
+    // Resetting the jump slice to a fresh grounded state each ladder tick stops
+    // the drift, so leaving the ladder or jumping resumes clean physics with no
+    // stale momentum and no slow landing-recovery.
+    next = {
+      ...next,
+      abilities: {
+        ...next.abilities,
+        jump: { kind: 'jump', jump: createJumpState(config.jump) },
+      },
+    };
   }
 
   return next;
