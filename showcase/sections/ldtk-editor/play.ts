@@ -19,7 +19,7 @@ import {
   type PlatformerInput,
   type PlatformerState,
 } from '../../../src/platformer';
-import { createJumpState } from '../../../src/animation/jump';
+import { createJumpState, DEFAULT_JUMP } from '../../../src/animation/jump';
 import { createCamera, updateCamera, type Camera } from '../../../src/camera';
 import {
   createKeyboardAdapter,
@@ -64,14 +64,33 @@ export const PLAYER_WIDTH = 8;
 export const CLIMB_SPEED = 120;
 
 /**
+ * Play-mode kernel tuning. Matches the tile-room showcase so the feel is
+ * consistent across scenes: gravity 1800 px/s², move 180 px/s, an 81px apex
+ * (~5 tiles) over 0.3s. Higher and snappier than the bare `PRECISION_PLATFORMER`
+ * default (apex 48px / gravity 980), which felt too weak and floaty here.
+ */
+const PLAY_CONFIG: Readonly<PlatformerConfig> = {
+  ...PRECISION_PLATFORMER,
+  gravity: 1800,
+  maxFallSpeed: 720,
+  moveSpeed: 180,
+  airControl: 0.5,
+  jump: {
+    ...DEFAULT_JUMP,
+    apexHeight: 81,
+    timeToApex: 0.3,
+  },
+};
+
+/**
  * Gravity-free config used while the player is on a ladder, so they stick in
  * place while idle and a climb override (see `stepLadderPlay`) is not fought
- * by gravity. Same as `PRECISION_PLATFORMER` but with gravity zeroed; the
- * terminal fall speed is kept at the normal value so the climb override (which
- * sets `vy` directly) is not clamped to zero by the kernel's max-fall clamp.
+ * by gravity. Same as `PLAY_CONFIG` but with gravity zeroed; the terminal fall
+ * speed is kept at the normal value so the climb override (which sets `vy`
+ * directly) is not clamped to zero by the kernel's max-fall clamp.
  */
 export const ZERO_GRAVITY_CONFIG: Readonly<PlatformerConfig> = {
-  ...PRECISION_PLATFORMER,
+  ...PLAY_CONFIG,
   gravity: 0,
 };
 
@@ -109,7 +128,7 @@ export function createPlaySession(
   canvas: HTMLCanvasElement,
   ldtkLevel: LdtkLevel,
 ): PlaySession {
-  const config: Readonly<PlatformerConfig> = PRECISION_PLATFORMER;
+  const config: Readonly<PlatformerConfig> = PLAY_CONFIG;
   const compiled: CompiledLevel = compileGeneratedLevel(
     { level, tileSemantics: semantics },
     { config, playerWidth: PLAYER_WIDTH },

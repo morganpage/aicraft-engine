@@ -19,10 +19,13 @@ import {
   stepLadderPlay,
   ZERO_GRAVITY_CONFIG,
 } from '../sections/ldtk-editor/play';
-import { createPlatformerState, PRECISION_PLATFORMER } from '../../src/platformer';
+import { createPlatformerState, stepPlatformer, PRECISION_PLATFORMER } from '../../src/platformer';
 import type { PlatformerConfig, PlatformerState } from '../../src/platformer';
 import type { Solid } from '../../src/collision';
 import type { LdtkLevel } from '../../src/ldtk';
+
+/** An idle (never pressed) jump edge. */
+const IDLE = { pressed: false, released: false, held: false };
 
 /** Tile size used throughout the bundled LDtk sample. */
 const TILE = 16;
@@ -317,6 +320,54 @@ describe('LDtk play-mode ladder config', () => {
     // gravity 0 stops the fall so the player sticks; maxFallSpeed must stay
     // non-zero or the kernel's max-fall clamp zeroes any climb override too.
     expect(ZERO_GRAVITY_CONFIG.gravity).toBe(0);
-    expect(ZERO_GRAVITY_CONFIG.maxFallSpeed).toBe(PRECISION_PLATFORMER.maxFallSpeed);
+    expect(ZERO_GRAVITY_CONFIG.maxFallSpeed).toBeGreaterThan(0);
+  });
+
+  it('jumps high enough to clear a ladder-tall obstacle (~5 tiles)', () => {
+    // The play config tunes the jump to an 81px apex (5 tiles) to match the
+    // tile-room feel. Pin it behaviourally: a grounded jump must rise well past
+    // the old 48px (3-tile) default, guarding against a weak-jump regression.
+    const config = ZERO_GRAVITY_CONFIG; // any play config; jump is the same
+    // Stand on a floor.
+    const floorTop = 10 * TILE;
+    let state = createPlatformerState(
+      4 * TILE,
+      floorTop - PLAYER_WIDTH * 4,
+      config,
+      PLAYER_WIDTH,
+      PLAYER_WIDTH * 4,
+    );
+    const floor: Solid[] = [
+      { id: 'floor', x: 0, y: floorTop, width: 20 * TILE, height: TILE },
+    ];
+    // Settle onto the floor.
+    for (let i = 0; i < 5; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 0, jump: IDLE, dash: null },
+        floor,
+        DT,
+        config,
+      ).state;
+    }
+    const startY = state.core.y;
+    // Press jump on the first tick and HOLD it through the rise so the
+    // variable-height cutoff doesn't truncate the jump (releasing early cuts
+    // the apex). Track the peak Y until the player lands back on the floor.
+    let peakY = startY;
+    for (let i = 0; i < 90; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, dash: null },
+        floor,
+        DT,
+        config,
+      ).state;
+      peakY = Math.min(peakY, state.core.y);
+      if (state.core.onGround && i > 15) break;
+    }
+    const rise = startY - peakY;
+    // ~81px apex with tolerance; comfortably above the 48px default.
+    expect(rise).toBeGreaterThan(70);
   });
 });
