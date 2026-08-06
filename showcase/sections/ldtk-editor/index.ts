@@ -14,8 +14,11 @@
 import { createGameLoop, type GameLoop } from '../../../src/game-loop';
 import { resizeCanvasToBackingStore } from '../../../src/primitives';
 import {
+  addLdtkEntity,
   ldtkLevelToLevelData,
+  moveLdtkEntity,
   paintLdtkIntGrid,
+  removeLdtkEntity,
   type LdtkLayerInstance,
   type LdtkLevel,
   type LdtkProject,
@@ -38,18 +41,97 @@ import {
   clampViewport,
   fitViewport,
   screenToCell,
+  screenToWorld,
   zoomAbout,
   zoomIn,
   zoomOut,
   type Viewport,
 } from './viewport';
-import { renderEditorScene } from './render';
+import { renderEditorScene, type EntityDrawEntry } from './render';
 import { PREVIEW_TOOLS, toolCells, lineCells, type Cell, type LdtkToolId } from './tools';
 import { createPlaySession, type PlaySession } from './play';
+import {
+  entityAtPoint,
+  entityInstanceFromDef,
+  levelEntityCount,
+  nextEntityIid,
+  paletteForLayer,
+} from './entities';
 
-// Bundled sample — the demo works with no file access at all.
-import sampleText from '../../../assets/ldtk/samples/Typical_2D_platformer_example.ldtk?raw';
-import sunnyLandUrl from '../../../assets/ldtk/samples/atlas/SunnyLand_by_Ansimuz-extended.png';
+// Bundled samples — globbed so every .ldtk under assets/ldtk/samples is
+// offered. The `.ldtk` text is loaded lazily (some samples are hundreds of KB),
+// while atlas image URLs are resolved eagerly (they are just URL strings; the
+// image bytes themselves load on demand via `loadImageFromUrl`).
+const sampleLoaders = import.meta.glob('../../../assets/ldtk/samples/*.ldtk', {
+  query: '?raw',
+  import: 'default',
+}) as Record<string, () => Promise<string>>;
+const atlasModules = import.meta.glob('../../../assets/ldtk/samples/atlas/*.png', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+/**
+ * A bundled sample's metadata: enough to populate the dropdown and resolve its
+ * tileset images, before the (large) `.ldtk` text is loaded on selection.
+ */
+interface BundledSample {
+  readonly fileName: string;
+  readonly label: string;
+  /** Lazy loader for the raw `.ldtk` text. */
+  readonly load: () => Promise<string>;
+  /** Image URLs by lowercased basename. */
+  readonly atlas: ReadonlyMap<string, string>;
+}
+
+/** Last path segment of a relative path. */
+function basename(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] ?? path;
+}
+
+/**
+ * Derive a short, human-friendly label from a sample file name.
+ *
+ * Strips the redundant `Typical_`/`AutoLayers_` prefixes the LDtk samples share
+ * and tidies underscores, so the dropdown reads "2D platformer example" rather
+ * than "Typical_2D_platformer_example".
+ */
+function sampleLabel(fileName: string): string {
+  return fileName
+    .replace(/^Typical_/, '')
+    .replace(/^AutoLayers_/, 'Auto-layers ')
+    .replace(/\.ldtk$/, '')
+    .replace(/_/g, ' ');
+}
+
+/**
+ * Build the sample registry from the globbed modules, in stable (name) order.
+ *
+ * Tileset references cannot be read from the (not-yet-loaded) text, so each
+ * sample is matched against the *whole* atlas glob — every bundled atlas image
+ * is offered to every sample, and the renderer skips any tileset whose image
+ * does not load. That keeps the registry build synchronous and the dropdown
+ * instant; the cost is one extra (skipped) image fetch per sample at most.
+ */
+function buildSampleRegistry(): readonly BundledSample[] {
+  const atlasByBasename = new Map<string, string>();
+  for (const [path, url] of Object.entries(atlasModules)) {
+    atlasByBasename.set(basename(path).toLowerCase(), url);
+  }
+
+  return Object.entries(sampleLoaders)
+    .map(([path, load]) => ({
+      fileName: basename(path),
+      label: sampleLabel(basename(path)),
+      load,
+      atlas: atlasByBasename,
+    }))
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+const SAMPLES: readonly BundledSample[] = buildSampleRegistry();
 
 const CANVAS_W = 900;
 const CANVAS_H = 520;
@@ -67,6 +149,10 @@ interface EditorState {
   showGrid: boolean;
   showIntGrid: boolean;
   dirty: boolean;
+  /** Selected entity def uid in the palette (the entity to place). */
+  entityDefUid: number | null;
+  /** Currently selected entity instance, or `null` when none. */
+  selectedEntityIid: string | null;
 }
 
 /**
@@ -98,7 +184,10 @@ export function initLdtkEditor(
 
   const layerList = query<HTMLElement>('.ldtk-layers');
   const valueList = query<HTMLElement>('.ldtk-values');
+  const entityPalette = query<HTMLElement>('.ldtk-entity-palette');
+  const entityTitle = query<HTMLElement>('.ldtk-entity-title');
   const levelSelect = query<HTMLSelectElement>('.ldtk-level-select');
+  const sampleSelect = query<HTMLSelectElement>('.ldtk-sample-select');
   const toolbar = query<HTMLElement>('.ldtk-tools');
   const zoomValue = query<HTMLElement>('.ldtk-zoom-value');
   const fileInput = query<HTMLInputElement>('.ldtk-file-input');
@@ -116,6 +205,8 @@ export function initLdtkEditor(
     showGrid: true,
     showIntGrid: false,
     dirty: false,
+    entityDefUid: null,
+    selectedEntityIid: null,
   };
 
   const history: LdtkProject[] = [];
@@ -150,6 +241,45 @@ export function initLdtkEditor(
 
   const colorOfValue = (value: number): string | undefined =>
     valueDefs().find((v) => v.value === value)?.color;
+
+  /** Resolve a selected entity instance on the current layer, if any. */
+  const selectedEntity = () => {
+    const layer = currentLayer();
+    const iid = state.selectedEntityIid;
+    if (layer === undefined || iid === null) return undefined;
+    return layer.entityInstances?.find((e) => e.iid === iid);
+  };
+
+  /** The entity defs the palette should show for the current layer. */
+  const currentPalette = () =>
+    state.project === null ? [] : paletteForLayer(state.project, currentLayer());
+
+  /**
+   * Whether the pointer can interact with entities on the current layer.
+   *
+   * The entity tool targets an `Entities` layer specifically; a click there
+   * either selects an existing instance or places the armed def.
+   */
+  const isEntityLayer = (layer: LdtkLayerInstance | undefined): boolean =>
+    layer !== undefined && layer.__type === 'Entities';
+
+  /**
+   * The entities to draw this frame, resolved against defs and tagged with the
+   * current selection. `undefined` when there is nothing to draw.
+   */
+  const entityDrawEntries = (): readonly EntityDrawEntry[] | undefined => {
+    const layer = currentLayer();
+    if (!isEntityLayer(layer)) return undefined;
+    const instances = layer?.entityInstances ?? [];
+    if (instances.length === 0) return undefined;
+    const defs = state.project?.defs.entities ?? [];
+    const selected = state.selectedEntityIid;
+    return instances.map((entity) => ({
+      entity,
+      def: defs.find((d) => d.uid === entity.defUid),
+      selected: entity.iid === selected,
+    }));
+  };
 
   // --- history ------------------------------------------------------------
 
@@ -207,6 +337,82 @@ export function initLdtkEditor(
     commit(retileProject(painted.project, state.levelIid, layer.layerDefUid));
   }
 
+  // --- entities ----------------------------------------------------------
+
+  /**
+   * Place the armed entity def at a cell on the active Entities layer.
+   *
+   * One history entry per placement. The instance is built from the def (size,
+   * pivot, field defaults) and given a fresh iid; nothing about it is random.
+   */
+  function placeEntity(cell: Cell): void {
+    const layer = currentLayer();
+    if (state.project === null || layer === undefined) return;
+    if (!isEntityLayer(layer) || state.entityDefUid === null) {
+      setStatus('Select an Entities layer and an entity type to place.');
+      return;
+    }
+    const def = state.project.defs.entities.find((d) => d.uid === state.entityDefUid);
+    if (def === undefined) return;
+    const iid = nextEntityIid(
+      state.levelIid,
+      levelEntityCount(currentLevel()?.layerInstances ?? null),
+    );
+    const instance = entityInstanceFromDef(def, cell, layer.__gridSize, iid);
+    const added = addLdtkEntity(state.project, state.levelIid, state.layerIid, instance);
+    if (!added.changed) return;
+    state.selectedEntityIid = iid;
+    commit(added.project);
+  }
+
+  /** Remove the currently selected entity. */
+  function deleteSelectedEntity(): void {
+    const layer = currentLayer();
+    const iid = state.selectedEntityIid;
+    if (state.project === null || layer === undefined || iid === null) return;
+    const removed = removeLdtkEntity(state.project, state.levelIid, state.layerIid, iid);
+    if (!removed.changed) return;
+    state.selectedEntityIid = null;
+    commit(removed.project);
+  }
+
+  /**
+   * Move the selected entity to a pixel position during a drag.
+   *
+   * The drag is collapsed into one undo entry: the project at drag start is
+   * captured the first time this is called and pushed to history once on
+   * pointer-up, so a whole drag reverses with a single undo rather than one
+   * step per pointer-move sample.
+   */
+  function moveSelectedEntity(x: number, y: number): void {
+    const layer = currentLayer();
+    const iid = state.selectedEntityIid;
+    if (state.project === null || layer === undefined || iid === null) return;
+    if (dragStartProject === null) dragStartProject = state.project;
+    const moved = moveLdtkEntity(state.project, state.levelIid, state.layerIid, iid, x, y);
+    if (!moved.changed) return;
+    // Swap the project in place — no per-sample history entry.
+    state.project = moved.project;
+    state.dirty = true;
+    refreshChrome();
+  }
+
+  /**
+   * Finish an entity drag: push the drag-start project as a single undo entry.
+   * Called once on pointer-up; a no-op when the drag never moved anything.
+   */
+  function endEntityDrag(): void {
+    if (dragStartProject !== null && entityDragMoved && state.project !== null) {
+      history.push(dragStartProject);
+      if (history.length > HISTORY_LIMIT) history.shift();
+      future.length = 0;
+      state.dirty = true;
+    }
+    dragStartProject = null;
+    draggingEntity = false;
+    entityDragMoved = false;
+  }
+
   // --- pointer ------------------------------------------------------------
 
   let gestureStart: Cell | null = null;
@@ -214,6 +420,14 @@ export function initLdtkEditor(
   let previewCells: readonly Cell[] = [];
   let cursorCell: Cell | undefined;
   let panning: { x: number; y: number; vx: number; vy: number } | null = null;
+  /** Whether a pointer-down began on the selected entity (a move gesture). */
+  let draggingEntity = false;
+  /** Whether the current drag has moved the entity (for undo collapse). */
+  let entityDragMoved = false;
+  /** Project snapshot at drag start, pushed to history once on pointer-up. */
+  let dragStartProject: LdtkProject | null = null;
+  /** Footprint of a pending placement, for the ghost preview. */
+  let entityGhost: { x: number; y: number; width: number; height: number } | undefined;
 
   const canvasPoint = (event: PointerEvent): { x: number; y: number } => {
     const rect = canvas.getBoundingClientRect();
@@ -263,6 +477,35 @@ export function initLdtkEditor(
     const cell = cellAt(event);
     gestureStart = cell;
     gesturePath = [cell];
+    draggingEntity = false;
+    entityDragMoved = false;
+
+    if (state.tool === 'entity') {
+      const layer = currentLayer();
+      if (!isEntityLayer(layer)) {
+        setStatus('Select an Entities layer to place entities.');
+        gestureStart = null;
+        return;
+      }
+      // Click on an existing instance selects and arms a move; click on empty
+      // space places the armed def. A second click on the selection also starts
+      // a move, so the author can drag either after placing or after selecting.
+      const world = screenToWorld(state.viewport, point.x, point.y);
+      const hit = entityAtPoint(layer, world.x, world.y);
+      if (hit !== undefined) {
+        state.selectedEntityIid = hit.iid;
+        draggingEntity = true;
+        refreshChrome();
+      } else if (state.entityDefUid !== null) {
+        placeEntity(cell);
+        gestureStart = null;
+      } else {
+        state.selectedEntityIid = null;
+        setStatus('Pick an entity type from the palette, then click to place.');
+        refreshChrome();
+      }
+      return;
+    }
 
     if (state.tool === 'picker') {
       const info = gridInfo();
@@ -303,6 +546,47 @@ export function initLdtkEditor(
     cursorCell = cell;
     if (gestureStart === null) return;
 
+    if (state.tool === 'entity') {
+      // Dragging the selection moves it (collapsed to one undo entry on
+      // pointer-up); otherwise the move tracks the pointer for a placement
+      // preview ghost.
+      if (draggingEntity) {
+        const world = screenToWorld(state.viewport, point.x, point.y);
+        const layer = currentLayer();
+        const entity = selectedEntity();
+        if (layer !== undefined && entity !== undefined) {
+          // The pointer should track the entity's centre. `px` is the pivot
+          // point, so to centre the entity under the pointer we place its
+          // top-left at pointer − half size, then convert back to the pivot
+          // position by adding the pivot's fraction of the size.
+          const pivotX = entity.__pivot[0] ?? 0;
+          const pivotY = entity.__pivot[1] ?? 0;
+          const px = Math.round(world.x - entity.width / 2 + pivotX * entity.width);
+          const py = Math.round(world.y - entity.height / 2 + pivotY * entity.height);
+          moveSelectedEntity(px, py);
+          entityDragMoved = true;
+        }
+      } else if (state.entityDefUid !== null) {
+        const layer = currentLayer();
+        const def = state.project?.defs.entities.find((d) => d.uid === state.entityDefUid);
+        if (layer !== undefined && def !== undefined) {
+          // Mirror the placement + draw math so the ghost lands exactly where
+          // the entity will: build the instance, then back out the pivot to get
+          // the rect's top-left (px is the pivot point, not the corner).
+          const preview = entityInstanceFromDef(def, cell, layer.__gridSize, 'preview');
+          const pivotX = preview.__pivot[0] ?? 0;
+          const pivotY = preview.__pivot[1] ?? 0;
+          entityGhost = {
+            x: preview.px[0] - pivotX * preview.width,
+            y: preview.px[1] - pivotY * preview.height,
+            width: def.width,
+            height: def.height,
+          };
+        }
+      }
+      return;
+    }
+
     if (PREVIEW_TOOLS.has(state.tool)) {
       previewCells = toolCells(state.tool, gestureStart, cell, [], gridInfo());
       return;
@@ -325,6 +609,12 @@ export function initLdtkEditor(
       // Nothing to release.
     }
     panning = null;
+    entityGhost = undefined;
+    if (state.tool === 'entity') {
+      endEntityDrag();
+      gestureStart = null;
+      return;
+    }
     if (play !== null || gestureStart === null) {
       gestureStart = null;
       return;
@@ -372,6 +662,7 @@ export function initLdtkEditor(
   function refreshChrome(): void {
     renderLayerList();
     renderValueList();
+    renderEntityPalette();
     renderLevelList();
     renderToolbar();
     if (zoomValue !== null) {
@@ -428,6 +719,44 @@ export function initLdtkEditor(
     }
   }
 
+  function renderEntityPalette(): void {
+    if (entityPalette === null) return;
+    entityPalette.textContent = '';
+    const layer = currentLayer();
+    const isEntity = isEntityLayer(layer);
+    // Toggle the panel heading so the section does not advertise a dead palette
+    // on a non-Entities layer.
+    if (entityTitle !== null) entityTitle.hidden = !isEntity;
+    if (!isEntity) {
+      entityPalette.innerHTML = '<p class="ldtk-hint">Select an Entities layer to place entities.</p>';
+      return;
+    }
+    const entries = currentPalette();
+    if (entries.length === 0) {
+      entityPalette.innerHTML = '<p class="ldtk-hint">This project defines no entity types. Add them in LDtk desktop.</p>';
+      return;
+    }
+    for (const entry of entries) {
+      const { def } = entry;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ldtk-entity';
+      button.setAttribute('aria-pressed', String(def.uid === state.entityDefUid));
+      button.style.setProperty('--swatch', def.color);
+      button.innerHTML =
+        `<span class="ldtk-swatch" aria-hidden="true"></span>`
+        + `<span>${escapeHtml(def.identifier)}</span>`
+        + `<span class="ldtk-entity-meta">${def.width}&times;${def.height}</span>`;
+      button.addEventListener('click', () => {
+        state.entityDefUid = def.uid;
+        state.tool = 'entity';
+        state.selectedEntityIid = null;
+        refreshChrome();
+      });
+      entityPalette.append(button);
+    }
+  }
+
   function renderLevelList(): void {
     if (levelSelect === null || state.project === null) return;
     const levels = allLevels(state.project);
@@ -467,6 +796,10 @@ export function initLdtkEditor(
     const paintable = level?.layerInstances?.find(isPaintable);
     state.layerIid = paintable?.iid ?? level?.layerInstances?.[0]?.iid ?? '';
     state.value = valueDefs()[0]?.value ?? 1;
+    // Forget any entity selection/def from the previous project — its iids and
+    // def uids do not carry over.
+    state.selectedEntityIid = null;
+    state.entityDefUid = null;
 
     state.viewport = fitViewport(contentSize(), { width: CANVAS_W, height: CANVAS_H });
     refreshChrome();
@@ -501,6 +834,7 @@ export function initLdtkEditor(
     }
     const level = currentLevel();
     if (level === null || level === undefined) return;
+    if (state.project === null) return;
     const translated = ldtkLevelToLevelData(level);
     if (translated.level === undefined) {
       setStatus(
@@ -508,9 +842,11 @@ export function initLdtkEditor(
       );
       return;
     }
-    play = createPlaySession(translated.level, translated.tileSemantics, canvas, level);
+    play = createPlaySession(translated.level, translated.tileSemantics, canvas, level, state.project, {
+      onLevelChange: (name) => setStatus(`Playing: ${name}. Arrows to move, Space to jump, Esc to stop.`),
+    });
     section.dataset.mode = 'play';
-    setStatus('Playing. Arrows to move, Space to jump, Esc to stop.');
+    setStatus(`Playing: ${level.identifier}. Arrows to move, Space to jump, Esc to stop.`);
   }
 
   // --- loop ---------------------------------------------------------------
@@ -526,10 +862,13 @@ export function initLdtkEditor(
         return;
       }
       if (play !== null) {
-        play.render(context, CANVAS_W, CANVAS_H, level, state.loaded.tilesets);
+        // Render the room the player is actually in, not the editor's selected
+        // level — the two diverge once the player crosses into a neighbour.
+        play.render(context, CANVAS_W, CANVAS_H, play.activeLdtkLevel(), state.loaded.tilesets);
         return;
       }
       const layer = currentLayer();
+      const entityEntries = entityDrawEntries();
       renderEditorScene(context, {
         level,
         tilesets: state.loaded.tilesets,
@@ -551,6 +890,8 @@ export function initLdtkEditor(
           : {}),
         previewCells,
         ...(cursorCell === undefined ? {} : { cursorCell }),
+        ...(entityEntries === undefined ? {} : { entities: entityEntries }),
+        ...(entityGhost === undefined ? {} : { entityGhost }),
       });
     },
   });
@@ -561,7 +902,10 @@ export function initLdtkEditor(
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerUp);
-  canvas.addEventListener('pointerleave', () => { cursorCell = undefined; });
+  canvas.addEventListener('pointerleave', () => {
+    cursorCell = undefined;
+    entityGhost = undefined;
+  });
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
@@ -569,6 +913,9 @@ export function initLdtkEditor(
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-tool]');
     if (button?.dataset.tool === undefined) return;
     state.tool = button.dataset.tool as LdtkToolId;
+    // Drop the entity selection when leaving the entity tool so the highlight
+    // does not linger over an uninteractable layer.
+    if (state.tool !== 'entity') state.selectedEntityIid = null;
     refreshChrome();
   });
 
@@ -577,6 +924,8 @@ export function initLdtkEditor(
     const level = currentLevel();
     const paintable = level?.layerInstances?.find(isPaintable);
     state.layerIid = paintable?.iid ?? level?.layerInstances?.[0]?.iid ?? '';
+    // An entity selection from another level is meaningless here.
+    state.selectedEntityIid = null;
     state.viewport = fitViewport(contentSize(), { width: CANVAS_W, height: CANVAS_H });
     refreshChrome();
   });
@@ -632,6 +981,19 @@ export function initLdtkEditor(
       event.preventDefault();
       if (event.shiftKey) redo();
       else undo();
+      return;
+    }
+    // Delete the selected entity. Guarded to the entity tool so the editor's
+    // other tools keep their current behaviour, and to non-text inputs so a
+    // field editor (future work) is not starved of Backspace.
+    if (
+      state.tool === 'entity'
+      && state.selectedEntityIid !== null
+      && (event.key === 'Delete' || event.key === 'Backspace')
+      && !isTextTarget(event.target)
+    ) {
+      event.preventDefault();
+      deleteSelectedEntity();
     }
   };
   window.addEventListener('keydown', onKeyDown);
@@ -644,20 +1006,74 @@ export function initLdtkEditor(
     }
   }
 
-  // Bundled sample so the section is live with no interaction.
-  void (async (): Promise<void> => {
-    try {
-      const images = new Map<string, CanvasImageSource>([
-        ['sunnyland_by_ansimuz-extended.png', await loadImageFromUrl(sunnyLandUrl)],
-      ]);
-      report(openBundledProject(sampleText, images, 'Typical_2D_platformer_example.ldtk'));
-    } catch (error) {
-      setStatus(
-        `Could not load the bundled sample (${(error as Error).message}). `
-        + 'Open a .ldtk file to begin.',
-      );
+  /**
+   * Populate the sample dropdown from the globbed registry. Each entry's value
+   * is the sample's file name, so the change handler can look it up directly.
+   */
+  function populateSampleSelect(): void {
+    if (sampleSelect === null) return;
+    const options = SAMPLES.map((s) => {
+      const option = document.createElement('option');
+      option.value = s.fileName;
+      option.textContent = s.label;
+      return option;
+    });
+    if (options.length === 0) return;
+    sampleSelect.textContent = '';
+    sampleSelect.append(...options);
+  }
+
+  /**
+   * Load a bundled sample by file name. The `.ldtk` text is fetched lazily;
+   * then only the tileset images the project actually references are loaded,
+   * matched against the globbed atlas by basename. Defaults to the platformer
+   * sample when the name is unknown.
+   */
+  async function loadBundledSample(fileName: string): Promise<void> {
+    const sample = SAMPLES.find((s) => s.fileName === fileName)
+      ?? SAMPLES.find((s) => s.fileName === 'Typical_2D_platformer_example.ldtk');
+    if (sample === undefined) {
+      setStatus('No bundled samples found. Open a .ldtk file to begin.');
+      return;
     }
-  })();
+    const text = await sample.load();
+    // Which tilesets does this project reference? Pull every "relPath": "…png"
+    // out of the raw text and match against the bundled atlas.
+    const referenced = new Set<string>();
+    const relPathRe = /"relPath":\s*"([^"]+)"/g;
+    for (let m = relPathRe.exec(text); m !== null; m = relPathRe.exec(text)) {
+      referenced.add(basename(m[1]).toLowerCase());
+    }
+    const images = new Map<string, CanvasImageSource>();
+    await Promise.all(
+      [...referenced].map(async (name) => {
+        const url = sample.atlas.get(name);
+        if (url === undefined) return;
+        try {
+          images.set(name, await loadImageFromUrl(url));
+        } catch {
+          // A missing image just leaves its tileset undrawn; the editor still
+          // loads so the level structure is visible.
+        }
+      }),
+    );
+    report(openBundledProject(text, images, sample.fileName));
+  }
+
+  populateSampleSelect();
+  sampleSelect?.addEventListener('change', () => {
+    setStatus(`Loading ${sampleSelect.value}…`);
+    void loadBundledSample(sampleSelect.value);
+  });
+
+  // Bundled sample so the section is live with no interaction. The platformer
+  // sample is the default — its auto-tiling is the section's headline.
+  if (sampleSelect !== null) sampleSelect.value = 'Typical_2D_platformer_example.ldtk';
+  void loadBundledSample('Typical_2D_platformer_example.ldtk').catch((error: Error) => {
+    setStatus(
+      `Could not load the bundled sample (${error.message}). Open a .ldtk file to begin.`,
+    );
+  });
 
   loop.start();
 
@@ -679,4 +1095,11 @@ function escapeHtml(value: string): string {
       default: return '&#39;';
     }
   });
+}
+
+/** Whether a key event originated in a text-editing element. */
+function isTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }

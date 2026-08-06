@@ -555,6 +555,7 @@ drawSpider(ctx, pose, config);</code></pre>
               <button type="button" data-tool="rectangleFilled" aria-pressed="false">Filled</button>
               <button type="button" data-tool="fill" aria-pressed="false">Fill</button>
               <button type="button" data-tool="picker" aria-pressed="false">Pick</button>
+              <button type="button" data-tool="entity" aria-pressed="false">Entity</button>
             </div>
             <span class="ldtk-toolbar-sep" aria-hidden="true"></span>
             <button type="button" class="ldtk-undo">Undo</button>
@@ -568,6 +569,11 @@ drawSpider(ctx, pose, config);</code></pre>
             <button type="button" class="ldtk-zoom-in" aria-label="Zoom in">+</button>
             <button type="button" class="ldtk-fit">Fit</button>
             <span class="ldtk-toolbar-sep" aria-hidden="true"></span>
+            <label class="ldtk-level-label">Sample
+              <select class="ldtk-sample-select" aria-label="Bundled sample">
+                <option value="">Loading…</option>
+              </select>
+            </label>
             <label class="ldtk-level-label">Level
               <select class="ldtk-level-select" aria-label="Level"></select>
             </label>
@@ -575,11 +581,13 @@ drawSpider(ctx, pose, config);</code></pre>
           </div>
 
           <div class="ldtk-workspace">
-            <aside class="ldtk-panel" aria-label="Layers and values">
+            <aside class="ldtk-panel" aria-label="Layers, values and entities">
               <h3 class="ldtk-panel-title">Layers</h3>
               <div class="ldtk-layers"></div>
               <h3 class="ldtk-panel-title">Paint value</h3>
               <div class="ldtk-values"></div>
+              <h3 class="ldtk-panel-title ldtk-entity-title" hidden>Entities</h3>
+              <div class="ldtk-entity-palette"></div>
             </aside>
             <div class="ldtk-canvas-wrap">
               <canvas class="ldtk-canvas" width="900" height="520" tabindex="0"

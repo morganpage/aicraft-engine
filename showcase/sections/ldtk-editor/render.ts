@@ -6,7 +6,13 @@
  * approximation that could disagree with the runtime.
  */
 
-import { drawLdtkLevel, type LdtkLevel, type LdtkTilesetBundle } from '../../../src/ldtk';
+import {
+  drawLdtkLevel,
+  type LdtkEntityDef,
+  type LdtkEntityInstance,
+  type LdtkLevel,
+  type LdtkTilesetBundle,
+} from '../../../src/ldtk';
 import type { Viewport } from './viewport';
 
 /** Colors for editor chrome. Kept together so nothing hard-codes a hex. */
@@ -19,7 +25,25 @@ export const EDITOR_PALETTE = {
   cursor: 'rgba(255, 255, 255, 0.85)',
   preview: 'rgba(120, 200, 255, 0.55)',
   intGridAlpha: 0.55,
+  entityLabel: 'rgba(255, 255, 255, 0.9)',
+  entityLabelShadow: 'rgba(0, 0, 0, 0.75)',
+  entityOutline: 'rgba(0, 0, 0, 0.65)',
+  entitySelected: '#ffd24e',
+  entityGhost: 'rgba(255, 210, 78, 0.45)',
 } as const;
+
+/**
+ * One drawable entity, pre-resolved against the project's entity defs so the
+ * renderer does not need to look anything up per frame. The editor builds these
+ * once per render from the active Entities layer.
+ */
+export interface EntityDrawEntry {
+  readonly entity: LdtkEntityInstance;
+  /** Resolved def, for color/render-mode/size. `undefined` if unknown. */
+  readonly def: LdtkEntityDef | undefined;
+  /** True when this is the editor's current selection. */
+  readonly selected: boolean;
+}
 
 /** Everything a frame needs. */
 export interface RenderSceneOptions {
@@ -47,6 +71,18 @@ export interface RenderSceneOptions {
   readonly cursorCell?: { readonly cx: number; readonly cy: number };
   /** Cell size for cursor/preview drawing. */
   readonly gridSize: number;
+  /**
+   * Entities to draw as editor chrome over the tile art. The runtime renderer
+   * skips Entities layers by design (entities spawn from translated data), so
+   * the editor overlays them itself — a colored rect or display tile, an
+   * identifier label, and a selection highlight.
+   */
+  readonly entities?: readonly EntityDrawEntry[];
+  /**
+   * Where a pending entity placement would land, in level pixels. Drawn as a
+   * ghost so the author sees the footprint before committing.
+   */
+  readonly entityGhost?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
 /**
@@ -85,6 +121,11 @@ export function renderEditorScene(
 
     if (options.intGridOverlay !== undefined) drawIntGridOverlay(context, options.intGridOverlay);
     if (options.showGrid) drawGrid(context, level, options.gridSize, viewport, view);
+
+    if (options.entities !== undefined && options.entities.length > 0) {
+      drawEntities(context, options.entities, options.tilesets, view);
+    }
+    if (options.entityGhost !== undefined) drawEntityGhost(context, options.entityGhost);
 
     drawPreview(context, options);
 
@@ -180,5 +221,128 @@ function drawPreview(
       size - lineWidth,
       size - lineWidth,
     );
+  }
+}
+
+/** Default entity color when the def or its color is unavailable. */
+const ENTITY_FALLBACK_COLOR = '#7a8699';
+
+/**
+ * The top-left corner of an entity's rect in world pixels.
+ *
+ * LDtk stores `px` as the position of the entity's *pivot point*, not its
+ * top-left: an entity with a bottom-centre pivot `[0.5, 1]` has its `px` at the
+ * middle of its bottom edge. To draw the rect we back up from `px` by the
+ * pivot's fraction of the size. Getting this wrong is exactly what makes
+ * entities render too low (a `pivotY: 1` entity draws a full height beneath its
+ * real position).
+ */
+function entityTopLeft(entity: Readonly<LdtkEntityInstance>): { x: number; y: number } {
+  const pivotX = entity.__pivot[0] ?? 0;
+  const pivotY = entity.__pivot[1] ?? 0;
+  return {
+    x: entity.px[0] - pivotX * entity.width,
+    y: entity.px[1] - pivotY * entity.height,
+  };
+}
+
+/**
+ * Draw entities as editor chrome.
+ *
+ * Each entity is a translucent rect in its def color (or its display tile when
+ * one is set and the tileset is loaded), plus an identifier label above and a
+ * crisp outline. The selection gets a solid highlight stroke. Tile art already
+ * drawn by `drawLdtkLevel` is left untouched; this only adds the entity layer
+ * the runtime renderer omits.
+ */
+function drawEntities(
+  context: CanvasRenderingContext2D,
+  entries: readonly EntityDrawEntry[],
+  tilesets: LdtkTilesetBundle,
+  view: Readonly<{ x: number; y: number; width: number; height: number }>,
+): void {
+  const labelHeight = 11;
+  context.save();
+  try {
+    context.textAlign = 'left';
+    context.textBaseline = 'alphabetic';
+    for (const entry of entries) {
+      const { entity, def } = entry;
+      // `px` is the pivot, not the corner — convert to the draw origin.
+      const origin = entityTopLeft(entity);
+      const x = origin.x;
+      const y = origin.y;
+      // Cull entities whose rect sits entirely outside the viewport — large
+      // levels place hundreds of entities and drawing off-screen ones wastes a
+      // frame budget.
+      if (x + entity.width < view.x || y + entity.height < view.y) continue;
+      if (x > view.x + view.width || y > view.y + view.height) continue;
+
+      // Display tile when the def provides one and the tileset is loaded.
+      const tilesetUid = def?.tileRect?.tilesetUid ?? null;
+      const tileImage = tilesetUid === null ? undefined : tilesets.get(tilesetUid)?.image;
+      if (def?.tileRect !== null && def?.tileRect !== undefined && tileImage !== undefined) {
+        context.globalAlpha = 0.96;
+        try {
+          context.drawImage(
+            tileImage,
+            def.tileRect.x, def.tileRect.y, def.tileRect.w, def.tileRect.h,
+            x, y, entity.width, entity.height,
+          );
+        } catch {
+          // A bad draw (e.g. zero-size image) should not abort the remaining
+          // entities; fall through to the rect fill.
+          context.fillStyle = def?.color ?? ENTITY_FALLBACK_COLOR;
+          context.fillRect(x, y, entity.width, entity.height);
+        }
+      } else {
+        context.globalAlpha = 0.7;
+        context.fillStyle = def?.color ?? ENTITY_FALLBACK_COLOR;
+        context.fillRect(x, y, entity.width, entity.height);
+      }
+      context.globalAlpha = 1;
+
+      // Outline + label.
+      context.lineWidth = 1;
+      context.strokeStyle = EDITOR_PALETTE.entityOutline;
+      context.strokeRect(x + 0.5, y + 0.5, entity.width - 1, entity.height - 1);
+
+      if (entity.width >= 8 && entity.height >= 4) {
+        context.font = '10px ui-monospace, monospace';
+        const label = entity.__identifier;
+        const baseline = Math.max(labelHeight, y - 2);
+        context.fillStyle = EDITOR_PALETTE.entityLabelShadow;
+        context.fillText(label, x + 1, baseline + 1);
+        context.fillStyle = EDITOR_PALETTE.entityLabel;
+        context.fillText(label, x, baseline);
+      }
+
+      if (entry.selected) {
+        context.lineWidth = 2;
+        context.strokeStyle = EDITOR_PALETTE.entitySelected;
+        context.strokeRect(x - 1, y - 1, entity.width + 2, entity.height + 2);
+      }
+    }
+  } finally {
+    context.restore();
+  }
+}
+
+/** Draw the footprint of a pending placement so it is visible before commit. */
+function drawEntityGhost(
+  context: CanvasRenderingContext2D,
+  ghost: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): void {
+  context.save();
+  try {
+    context.fillStyle = EDITOR_PALETTE.entityGhost;
+    context.fillRect(ghost.x, ghost.y, ghost.width, ghost.height);
+    context.lineWidth = 1;
+    context.strokeStyle = EDITOR_PALETTE.entitySelected;
+    context.setLineDash([3, 3]);
+    context.strokeRect(ghost.x + 0.5, ghost.y + 0.5, ghost.width - 1, ghost.height - 1);
+    context.setLineDash([]);
+  } finally {
+    context.restore();
   }
 }
