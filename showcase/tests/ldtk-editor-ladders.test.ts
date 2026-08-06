@@ -26,6 +26,8 @@ import type { LdtkLevel } from '../../src/ldtk';
 
 /** An idle (never pressed) jump edge. */
 const IDLE = { pressed: false, released: false, held: false };
+/** A jump-pressed-and-held edge. */
+const JUMP = { pressed: true, released: false, held: true };
 
 /** Tile size used throughout the bundled LDtk sample. */
 const TILE = 16;
@@ -128,7 +130,7 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 30; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: 0 },
+        { moveX: 0, jump: IDLE, climbY: 0 },
         solids,
         ladders,
         DT,
@@ -148,7 +150,7 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 30; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: -CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
         solids,
         ladders,
         DT,
@@ -172,7 +174,7 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 30; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, climbY: CLIMB_SPEED },
         solids,
         ladders,
         DT,
@@ -195,7 +197,7 @@ describe('LDtk play-mode ladders', () => {
     // must fall through to normal gravity rather than sticking in place.
     const after = stepLadderPlay(
       state,
-      { moveX: 0, jump: true, climbY: 0 },
+      { moveX: 0, jump: JUMP, climbY: 0 },
       solids,
       ladders,
       DT,
@@ -218,7 +220,7 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 30; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: -CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
         noSolids,
         noLadders,
         DT,
@@ -247,7 +249,7 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 60; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: -CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
         floorSolids,
         ladders,
         DT,
@@ -269,7 +271,7 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 5; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: -CLIMB_SPEED },
+        { moveX: 0, jump: IDLE, climbY: -CLIMB_SPEED },
         solids,
         ladders,
         DT,
@@ -293,18 +295,20 @@ describe('LDtk play-mode ladders', () => {
     for (let i = 0; i < 3; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: false, climbY: 0 },
+        { moveX: 0, jump: IDLE, climbY: 0 },
         floor,
         { size: TILE, cells: new Set<string>() },
         DT,
         config,
       );
     }
-    // Hold jump long enough to pass anticipation, then assert the rise.
+    // Hold jump long enough to pass anticipation, then assert the rise. Press
+    // on the first tick and hold thereafter (real input), so the variable-height
+    // cutoff doesn't truncate the jump.
     for (let i = 0; i < 6; i++) {
       state = stepLadderPlay(
         state,
-        { moveX: 0, jump: true, climbY: 0 },
+        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, climbY: 0 },
         floor,
         { size: TILE, cells: new Set<string>() },
         DT,

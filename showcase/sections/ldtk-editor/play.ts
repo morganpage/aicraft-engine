@@ -69,7 +69,7 @@ export const CLIMB_SPEED = 120;
  * (~5 tiles) over 0.3s. Higher and snappier than the bare `PRECISION_PLATFORMER`
  * default (apex 48px / gravity 980), which felt too weak and floaty here.
  */
-const PLAY_CONFIG: Readonly<PlatformerConfig> = {
+export const PLAY_CONFIG: Readonly<PlatformerConfig> = {
   ...PRECISION_PLATFORMER,
   gravity: 1800,
   maxFallSpeed: 720,
@@ -191,7 +191,7 @@ export function createPlaySession(
           : CLIMB_SPEED;
       state = stepLadderPlay(
         state,
-        { moveX, jump: jumpEdge.pressed, climbY },
+        { moveX, jump: jumpEdge, climbY },
         solids,
         ladders,
         dt,
@@ -255,8 +255,9 @@ export function createPlaySession(
 export interface LadderPlayIntent {
   /** Horizontal movement: -1 left, 0 idle, +1 right. */
   readonly moveX: -1 | 0 | 1;
-  /** Whether jump was pressed this tick. */
-  readonly jump: boolean;
+  /** Polled jump edge. The `held` flag drives variable jump height — collapsing
+   * it to a boolean would cut every jump to its minimum apex. */
+  readonly jump: PolledEdge;
   /** Resolved vertical climb velocity in px/s (negative = up, positive = down). */
   readonly climbY: number;
 }
@@ -283,12 +284,9 @@ export function stepLadderPlay(
   dt: number,
   config: Readonly<PlatformerConfig>,
 ): PlatformerState {
-  const jumpEdge: PolledEdge = intent.jump
-    ? { pressed: true, released: false, held: true }
-    : IDLE_EDGE;
   const input: PlatformerInput = {
     moveX: intent.moveX,
-    jump: jumpEdge,
+    jump: intent.jump,
     dash: null,
   };
 
@@ -301,7 +299,7 @@ export function stepLadderPlay(
   // is not enough to stop a fall. Instead we run the step (so horizontal move
   // and collision still resolve), then restore the ladder-authoritative Y:
   // start Y plus the intended climb delta (0 when idle → sticks in place).
-  const ladderAuthoritative = onLadder && !intent.jump;
+  const ladderAuthoritative = onLadder && !intent.jump.pressed;
   const effectiveConfig: Readonly<PlatformerConfig> = ladderAuthoritative
     ? ZERO_GRAVITY_CONFIG
     : config;
