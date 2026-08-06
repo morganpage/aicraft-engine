@@ -1247,6 +1247,46 @@ main {
   border: 1px solid rgba(0, 0, 0, 0.45);
 }
 
+/* Entity palette — mirrors the Paint-value list, shown only on Entities layers. */
+.ldtk-entity-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ldtk-entity {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.35em 0.5em;
+  font-size: 0.8rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.ldtk-entity:hover { background: rgba(255, 255, 255, 0.07); }
+
+.ldtk-entity[aria-pressed='true'] {
+  background: rgba(255, 210, 78, 0.16);
+  border-color: #ffd24e;
+}
+
+.ldtk-entity-meta {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--text-dim, inherit);
+  opacity: 0.75;
+}
+
+/* When the layer is not an Entities layer, the palette still renders a hint but
+   the heading stays hidden so the panel does not advertise a dead section. */
+.ldtk-entity-title[hidden] + .ldtk-entity-palette .ldtk-hint { display: block; }
+
 .ldtk-canvas-wrap {
   min-width: 0;
   border: var(--outline-width) solid var(--outline);

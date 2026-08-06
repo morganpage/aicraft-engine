@@ -17,13 +17,22 @@ import {
 } from '../../src/platformer';
 import type { PlatformerConfig } from '../../src/platformer';
 import type { Solid } from '../../src/collision';
-import { makeLadderMask, isOnLadder, PLAYER_WIDTH, CLIMB_SPEED } from '../sections/ldtk-editor/play';
+import {
+  makeLadderMask,
+  isOnLadder,
+  playerWidthFor,
+  CLIMB_SPEED_TILES,
+} from '../sections/ldtk-editor/play';
 import type { LdtkLevel } from '../../src/ldtk';
 
 /** Tile size used throughout the bundled LDtk sample. */
 const TILE = 16;
 /** Fixed timestep the showcase loop runs at (~60 fps). */
 const DT = 1 / 60;
+/** Player width at the 16px reference tile (mirrors play.ts `playerWidthFor`). */
+const PLAYER_WIDTH = playerWidthFor(TILE);
+/** Climb speed in px/s at the 16px tile (mirrors play.ts `CLIMB_SPEED_TILES`). */
+const CLIMB_SPEED = CLIMB_SPEED_TILES * TILE;
 
 /** Play config with the climb ability enabled (mirrors `play.ts`). */
 const CLIMB_CONFIG: Readonly<PlatformerConfig> = {

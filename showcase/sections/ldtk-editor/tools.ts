@@ -21,7 +21,8 @@ export type LdtkToolId =
   | 'rectangle'
   | 'rectangleFilled'
   | 'fill'
-  | 'picker';
+  | 'picker'
+  | 'entity';
 
 /** Tools that preview a shape while dragging rather than painting immediately. */
 export const PREVIEW_TOOLS: ReadonlySet<LdtkToolId> = new Set<LdtkToolId>([
@@ -166,6 +167,9 @@ export function toolCells(
     case 'fill':
       return floodFillCells(end, grid.cols, grid.rows, grid.valueAt);
     case 'picker':
+    case 'entity':
+      // Entities are placed by pointer hit-testing, not cell painting, so the
+      // cell tool produces no painted cells (mirroring `picker`).
       return [];
     default:
       return [];
