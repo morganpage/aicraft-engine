@@ -283,9 +283,9 @@ export function createPlatformerController(
       // Storing the per-tick delta here would corrupt core.vx into px/tick
       // units, breaking any consumer that reads core.vx as px/s (e.g. the
       // showcase's locomotion drive: `vx / 60` to convert to px/tick).
-      const nextVx = rx.hitWall ? 0 : core.vx;
       let leftWallId: string | null = null;
       let rightWallId: string | null = null;
+      let hitWall = rx.hitWall;
       if (rx.hitWall) {
         const contact = findWallSolidId(
           { x: nextX, y: core.y, width: core.width, height: core.height },
@@ -298,6 +298,46 @@ export function createPlatformerController(
         }
         events.hitWall = true;
       }
+
+      // Step 6b — Horizontal step-up. If the player walked into a wall but the
+      // wall's top is a small step (within `config.stepHeight` above the feet),
+      // lift the player onto it instead of blocking. This smooths stair-climbs,
+      // small ledges, and the last few px of a ladder-top exit (where the climb
+      // guard leaves the player one step below a flush platform). Only when
+      // moving horizontally, supported (on ground or climbing), step-up enabled,
+      // and not dashing. The subsequent Y resolve confirms the landing on the
+      // stepped surface.
+      const stepHeight = config.stepHeight ?? 0;
+      if (
+        hitWall &&
+        stepHeight > 0 &&
+        appliedVx !== 0 &&
+        !dashActive &&
+        (core.onGround || climbActive)
+      ) {
+        const stepped = tryStepUp(
+          { x: nextX, y: core.y, width: core.width, height: core.height },
+          appliedVx,
+          prevBottom,
+          stepHeight,
+          solids,
+        );
+        if (stepped !== null) {
+          // Snap onto the step: feet to the step top, X advanced just past the
+          // leading edge so the body rests on the surface. Keep the horizontal
+          // velocity (the player is walking, not stopped) and clear the wall
+          // contact — this was a step, not a wall.
+          core = { ...core, y: stepped.top - core.height };
+          nextX = stepped.advanceTo;
+          hitWall = false;
+          leftWallId = null;
+          rightWallId = null;
+          events.hitWall = false;
+        }
+      }
+      // Re-derive nextVx from the (possibly step-up-cleared) hitWall so a
+      // successful step keeps the player walking instead of zeroing vx.
+      const resolvedVx = hitWall ? 0 : core.vx;
 
       const ry = resolveAxisY(
         { x: nextX, y: core.y, width: core.width, height: core.height },
@@ -349,7 +389,7 @@ export function createPlatformerController(
         ...core,
         x: nextX,
         y: nextY,
-        vx: nextVx,
+        vx: resolvedVx,
         vy: nextVy,
         onGround: nowOnGround,
         contacts,
@@ -552,6 +592,97 @@ function findWallSolidId(
     }
   }
   return null;
+}
+
+/**
+ * Attempt a horizontal step-up: when the body is flush against a wall (from
+ * {@link resolveAxisX}), find the blocking solid and, if its top is a small step
+ * (within `stepHeight` above the body's pre-move feet `prevBottom`), return the
+ * target surface height and the X to advance to so the body rests on top.
+ *
+ * Conditions for a successful step (all must hold):
+ *  - The blocking solid is fully solid (not passthrough, not ladder).
+ *  - Its top is strictly above the feet (a real step up, not level ground) and
+ *    within `stepHeight` of them.
+ *  - There is headroom: lifting the body by the step height does not drive it
+ *    into a ceiling solid.
+ *  - The space above the step is clear horizontally (no solid blocks the body
+ *    at its lifted height at the destination X), so the body can actually stand
+ *    there.
+ *
+ * Returns `null` when the wall is too tall to step, the body is unsupported, or
+ * the destination is obstructed — in which case the caller treats it as a real
+ * wall. Pure: never mutates inputs.
+ *
+ * @param resolvedBody - Body rect flush against the wall (post-X-resolve).
+ * @param appliedVx    - Horizontal delta this tick (sign = direction). `0` → no step.
+ * @param prevBottom   - Body's feet Y before this tick's movement.
+ * @param stepHeight   - Max step-up height; the caller gates on `> 0`.
+ * @param solids       - Collision surfaces.
+ */
+function tryStepUp(
+  resolvedBody: Rect,
+  appliedVx: number,
+  prevBottom: number,
+  stepHeight: number,
+  solids: readonly Solid[],
+): { top: number; advanceTo: number } | null {
+  if (appliedVx === 0) return null;
+  const dir = Math.sign(appliedVx);
+
+  // 1. Find the blocking solid: flush against the body's leading edge with
+  //    Y-range overlap. (Same contact test as findWallSolidId.)
+  let blocking: Solid | null = null;
+  for (const solid of solids) {
+    if (solid.passthrough || solid.ladder) continue;
+    const yOverlap =
+      resolvedBody.y < solid.y + solid.height &&
+      resolvedBody.y + resolvedBody.height > solid.y;
+    if (!yOverlap) continue;
+    const touching = dir > 0
+      ? Math.abs(resolvedBody.x + resolvedBody.width - solid.x) < 0.5
+      : Math.abs(resolvedBody.x - (solid.x + solid.width)) < 0.5;
+    if (touching) {
+      blocking = solid;
+      break;
+    }
+  }
+  if (blocking === null) return null;
+
+  // 2. The step top must be above the feet (a real step up) and within
+  //    stepHeight. +Y is down, so "above" means stepTop < prevBottom; the rise
+  //    height is prevBottom - stepTop (positive when stepping up). A wall whose
+  //    top is at/below the feet isn't a step (level ground or lower).
+  const stepTop = blocking.y;
+  const rise = prevBottom - stepTop;
+  if (rise <= 0 || rise > stepHeight) return null;
+
+  // 3. Advance X just past the step's leading edge so the body rests on top.
+  //    A full body-width past the edge guarantees the body is wholly on the
+  //    surface (no longer straddling the lip), which the Y resolve then lands.
+  const advanceTo = dir > 0 ? blocking.x + resolvedBody.width : blocking.x + blocking.width - resolvedBody.width;
+
+  // 4. Headroom + destination clearance: the body lifted onto the step must not
+  //    overlap any solid at its new position. Check the lifted rect.
+  const lifted = {
+    x: advanceTo,
+    y: stepTop - resolvedBody.height,
+    width: resolvedBody.width,
+    height: resolvedBody.height,
+  };
+  for (const solid of solids) {
+    if (solid.passthrough || solid.ladder) continue;
+    if (
+      lifted.x < solid.x + solid.width &&
+      lifted.x + lifted.width > solid.x &&
+      lifted.y < solid.y + solid.height &&
+      lifted.y + lifted.height > solid.y
+    ) {
+      return null;
+    }
+  }
+
+  return { top: stepTop, advanceTo };
 }
 
 /**

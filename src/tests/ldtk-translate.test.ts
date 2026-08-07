@@ -178,6 +178,52 @@ describe('ldtkLevelToLevelData — name-driven tile semantics', () => {
     expect(tileSemantics.passthrough).toEqual([]);
   });
 
+  it('excludes a ladder-named value from solid and records it in tileSemantics.ladder', () => {
+    // Mirrors the 1-bit platformer sample: Dirt(2)/Brick(3)/Stone(4)/Ladder(5).
+    // The historical bug: Ladder(5) was solid, got merged into a wall rect, and
+    // the rect's ladder overlap re-tagged the whole wall non-colliding.
+    const level = makeLevel({ intGridCsv: [2, 3, 4, 5, 5, 0] });
+    const project = makeProject([
+      { value: 2, identifier: 'Dirt' },
+      { value: 3, identifier: 'Brick' },
+      { value: 4, identifier: 'Stone' },
+      { value: 5, identifier: 'Ladder' },
+    ]);
+    const { tileSemantics } = ldtkLevelToLevelData(level, project);
+    expect(tileSemantics.solid).toEqual([2, 3, 4]);
+    expect(tileSemantics.passthrough).toEqual([]);
+    expect(tileSemantics.ladder).toEqual([5]);
+  });
+
+  it('is case-insensitive on the ladder name (exact match, not substring)', () => {
+    // 'LADDER' (all caps) matches; a name that merely contains 'ladder' as a
+    // substring (e.g. 'laddervine') does NOT — ladders use an exact identifier
+    // match, mirroring ladderValueFromProject in the showcase.
+    const level = makeLevel({ intGridCsv: [6, 7, 8] });
+    const project = makeProject([
+      { value: 6, identifier: 'LADDER' },
+      { value: 7, identifier: 'ladder' },
+      { value: 8, identifier: 'laddervine' },
+    ]);
+    const { tileSemantics } = ldtkLevelToLevelData(level, project);
+    expect(tileSemantics.ladder).toEqual([6, 7]);
+    // 'laddervine' is neither passthrough nor ladder → it stays solid.
+    expect(tileSemantics.solid).toEqual([8]);
+  });
+
+  it('omits tileSemantics.ladder when no value is named ladder', () => {
+    // No ladder → the ladder field is absent (not an empty array), so existing
+    // callers that don't set it see an unchanged object shape.
+    const level = makeLevel({ intGridCsv: [1, 2, 3] });
+    const project = makeProject([
+      { value: 1, identifier: 'dirt' },
+      { value: 2, identifier: 'stone' },
+    ]);
+    const { tileSemantics } = ldtkLevelToLevelData(level, project);
+    expect(tileSemantics.ladder).toBeUndefined();
+    expect(tileSemantics.solid).toEqual([1, 2, 3]);
+  });
+
   it('falls back to integer options when no project is supplied', () => {
     // Same grid as the name test, but no project → value 4 is solid (not
     // passthrough), proving the legacy path is intact.

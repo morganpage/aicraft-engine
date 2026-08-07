@@ -20,6 +20,7 @@ import type { Solid } from '../../src/collision';
 import {
   makeLadderMask,
   isOnLadder,
+  ladderMaskToSolids,
   playerWidthFor,
   CLIMB_SPEED_TILES,
   ladderValueFromProject,
@@ -40,6 +41,7 @@ const CLIMB_CONFIG: Readonly<PlatformerConfig> = {
   ...PRECISION_PLATFORMER,
   climbEnabled: true,
   climbSpeed: CLIMB_SPEED,
+  stepHeight: 0.5 * TILE,
 };
 
 /** An idle (never pressed) jump edge. */
@@ -181,6 +183,70 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     // Must have risen well past the start (~CLIMB_SPEED * 1s = 120px), stopping
     // only when the body leaves the ladder cells at the top of the shaft.
     expect(state.core.y).toBeLessThan(startY - 40);
+  });
+
+  it('climbs to the top and steps off onto a flush platform', () => {
+    // Regression guard for the 1-bit platformer ladder-top exit. A ladder shaft
+    // has a solid platform flush with the ladder's top cell to one side (the
+    // real level's layout: ladder col, stone block immediately right of the top
+    // cell). The player climbs to the top — the climb guard stops the feet one
+    // climb-step short of flush — then horizontal step-up (stepHeight) lifts the
+    // player the last few px onto the platform as it walks off. Before the fix,
+    // the player was a few px too low and walked into the platform's side wall,
+    // stuck and unable to exit the ladder.
+    const platformTop = 2 * TILE; // platform surface y; ladder top cell is [2*T, 3*T)
+    const shaftSolids: Solid[] = [
+      { id: 'wall-l', x: 0, y: 0, width: TILE, height: 16 * TILE },
+      // ladder cells rows 2–8 (column 1)
+      { id: 'ladder', x: TILE, y: 2 * TILE, width: TILE, height: 7 * TILE, ladder: true },
+      // stone platform flush with the ladder top, to the right of the shaft.
+      // Its left edge is the shaft's right edge; the platform block forms the
+      // wall the player must step up onto.
+      { id: 'stone', x: 2 * TILE, y: platformTop, width: 6 * TILE, height: 14 * TILE },
+    ];
+    let state = createPlatformerState(
+      TILE + (TILE - PLAYER_WIDTH) / 2, // column 1, centred
+      6 * TILE,
+      CLIMB_CONFIG,
+      PLAYER_WIDTH,
+      TILE * 1.5, // real player height (playerHeightFor)
+    );
+
+    // Climb to the top (hold Up). Must not bounce (vy never goes positive).
+    let bounced = false;
+    for (let i = 0; i < 60; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        shaftSolids,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+      if (state.core.vy > 0) bounced = true;
+    }
+    expect(bounced).toBe(false);
+
+    // Now hold Up + Right to walk out onto the stone. Step-up must lift the
+    // player onto the platform; it must NOT be stuck against the stone's wall.
+    let landed = false;
+    for (let i = 0; i < 90; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 1, jump: IDLE, dash: null, climb: -1 },
+        shaftSolids,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+      // The player has exited the shaft onto the platform: x past the shaft's
+      // right wall (2*TILE) and grounded on the stone surface.
+      if (state.core.onGround && state.core.x >= 2 * TILE) {
+        landed = true;
+        break;
+      }
+    }
+    expect(landed).toBe(true);
+    // Feet rest on the platform surface.
+    expect(state.core.y + state.core.height).toBeCloseTo(platformTop, 0);
   });
 
   it('does not bounce when holding Up at the top of a ladder', () => {
@@ -382,3 +448,99 @@ describe('LDtk play-mode ladder mask + tint helpers', () => {
     expect(ladderValueFromProject(upper, noGrid)).toBeUndefined();
   });
 });
+
+describe('LDtk play-mode — ladders do not turn adjacent walls into passthrough', () => {
+  // Regression guard for the 1-bit platformer bug. A ladder shaft sits inside
+  // solid walls: the ladder cells are flanked by solid on both sides and span
+  // the same rows. Historically, the ladder IntGrid value classified as
+  // 'solid', the flatten pass merged it into the adjacent wall rect, and the
+  // ladder-overlap re-tag then marked the whole merged wall `ladder: true` —
+  // making the wall fully non-colliding (walls you could walk through). The fix
+  // emits ladders as standalone per-cell `ladder: true` solids and keeps ladder
+  // values out of `solid` at translation time, so walls can never be mis-tagged.
+
+  it('ladderMaskToSolids emits one ladder solid per cell, none touching the walls', () => {
+    // 3-col shaft: solid | ladder | solid, 4 rows. Ladder value = 5.
+    const rows = 4, cols = 3;
+    const csv: number[] = [];
+    for (let y = 0; y < rows; y++) csv.push(2, 5, 2); // dirt | ladder(5) | dirt
+    const level = {
+      layerInstances: [
+        { __type: 'IntGrid', __cWid: cols, __cHei: rows, __gridSize: TILE, intGridCsv: csv },
+      ],
+    } as unknown as LdtkLevel;
+    const mask = makeLadderMask(level, TILE, 5);
+    const ladderSolids = ladderMaskToSolids(mask);
+
+    // Exactly one ladder solid per ladder cell, each TILE×TILE, each ladder:true.
+    expect(ladderSolids).toHaveLength(rows);
+    for (const s of ladderSolids) {
+      expect(s.ladder).toBe(true);
+      expect(s.width).toBe(TILE);
+      expect(s.height).toBe(TILE);
+      // All ladder cells are in column 1 (x === TILE).
+      expect(s.x).toBe(TILE);
+    }
+  });
+
+  it('wall solids stay fully colliding when a ladder runs through them', () => {
+    // Build the solids the way compileLevel now does: compiled static solids
+    // (walls, derived from the non-ladder values) + per-cell ladder solids.
+    // The walls flank the ladder on both sides; the player must NOT pass through
+    // them horizontally. This is the direct end-to-end pin for the bug.
+    const wallHeight = 8 * TILE;
+    const walls: Solid[] = [
+      { id: 'wall-l', x: 0, y: 0, width: TILE, height: wallHeight },
+      { id: 'wall-r', x: 2 * TILE, y: 0, width: TILE, height: wallHeight },
+    ];
+    // Ladder cells down the middle column (column 1), full height — the layout
+    // that previously merged ladder cells into the adjacent wall rects.
+    const ladderSolids = ladderMaskToSolids(makeLadderMask(shaftLevelFixture(8), TILE, 5));
+    const solids = [...walls, ...ladderSolids];
+
+    // No wall solid may carry `ladder: true` — that was the bug signature.
+    expect(walls.every((w) => !w.ladder)).toBe(true);
+    // Ladder solids are all non-colliding climb space.
+    expect(ladderSolids.every((l) => l.ladder === true)).toBe(true);
+
+    // Player in the ladder column (climb space — it sticks, no fall), pushed
+    // right toward wall-r. The wall must block: the player's right edge cannot
+    // pass the wall's left edge. A mis-tagged (ladder) wall would let it sail
+    // through to the right.
+    let state = createPlatformerState(
+      TILE, // column 1 — the ladder shaft
+      4 * TILE,
+      CLIMB_CONFIG,
+      PLAYER_WIDTH,
+      TILE * 2,
+    );
+    const startX = state.core.x;
+    for (let i = 0; i < 20; i++) {
+      state = stepPlatformer(
+        state,
+        { moveX: 1, jump: IDLE, dash: null, climb: 0 },
+        solids,
+        DT,
+        CLIMB_CONFIG,
+      ).state;
+    }
+    // Right edge stopped at the wall's left edge (x = 2*TILE).
+    expect(state.core.x + PLAYER_WIDTH).toBeLessThanOrEqual(2 * TILE);
+    // The player did advance right (input applied, not frozen) but was capped.
+    expect(state.core.x).toBeGreaterThanOrEqual(startX);
+  });
+});
+
+/**
+ * A minimal LDtk level whose IntGrid paints solid(2) | ladder(5) | solid(2) down
+ * `rows` rows — the layout that previously merged ladder cells into the wall.
+ */
+function shaftLevelFixture(rows: number): LdtkLevel {
+  const csv: number[] = [];
+  for (let y = 0; y < rows; y++) csv.push(2, 5, 2);
+  return {
+    layerInstances: [
+      { __type: 'IntGrid', __cWid: 3, __cHei: rows, __gridSize: TILE, intGridCsv: csv },
+    ],
+  } as unknown as LdtkLevel;
+}

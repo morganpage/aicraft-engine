@@ -302,6 +302,31 @@ function passthroughValuesFromNames(
 }
 
 /**
+ * Derive ladder IntGrid values by name from the collision layer's definition.
+ * Any declared value whose identifier is exactly `'ladder'` (case-insensitive)
+ * is collected — the exact match mirrors {@link ladderValueFromProject} in the
+ * showcase. Ladder values are climb space, not collision, so the caller excludes
+ * them from `solid` (and they never become `passthrough`). Returns the set, or
+ * `undefined` when there is no project, no matching layer def, or no value named
+ * ladder.
+ */
+function ladderValuesFromNames(
+  project: LdtkProject | undefined,
+  collision: LdtkLayerInstance | undefined,
+): Set<number> | undefined {
+  const def = layerDefOf(project, collision);
+  const values = def?.intGridValues;
+  if (values === undefined) return undefined;
+  const ladder = new Set<number>();
+  for (const v of values) {
+    if (v.identifier !== null && v.identifier.toLowerCase() === 'ladder') {
+      ladder.add(v.value);
+    }
+  }
+  return ladder.size > 0 ? ladder : undefined;
+}
+
+/**
  * Translate an LDtk level into the engine's {@link LevelData} schema.
  *
  * The level's first `IntGrid` layer becomes {@link TileGrid}. The shapes
@@ -312,9 +337,12 @@ function passthroughValuesFromNames(
  * **Tile semantics.** When `project` is supplied, solidity is derived from the
  * collision layer's declared IntGrid value names: every non-zero value is
  * treated as solid unless its identifier contains `'passthrough'`
- * (case-insensitive), in which case it becomes a one-way platform. This lets a
- * project name a value `'passthrough'` (any case, any integer) rather than
- * reserving a magic integer. Without `project`, the legacy integer fallback
+ * (case-insensitive), in which case it becomes a one-way platform, or is exactly
+ * `'ladder'` (case-insensitive), in which case it is climb space —
+ * non-colliding, excluded from `solid`, and recorded in `tileSemantics.ladder`
+ * so the runtime can overlay per-cell ladder solids. This lets a project name a
+ * value `'passthrough'` or `'ladder'` (any case, any integer) rather than
+ * reserving magic integers. Without `project`, the legacy integer fallback
  * applies (`solidValue` default `1`, `passthroughValue` default `2`).
  *
  * **Never throws.** Malformed entities emit warnings and are skipped;
@@ -371,27 +399,39 @@ export function ldtkLevelToLevelData(
 
   // Tile semantics. When a project is supplied, derive solidity from the
   // collision layer's declared value names: every non-zero value is solid
-  // unless its identifier contains 'passthrough', in which case it is a
-  // one-way platform. Without a project, fall back to the integer options so
+  // unless its identifier contains 'passthrough' (one-way platform) or is
+  // exactly 'ladder' (climb space — non-colliding; the runtime overlays ladder
+  // cells separately). Without a project, fall back to the integer options so
   // legacy callers behave as before. Supplying a project with no
-  // passthrough-named value means "no passthrough" — the integer default is
-  // NOT re-applied, since the names are the source of truth.
+  // passthrough/ladder-named value means "none of that kind" — the integer
+  // defaults are NOT re-applied, since the names are the source of truth.
   const presentValues = new Set<number>();
   for (const v of data) if (v !== 0) presentValues.add(v);
   let solid: number[];
   let passthrough: number[];
+  let ladder: number[] = [];
   if (project !== undefined) {
     const namedPassthrough = passthroughValuesFromNames(project, collision);
-    solid = [...presentValues].filter((v) => namedPassthrough === undefined || !namedPassthrough.has(v));
+    const namedLadder = ladderValuesFromNames(project, collision);
+    // A value is solid unless it is named passthrough or ladder. Ladder and
+    // passthrough are mutually exclusive by name (ladder uses an exact match),
+    // so a value won't appear in both — but filter defensively anyway.
+    solid = [...presentValues].filter(
+      (v) =>
+        (namedPassthrough === undefined || !namedPassthrough.has(v)) &&
+        (namedLadder === undefined || !namedLadder.has(v)),
+    );
     passthrough = namedPassthrough === undefined
       ? []
       : [...presentValues].filter((v) => namedPassthrough.has(v));
+    ladder = namedLadder === undefined ? [] : [...presentValues].filter((v) => namedLadder.has(v));
   } else {
     solid = [...presentValues].filter((v) => v !== passthroughValue);
     if (!solid.includes(solidValue) && presentValues.size === 0) solid.push(solidValue);
     passthrough = presentValues.has(passthroughValue) ? [passthroughValue] : [];
   }
-  const tileSemantics: GeneratedTileSemantics = { solid, passthrough };
+  const tileSemantics: GeneratedTileSemantics =
+    ladder.length > 0 ? { solid, passthrough, ladder } : { solid, passthrough };
 
   // Entities — collect from every Entities layer.
   const entityMap = options.entityMap ?? LDTK_DEFAULT_ENTITY_MAP;

@@ -7,11 +7,13 @@
  * play mode is the level as it will actually ship rather than a preview.
  *
  * Ladder climbing is handled by the engine's climb ability (`climbEnabled` in
- * the config below). Ladder cells are tagged `ladder: true` on the compiled
- * solids: the AABB resolvers skip them (non-colliding climb space) and the
- * climb ability reads them to drive ascent/descent and the stick-to-ladder
- * feel. This keeps climb and jump from desyncing — the ability owns vertical
- * motion inside the pipeline rather than fighting it from outside.
+ * the config below). Ladder IntGrid values are excluded from `solid` during
+ * translation (so they never form blocking rects or get merged into walls) and
+ * re-emitted as one `ladder: true` solid per cell: the AABB resolvers skip them
+ * (non-colliding climb space) and the climb ability reads them to drive
+ * ascent/descent and the stick-to-ladder feel. This keeps climb and jump from
+ * desyncing — the ability owns vertical motion inside the pipeline rather than
+ * fighting it from outside.
  *
  * The session owns a clone of the level data; nothing it does can write back
  * into the project being edited.
@@ -28,6 +30,7 @@ import {
   type PlatformerInput,
   type PlatformerState,
 } from '../../../src/platformer';
+import type { Solid } from '../../../src/collision';
 import { DEFAULT_JUMP } from '../../../src/animation/jump';
 import { createCamera, updateCamera, type Camera } from '../../../src/camera';
 import {
@@ -112,6 +115,11 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
     },
     climbEnabled: true,
     climbSpeed: CLIMB_SPEED_TILES * tileSize,
+    // Let the player walk up small steps: stair lips, minor ledges, and the
+    // last few px of a ladder-top exit (the climb guard leaves the player one
+    // climb step below a flush platform). Half a tile is enough to bridge those
+    // without letting the player auto-climb full-tile walls.
+    stepHeight: 0.5 * tileSize,
   };
 }
 
@@ -334,9 +342,16 @@ export function createPlaySession(
     );
     const ladderValue = ladderValueFromProject(project, ldtkLevel) ?? LADDER_INT_GRID_VALUE;
     const ladders = makeLadderMask(ldtkLevel, levelData.tileSize, ladderValue);
-    const solids = compiled.staticSolids.map((s) =>
-      isOnLadder(s, ladders) ? { ...s, ladder: true } : s,
-    );
+    // Ladders are pure climb space: one non-colliding `ladder: true` solid per
+    // ladder cell, emitted separately from the compiled wall/floor solids. This
+    // keeps ladder cells out of the merged wall rects (which previously let a
+    // merged rect that happened to span a ladder cell get mis-tagged `ladder`
+    // and become fully non-colliding — the "walls act as passthrough" bug).
+    // The name-driven translation now excludes ladder values from `solid`, so
+    // the compiled solids never contain ladder cells in the first place; these
+    // per-cell solids are what the climb ability reads via `overlapsLadder`.
+    const ladderSolids = ladderMaskToSolids(ladders);
+    const solids = [...compiled.staticSolids, ...ladderSolids];
     return { ldtkLevel, levelData, compiled, solids, ladders };
   }
   function getLevel(iid: string): LevelRuntime | undefined {
@@ -498,7 +513,9 @@ export function createPlaySession(
 /**
  * Precomputed ladder cells. Built once from the LDtk IntGrid (the bundled
  * sample marks ladders as value {@link LADDER_INT_GRID_VALUE} on its
- * `Collisions` layer) and queried per-tick to tag solids and tint the player.
+ * `Collisions` layer) and used to emit per-cell `ladder: true` solids
+ * ({@link ladderMaskToSolids}) and to tint the player while overlapping a
+ * ladder.
  */
 export interface LadderMask {
   /** Pixel edge length of one cell. Matches the collision layer's `__gridSize`. */
@@ -574,9 +591,42 @@ export function makeLadderMask(
 }
 
 /**
+ * Build one non-colliding `ladder: true` solid per ladder cell in `mask`. Each
+ * cell becomes a size×size rect at its pixel position. These solids are skipped
+ * by both AABB resolvers (so they never block movement) and read by the climb
+ * ability via `overlapsLadder` to detect climb space.
+ *
+ * Emitting ladders as per-cell solids — rather than re-tagging compiled wall
+ * rects that happen to overlap a ladder cell — is what prevents a merged wall
+ * rect from being turned entirely non-colliding. Ladder values are already
+ * excluded from `solid` during translation, so `compiled.staticSolids` contains
+ * no ladder cells; this helper re-adds them as climb space only.
+ */
+export function ladderMaskToSolids(mask: LadderMask): Solid[] {
+  const { size, cells } = mask;
+  const solids: Solid[] = [];
+  for (const key of cells) {
+    const comma = key.indexOf(',');
+    const tx = Number(key.slice(0, comma));
+    const ty = Number(key.slice(comma + 1));
+    if (!Number.isInteger(tx) || !Number.isInteger(ty)) continue;
+    solids.push({
+      id: `ladder-${tx}-${ty}`,
+      x: tx * size,
+      y: ty * size,
+      width: size,
+      height: size,
+      ladder: true,
+    });
+  }
+  return solids;
+}
+
+/**
  * Whether the body's AABB covers any ladder cell in `mask`. Inclusive tile
- * range, matching the collision query convention. Used to tag solids and to
- * tint the player while overlapping a ladder.
+ * range, matching the collision query convention. Used to tint the player while
+ * overlapping a ladder (ladder climb itself is driven by per-cell ladder solids
+ * via `overlapsLadder`, not this helper).
  */
 export function isOnLadder(
   body: Readonly<{ x: number; y: number; width: number; height: number }>,

@@ -20,6 +20,7 @@ import type {
   ActorCore,
   AnyAbilityState,
   JumpAbilityState,
+  PlatformerConfig,
   PlatformerInput,
   PlatformerState,
 } from '../platformer/types';
@@ -502,6 +503,73 @@ describe('stepPlatformer (integration)', () => {
     expect(hitWallTick).toBeGreaterThanOrEqual(0);
     expect(state.core.contacts.rightWallId).toBe('wall');
     expect(state.core.vx).toBe(0);
+  });
+
+  it('horizontal step-up: walking into a low step lifts the actor onto it (no wall block)', () => {
+    // A 4px step up in the middle of a floor. With stepHeight enabled, the
+    // actor walks up it instead of being blocked.
+    const config: Readonly<PlatformerConfig> = { ...DEFAULT_PLATFORMER_CONFIG, stepHeight: 8 };
+    const solids: Solid[] = [
+      { id: 'floor', x: 0, y: 200, width: 250, height: 16 },
+      // step block: top 4px higher than the floor (top at 196), starting at x=250
+      { id: 'step', x: 250, y: 196, width: 200, height: 20 },
+    ];
+    // Actor grounded on the floor (bottom = 200), left of the step, moving right.
+    let state = makeState({ x: 100, y: 200 - DEFAULT_PLAYER_HEIGHT, onGround: true, vx: 0, vy: 0 });
+    let blocked = false;
+    for (let i = 0; i < 200; i++) {
+      const input: PlatformerInput = { moveX: 1, jump: idleEdge(), dash: null };
+      const result = stepPlatformer(state, input, solids, DT, config);
+      state = result.state;
+      if (state.events.hitWall) blocked = true;
+      // Stop once the actor is clearly past the step's leading edge (x >= 260).
+      if (state.core.x >= 260) break;
+    }
+    expect(blocked).toBe(false);
+    // The actor must have crossed the step and now stand on top of it
+    // (bottom at the step's top, y = 196 - height), not be stuck at the lip.
+    expect(state.core.x).toBeGreaterThanOrEqual(260);
+    expect(state.core.y + state.core.height).toBeCloseTo(196, 0);
+    expect(state.core.onGround).toBe(true);
+  });
+
+  it('horizontal step-up: a wall taller than stepHeight blocks (no free climb)', () => {
+    // A full-height wall: its top is far above stepHeight, so step-up must NOT
+    // fire and the actor must be blocked as a normal wall.
+    const config: Readonly<PlatformerConfig> = { ...DEFAULT_PLATFORMER_CONFIG, stepHeight: 8 };
+    const solids: Solid[] = [
+      { id: 'floor', x: 0, y: 200, width: 250, height: 16 },
+      { id: 'wall', x: 250, y: 100, width: 16, height: 100 },
+    ];
+    let state = makeState({ x: 100, y: 200 - DEFAULT_PLAYER_HEIGHT, onGround: true, vx: 0, vy: 0 });
+    let hitWall = false;
+    for (let i = 0; i < 200; i++) {
+      const input: PlatformerInput = { moveX: 1, jump: idleEdge(), dash: null };
+      const result = stepPlatformer(state, input, solids, DT, config);
+      state = result.state;
+      if (state.events.hitWall) { hitWall = true; break; }
+    }
+    expect(hitWall).toBe(true);
+    // Did not get lifted onto the wall top (y=100); still at floor level.
+    expect(state.core.y + state.core.height).toBeGreaterThanOrEqual(200 - 1);
+  });
+
+  it('step-up disabled by default (stepHeight 0): low step blocks like a wall', () => {
+    // Same 4px step, but no stepHeight → must block. Pins that the default
+    // config preserves strict wall blocking.
+    const solids: Solid[] = [
+      { id: 'floor', x: 0, y: 200, width: 250, height: 16 },
+      { id: 'step', x: 250, y: 196, width: 200, height: 20 },
+    ];
+    let state = makeState({ x: 100, y: 200 - DEFAULT_PLAYER_HEIGHT, onGround: true, vx: 0, vy: 0 });
+    let hitWall = false;
+    for (let i = 0; i < 200; i++) {
+      const input: PlatformerInput = { moveX: 1, jump: idleEdge(), dash: null };
+      const result = stepPlatformer(state, input, solids, DT);
+      state = result.state;
+      if (state.events.hitWall) { hitWall = true; break; }
+    }
+    expect(hitWall).toBe(true);
   });
 
   it('ceiling contact: rising actor → ceilingId set, hitCeiling=true, vy=0', () => {

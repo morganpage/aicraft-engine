@@ -359,6 +359,17 @@ export interface PlatformerConfig {
   readonly climbEnabled: boolean;
   /** Climb speed in px/s while ascending/descending a ladder. */
   readonly climbSpeed: number;
+  /**
+   * Maximum vertical step-up height in px the player auto-snaps over while
+   * moving horizontally into a small step. When the player walks into a solid
+   * whose top is within this height above the player's feet, the player is
+   * lifted onto it instead of being blocked — so stairs, small ledges, and the
+   * last few px of a ladder-top exit (where the player is one climb step below a
+   * flush platform) are traversed smoothly. `0` (or omitted) disables step-up,
+   * preserving strict wall blocking. Only applies while moving horizontally and
+   * supported (on ground or climbing) — never in free fall.
+   */
+  readonly stepHeight?: number;
 }
 
 /**

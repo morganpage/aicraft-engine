@@ -36,6 +36,15 @@ export interface GeneratedTileSemantics {
   readonly solid: readonly number[];
   /** Values compiled as one-way passthrough. */
   readonly passthrough: readonly number[];
+  /**
+   * Values treated as ladder (climb space) — not solid, not passthrough. These
+   * map to `'empty'` for collision (they never form a blocking rect), but are
+   * recorded so a runtime can overlay per-cell ladder solids separately. Ladders
+   * must be disjoint from `solid` and `passthrough`; if a value appears in more
+   * than one set, `solid`/`passthrough` win and `ladder` is ignored for it.
+   * Optional — generators/levels without ladders omit it and behave as before.
+   */
+  readonly ladder?: readonly number[];
 }
 
 /**
@@ -46,8 +55,11 @@ export interface GeneratedTileSemantics {
  * Behavior:
  *  - Integers in `semantics.solid` → `'solid'`.
  *  - Integers in `semantics.passthrough` → `'passthrough'`.
- *  - All other integers (including `0`, missing values, and integers in
- *    neither list) → `'empty'`.
+ *  - All other integers (including `0`, missing values, integers in
+ *    `semantics.ladder`, and integers in neither list) → `'empty'`.
+ *    Ladder values are climb space, not collision: they resolve to `'empty'`
+ *    here so they never form a blocking rect. A runtime overlays ladder cells
+ *    separately as non-colliding `ladder: true` solids.
  *  - Non-integer or non-finite values → `'empty'`.
  *  - Never throws.
  *
@@ -87,6 +99,9 @@ export function createTileTypeMap(
       if (typeof v === 'number' && Number.isInteger(v)) passthroughSet.add(v);
     }
   }
+  // Ladder values are intentionally NOT added to either set — they resolve to
+  // 'empty' (see the lookup below) so they never block. We don't need the set
+  // for classification; it exists only for runtimes that want to read it back.
 
   return (value: number): TileType => {
     if (typeof value !== 'number' || !Number.isInteger(value)) return 'empty';
