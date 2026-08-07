@@ -9,7 +9,7 @@
 
 A small TypeScript library extracted from the [Spitekeep](https://github.com/) codebase (now renamed **IMP - Not a Troll**) and generalised for reuse across every game in the [Clone-to-Jest pipeline](../ai-craft-strategy/knowledge/clone-to-jest-methodology.md). Three principles drive every design decision:
 
-1. **Ultra-minimalist rendering** — no imported art assets. Characters, worlds, and effects are drawn from vector primitives in code. Inspired by [Sokpop Collective](https://sokpop.itch.io/)'s ~100-title catalog and their public [fake-3D demo](https://sokpop.itch.io/sokpop-fake-3d-demo).
+1. **Procedural-first rendering** — characters, worlds, and effects are drawn from vector primitives in code. Inspired by [Sokpop Collective](https://sokpop.itch.io/)'s ~100-title catalog and their public [fake-3D demo](https://sokpop.itch.io/sokpop-fake-3d-demo). CC0/PD pixel art is also a first-class citizen: the `src/sprites` pipeline plays Aseprite-JSON sprite sheets (one `.json` + one `.png` = a whole game's cast), and the two can be mixed per-entity in one scene.
 2. **Algorithmic cosmetics** — skins, themes, and content variants are parameter presets, not art files. The algorithm IS the art. This gives a full IAP cosmetics surface with zero asset pipeline.
 3. **Determinism everywhere** — the same inputs always produce the same outputs. No `Math.random` in deterministic code (renderers may use it only when the result never feeds back into the simulation). Saves, replays, and recorded footage all reproduce exactly.
 
@@ -24,6 +24,7 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **1. Particles** | Deterministic spawn / advance / cull, region/cone sampling, continuous emitters, heterogeneous physics | **Shipped** |
 | **1. Animation** | Skeletal rig, IK (limb/CCD/FABRIK), procedural locomotion, squash/stretch, Verlet springs, foot-lock, oscillators, procedural spider enemy, and seeded visual-only humanoid body plan | **Shipped** |
 | **1. Character body plans** | Typed body-plan registry plus deterministic humanoid config, displacement-driven visual state, signed-gravity poses, and Canvas2D renderer | **Shipped** |
+| **1. Sprite animation** | Aseprite-JSON-superset pipeline: one `.json` + one `.png` defines a whole game's cast. Defensive never-throws parser, grid + explicit-rect frames, named animations (`frameTags`), multi-character `characters[]`, deterministic per-frame-duration player (loop/reverse/pingpong), facing mirror + silhouette tint, and a character-agnostic anim-state deriver shared by player and enemies | **Shipped** |
 | **1. Collision** | AABB overlap, per-axis move-and-resolve, tile-grid collision (one-way platforms), moving-gap platforms, capped supercover line of sight | **Shipped** |
 | **1. Camera** | Follow camera (lerp, clamp, snap-to-target) | **Shipped** |
 | **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, multi-touch button set, gamepad adapter (Standard Gamepad, axial deadzone), OR-merge | **Shipped** |

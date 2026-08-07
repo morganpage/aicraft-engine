@@ -958,6 +958,37 @@ drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
           </div>
         </div>
       </section>
+
+      <section id="sprite-demo" class="section sprite-demo-section">
+        <div class="sprite-demo-copy">
+          <h2 class="sprite-demo-title">Sprite-sheet animation.</h2>
+          <p class="sprite-demo-blurb">
+            One <span class="kbd">.json</span> + one <span class="kbd">.png</span>
+            from Kenney's CC0 1-Bit Platformer defines the whole cast — player
+            and two enemy types. The <span class="kbd">src/sprites</span>
+            pipeline parses an Aseprite-compatible document, compiles frame tags
+            into animation clips, and a deterministic frame-player drives every
+            sprite. The same <span class="kbd">deriveSpriteAnimKind</span> picks
+            idle/walk/jump/fall for the player and the patrolling enemies, so
+            sprites and procedural characters share one animation vocabulary.
+          </p>
+          <p class="sprite-demo-controls">
+            <span class="kbd">A</span>/<span class="kbd">D</span> or
+            <span class="kbd">←</span>/<span class="kbd">→</span> move ·
+            <span class="kbd">Space</span> / <span class="kbd">W</span> /
+            <span class="kbd">↑</span> jump
+          </p>
+        </div>
+
+        <div class="sprite-demo-stage">
+          <canvas
+            class="sprite-demo"
+            width="480"
+            height="270"
+            aria-label="Sprite animation platformer demo"
+          ></canvas>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">

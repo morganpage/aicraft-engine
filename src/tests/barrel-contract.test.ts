@@ -232,4 +232,17 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.playReplay).toBe('function');
     expect(typeof aicraft.replayHash).toBe('function');
   });
+
+  it('sprites: parse → compile → resolve → render pipeline is public', () => {
+    expect(typeof aicraft.parseSpriteSheet).toBe('function');
+    expect(typeof aicraft.compileSpriteSheet).toBe('function');
+    expect(typeof aicraft.resolveAnim).toBe('function');
+    expect(typeof aicraft.createSpriteAnimState).toBe('function');
+    expect(typeof aicraft.advanceSpriteAnim).toBe('function');
+    expect(typeof aicraft.currentFrameIndex).toBe('function');
+    expect(typeof aicraft.drawSprite).toBe('function');
+    expect(typeof aicraft.deriveSpriteAnimKind).toBe('function');
+    expect(typeof aicraft.createSpriteTintCache).toBe('function');
+    expect(aicraft.DEFAULT_FRAME_DURATION_MS).toBe(100);
+  });
 });

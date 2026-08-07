@@ -1,0 +1,96 @@
+{
+  "frames": {},
+  "meta": {
+    "image": "../../vendor/kenney-1-bit-platformer/Tilemap/monochrome_tilemap_transparent_packed.png",
+    "size": {
+      "w": 320,
+      "h": 320
+    },
+    "grid": {
+      "tileWidth": 16,
+      "tileHeight": 16,
+      "columns": 20
+    },
+    "frameTags": [
+      {
+        "name": "player/idle",
+        "from": 280,
+        "to": 280,
+        "direction": "forward"
+      },
+      {
+        "name": "player/walk",
+        "from": 281,
+        "to": 284,
+        "direction": "forward"
+      },
+      {
+        "name": "player/jump",
+        "from": 285,
+        "to": 285,
+        "direction": "forward"
+      },
+      {
+        "name": "player/fall",
+        "from": 285,
+        "to": 285,
+        "direction": "forward"
+      },
+      {
+        "name": "slime/idle",
+        "from": 320,
+        "to": 320,
+        "direction": "forward"
+      },
+      {
+        "name": "slime/walk",
+        "from": 321,
+        "to": 322,
+        "direction": "forward"
+      },
+      {
+        "name": "walker/idle",
+        "from": 340,
+        "to": 340,
+        "direction": "forward"
+      },
+      {
+        "name": "walker/walk",
+        "from": 341,
+        "to": 342,
+        "direction": "forward"
+      }
+    ]
+  },
+  "characters": [
+    {
+      "name": "player",
+      "defaultAnim": "idle",
+      "animations": {
+        "idle": "player/idle",
+        "walk": "player/walk",
+        "jump": "player/jump",
+        "fall": "player/fall",
+        "ascent": "player/jump",
+        "apex": "player/fall",
+        "descent": "player/fall"
+      }
+    },
+    {
+      "name": "slime",
+      "defaultAnim": "idle",
+      "animations": {
+        "idle": "slime/idle",
+        "walk": "slime/walk"
+      }
+    },
+    {
+      "name": "walker",
+      "defaultAnim": "idle",
+      "animations": {
+        "idle": "walker/idle",
+        "walk": "walker/walk"
+      }
+    }
+  ]
+}

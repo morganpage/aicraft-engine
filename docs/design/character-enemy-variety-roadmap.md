@@ -177,7 +177,7 @@ Every phase must clear before its decision is filed:
 
 ## Out of scope (this roadmap)
 
-- Raster sprite sheet import (violates the procedural rendering principle)
+- Raster sprite sheet *import/build tooling* (FFmpeg/Aseprite-source compilers, packing/trim/rotation) — note: consuming authored Aseprite-JSON sprite sheets IS supported as of 2026-08-07 via `src/sprites/` (see `docs/research/spritesheet-pipelines.md`); this roadmap stays focused on the procedural character/enemy variety surface
 - Dialogue / quest / story systems
 - Multiplayer / netcode
 - Save-game schema changes (combat state, if added, must fit existing pure-

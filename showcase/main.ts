@@ -16,6 +16,7 @@ import { initParallax } from './sections/parallax';
 import { initSpider } from './sections/spider';
 import { initTileRoom } from './sections/tile-room';
 import { initLdtkEditor } from './sections/ldtk-editor';
+import { initSpriteDemo } from './sections/sprite-demo';
 
 /**
  * Global showcase state. The hero fields are populated; the rest of the
@@ -126,4 +127,9 @@ if (tileRoomSection) {
 const ldtkEditorSection = document.getElementById('ldtk-editor');
 if (ldtkEditorSection) {
   initLdtkEditor(ldtkEditorSection, store);
+}
+
+const spriteDemoSection = document.getElementById('sprite-demo');
+if (spriteDemoSection) {
+  initSpriteDemo(spriteDemoSection, store);
 }
