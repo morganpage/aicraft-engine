@@ -30,6 +30,19 @@ import {
   type PlatformerInput,
   type PlatformerState,
 } from '../../../src/platformer';
+import {
+  createSpriteAnimState,
+  advanceSpriteAnim,
+  deriveSpriteAnimKind,
+  type SpriteAnimState,
+} from '../../../src/sprites';
+import {
+  createMobActors,
+  drawPlayerSprite,
+  SPRITE_ANIM_TIME_SCALE,
+  type MobActors,
+  type SpriteBundle,
+} from './mob-sprites';
 import type { Solid } from '../../../src/collision';
 import { DEFAULT_JUMP } from '../../../src/animation/jump';
 import { createCamera, updateCamera, type Camera } from '../../../src/camera';
@@ -301,6 +314,22 @@ export interface PlaySessionOptions {
    * identifier, for a status-line indicator. Optional.
    */
   readonly onLevelChange?: (identifier: string) => void;
+  /**
+   * Optional sprite bundle for the PLAYER. When supplied, the player is drawn
+   * as a sprite selected from physics via `deriveSpriteAnimKind`. This may be a
+   * different sheet from `mobSprites` — e.g. the full-color 0x72 knight for the
+   * player while mobs still come from the Kenney sheet. When omitted, the
+   * player is a colored rect (the legacy behavior).
+   */
+  readonly sprites?: SpriteBundle;
+  /**
+   * Optional sprite bundle for patrolling MOBS. Defaults to `sprites` when not
+   * specified (the legacy single-bundle behavior). Pass a separate bundle when
+   * the player sheet (e.g. the 0x72 knight) does not define the mob characters
+   * (`slime`/`walker`); mobs then animate from this sheet instead. When both
+   * this and `sprites` are omitted, mobs are not rendered.
+   */
+  readonly mobSprites?: SpriteBundle;
 }
 
 /**
@@ -370,6 +399,26 @@ export function createPlaySession(
   // start level + semantics rather than re-translating.
   let active = compileLevel(startLdtkLevel, startLevel, semantics);
   cache.set(startLdtkLevel.iid, active);
+
+  // Sprite state (only when a bundle was supplied). The player's anim clock is
+  // session-wide; mobs are per-level (each room has its own instances and its
+  // own independent patrol sim), cached alongside the level runtime. The player
+  // bundle (`sprites`) and the mob bundle (`mobSprites`, defaulting to `sprites`)
+  // may differ: the 0x72 knight sheet defines only the player, so mobs continue
+  // to animate from the Kenney sheet that carries the `slime`/`walker` characters.
+  const sprites = options.sprites;
+  const mobSprites = options.mobSprites ?? options.sprites;
+  let playerAnim: SpriteAnimState | null = sprites === undefined ? null : createSpriteAnimState();
+  const mobActorsByLevel = new Map<string, MobActors>();
+  function mobActorsFor(level: LdtkLevel): MobActors | null {
+    if (mobSprites === undefined) return null;
+    const cached = mobActorsByLevel.get(level.iid);
+    if (cached !== undefined) return cached;
+    const actors = createMobActors(level, mobSprites);
+    if (actors !== null) mobActorsByLevel.set(level.iid, actors);
+    return actors;
+  }
+  let mobs = mobActorsFor(startLdtkLevel);
 
   let state: PlatformerState = active.compiled.initialState;
   let camera: Camera = createCamera();
@@ -444,6 +493,7 @@ export function createPlaySession(
             },
           };
           active = target;
+          mobs = mobActorsFor(active.ldtkLevel);
           camera = createCamera();
           zoom = fitZoom(active.levelData, viewport);
           worldView = { width: viewport.width / zoom, height: viewport.height / zoom };
@@ -462,6 +512,12 @@ export function createPlaySession(
         { width: active.levelData.width, height: active.levelData.height },
         worldView,
       );
+
+      // Advance the sprite animation clocks at the shared scaled rate (the
+      // frame-player works in milliseconds, but `SPRITE_ANIM_TIME_SCALE` slows
+      // the cast so the 2-frame walk cycles don't shuffle).
+      if (playerAnim !== null) playerAnim = advanceSpriteAnim(playerAnim, dt * 1000 * SPRITE_ANIM_TIME_SCALE);
+      mobs?.step(dt);
     },
 
     render(context, width, height, ldtkLevel, tilesets) {
@@ -484,18 +540,57 @@ export function createPlaySession(
       });
 
       const { core } = state;
-      context.fillStyle = isOnLadder(core, active.ladders)
-        ? PLAYER_LADDER_COLOR
-        : PLAYER_COLOR;
-      context.fillRect(core.x + offsetX, core.y + offsetY, core.width, core.height);
-      context.strokeStyle = PLAYER_OUTLINE;
-      context.lineWidth = 1 / zoom;
-      context.strokeRect(
-        core.x + offsetX + 0.5 / zoom,
-        core.y + offsetY + 0.5 / zoom,
-        core.width - 1 / zoom,
-        core.height - 1 / zoom,
-      );
+
+      // Patrolling mobs: drawn before the player so the player reads on top.
+      // `MobActors.draw` takes the camera offset since the world transform is
+      // scale-only here (the level was drawn with an explicit `worldOffset`).
+      if (mobs !== null) {
+        mobs.draw(context, { x: offsetX, y: offsetY });
+      }
+
+      // Player: sprite when a bundle is present (selected from physics), else
+      // the legacy colored rect. The sprite source is a square 16px cell; drawn
+      // at one tile so it scales by a clean integer (1× at 16px tiles, 2× at
+      // 8px tiles) and stays pixel-crisp. The collision body is taller than it
+      // is wide (0.5×1.5 tiles — narrow so it fits one-tile ladder shafts), so
+      // the sprite is bottom-anchored to the body's feet and horizontally
+      // centred on the narrow body. Dest coords are snapped to whole pixels so
+      // the float physics position doesn't bleed across edges mid-stride.
+      let drewSprite = false;
+      if (sprites !== undefined && playerAnim !== null) {
+        const kind = deriveSpriteAnimKind({
+          supported: core.onGround,
+          speedX: core.vx,
+          velocityY: core.vy,
+        });
+        const spriteSize = active.levelData.tileSize;
+        drewSprite = drawPlayerSprite(
+          context,
+          sprites,
+          playerAnim,
+          kind,
+          // Centre the (square) sprite on the narrow body.
+          Math.round(core.x + offsetX + (core.width - spriteSize) / 2),
+          // Bottom-anchor: the sprite's feet meet the body's bottom edge.
+          Math.round(core.y + offsetY + core.height - spriteSize),
+          core.facing,
+          spriteSize,
+        );
+      }
+      if (!drewSprite) {
+        context.fillStyle = isOnLadder(core, active.ladders)
+          ? PLAYER_LADDER_COLOR
+          : PLAYER_COLOR;
+        context.fillRect(core.x + offsetX, core.y + offsetY, core.width, core.height);
+        context.strokeStyle = PLAYER_OUTLINE;
+        context.lineWidth = 1 / zoom;
+        context.strokeRect(
+          core.x + offsetX + 0.5 / zoom,
+          core.y + offsetY + 0.5 / zoom,
+          core.width - 1 / zoom,
+          core.height - 1 / zoom,
+        );
+      }
       context.restore();
     },
 
@@ -506,6 +601,7 @@ export function createPlaySession(
     dispose() {
       window.removeEventListener('keydown', suppress);
       keyboard.dispose();
+      for (const actors of mobActorsByLevel.values()) actors.dispose();
     },
   };
 }

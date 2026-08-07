@@ -51,6 +51,15 @@ import { renderEditorScene, type EntityDrawEntry } from './render';
 import { PREVIEW_TOOLS, toolCells, lineCells, type Cell, type LdtkToolId } from './tools';
 import { createPlaySession, type PlaySession } from './play';
 import {
+  createMobOverlay,
+  loadSpriteBundle,
+  loadKnightBundle,
+  ONE_BIT_PLATFORMER_SAMPLE,
+  TWO_D_PLATFORMER_SAMPLE,
+  type MobOverlay,
+  type SpriteBundle,
+} from './mob-sprites';
+import {
   entityAtPoint,
   entityInstanceFromDef,
   levelEntityCount,
@@ -192,7 +201,24 @@ export function initLdtkEditor(
   const zoomValue = query<HTMLElement>('.ldtk-zoom-value');
   const fileInput = query<HTMLInputElement>('.ldtk-file-input');
 
-  resizeCanvasToBackingStore(canvas, CANVAS_W, CANVAS_H);
+  // The canvas is sized to CSS dimensions × DPR, but `imageSmoothingEnabled =
+  // false` and `image-rendering: pixelated` only stay crisp if the drawing
+  // surface itself is not silently stretched. Composing the DPR into the
+  // per-frame transform (see the `render` callback) keeps 1 logical pixel ==
+  // 1 backing pixel on HiDPI displays; without it a Retina panel upscales the
+  // whole scene before nearest-neighbour can help, which is what softens the
+  // sprites. Re-read fresh on resize so a window dragged between displays (or a
+  // browser zoom change) keeps its 1:1 mapping.
+  let dpr = resizeCanvasToBackingStore(canvas, CANVAS_W, CANVAS_H);
+  let resizeRaf = 0;
+  const handleResize = () => {
+    if (resizeRaf !== 0) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      dpr = resizeCanvasToBackingStore(canvas, CANVAS_W, CANVAS_H);
+    });
+  };
+  window.addEventListener('resize', handleResize);
 
   const state: EditorState = {
     loaded: null,
@@ -212,6 +238,20 @@ export function initLdtkEditor(
   const history: LdtkProject[] = [];
   const future: LdtkProject[] = [];
   let play: PlaySession | null = null;
+  let mobOverlay: MobOverlay | null = null;
+  /**
+   * Shared sprite bundle for the 1-bit platformer sample. Loaded once alongside
+   * the editor overlay and shared with the play session so the PNG is decoded a
+   * single time. `null` once loaded-but-unavailable (failed decode); `undefined`
+   * until the first load attempt resolves.
+   */
+  let spriteBundle: SpriteBundle | null | undefined = undefined;
+  /**
+   * The 0x72 knight bundle used as the PLAYER for the 1-bit platformer sample
+   * (the Kenney `spriteBundle` above still serves the slime/walker mobs, since
+   * the knight sheet defines no mob characters). Same tri-state as `spriteBundle`.
+   */
+  let knightBundle: SpriteBundle | null | undefined = undefined;
 
   // --- lookups ------------------------------------------------------------
 
@@ -781,6 +821,48 @@ export function initLdtkEditor(
 
   // --- loading ------------------------------------------------------------
 
+  /**
+   * (Re)build the animated-mob overlay for the current level, if it is the
+   * 1-bit platformer sample. The overlay parses the sprite sheet and decodes
+   * its PNG asynchronously; a sample may have changed by the time it resolves,
+   * so the resolved overlay is dropped unless it still matches `loaded.source`.
+   * Failures (parse/decode) degrade to `null` — the editor keeps working, the
+   * mobs just stay as static rects.
+   */
+  function reloadMobOverlay(): void {
+    mobOverlay?.dispose();
+    mobOverlay = null;
+    spriteBundle = undefined;
+    knightBundle = undefined;
+    const loaded = state.loaded;
+    const level = currentLevel();
+    if (loaded === null || state.project === null || level === undefined) return;
+    const source = loaded.source;
+    // The Kenney 1-bit bundle (player + slime/walker mobs) serves the 1-bit
+    // platformer sample; the 0x72 knight bundle is the player for the full-color
+    // 2D platformer sample. Each loads only for the sample that needs it, and
+    // the resolved bundle is dropped if the user has since switched samples.
+    if (source === ONE_BIT_PLATFORMER_SAMPLE) {
+      void loadSpriteBundle().then((bundle) => {
+        if (state.loaded?.source !== source) return;
+        spriteBundle = bundle;
+      });
+    } else if (source === TWO_D_PLATFORMER_SAMPLE) {
+      void loadKnightBundle().then((bundle) => {
+        if (state.loaded?.source !== source) return;
+        knightBundle = bundle;
+      });
+    }
+    void createMobOverlay({ level, project: state.project, source }).then((overlay) => {
+      // Drop a late result if the user has since switched samples.
+      if (state.loaded?.source !== source) {
+        overlay?.dispose();
+        return;
+      }
+      mobOverlay = overlay;
+    });
+  }
+
   function adopt(loaded: LoadedLdtkProject): void {
     state.loaded = loaded;
     state.project = loaded.document.project;
@@ -812,6 +894,8 @@ export function initLdtkEditor(
       `${loaded.source} — ${levels.length} level${levels.length === 1 ? '' : 's'}, `
       + `${rules} auto-layer rules. Paint the IntGrid and the tiles follow.`,
     );
+
+    reloadMobOverlay();
   }
 
   function report(result: LoadedLdtkProject | { readonly error: string }): void {
@@ -844,6 +928,15 @@ export function initLdtkEditor(
     }
     play = createPlaySession(translated.level, translated.tileSemantics, canvas, level, state.project, {
       onLevelChange: (name) => setStatus(`Playing: ${name}. Arrows to move, Space to jump, Esc to stop.`),
+      // The player sprite bundle: the 0x72 knight for the 2D platformer sample,
+      // the Kenney player for the 1-bit sample. Only one is loaded at a time
+      // (whichever matches the open sample); whichever is present wins. The
+      // bundle may still be loading on the first play press — the session falls
+      // back to the rect renderer until it resolves.
+      ...(() => {
+        const player = knightBundle ?? spriteBundle;
+        return player === undefined || player === null ? {} : { sprites: player };
+      })(),
     });
     section.dataset.mode = 'play';
     setStatus(`Playing: ${level.identifier}. Arrows to move, Space to jump, Esc to stop.`);
@@ -853,8 +946,17 @@ export function initLdtkEditor(
 
   const loop: GameLoop = createGameLoop({
     fixedDt: 1 / 60,
-    step: (dt) => play?.step(dt),
+    step: (dt) => {
+      play?.step(dt);
+      // The mob overlay is editor-only chrome, so it animates while editing and
+      // is paused in play mode (play mode renders its own scene).
+      if (play === null) mobOverlay?.step(dt);
+    },
     render: () => {
+      // Reset to a DPR-scaled identity so the 900×520 logical-space draws below
+      // land 1:1 on the (larger) HiDPI backing store. Each scene re-applies its
+      // own transform on top of this base via save()/scale()/translate().
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
       const level = currentLevel();
       if (state.loaded === null || level === undefined) {
         context.fillStyle = '#0b0e12';
@@ -869,6 +971,7 @@ export function initLdtkEditor(
       }
       const layer = currentLayer();
       const entityEntries = entityDrawEntries();
+      const skipEntityIids = mobOverlay?.animatedIids;
       renderEditorScene(context, {
         level,
         tilesets: state.loaded.tilesets,
@@ -891,8 +994,23 @@ export function initLdtkEditor(
         previewCells,
         ...(cursorCell === undefined ? {} : { cursorCell }),
         ...(entityEntries === undefined ? {} : { entities: entityEntries }),
+        ...(skipEntityIids === undefined ? {} : { skipEntityIids }),
         ...(entityGhost === undefined ? {} : { entityGhost }),
       });
+      // Animated mobs overlay on top of the scene (every layer), in world-pixel
+      // space. The scene transform is still applied from `renderEditorScene`'s
+      // save/restore, but that has already returned — re-apply it here so the
+      // sprites land in level space at the right pan/zoom.
+      if (mobOverlay !== null) {
+        context.save();
+        try {
+          context.scale(state.viewport.scale, state.viewport.scale);
+          context.translate(-state.viewport.x, -state.viewport.y);
+          mobOverlay.draw(context);
+        } finally {
+          context.restore();
+        }
+      }
     },
   });
 
@@ -927,6 +1045,7 @@ export function initLdtkEditor(
     // An entity selection from another level is meaningless here.
     state.selectedEntityIid = null;
     state.viewport = fitViewport(contentSize(), { width: CANVAS_W, height: CANVAS_H });
+    reloadMobOverlay();
     refreshChrome();
   });
 
@@ -1080,7 +1199,10 @@ export function initLdtkEditor(
   return () => {
     loop.stop();
     play?.dispose();
+    mobOverlay?.dispose();
     window.removeEventListener('keydown', onKeyDown);
+    if (resizeRaf !== 0) cancelAnimationFrame(resizeRaf);
+    window.removeEventListener('resize', handleResize);
   };
 }
 

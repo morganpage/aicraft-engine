@@ -32,6 +32,41 @@ The `player` character also maps the physics-derived anim kinds
 tags, so the player animates correctly in the air with just four authored
 clips.
 
+## `knight-0x72.json`
+
+The armored knight from 0x72's **DungeonTileset II** (CC0), driven off the
+single sheet
+[`0x72_DungeonTilesetII_v1.7.png`](../../vendor/0x72/0x72_DungeonTilesetII_v1.7.png)
+(512×512, 16px tiles, 32×32 grid). Used as the **player** for the full-color
+LDtk 2D platformer sample (`Typical_2D_platformer_example.ldtk`). The 1-bit
+platformer sample keeps the Kenney player + slime/walker mobs from
+`kenney-1bit.json`; the two samples use disjoint sprite sets. Defines one
+character:
+
+| Character | Anims | Tile-index ranges (32-col grid) |
+|-----------|-------|---------------------------------|
+| `knight`  | `idle`, `walk`, `jump`, `fall` | idle 296, walk 296-297, jump 301, fall 304 (row 9) |
+
+Two differences from the Kenney sheet:
+
+- **Full-color, not tinted.** The 0x72 sheet is RGBA pixel art, not 1-bit white
+  ink, so the knight is drawn **without** a tint — `playerTintFor` returns
+  `undefined` for a `colored: true` bundle and `drawSprite` blits the raw pixels.
+  The Kenney `source-in` recolor path would flatten the knight to a flat
+  silhouette.
+- **Top-down source art.** The DungeonTileset II is a top-down dungeon crawler
+  tileset, so the knight frames are top-down poses (the selected row-9 frames
+  face toward the camera). In the side-scrolling platformer the knight reads as
+  facing the viewer rather than running in profile — recognizable as a knight,
+  but not a true side-view run/jump cycle. The frames were chosen from the
+  face-camera row for the clearest silhouette.
+
+> Like the Kenney entry above, these tile indices were derived by slicing the
+> sheet (programmatically — the sheet has irregular spacing and no published
+> index map) and **refining by eye**. If a frame reads wrong, editing this file
+> is the only step needed; the engine consumes any valid ranges. Guarded by
+> `showcase/tests/knight-0x72-sprites.test.ts`.
+
 ### Reusing the format
 
 This file is a valid **Aseprite-JSON superset** document. To author your own:

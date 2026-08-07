@@ -79,6 +79,12 @@ export interface RenderSceneOptions {
    */
   readonly entities?: readonly EntityDrawEntry[];
   /**
+   * Instance iids whose body fill the editor should NOT draw (outline, label,
+   * and selection still render). Used by the animated-mob overlay so a mob the
+   * overlay is blitting as a sprite does not also show its static rect beneath.
+   */
+  readonly skipEntityIids?: ReadonlySet<string>;
+  /**
    * Where a pending entity placement would land, in level pixels. Drawn as a
    * ghost so the author sees the footprint before committing.
    */
@@ -123,7 +129,7 @@ export function renderEditorScene(
     if (options.showGrid) drawGrid(context, level, options.gridSize, viewport, view);
 
     if (options.entities !== undefined && options.entities.length > 0) {
-      drawEntities(context, options.entities, options.tilesets, view);
+      drawEntities(context, options.entities, options.tilesets, view, options.skipEntityIids);
     }
     if (options.entityGhost !== undefined) drawEntityGhost(context, options.entityGhost);
 
@@ -260,6 +266,7 @@ function drawEntities(
   entries: readonly EntityDrawEntry[],
   tilesets: LdtkTilesetBundle,
   view: Readonly<{ x: number; y: number; width: number; height: number }>,
+  skipEntityIids?: ReadonlySet<string>,
 ): void {
   const labelHeight = 11;
   context.save();
@@ -278,10 +285,16 @@ function drawEntities(
       if (x + entity.width < view.x || y + entity.height < view.y) continue;
       if (x > view.x + view.width || y > view.y + view.height) continue;
 
+      // The animated-mob overlay blits these as sprites; skip the static body
+      // (rect fill or display tile) so it does not show through. The outline,
+      // label, and selection highlight still draw, so the entity remains
+      // selectable and labeled on the Entities layer.
+      const bodySkipped = skipEntityIids !== undefined && skipEntityIids.has(entity.iid);
+
       // Display tile when the def provides one and the tileset is loaded.
       const tilesetUid = def?.tileRect?.tilesetUid ?? null;
       const tileImage = tilesetUid === null ? undefined : tilesets.get(tilesetUid)?.image;
-      if (def?.tileRect !== null && def?.tileRect !== undefined && tileImage !== undefined) {
+      if (!bodySkipped && def?.tileRect !== null && def?.tileRect !== undefined && tileImage !== undefined) {
         context.globalAlpha = 0.96;
         try {
           context.drawImage(
@@ -295,7 +308,7 @@ function drawEntities(
           context.fillStyle = def?.color ?? ENTITY_FALLBACK_COLOR;
           context.fillRect(x, y, entity.width, entity.height);
         }
-      } else {
+      } else if (!bodySkipped) {
         context.globalAlpha = 0.7;
         context.fillStyle = def?.color ?? ENTITY_FALLBACK_COLOR;
         context.fillRect(x, y, entity.width, entity.height);

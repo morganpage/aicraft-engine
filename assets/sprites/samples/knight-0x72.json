@@ -1,0 +1,56 @@
+{
+  "frames": {},
+  "meta": {
+    "image": "../../vendor/0x72/0x72_DungeonTilesetII_v1.7.png",
+    "size": {
+      "w": 512,
+      "h": 512
+    },
+    "grid": {
+      "tileWidth": 16,
+      "tileHeight": 16,
+      "columns": 32
+    },
+    "frameTags": [
+      {
+        "name": "knight/idle",
+        "from": 296,
+        "to": 296,
+        "direction": "forward"
+      },
+      {
+        "name": "knight/walk",
+        "from": 296,
+        "to": 297,
+        "direction": "forward"
+      },
+      {
+        "name": "knight/jump",
+        "from": 301,
+        "to": 301,
+        "direction": "forward"
+      },
+      {
+        "name": "knight/fall",
+        "from": 304,
+        "to": 304,
+        "direction": "forward"
+      }
+    ]
+  },
+  "characters": [
+    {
+      "name": "knight",
+      "defaultAnim": "idle",
+      "animations": {
+        "idle": "knight/idle",
+        "walk": "knight/walk",
+        "jump": "knight/jump",
+        "fall": "knight/fall",
+        "ascent": "knight/jump",
+        "apex": "knight/fall",
+        "descent": "knight/fall"
+      }
+    }
+  ]
+}
