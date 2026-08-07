@@ -835,7 +835,7 @@ export function initLdtkEditor(
     const level = currentLevel();
     if (level === null || level === undefined) return;
     if (state.project === null) return;
-    const translated = ldtkLevelToLevelData(level);
+    const translated = ldtkLevelToLevelData(level, state.project);
     if (translated.level === undefined) {
       setStatus(
         `Cannot play: ${translated.diagnostics.map((d) => d.message).join('; ')}`,

@@ -5,7 +5,7 @@ import {
   translateLdtkEntity,
 } from '../ldtk/translate';
 import { validateLevel } from '../level';
-import type { LdtkEntityInstance, LdtkLevel } from '../ldtk/types';
+import type { LdtkEntityInstance, LdtkLevel, LdtkProject } from '../ldtk/types';
 
 /** Build a minimal LDtk level fixture with the given IntGrid + entities. */
 function makeLevel(opts: {
@@ -133,6 +133,61 @@ describe('ldtkLevelToLevelData — IntGrid', () => {
   });
 });
 
+describe('ldtkLevelToLevelData — name-driven tile semantics', () => {
+  // The makeLevel helper uses layerDefUid: 10 for its IntGrid layer. Build a
+  // project whose defs.layers includes a matching def declaring named values.
+  function makeProject(values: { value: number; identifier: string | null }[]): LdtkProject {
+    return {
+      defs: { layers: [{ uid: 10, intGridValues: values }] },
+    } as unknown as LdtkProject;
+  }
+
+  it('derives passthrough by name (case-insensitive, any integer) when project is supplied', () => {
+    // Value 1 = 'dirt' (solid), value 4 = 'one_way_passthrough' (one-way).
+    // Note value 4 is NOT the legacy default 2 — name resolution must find it.
+    const level = makeLevel({ intGridCsv: [1, 4, 1, 0, 1, 4] });
+    const project = makeProject([
+      { value: 1, identifier: 'dirt' },
+      { value: 4, identifier: 'one_way_passthrough' },
+    ]);
+    const { tileSemantics } = ldtkLevelToLevelData(level, project);
+    expect(tileSemantics.solid).toContain(1);
+    expect(tileSemantics.passthrough).toContain(4);
+    expect(tileSemantics.solid).not.toContain(4);
+  });
+
+  it('is case-insensitive on the passthrough name', () => {
+    const level = makeLevel({ intGridCsv: [3, 0, 3] });
+    const project = makeProject([{ value: 3, identifier: 'PASSTHROUGH' }]);
+    const { tileSemantics } = ldtkLevelToLevelData(level, project);
+    expect(tileSemantics.passthrough).toEqual([3]);
+    expect(tileSemantics.solid).toEqual([]);
+  });
+
+  it('defaults every non-zero value to solid when none is named passthrough', () => {
+    const level = makeLevel({ intGridCsv: [1, 2, 3] });
+    const project = makeProject([
+      { value: 1, identifier: 'dirt' },
+      { value: 2, identifier: 'stone' },
+      { value: 3, identifier: 'brick' },
+    ]);
+    const { tileSemantics } = ldtkLevelToLevelData(level, project);
+    // No 'passthrough' name → all three are solid, including value 2 which the
+    // legacy integer fallback would have classed as passthrough.
+    expect(tileSemantics.solid).toEqual([1, 2, 3]);
+    expect(tileSemantics.passthrough).toEqual([]);
+  });
+
+  it('falls back to integer options when no project is supplied', () => {
+    // Same grid as the name test, but no project → value 4 is solid (not
+    // passthrough), proving the legacy path is intact.
+    const level = makeLevel({ intGridCsv: [1, 4, 1, 0, 1, 4] });
+    const { tileSemantics } = ldtkLevelToLevelData(level);
+    expect(tileSemantics.solid).toContain(4);
+    expect(tileSemantics.passthrough).not.toContain(4);
+  });
+});
+
 describe('ldtkLevelToLevelData — entity mapping', () => {
   it('maps known LDtk identifiers to engine entity kinds', () => {
     const level = makeLevel({
@@ -218,7 +273,7 @@ describe('ldtkLevelToLevelData — validateLevel interop', () => {
     const level = makeLevel({
       entities: [ENT({ __identifier: 'WarpPad', px: [0, 0], width: 8, height: 8 })],
     });
-    const { level: out } = ldtkLevelToLevelData(level, {
+    const { level: out } = ldtkLevelToLevelData(level, undefined, {
       entityMap: { resolve: (id) => (id === 'WarpPad' ? 'exit' : null) },
     });
     expect(out!.entities[0].kind).toBe('exit');

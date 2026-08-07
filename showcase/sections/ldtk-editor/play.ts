@@ -344,7 +344,7 @@ export function createPlaySession(
     if (cached !== undefined) return cached;
     const ldtkLevel = findLevelInProject(project, iid);
     if (ldtkLevel === undefined) return undefined;
-    const translated = ldtkLevelToLevelData(ldtkLevel);
+    const translated = ldtkLevelToLevelData(ldtkLevel, project);
     if (translated.level === undefined) return undefined;
     const runtime = compileLevel(ldtkLevel, translated.level, translated.tileSemantics);
     cache.set(iid, runtime);

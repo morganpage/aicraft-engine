@@ -25,8 +25,10 @@ import type { GeneratedTileSemantics } from '../level/tile-semantics';
 import type {
   LdtkEntityInstance,
   LdtkFieldInstance,
+  LdtkLayerDef,
   LdtkLayerInstance,
   LdtkLevel,
+  LdtkProject,
 } from './types';
 
 /**
@@ -81,9 +83,19 @@ export interface LdtkTranslateOptions {
   /**
    * Override the solid IntGrid value (default `1`). Passthrough is `2`.
    * Values ≥ 1 other than these map to solid by default.
+   *
+   * **Fallback only.** When {@link ldtkLevelToLevelData} is called with a
+   * `project`, solidity is derived from IntGrid value names — every non-zero
+   * value is solid unless its name contains `'passthrough'`. This option and
+   * {@link LdtkTranslateOptions.passthroughValue} apply only when no `project`
+   * is supplied (or it declares no passthrough-named value).
    */
   readonly solidValue?: number;
-  /** Override the passthrough IntGrid value (default `2`). */
+  /**
+   * Override the passthrough IntGrid value (default `2`).
+   *
+   * **Fallback only** — see {@link LdtkTranslateOptions.solidValue}.
+   */
   readonly passthroughValue?: number;
 }
 
@@ -255,6 +267,41 @@ function findCollisionLayer(
 }
 
 /**
+ * Look up a layer instance's definition in `project.defs.layers` by uid.
+ * Returns `undefined` when the project or matching def is absent.
+ */
+function layerDefOf(
+  project: LdtkProject | undefined,
+  layer: LdtkLayerInstance | undefined,
+): LdtkLayerDef | undefined {
+  if (project === undefined || layer === undefined) return undefined;
+  return project.defs.layers.find((d) => d.uid === layer.layerDefUid);
+}
+
+/**
+ * Derive passthrough IntGrid values by name from the collision layer's
+ * definition. Any declared value whose identifier contains `'passthrough'`
+ * (case-insensitive) is collected. Returns the set, or `undefined` when there
+ * is no project, no matching layer def, or no value named passthrough — in
+ * which case the caller falls back to the integer options.
+ */
+function passthroughValuesFromNames(
+  project: LdtkProject | undefined,
+  collision: LdtkLayerInstance | undefined,
+): Set<number> | undefined {
+  const def = layerDefOf(project, collision);
+  const values = def?.intGridValues;
+  if (values === undefined) return undefined;
+  const passthrough = new Set<number>();
+  for (const v of values) {
+    if (v.identifier !== null && v.identifier.toLowerCase().includes('passthrough')) {
+      passthrough.add(v.value);
+    }
+  }
+  return passthrough.size > 0 ? passthrough : undefined;
+}
+
+/**
  * Translate an LDtk level into the engine's {@link LevelData} schema.
  *
  * The level's first `IntGrid` layer becomes {@link TileGrid}. The shapes
@@ -262,19 +309,33 @@ function findCollisionLayer(
  * plus a `tileSize`/`width`/`height`/`spawn` derivation. Entities are
  * mapped via {@link LDTK_DEFAULT_ENTITY_MAP} (overridable).
  *
+ * **Tile semantics.** When `project` is supplied, solidity is derived from the
+ * collision layer's declared IntGrid value names: every non-zero value is
+ * treated as solid unless its identifier contains `'passthrough'`
+ * (case-insensitive), in which case it becomes a one-way platform. This lets a
+ * project name a value `'passthrough'` (any case, any integer) rather than
+ * reserving a magic integer. Without `project`, the legacy integer fallback
+ * applies (`solidValue` default `1`, `passthroughValue` default `2`).
+ *
  * **Never throws.** Malformed entities emit warnings and are skipped;
  * structural failures (no IntGrid layer) emit errors.
+ *
+ * @param level - The LDtk level to translate.
+ * @param project - Optional whole project. When supplied, enables name-driven
+ *   tile semantics (see above). The showcase always passes this.
+ * @param options - Translation overrides.
  *
  * @example
  * ```ts
  * const { ok, project } = parseLdtkProject(text);
  * if (!ok || !project) throw new Error('bad ldtk');
- * const { level, tileSemantics } = ldtkLevelToLevelData(project.levels[0]);
+ * const { level, tileSemantics } = ldtkLevelToLevelData(project.levels[0], project);
  * const result = validateLevel(level);
  * ```
  */
 export function ldtkLevelToLevelData(
   level: LdtkLevel,
+  project?: LdtkProject,
   options: Readonly<LdtkTranslateOptions> = {},
 ): LdtkTranslateResult {
   const diagnostics: LdtkTranslateDiagnostic[] = [];
@@ -308,14 +369,28 @@ export function ldtkLevelToLevelData(
     data = new Array(cols * rows).fill(0);
   }
 
-  // Tile semantics: solidValue → solid, passthroughValue → passthrough.
-  // Any other non-zero values present in the grid are also treated as solid
-  // (best-effort) so levels with multi-value IntGrids still collide.
+  // Tile semantics. When a project is supplied, derive solidity from the
+  // collision layer's declared value names: every non-zero value is solid
+  // unless its identifier contains 'passthrough', in which case it is a
+  // one-way platform. Without a project, fall back to the integer options so
+  // legacy callers behave as before. Supplying a project with no
+  // passthrough-named value means "no passthrough" — the integer default is
+  // NOT re-applied, since the names are the source of truth.
   const presentValues = new Set<number>();
   for (const v of data) if (v !== 0) presentValues.add(v);
-  const solid = [...presentValues].filter((v) => v !== passthroughValue);
-  if (!solid.includes(solidValue) && presentValues.size === 0) solid.push(solidValue);
-  const passthrough = presentValues.has(passthroughValue) ? [passthroughValue] : [];
+  let solid: number[];
+  let passthrough: number[];
+  if (project !== undefined) {
+    const namedPassthrough = passthroughValuesFromNames(project, collision);
+    solid = [...presentValues].filter((v) => namedPassthrough === undefined || !namedPassthrough.has(v));
+    passthrough = namedPassthrough === undefined
+      ? []
+      : [...presentValues].filter((v) => namedPassthrough.has(v));
+  } else {
+    solid = [...presentValues].filter((v) => v !== passthroughValue);
+    if (!solid.includes(solidValue) && presentValues.size === 0) solid.push(solidValue);
+    passthrough = presentValues.has(passthroughValue) ? [passthroughValue] : [];
+  }
   const tileSemantics: GeneratedTileSemantics = { solid, passthrough };
 
   // Entities — collect from every Entities layer.
