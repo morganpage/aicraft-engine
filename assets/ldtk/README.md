@@ -61,6 +61,20 @@ alternatives.
 `sunny-land/SunnyLand_by_Ansimuz.png` above — different dimensions, so the two
 are not interchangeable when resolving a sample's tile coordinates.
 
+`samples/atlas/monochrome_tilemap_transparent_packed.png` is the exception: it
+is **not** from LDtk's sample set but from Kenney's CC0 1-Bit Platformer pack
+(see [`assets/vendor/kenney-1-bit-platformer/`](../vendor/kenney-1-bit-platformer)).
+It exists in the atlas so the hand-authored `Typical_1-bit_platformer.ldtk`
+sample — a minimal plain-Tiles level rather than an auto-layer showcase — can
+resolve its `relPath`. It is the only atlas image sourced outside
+`deepnight/ldtk`.
+
+`Typical_1-bit_platformer.ldtk` is authored in LDtk and exported normally — it
+carries a single `Tiles` layer (no IntGrid, no auto-layer rules) and so adds no
+coverage to the rules oracle. Its purpose is to exercise the plain-tile render
+path against a clean CC0 tileset and to give the showcase a level that also
+opens cleanly in the LDtk desktop editor.
+
 Pruned from the upstream sample set: `thumbs/` (preview images, unused),
 `NuclearBlaze_by_deepnight.aseprite` (CC-BY-SA 4.0 — see the exclusions above),
 `Beach by deepnight.png` and `classicAutoTiles.aseprite` (unreferenced), and the

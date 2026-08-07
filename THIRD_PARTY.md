@@ -21,10 +21,12 @@ Sourced from LDtk's bundled sample tilesets at
 
 ## LDtk sample projects (test fixtures)
 
-`assets/ldtk/samples/*.ldtk` are LDtk's own sample projects, vendored from the
-MIT-licensed [`deepnight/ldtk`](https://github.com/deepnight/ldtk) repository.
-They serve as the correctness oracle for the auto-layer rule engine
-(`src/ldtk/rules.ts`) and are referenced only by tests.
+`assets/ldtk/samples/*.ldtk` are mostly LDtk's own sample projects, vendored
+from the MIT-licensed [`deepnight/ldtk`](https://github.com/deepnight/ldtk)
+repository. Those serve as the correctness oracle for the auto-layer rule
+engine (`src/ldtk/rules.ts`) and are referenced only by tests. The exception is
+`Typical_1-bit_platformer.ldtk`, an LDtk-authored level that ships a
+clean-licensed tileset into the showcase (see the Kenney entry below).
 
 `assets/ldtk/samples/atlas/TopDown_by_deepnight.png` is authored by Sébastien
 Bénard with no explicit per-asset license. It is retained **as a test fixture
@@ -53,3 +55,12 @@ The `.ldtk` file format is plain JSON documented at
 [Kenney's "Pixel Platformer" pack](https://kenney.nl/assets/pixel-platformer),
 licensed under CC0 (public domain). Used by the legacy tileset-import showcase
 panel; being superseded by the LDtk pipeline.
+
+## Kenney — 1-Bit Platformer
+
+`assets/vendor/kenney-1-bit-platformer/` contains the packed tileset sheet from
+[Kenney's "1-Bit Platformer" pack](https://kenney.nl/assets/bit-platformer),
+licensed under CC0 (public domain). Only the transparent packed sheet is
+vendored (`Tilemap/monochrome_tilemap_transparent_packed.png`, 320×320 at 16px
+tiles); it is consumed by the LDtk editor showcase panel via the
+`Typical_1-bit_platformer.ldtk` sample.

@@ -22,8 +22,9 @@ import {
   isOnLadder,
   playerWidthFor,
   CLIMB_SPEED_TILES,
+  ladderValueFromProject,
 } from '../sections/ldtk-editor/play';
-import type { LdtkLevel } from '../../src/ldtk';
+import type { LdtkLevel, LdtkProject } from '../../src/ldtk';
 
 /** Tile size used throughout the bundled LDtk sample. */
 const TILE = 16;
@@ -317,5 +318,67 @@ describe('LDtk play-mode ladder mask + tint helpers', () => {
     expect(mask.cells.has('1,0')).toBe(true);
     expect(isOnLadder({ x: TILE, y: 0, width: TILE, height: TILE }, mask)).toBe(true);
     expect(isOnLadder({ x: 0, y: 0, width: TILE, height: TILE }, mask)).toBe(false);
+  });
+
+  it('ladderValueFromProject resolves the ladder value by name (any case, any integer)', () => {
+    // A project whose IntGrid uses value 3 (not the default 2) for ladders, and
+    // names it 'Ladder' (capitalized) — mirroring how a fresh LDtk project might
+    // be authored without reserving integer 2.
+    const rows = 4, cols = 3;
+    const csv: number[] = [];
+    for (let y = 0; y < rows; y++) csv.push(1, 3, 1); // solid | ladder(=3) | solid
+    const layerDefUid = 50;
+    const level = {
+      layerInstances: [
+        { __type: 'IntGrid', __cWid: cols, __cHei: rows, __gridSize: TILE, intGridCsv: csv, layerDefUid },
+      ],
+    } as unknown as LdtkLevel;
+    const project = {
+      defs: {
+        layers: [
+          { uid: layerDefUid, intGridValues: [
+            { value: 1, identifier: 'Solid' },
+            { value: 3, identifier: 'Ladder' },
+          ] },
+        ],
+      },
+    } as unknown as LdtkProject;
+
+    const ladderValue = ladderValueFromProject(project, level);
+    expect(ladderValue).toBe(3);
+
+    // Feeding the resolved value into makeLadderMask flags the value-3 cells,
+    // which the default (2) would have missed entirely.
+    const mask = makeLadderMask(level, TILE, ladderValue);
+    expect(mask.cells.size).toBe(rows);
+    expect(mask.cells.has('1,0')).toBe(true);
+    expect(isOnLadder({ x: TILE, y: 0, width: TILE, height: TILE }, mask)).toBe(true);
+  });
+
+  it('ladderValueFromProject is case-insensitive and returns undefined when unnamed', () => {
+    const layerDefUid = 60;
+    const level = {
+      layerInstances: [
+        { __type: 'IntGrid', __cWid: 3, __cHei: 1, __gridSize: TILE, intGridCsv: [5, 0, 0], layerDefUid },
+      ],
+    } as unknown as LdtkLevel;
+
+    // 'LADDER' (all caps) still matches.
+    const upper = {
+      defs: { layers: [{ uid: layerDefUid, intGridValues: [{ value: 5, identifier: 'LADDER' }] }] },
+    } as unknown as LdtkProject;
+    expect(ladderValueFromProject(upper, level)).toBe(5);
+
+    // No value named 'ladder' → undefined (caller falls back to the default).
+    const unnamed = {
+      defs: { layers: [{ uid: layerDefUid, intGridValues: [{ value: 5, identifier: 'vine' }] }] },
+    } as unknown as LdtkProject;
+    expect(ladderValueFromProject(unnamed, level)).toBeUndefined();
+
+    // No IntGrid layer at all → undefined.
+    const noGrid = {
+      layerInstances: [{ __type: 'Tiles' }],
+    } as unknown as LdtkLevel;
+    expect(ladderValueFromProject(upper, noGrid)).toBeUndefined();
   });
 });

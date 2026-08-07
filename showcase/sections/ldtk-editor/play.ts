@@ -56,9 +56,12 @@ const PLAYER_OUTLINE = '#1d1300';
 const PLAYER_LADDER_COLOR = '#7CFC9E';
 
 /**
- * IntGrid value identifying a ladder in the bundled platformer sample's
- * `Collisions` layer (`{ value: 2, identifier: 'ladder' }`). Used to tag the
- * compiled solids and to tint the player while overlapping.
+ * Fallback IntGrid value used to identify ladders when a project declares no
+ * value named `'ladder'` in its defs. Matches the bundled platformer sample's
+ * `Collisions` layer (`{ value: 2, identifier: 'ladder' }`). The real ladder
+ * value is resolved per level from the project's IntGrid value names — see
+ * {@link ladderValueFromProject} — so a project can use any integer for ladders
+ * as long as it names the value `'ladder'` (any case).
  */
 const LADDER_INT_GRID_VALUE = 2;
 
@@ -329,7 +332,8 @@ export function createPlaySession(
       { level: levelData, tileSemantics: semantics },
       { config, playerWidth, playerHeight },
     );
-    const ladders = makeLadderMask(ldtkLevel, levelData.tileSize);
+    const ladderValue = ladderValueFromProject(project, ldtkLevel) ?? LADDER_INT_GRID_VALUE;
+    const ladders = makeLadderMask(ldtkLevel, levelData.tileSize, ladderValue);
     const solids = compiled.staticSolids.map((s) =>
       isOnLadder(s, ladders) ? { ...s, ladder: true } : s,
     );
@@ -507,12 +511,49 @@ export interface LadderMask {
 const EMPTY_LADDER_MASK: LadderMask = { size: 16, cells: new Set<string>() };
 
 /**
+ * Resolve the IntGrid integer that marks ladders in `ldtkLevel` by looking up
+ * the level's IntGrid layer definition in `project.defs.layers` and finding the
+ * declared value whose identifier is `'ladder'` (case-insensitive, so
+ * `'Ladder'` and `'LADDER'` all match).
+ *
+ * Returns `undefined` when the level has no IntGrid layer, the project has no
+ * matching layer definition, or no value is named `'ladder'` — in which case
+ * the caller falls back to {@link LADDER_INT_GRID_VALUE}.
+ */
+export function ladderValueFromProject(
+  project: LdtkProject,
+  ldtkLevel: LdtkLevel,
+): number | undefined {
+  const layers = ldtkLevel.layerInstances;
+  if (layers === null) return undefined;
+  const intGridLayer = layers.find((l) => l.__type === 'IntGrid');
+  if (intGridLayer === undefined) return undefined;
+  const def = project.defs.layers.find((d) => d.uid === intGridLayer.layerDefUid);
+  const values = def?.intGridValues;
+  if (values === undefined) return undefined;
+  for (const v of values) {
+    if (v.identifier !== null && v.identifier.toLowerCase() === 'ladder') return v.value;
+  }
+  return undefined;
+}
+
+/**
  * Collect every ladder IntGrid cell in `ldtkLevel` into a fast lookup mask.
  * Falls back to an empty mask (no ladders) if there is no IntGrid layer; the
  * collision layer's `__gridSize` is used so the mask stays correct when it
  * differs from the engine `tileSize`.
+ *
+ * `ladderValue` identifies which IntGrid integer marks a ladder. Resolve it per
+ * level via {@link ladderValueFromProject} so projects can name the value
+ * `'ladder'` (any case) rather than reserving integer `2`. Defaults to
+ * {@link LADDER_INT_GRID_VALUE} when omitted, preserving the legacy behaviour
+ * for callers — and tests — that don't supply it.
  */
-export function makeLadderMask(ldtkLevel: LdtkLevel, fallbackTileSize: number): LadderMask {
+export function makeLadderMask(
+  ldtkLevel: LdtkLevel,
+  fallbackTileSize: number,
+  ladderValue: number = LADDER_INT_GRID_VALUE,
+): LadderMask {
   const layers = ldtkLevel.layerInstances;
   if (layers === null) return EMPTY_LADDER_MASK;
   for (const layer of layers) {
@@ -521,7 +562,7 @@ export function makeLadderMask(ldtkLevel: LdtkLevel, fallbackTileSize: number): 
     if (csv === undefined) continue;
     const cells = new Set<string>();
     for (let i = 0; i < csv.length; i++) {
-      if (csv[i] === LADDER_INT_GRID_VALUE) {
+      if (csv[i] === ladderValue) {
         const ty = Math.floor(i / layer.__cWid);
         const tx = i - ty * layer.__cWid;
         cells.add(`${tx},${ty}`);
