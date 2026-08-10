@@ -105,7 +105,7 @@ A JSDoc warning is added to `advanceLocomotionByDisplacement`:
 
 `evaluateLocomotion` now returns different `leftFootOffset.y` / `rightFootOffset.y` values at most phases. Same inputs → different outputs. The function signature is unchanged. The types are unchanged. This is a **behavioural correction**, not a signature change.
 
-No external consumers exist yet (the library is consumed only by Spitekeep, which has not yet integrated the submodule). The change protocol requires this decision doc to record the correction. If consumers existed, this would require a minor version bump.
+No external consumers exist yet (the library is consumed only by the reference implementation, which has not yet integrated the submodule). The change protocol requires this decision doc to record the correction. If consumers existed, this would require a minor version bump.
 
 ## Known follow-up
 

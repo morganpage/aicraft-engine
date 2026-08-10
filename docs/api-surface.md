@@ -19,7 +19,7 @@ Color math, pixel helpers, motion probe. (The animation helpers — `bob`, `puls
 |---|---|---|---|
 | `outlineRect(ctx, x, y, w, h, fill, outline?, coverage?)` | function | Flat-fill rect with 1px dark outline; `coverage` controls pixel-grid snapping: `'floor'` (default, snaps down) or `'ceil'` (snaps up) | `src/primitives/outline-rect.ts` |
 | `OutlineCoverage` | type | `'floor' \| 'ceil'` — fill-extent policy for `outlineRect` (`'floor'` truncates to `floor(w/h)`; `'ceil'` covers the full geometric bounds for fractional-position rects) | `src/primitives/outline-rect.ts` |
-| `DEFAULT_OUTLINE_COLOR` | const | `'#1d1128'` — Spitekeep's near-black outline | `src/primitives/outline-rect.ts` |
+| `DEFAULT_OUTLINE_COLOR` | const | `'#1d1128'` — near-black outline | `src/primitives/outline-rect.ts` |
 | `parseHex(hex)` | function | `#rrggbb` → `{r, g, b}` record; throws on invalid input | `src/primitives/color.ts` |
 | `isHexColor(value)` | function | Non-throwing type guard for complete six-digit hex strings, with or without `#` | `src/primitives/color.ts` |
 | `safeHex(value, fallback)` | function | Return a valid input or fallback; malformed fallback degrades to black | `src/primitives/color.ts` |
@@ -79,7 +79,7 @@ Pure-function easing curves and a stateless tween driver. Deterministic: same `(
 | `advanceTween(state, dt, config)` | function | Pure: advance tween by `dt` seconds; returns new state + eased value + done flag. Call inside `step(fixedDt)` for replay-deterministic animation | `src/easing/tween.ts` |
 
 - _particle lifetime integration: `particleAlphaCurve` / `particleSizeCurve` gain an optional `ease?` parameter (default linear) — see `src/particles/lifetime.ts`_
-- _replaces Spitekeep's local `easing(t, name)` in `src/core/traps/hidden-pit.ts:272` and inline `1 - Math.pow(1-t, 3)` in `src/death-cinematography/zoom.ts:75`_
+- _replaces consumer-local `easing(t, name)` dispatch helpers and inline `1 - Math.pow(1-t, 3)` ease-out cubic calls_
 
 - _research note: See `docs/research/procedural-locomotion.md` for planned trigonometric locomotion, squash/stretch, and Verlet-based spring chains._
 
@@ -364,7 +364,7 @@ Trigonometric locomotion: phase-accumulator walk/run cycles with smooth speed tr
 |---|---|---|---|
 | `LocomotionState` | type | Phase accumulator: `{phase: number}` in [0, 2π) | `src/animation/locomotion.ts` |
 | `GaitConfig` | type | Per-character gait params: baseFrequency, strideLength, strideHeight, hipBobHeight, hipSwayWidth | `src/animation/locomotion.ts` |
-| `DEFAULT_GAIT` | const | Default GaitConfig matching Spitekeep's devil character scale | `src/animation/locomotion.ts` |
+| `DEFAULT_GAIT` | const | Default GaitConfig tuned for a small bipedal character scale | `src/animation/locomotion.ts` |
 | `LocomotionPose` | type | Hip/foot offsets: hipOffset, leftFootOffset, rightFootOffset (all Vec2) | `src/animation/locomotion.ts` |
 | `advanceLocomotion(state, speed, dt, config)` | function | Pure: integrate phase accumulator; returns new LocomotionState | `src/animation/locomotion.ts` |
 | `evaluateLocomotion(state, config)` | function | Pure: compute hip/foot offsets from phase; returns LocomotionPose. Foot-lift half-cycle was corrected from `max(0, sin(phi))` to `max(0, -sin(phi))` — see `docs/design/walk-cycle-correction-decision.md` | `src/animation/locomotion.ts` |
@@ -488,7 +488,7 @@ Apex-parameterized jump trajectory, state machine (coyote time, jump buffering, 
 
 ### `src/animation/simple-feet.ts`
 
-Lightweight two-rectangle feet renderer driven by a `LocomotionPose`. The drop-in alternative to the full IK rig (`drawRig` + `solveLimb`): characters that only need two body-colored foot rects bobbing via `evaluateLocomotion`'s sin/cos output use `drawSimpleFeet`. No IK, no joints — the foot-lock is emergent (displacement-driven phase integration freezes phase when the character stops, planting the feet). Ported from Spitekeep's `render/devil-sprite.ts:1436-1469`.
+Lightweight two-rectangle feet renderer driven by a `LocomotionPose`. The drop-in alternative to the full IK rig (`drawRig` + `solveLimb`): characters that only need two body-colored foot rects bobbing via `evaluateLocomotion`'s sin/cos output use `drawSimpleFeet`. No IK, no joints — the foot-lock is emergent (displacement-driven phase integration freezes phase when the character stops, planting the feet). Productionized from a consumer-local prototype.
 
 **Orbital gait (IK parity):** Setting `idleSpread: 0` makes both feet center on the body midline, orbiting symmetrically via `cos(phase) * strideLength`. At each footfall endpoint, both feet have equal magnitude from the midline on opposite sides — the same trajectory as the IK version's co-located-hips foot targets, without bones. See `IK_PARITY_FEET` preset.
 
@@ -499,7 +499,7 @@ Lightweight two-rectangle feet renderer driven by a `LocomotionPose`. The drop-i
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `SimpleFeetConfig` | type | Foot rendering config: `footW`, `footH`, `idleSpread`, `baseY`, `color`, optional `outline`. All `readonly` — no magic numbers in the renderer. `idleSpread` controls foot center distance from the midline (0 = orbital crossing / IK-parity; 5.5 = wide stance) | `src/animation/simple-feet.ts` |
-| `DEFAULT_SIMPLE_FEET` | const | Default `SimpleFeetConfig` matching Spitekeep's devil character (footW 7, footH 5, idleSpread 5.5, baseY 14, color `#FE5701`, outline `#1d1128`). Spread and override `color`/`outline` with your palette | `src/animation/simple-feet.ts` |
+| `DEFAULT_SIMPLE_FEET` | const | Default `SimpleFeetConfig` tuned for a small bipedal character (footW 7, footH 5, idleSpread 5.5, baseY 14, color `#FE5701`, outline `#1d1128`). Spread and override `color`/`outline` with your palette | `src/animation/simple-feet.ts` |
 | `IK_PARITY_FEET` | const | `SimpleFeetConfig` with `idleSpread: 0` — orbital gait preset. Feet center on the body midline, orbiting symmetrically with endpoint parity at each footfall. Mimics the IK version's foot-target trajectory without bones. Spread and override `footW`/`footH`/`color` with your character config | `src/animation/simple-feet.ts` |
 | `drawSimpleFeet(ctx, pose, config)` | function | Draw two static foot rectangles positioned by a `LocomotionPose`. Uses `outlineRect` when `config.outline` is provided (1px outline, pixel-snapped), otherwise bare `fillRect`. Positions rounded to integers via `Math.round`. Caller owns transform/state | `src/animation/simple-feet.ts` |
 
@@ -801,7 +801,7 @@ Moving-gap platform: a traveling absence of floor. Splits a span into 0–2 `Sol
 | `gapTileQuery(base, span, gap, tileSize)` | function | Pure: wrap a `TileSolidityQuery` to report `'empty'` for tiles inside the clamped gap. Single-row v1: only tiles overlapping the span's Y range are affected. Uses strict AABB overlap (not left-edge test) for tile membership. Clamped gap bounds computed once at wrap time, O(1) per tile | `src/collision/moving-gap.ts` |
 | `DEFAULT_GAP_WIDTH` | const | `64` — default gap width in pixels (GDD §6.13) | `src/collision/moving-gap.ts` |
 | `DEFAULT_GAP_SPEED` | const | `2` — default movement speed in px/tick (GDD §6.13) | `src/collision/moving-gap.ts` |
-| `DEFAULT_CHASE_GIVE_UP_RADIUS` | const | `200` — default chase give-up radius (~3× gap width; mirrors Spitekeep chase-disengage feel) | `src/collision/moving-gap.ts` |
+| `DEFAULT_CHASE_GIVE_UP_RADIUS` | const | `200` — default chase give-up radius (~3× gap width; tuned for a forgiving chase-disengage feel) | `src/collision/moving-gap.ts` |
 
 ### `src/camera/`
 
@@ -895,7 +895,7 @@ Generic multi-touch-safe button group adapter. Takes an array of DOM elements (o
 
 - _decision: `docs/design/mobile-directional-input-decision.md`_
 - _research note: `docs/research/mobile-directional-input.md` §Pattern 1, §Multi-Touch_
-- _existence proof: Spitekeep `src/input/touch.ts` (`TouchControls` class with identical pointer-ID tracking; ~120 lines of reusable core in a 414-line class that also includes CSS injection, capability detection, and DOM creation)_
+- _existence proof: a consumer `TouchControls` class with identical pointer-ID tracking (~120 lines of reusable core in a 414-line class that also includes CSS injection, capability detection, and DOM creation)_
 
 #### `src/input/gamepad.ts`
 
@@ -1463,7 +1463,7 @@ Skin presets, versioned manifests, defensive migration, deterministic seeded gen
 
 #### `src/cosmetics/migrate.ts`
 
-Defensive manifest parser. Mirrors Spitekeep's `platform/save.ts` `migrateSave` pattern: never throws, rebuilds a fresh default, overlays validated fields.
+Defensive manifest parser. Mirrors the canonical defensive-migration pattern: never throws, rebuilds a fresh default, overlays validated fields.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
@@ -1481,7 +1481,7 @@ Deterministic seeded generation. Delegates palette entirely to `src/palette/gene
 
 #### `src/cosmetics/ownership.ts`
 
-Pure progression ops. Mirrors Spitekeep's `platform/progress.ts`: immutable in → JSON-clone out → never mutate → never throw. Call only on user actions (equip/purchase), never per-frame.
+Pure progression ops: immutable in → JSON-clone out → never mutate → never throw. Call only on user actions (equip/purchase), never per-frame.
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
@@ -1732,7 +1732,7 @@ localStorage-backed adapter for local dev. Lazily resolves `window.localStorage`
 
 ### `src/level/`
 
-Versioned, serializable 2D platformer level schema with forward-ladder migration, defensive validation, and a tile-grid bridge to `src/collision/`. Ships an opinionated entity taxonomy (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform, enemy, collectible) that mirrors Spitekeep's `LevelData` shape. Consumer extends via typed `props` bags on each entity kind.
+Versioned, serializable 2D platformer level schema with forward-ladder migration, defensive validation, and a tile-grid bridge to `src/collision/`. Ships an opinionated entity taxonomy (spawn, exit, platform, passthrough, trap, hazard, decoration, trigger, movingPlatform, enemy, collectible) tuned for 2D platformers. Consumer extends via typed `props` bags on each entity kind.
 
 #### `src/level/types.ts`
 
@@ -1841,7 +1841,7 @@ LDtk resolves auto-tiling at save time, which is enough to *play* a level but no
 | `LdtkDocument`, `LdtkReadResult`, `LdtkCellEdit`, `LdtkCellRect`, `LdtkEditResult` | types | Editing and round-trip surfaces | `src/ldtk/edit.ts`, `src/ldtk/write.ts` |
 
 - _schema reference: <https://ldtk.io/json/>_
-- _bundled CC0/PD tilesets: `assets/ldtk/` (Cavernas, SunnyLand, Inca); LDtk's own sample projects are vendored as test fixtures. See `THIRD_PARTY.md`_
+- _bundled CC0/PD tilesets: `assets/ldtk/samples/atlas/` (Cavernas, SunnyLand, Inca); LDtk's own sample projects are vendored as test fixtures. See `THIRD_PARTY.md`_
 - _composes with: `src/level/` (`LevelData`, `validateLevel`, `GeneratedTileSemantics`); renders into a `theme.terrainArt` override on `LevelRenderTheme` (`src/platformer/level-theme.ts`)_
 - _three independent leaves, each budgeted by `npm run check:ldtk-runtime-size`: **render ~2.3 KB**, **auto-tiler ~12.7 KB**, **writer ~17.5 KB**. A game that only draws levels pays for none of the authoring code_
 - _additive to `src/terrain-art/`, not a replacement: that module exists for games shipping no tile assets at all, which LDtk by definition cannot serve_
@@ -2382,9 +2382,9 @@ Sokpop-inspired fake-3D rendering on Canvas2D. Reference: `docs/research/fake-3d
 
 ## Pillar 6: Platform Adapters (on-demand)
 
-### `src/iap/adapters/jest.ts` (deferred)
+### `src/iap/adapters/direct-iap.ts` (deferred)
 
-Jest SDK adapter. Triggered when Spitekeep (or a sibling) submits to Jest.
+Direct-IAP platform SDK adapter. Triggered when a consumer targets a direct-IAP platform.
 
 ### `src/iap/adapters/poki.ts` (deferred)
 
@@ -2492,4 +2492,4 @@ Breaking changes to existing exports require:
 
 - Major version bump in `package.json`.
 - Migration notes in `docs/design/<technique>-decision.md`.
-- Update to Spitekeep (the first consumer) in the same coordinated change.
+- Update to first consumers in the same coordinated change.

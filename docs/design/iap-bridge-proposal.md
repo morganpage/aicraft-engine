@@ -6,14 +6,14 @@
 
 ## Consumer Need
 
-Spitekeep and future Clone-to-Jest siblings need a monetisation surface that works identically across ad-monetised platforms (Poki) and IAP-only platforms (Jest), without dragging in platform SDKs as runtime dependencies. The library must:
+The consumer game and future consumer titles need a monetisation surface that works identically across ad-monetised platforms (Poki) and IAP-only platforms (a direct-IAP platform), without dragging in platform SDKs as runtime dependencies. The library must:
 
 1. **Bridge async purchase results into the deterministic sim core** without leaking `Math.random`, `Date.now()`, or host API calls into the game loop.
 2. **Provide pure entitlement ops** — immutable in, JSON-clone out, never throw. These manage only `entitlements` and `receipts`; cosmetic mutation is the consumer's responsibility at the composition boundary.
-3. **Ship defensive adapters** for memory (tests) and localStorage (dev), with a clear interface for Poki/Jest adapters added later in Pillar 5.
+3. **Ship defensive adapters** for memory (tests) and localStorage (dev), with a clear interface for Poki/direct-IAP platforms adapters added later in Pillar 5.
 4. **Return grant descriptors** from `flushIAPEvents` so the consumer can bridge into cosmetics (`grantSkin`, etc.) at their own composition boundary. No cross-pillar import from `src/iap/` to `src/cosmetics/`.
 
-Currently Spitekeep has no IAP code. Every skin is hardcoded. This proposal establishes the library-level bridge so that skin purchases can be driven by platform-native billing or ad proxies with zero code changes at the game level.
+Currently the reference implementation has no IAP code. Every skin is hardcoded. This proposal establishes the library-level bridge so that skin purchases can be driven by platform-native billing or ad proxies with zero code changes at the game level.
 
 ---
 
@@ -137,7 +137,6 @@ export interface GrantDescriptor {
   readonly targetId: string;
 }
 
-
 // ─── src/iap/entitlements.ts ────────────────────────────────────────
 
 /**
@@ -199,7 +198,6 @@ export function flushIAPEvents(
   resolver: SkuResolver,
 ): { save: EntitlementSave; grants: readonly GrantDescriptor[] };
 
-
 // ─── src/iap/bridge.ts ──────────────────────────────────────────────
 
 /**
@@ -228,7 +226,7 @@ export function drainQueue(events: readonly IAPEvent[]): {
  */
 export function pushTransaction(events: readonly IAPEvent[], tx: IAPTransaction): readonly IAPEvent[];
 
-/** Host-touching adapter interface. Mirrors Spitekeep's SaveStorage shape. */
+/** Host-touching adapter interface. Mirrors the reference SaveStorage shape. */
 export interface IAPBridge {
   initialize(): Promise<void>;
   isInitialized(): boolean;
@@ -578,7 +576,7 @@ The library defines the `SkuResolver` type — a function `(sku: string) => read
 Skin presets are content data — they describe what a skin looks like, not how it's sold. Embedding `sku: 'com.game.neon_devil'` in the `SkinPreset` couples content authoring to store configuration. If the developer changes their App Store SKU (which happens frequently during A/B testing), they must update every skin preset file. The resolver function keeps this mapping in one place, external to the content.
 
 **Why not a separate `SkuMap` config object (option b)?**
-A `SkuMap` is essentially a function with extra ceremony. The resolver function is more flexible — it can contain conditional logic (e.g., "on Poki, SKU `X` grants skins A and B; on Jest, SKU `X` grants only skin A"). A static map cannot express this.
+A `SkuMap` is essentially a function with extra ceremony. The resolver function is more flexible — it can contain conditional logic (e.g., "on Poki, SKU `X` grants skins A and B; on a direct-IAP platform, SKU `X` grants only skin A"). A static map cannot express this.
 
 **The resolver approach also solves the multi-grant problem.** One SKU can grant multiple entitlements (e.g., a "bundle" SKU grants 3 skins). The resolver returns an array of `GrantDescriptor`s. A static map would need to handle this as arrays-of-arrays, which is less natural.
 
@@ -675,7 +673,7 @@ export const TX_STATE_FINISHED = 'finished' as const;
  *
  * Provides types, pure entitlement ops, event queue primitives, and
  * defensive adapters for memory and localStorage. Platform-specific
- * adapters (Poki, Jest) ship in Pillar 5.
+ * adapters (Poki, direct-IAP platforms) ship in Pillar 5.
  *
  * @module
  */
@@ -757,7 +755,7 @@ export { createLocalStorageIAPAdapter } from './adapters/local-storage';
 
 4. **Adapter `onTransaction` push semantics.** With the plain-array queue, `pushTransaction(events, tx)` returns a new array. The consumer reassigns: `events = pushTransaction(events, tx)`. This requires `events` to be `let`-bound. This is the same trade-off as before but now the type is simpler (`IAPEvent[]` vs `IAPEventQueue`). The alternative is a mutable push (`.push()` in place) which breaks the pure-op contract. The proposal keeps the immutable approach for consistency with the library's convention.
 
-5. **Poki adapter scope.** The proposal defers Poki/Jest adapters to Pillar 5. Should `createMemoryIAPAdapter` be generic enough that a Poki adapter can be built as a thin wrapper (e.g., `createPokiIAPAdapter(sdk)` returns an `IAPBridge` that maps `purchase` to `sdk.rewardedBreak()`)? The interface is already sufficient for this. But should the proposal sketch the Poki adapter to prove the interface works?
+5. **Poki adapter scope.** The proposal defers Poki/direct-IAP platforms adapters to Pillar 5. Should `createMemoryIAPAdapter` be generic enough that a Poki adapter can be built as a thin wrapper (e.g., `createPokiIAPAdapter(sdk)` returns an `IAPBridge` that maps `purchase` to `sdk.rewardedBreak()`)? The interface is already sufficient for this. But should the proposal sketch the Poki adapter to prove the interface works?
 
 ---
 

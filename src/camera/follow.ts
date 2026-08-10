@@ -1,5 +1,5 @@
 /**
- * Follow-camera implementation (pure port of Spitekeep's `updateCamera`).
+ * Follow-camera implementation (pure).
  *
  * @module
  */
@@ -31,7 +31,7 @@ export function createCamera(): Camera {
  * per-axis target, it snaps exactly. This makes the lerp converge instead of
  * asymptoting forever — at a clamp bound the per-tick lerp increment drops
  * below the pixel grid and would otherwise stall short of the bound (the
- * canonical Spitekeep camera bug).
+ * canonical camera bug).
  *
  * Pure: returns a brand-new {@link Camera}; the input is never mutated, and
  * the function never throws.

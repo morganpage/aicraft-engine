@@ -1,10 +1,10 @@
 /**
  * Per-axis move-and-resolve against static solids.
  *
- * Mirrors the discipline of Spitekeep's `resolveX` / `resolveY` (in
- * `core/player.ts`), generalized to pure functions: the caller passes the
- * current body position plus the velocity to apply this tick, and receives
- * the resolved position + flags back. Inputs are never mutated.
+ * Follows the discipline of the reference `resolveX` / `resolveY` handlers,
+ * generalized to pure functions: the caller passes the current body position
+ * plus the velocity to apply this tick, and receives the resolved position +
+ * flags back. Inputs are never mutated.
  *
  * The two axes are resolved independently (caller decides order — typically X
  * then Y, or Y then X, per the game's preferred tunneling trade-offs). Each

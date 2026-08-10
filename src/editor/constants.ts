@@ -20,8 +20,8 @@ export const DEFAULT_MAX_HISTORY_DEPTH = 100;
 /**
  * Default grid size in pixels for the "snap to grid" feature.
  *
- * Matches the canonical Sokpop / Spitekeep 16-pixel tile. Consumers may
- * pass any positive integer to `snapToGrid` / `snapRectToGrid`.
+ * Matches the canonical Sokpop 16-pixel tile. Consumers may pass any
+ * positive integer to `snapToGrid` / `snapRectToGrid`.
  */
 export const DEFAULT_GRID_SIZE = 16;
 

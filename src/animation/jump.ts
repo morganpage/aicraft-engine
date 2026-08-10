@@ -74,8 +74,7 @@ export interface JumpConfig {
 }
 
 /**
- * Default jump tuning matching the Spitekeep devil character scale. Tunable;
- * consumers spread this into their own config.
+ * Default jump tuning. Tunable; consumers spread this into their own config.
  */
 export const DEFAULT_JUMP: Readonly<JumpConfig> = {
   apexHeight: 48,

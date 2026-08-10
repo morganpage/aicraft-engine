@@ -81,9 +81,9 @@ export interface CosmeticManifest {
  * Player cosmetic ownership and equipment state — the mutable save sub-object.
  *
  * **Fields are intentionally NOT `readonly`**: ownership ops clone the save
- * then mutate the clone in place (mirrors Spitekeep's `SaveData`), so `readonly`
- * plus an `as`-cast would be misleading ceremony. Purity is enforced by the
- * clone-then-return discipline in `ownership.ts`, not by field modifiers.
+ * then mutate the clone in place, so `readonly` plus an `as`-cast would be
+ * misleading ceremony. Purity is enforced by the clone-then-return discipline
+ * in `ownership.ts`, not by field modifiers.
  *
  * `owned` is a plain sorted `string[]` — never a `Set`/`Map` — for
  * deterministic serialisation. `equipped` uses `Partial<Record>` because not

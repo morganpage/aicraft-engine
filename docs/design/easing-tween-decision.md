@@ -22,7 +22,7 @@ all dimensions (determinism, layer separation, zero-dep, pure-progression-ops,
 public-API stability, scope). No benchmark was required: this is pure math with
 no visual output to compare (the architect noted accessibility/visual N/A).
 
-Approach A (curves only, no driver) was rejected because three real Spitekeep
+Approach A (curves only, no driver) was rejected because three real the reference implementation
 call sites — particle lifetime curves, death-zoom tween, trap easing — all need
 the driver; shipping curves alone would force every consumer to reimplement the
 same fixed-step tween state machine. Approach C (minimal curves) was rejected as

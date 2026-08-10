@@ -10,7 +10,7 @@ Procedural spider locomotion replaces pre-baked scuttling animations with real-t
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly extends **Pillar 1 (Primitives / Animation)**, integrates with **Pillar 4 (Fake-3D / character stacks)**, and supports **Pillar 2 (Cosmetics / Skins)**.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* (a side-view platformer) and future card-based village builders or procedural RTS games need scary, responsive, and environmental-aware enemies.
+- **Consumer Games**: *the reference implementation* (a side-view platformer) and future card-based village builders or procedural RTS games need scary, responsive, and environmental-aware enemies.
 - **Unlocks**:
   - **Zero-Asset Scary Enemies**: Procedural scuttling reads as far more organic and creepy than pre-baked sprites, making spider-like enemies genuinely scary while keeping asset sizes at zero.
   - **Wall and Ceiling Crawling**: Since foot placement is calculated dynamically by querying the tile-grid solidity, the spider can naturally crawl up walls, hang from ceilings, and navigate uneven platforms, aligning its body angle to the surface normal.
@@ -423,4 +423,4 @@ Real spiders walk using an **alternating tetrapod gait** (Shultz, JEB 1987; Ma e
 - `docs/research/procedural-locomotion.md` (the phase-accumulator and squash/stretch concepts)
 - `docs/research/springy-rod.md` (the `advanceSpringRod` primitive used for pedipalps and antennae)
 - `docs/research/platformer-enemy-archetypes.md` (the behavior-registry system where this spider handler is registered)
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (Sokpop's primitive-stack character construction)
+- The canonical Sokpop reference (sokpop.itch.io) (Sokpop's primitive-stack character construction)

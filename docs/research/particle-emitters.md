@@ -10,7 +10,7 @@ Particle emitter abstractions extend basic one-shot radial bursts into continuou
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly extends **Pillar 1 (Primitives / Particles)** and feeds into **Pillar 4 (Fake-3D / environmental FX)**.
-- **Consumer Games**: Sibling games like *Spitekeep* or future Clone-to-Jest titles (e.g., a card-based village builder with active campfires, or a platformer with lava pools) need continuous, directional, and regional particle effects.
+- **Consumer Games**: Consumer titles (e.g., a card-based village builder with active campfires, or a platformer with lava pools) need continuous, directional, and regional particle effects.
 - **Unlocks**:
   - **Dynamic Environments**: Continuous fire, smoke, bubbles, and weather effects (rain, snow) can be rendered entirely procedurally.
   - **Heterogeneous FX**: Fire and smoke can be emitted from the same source but behave differently (smoke rises and slows down, fire falls and fades).

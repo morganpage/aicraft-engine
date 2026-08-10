@@ -228,4 +228,4 @@ The current showcase-local correction (`applyAntennaRestPose` in `slime-knight.t
 - `docs/research/README.md` — Research note conventions.
 - `src/animation/spring.ts` — The current Verlet/PBD distance solver.
 - `showcase/helpers/slime-knight.ts` — The current showcase character composition and antenna drawing.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Strategic context on Sokpop's minimalist rendering.
+- The canonical Sokpop reference (sokpop.itch.io) — Strategic context on Sokpop's minimalist rendering.

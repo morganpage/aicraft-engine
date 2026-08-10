@@ -10,7 +10,7 @@ Procedural walk cycles require a precise mathematical alignment between horizont
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Extends **Pillar 1 (Primitives / Animation)** and prepares for **Pillar 4 (Fake-3D / character stacks)**.
-- **Consumer Games**: Sibling games like *Spitekeep* (and future platformers or RTS titles) require characters that can walk left and right across complex terrain, jump, and backpedal without foot sliding, sudden animation pops, or awkward moonwalking.
+- **Consumer Games**: *the reference implementation* (and future platformers or RTS titles) require characters that can walk left and right across complex terrain, jump, and backpedal without foot sliding, sudden animation pops, or awkward moonwalking.
 - **Unlocks**:
   - **Flawless Side-View Traversal**: Eliminates the "moonwalk" bug where characters appear to glide backward while their feet swing backwards in the air.
   - **Robust Facing Transitions**: Solves the "double-reversal" bug where walking left reverses the phase while horizontal mirroring also flips the geometry, resulting in a broken visual cycle.

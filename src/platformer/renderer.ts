@@ -67,7 +67,7 @@ export interface EntityPalette {
  * - `decoration`: muted purple (`#6a5a7a`) — recedes.
  * - `trigger`: teal (`#3a7a7a`) — invisible-ish.
  * - `movingPlatform`: steel blue (`#5a7a9a`) — mechanical.
- * - `player`: Spitekeep orange (`#fe5701`).
+ * - `player`: warm orange (`#fe5701`).
  */
 export const DEFAULT_ENTITY_PALETTE: Readonly<EntityPalette> = {
   spawn: '#7aff7a',

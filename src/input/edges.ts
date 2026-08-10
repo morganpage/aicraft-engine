@@ -17,8 +17,6 @@
  * deliberately do NOT use a diff.
  *
  * No DOM, no globals — safe to unit test under Node / vitest (no jsdom needed).
- *
- * Ported from Spitekeep's `src/input/edges.ts`.
  */
 
 import type { EdgeAccumulator, PolledEdge } from './types';

@@ -10,7 +10,7 @@ Music is the most algorithmic audio: a pattern is a deterministic, serializable 
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Extends **Pillar 1 (Primitives / Audio)** from one-shot SFX to **continuous procedural music**, and pairs with **Pillar 2 (Cosmetics)** — a `SkinPreset` gains an optional `music` field that is itself a serializable pattern preset. This is the literal realization of the library's "the algorithm IS the art" thesis: music becomes a parameter preset, not an asset.
-- **Consumer Games**: Spitekeep (idle/menu music, level themes, "chill" cosmetic soundtracks), future Clone-to-Jest titles (Stacklands-style card games want ambient music; Sokpop-style minimalist games want generative soundtracks that respond to gameplay). The Sokpop teardown explicitly lists "chill songs to drive around to" as a Sokpop feature (`passenger-seat`) — generative music is part of the minimalist-procedural canon.
+- **Consumer Games**: the reference implementation (idle/menu music, level themes, "chill" cosmetic soundtracks), future consumer titles (Stacklands-style card games want ambient music; Sokpop-style minimalist games want generative soundtracks that respond to gameplay). The Sokpop teardown explicitly lists "chill songs to drive around to" as a Sokpop feature (`passenger-seat`) — generative music is part of the minimalist-procedural canon.
 - **Unlocks**:
   - **Asset-less music**: zero audio files, zero samples, zero licenses — every note is synthesized from the existing `AudioAdapter.playTone`/`playNoise` primitives. Matches the library's zero-runtime-dep, zero-asset ethos.
   - **Cosmetic soundtracks**: a `SkinPreset` can carry a `Pattern`; equipping a skin swaps the music. Same `mulberry32`-driven seed stability as palettes.
@@ -488,7 +488,6 @@ The seeded generator is the v1 "chill ambient music" path — a Sokpop-style gen
 - `src/rng/mulberry32.ts` — The seeded PRNG used by `generatePattern`
 - `src/particles/` — The pure-core / renderer-adjacent split that the music module mirrors
 - `src/easing/` — The pure-function + stateless-advance pattern that `advanceSequencer` mirrors
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Sokpop's "chill generative soundtrack" pattern (6 songs in `passenger-seat`, 8 soundtracks in `sok-worlds`)
 - `docs/research/easing-tween.md` — The pure-function + stateless-advance pattern (the closest existing research note in shape)
 - `docs/research/algorithmic-skin-variation.md` — The cosmetic-embeddable pattern generation that music extends
 - `docs/research/particle-emitters.md` — The pure-core / renderer-adjacent split that music mirrors

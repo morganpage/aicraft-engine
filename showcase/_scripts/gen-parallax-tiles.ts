@@ -6,7 +6,7 @@
  *  WHAT THIS IS
  *  A standalone dev-time script that calls OpenAI's `gpt-image-2` model to
  *  paint 4 horizontally-seamless parallax tiles (sky, far-fortress, mid-ruins,
- *  foreground) for the "IMP - Not a Troll" devil/underworld side-scroller, then
+ *  foreground) for the showcase's devil/underworld side-scroller, then
  *  mirror-pads each tile to GUARANTEE seamlessness and composites a contact
  *  sheet for visual review.
  *

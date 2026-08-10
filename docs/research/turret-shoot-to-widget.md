@@ -10,7 +10,7 @@ A "Shoot-to-Target" aim widget provides level designers with an intuitive, inter
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly establishes capabilities for **Pillar 4 (Fake-3D / Level Loading)** level editing, integrates with **Pillar 1 (Primitives / Particles)** for deterministic projectile trajectory rendering, and supports **Pillar 2 (Cosmetics)** by enabling skin-specific turret visual ranges.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* (formerly Spitekeep) and future Clone-to-Jest titles feature turrets, cannons, and hazard-launchers. Level designers need a quick, visual way to define where these hazards shoot without manually typing angles and lifetimes into text fields.
+- **Consumer Games**: Consumer titles feature turrets, cannons, and hazard-launchers. Level designers need a quick, visual way to define where these hazards shoot without manually typing angles and lifetimes into text fields.
 - **Unlocks**:
   - **Visual Trajectory Previews**: Designers can instantly see the exact path and maximum reach of a projectile inside the editor, eliminating the tedious cycle of "guess value, playtest, adjust, repeat."
   - **Deterministic Lifetime Resolution**: By mapping the handle's distance to a projectile speed, the runtime can calculate the exact tick count at which the projectile should expire, guaranteeing identical behavior across all host environments.
@@ -236,7 +236,7 @@ A "Shoot-to-Target" aim widget provides level designers with an intuitive, inter
 - **Unity 2D Editor Handles** ([GitHub: Unity-Technologies/UnityCsReference](https://github.com/Unity-Technologies/UnityCsReference)): Shows how Unity separates editor-only GUI handles from scene components.
 - **Godot Editor Gizmos** ([GitHub: godotengine/godot](https://github.com/godotengine/godot)): Demonstrates 2D viewport handle drawing and input event interception.
 - **Aseprite Vector Tools** ([GitHub: aseprite/aseprite](https://github.com/aseprite/aseprite)): Illustrates polar coordinate snapping and angle constraints in 2D editors.
-- **IMP - Not a Troll Projectile Core** (`src/particles/`): The local sibling module that manages deterministic particle updates, which can be extended to support range-limited projectiles.
+- **Reference projectile core** (`src/particles/`): The local sibling module that manages deterministic particle updates, which can be extended to support range-limited projectiles.
 
 ---
 

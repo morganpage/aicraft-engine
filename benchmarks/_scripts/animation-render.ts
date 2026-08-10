@@ -22,7 +22,7 @@ import type { Vec2, BoneNode, AffineTransform, VerletNode } from '../../src/anim
 const OUTPUT_DIR = 'benchmarks/animation';
 const BACKGROUND_COLOR = '#f1f5f9'; // Slate-100: clean, high-contrast neutral background
 
-/** Spitekeep-spirit palette: warm fill, dark outline, plus accents. */
+/** Warm-fill, dark-outline palette with accents (minimalist-procedural style). */
 const PALETTE = {
   /** Primary bone color (solved / posed limbs and chains). */
   bone: '#FE5701',

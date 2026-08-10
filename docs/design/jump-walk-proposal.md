@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep (and future Clone-to-Jest siblings) need characters that walk, jump, and land with satisfying game feel — without relying on external physics engines or pre-baked sprite sheets. Today, Spitekeep's input system already exposes `jump`, `jumpPressed`, `jumpReleased`, and `isGrounded` (see `src/config/types.ts:113`), but the library provides no jump trajectory solver, no landing squash, and no displacement-driven walk sync. Without this feature set, consumers must hand-roll all jump physics, coyote time, jump buffering, walk-phase syncing, and squash/stretch on landing — duplicating complex, error-prone code per game.
+The consumer game (and future consumer titles) needs characters that walk, jump, and land with satisfying game feel — without relying on external physics engines or pre-baked sprite sheets. Today, its input system already exposes `jump`, `jumpPressed`, `jumpReleased`, and `isGrounded` (see `src/config/types.ts:113`), but the library provides no jump trajectory solver, no landing squash, and no displacement-driven walk sync. Without this feature set, consumers must hand-roll all jump physics, coyote time, jump buffering, walk-phase syncing, and squash/stretch on landing — duplicating complex, error-prone code per game.
 
 This proposal delivers a complete, deterministic, zero-dep jump + walk translation system: apex-parameterized trajectory, a state machine with coyote time and jump buffering, variable-height jumps, displacement-driven walk phase, airborne tuck blending, and landing squash with spring recovery.
 
@@ -670,7 +670,7 @@ The library receives `isGrounded: boolean` as an input flag. This is a critical 
 - The library treats `isGrounded` as ground truth for the current tick — it does not validate, cache, or remember previous grounded states (the jump state machine tracks its own internal grounded history via phase transitions).
 - If the consumer provides `isGrounded = true` while the character is mid-jump, the library transitions to LANDING. This is a consumer bug, not a library bug — the library trusts its inputs.
 
-**Why this boundary:** It mirrors the `InputState` pattern in Spitekeep (`src/config/types.ts:113`), where the input layer provides abstract flags and the simulation consumes them. It keeps the library deterministic (no DOM reads) and game-agnostic (no collision model assumed).
+**Why this boundary:** It mirrors the `InputState` pattern in the reference implementation (`src/config/types.ts:113`), where the input layer provides abstract flags and the simulation consumes them. It keeps the library deterministic (no DOM reads) and game-agnostic (no collision model assumed).
 
 **Edge case — `hitCeiling`:** If the character hits a ceiling while rising, the consumer sets `hitCeiling = true`. The library transitions from RISING to FALLING and zeroes `vy`. This is optional (default `false`).
 

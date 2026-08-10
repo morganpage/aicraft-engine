@@ -6,9 +6,9 @@
 
 ## Consumer Need
 
-**Who:** Spitekeep (now IMP - Not a Troll) is the first real consumer. Future Clone-to-Jest siblings need the same enemy archetypes. The showcase needs interactive hazards to demonstrate the platformer kernel in action.
+**Who:** The consumer game is the first real consumer. Future consumer titles need the same enemy archetypes. The showcase needs interactive hazards to demonstrate the platformer kernel in action.
 
-**What they're doing now:** Spitekeep has a `TrapHandler` system (`src/core/traps/types.ts`) with a mutable `runtime.data` bag, but that architecture is Spitekeep-specific — it mutates `GameState` directly and reads `GameState` in the `update` call. The aicraft-engine library has no enemy/hazard runtime at all — only static `hazard` entities (empty props, no behavior). The showcase playground can place hazards but they're inert colored rects.
+**What they're doing now:** The consumer game has a `TrapHandler` system (`src/core/traps/types.ts`) with a mutable `runtime.data` bag, but that architecture is consumer-specific — it mutates `GameState` directly and reads `GameState` in the `update` call. The aicraft-engine library has no enemy/hazard runtime at all — only static `hazard` entities (empty props, no behavior). The showcase playground can place hazards but they're inert colored rects.
 
 **What becomes possible:** Two MVP archetypes that cover the two fundamental enemy patterns:
 1. **Spinny / contact-patrol** — walks a path, kills on touch, has a spinning visual pose. The "goomba" of deterministic platformers.
@@ -18,7 +18,7 @@ Both must serialize cleanly into `LevelData` (editor integration), compile to a 
 
 ## Approach A: Extend EntityKind + Flat Enemy Runtime
 
-**Source pattern:** Spitekeep's `TrapHandler` registry (Pattern 1 from research — table-driven behavior dictionary), fused with the existing `EntityKind` discriminated union from `src/level/types.ts`.
+**Source pattern:** the reference `TrapHandler` registry (Pattern 1 from research — table-driven behavior dictionary), fused with the existing `EntityKind` discriminated union from `src/level/types.ts`.
 
 **Core idea:** Add `'enemy'` as a new `EntityKind` variant with typed `EnemyProps`. Compile time converts level entities to flat `CompiledEnemy` runtime descriptors. Enemies and projectiles live in a global flat array in the level runtime. Behaviors are dispatched by a `behavior` string key in `EnemyProps`, looked up in a `Record<string, EnemyBehaviorHandler>` dictionary.
 
@@ -451,7 +451,7 @@ const result = stepEnemies(enemies, { spinny: spinnyController, turret: turretCo
 
 ## Approach C: Minimal Kinematic Enemies (No Registry, No Abilities)
 
-**Source pattern:** Spitekeep's `moving-hazard.ts` — the simplest possible pattern. A flat `EnemyKind` string, a single `stepEnemy(state, props, ctx)` switch-dispatch, no registry, no pipeline. Enemies and projectiles live in `CompiledLevel` output.
+**Source pattern:** the reference `moving-hazard.ts` — the simplest possible pattern. A flat `EnemyKind` string, a single `stepEnemy(state, props, ctx)` switch-dispatch, no registry, no pipeline. Enemies and projectiles live in `CompiledLevel` output.
 
 **Core idea:** No extensibility layer at all. The library ships a single `stepEnemy` function with a `switch` on `archetype`. New archetypes require modifying the library. This is the absolute minimum to get enemies working in the showcase.
 
@@ -557,11 +557,11 @@ function tick(dt: number) {
 
 **Approach A: Extend EntityKind + Flat Enemy Runtime with Behavior Registry.**
 
-Reasoning: It balances all constraints. The `EnemyBehaviorHandler` registry gives consumers infinite extensibility without the complexity of the ability-pipeline pattern. The `compileEnemies` / `stepEnemies` API mirrors the existing `compileLevel` / `stepPlatformer` pattern — Spitekeep developers already know this shape. The `EnemyProps` discriminated union on `archetype` is the same pattern as `TrapProps.type` in Spitekeep and `TriggerProps.action` in the level schema — proven, serializable, editor-friendly.
+Reasoning: It balances all constraints. The `EnemyBehaviorHandler` registry gives consumers infinite extensibility without the complexity of the ability-pipeline pattern. The `compileEnemies` / `stepEnemies` API mirrors the existing `compileLevel` / `stepPlatformer` pattern — consumer-game developers already know this shape. The `EnemyProps` discriminated union on `archetype` is the same pattern as `TrapProps.type` in the consumer game and `TriggerProps.action` in the level schema — proven, serializable, editor-friendly.
 
 Approach C is tempting for its simplicity but blocks extensibility — every new enemy type would be a library release, which is unacceptable for a library that aims to serve multiple games. Approach B is over-engineered for the MVP; the ability-pipeline pattern is justified for a player controller (where the consumer composes dash/jump/wallSlide at runtime) but not for enemies (where the library ships the archetypes and consumers mostly configure them).
 
-Approach A with the `EnemyBehaviorHandler` registry also aligns with the research note's Pattern 1 (Table-Driven Behavior Dictionary) and Spitekeep's existing `TrapHandler` pattern — both proven shapes that our first consumer already understands.
+Approach A with the `EnemyBehaviorHandler` registry also aligns with the research note's Pattern 1 (Table-Driven Behavior Dictionary) and the reference implementation's existing `TrapHandler` pattern — both proven shapes that our first consumer already understands.
 
 ### What We're NOT Doing (Scope Guard)
 
@@ -592,4 +592,4 @@ Approach A with the `EnemyBehaviorHandler` registry also aligns with the researc
 
 4. **Should `CompiledEnemy` carry the full `LevelEntity` back-reference, or just the entity ID?** The proposal carries the full entity for rendering convenience. The alternative is `entityId: number` + a separate entity lookup, which is leaner but requires the consumer to maintain the mapping.
 
-5. **Health system future-proofing:** Even though the MVP doesn't include HP, should `EnemyState` include a `health?: number` field so consumers can opt in without forking? The research note's `EnemyState` had no health; Spitekeep's `TrapHandler` also has no health. Adding it preemptively risks designing for a use case that hasn't materialized.
+5. **Health system future-proofing:** Even though the MVP doesn't include HP, should `EnemyState` include a `health?: number` field so consumers can opt in without forking? The research note's `EnemyState` had no health; the reference `TrapHandler` also has no health. Adding it preemptively risks designing for a use case that hasn't materialized.

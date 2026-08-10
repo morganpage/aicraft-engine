@@ -17,7 +17,7 @@
 
 ## Consumer Need
 
-**Who:** Spitekeep (IMP - Not a Troll) and future Clone-to-Jest siblings feature turrets, cannons, and hazard-launchers.
+**Who:** The consumer game and future consumer titles feature turrets, cannons, and hazard-launchers.
 
 **Current state:** Turret params accept `aimDirection: {x, y}` (a direction-only vector) and `projectileSpeed` (px/s). No range concept — projectiles fly forever until they hit a solid or leave the viewport.
 

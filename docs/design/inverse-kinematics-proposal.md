@@ -6,10 +6,10 @@
 
 ## Consumer Need
 
-Spitekeep and future Clone-to-Jest siblings need characters that dynamically plant feet on uneven terrain, reach for weapons/doors, and swing tails without pre-baked sprite assets. Without IK, every limb pose must be hand-authored as keyframes or computed ad-hoc with trigonometry — brittle, non-adaptive, and non-deterministic across platforms.
+The consumer game and future consumer titles need characters that dynamically plant feet on uneven terrain, reach for weapons/doors, and swing tails without pre-baked sprite assets. Without IK, every limb pose must be hand-authored as keyframes or computed ad-hoc with trigonometry — brittle, non-adaptive, and non-deterministic across platforms.
 
 With IK shipped:
-- **Spitekeep** gets no-slide foot placement during walk cycles (feet lock to ground as body moves).
+- **The consumer game** gets no-slide foot placement during walk cycles (feet lock to ground as body moves).
 - Any game gets dynamic arm reaching (procedural combat, item pickup).
 - Procedural creatures (multi-legged insects, tentacled aliens) can have their limbs react to terrain.
 

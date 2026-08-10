@@ -10,7 +10,7 @@
 /** Current level schema version. Incremented on breaking shape changes. */
 export const LEVEL_VERSION = 1 as const;
 
-/** Default tile size in pixels. Matches Sokpop / Spitekeep convention. */
+/** Default tile size in pixels. Matches the Sokpop convention. */
 export const DEFAULT_TILE_SIZE = 16;
 
 /** Default level width in pixels. */

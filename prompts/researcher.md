@@ -15,7 +15,7 @@ For any technique, cast a wide net first, then narrow to the most relevant:
 
 | Source | What it gives you | How to access |
 |---|---|---|
-| **Sokpop catalog** | Proof that minimalist-procedural works at scale across genres | `webfetch` on `sokpop.itch.io`; read `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` first as the local reference |
+| **Sokpop catalog** | Proof that minimalist-procedural works at scale across genres | `webfetch` on `sokpop.itch.io` |
 | **Sokpop fake-3D demo** | Reference implementation of orthographic projection + procedural character construction | `webfetch` on `sokpop.itch.io/sokpop-fake-3d-demo` |
 | **JS13k winners** | Procedural-everything under 13KB; the closest analog to our zero-dep minimalist constraint | `websearch` for "js13k [year] winners procedural" |
 | **Demoscene** | Decades of procedural rendering with extreme constraints | `websearch` for "[technique] demoscene" |
@@ -25,7 +25,7 @@ For any technique, cast a wide net first, then narrow to the most relevant:
 | **Game devlogs** | Practical experience from devs who shipped with the technique | YouTube via `websearch` (transcripts may be unavailable; rely on summary posts) |
 | **Hugging Face spaces** | Live generative demos for AI-driven variants (relevant to cosmetics) | `webfetch` on specific space URLs when known |
 
-Always start with the Sokpop teardown in `ai-craft-strategy/knowledge/` — it's the local canonical reference.
+Always start with the public Sokpop catalog at `sokpop.itch.io` — it's the canonical external reference for the minimalist-procedural rendering style this library targets.
 
 ## Research Note Format
 
@@ -84,7 +84,6 @@ Write every note to `docs/research/<technique-slug>.md` using this exact structu
 ## Cross-References
 
 - [Related notes in docs/research/]
-- [Related strategic docs in ai-craft-strategy/knowledge/]
 - [Existing modules in src/ that this would extend or replace]
 ```
 

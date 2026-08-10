@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep currently uses particles for one effect only: a deterministic 8-particle death "poof" (`core/update.ts:44-63`). Particles are hand-constructed with evenly-distributed angles, no RNG, and no regional spawning. The renderer draws them with a fixed palette color and linear alpha fade (`render/sprites.ts:1718-1728`).
+The consumer game currently uses particles for one effect only: a deterministic 8-particle death "poof" (`core/update.ts:44-63`). Particles are hand-constructed with evenly-distributed angles, no RNG, and no regional spawning. The renderer draws them with a fixed palette color and linear alpha fade (`render/sprites.ts:1718-1728`).
 
 This works for one-shot bursts but cannot support:
 - **Continuous effects**: Campfires, lava pools, rain, smoke plumes — any effect that emits particles steadily over time.
@@ -26,7 +26,7 @@ The emitter abstraction extends the existing pure `spawn`/`advance`/`cull` pipel
 
 Every emitter receives its own `rng` function, derived by sub-seeding from a consumer-provided seed. This prevents regional/cone spawn sampling (which may consume 2-4 RNG calls per particle) from polluting the gameplay simulation's RNG stream. The consumer creates the sub-seed at emitter creation time using `mulberry32(seed)` and passes the resulting function into the emitter. The library does NOT auto-create RNGs — the consumer controls the seed lifecycle.
 
-**Justification:** Spitekeep uses `mulberry32` for deterministic combat, card draws, and trap placement. If particle spawn sampling consumed the same RNG stream, visual variation would alter gameplay outcomes across replays. The research note recommends isolation. This matches the library's convention: "consumer passes dependencies as parameters, library doesn't auto-resolve."
+**Justification:** the reference implementation uses `mulberry32` for deterministic combat, card draws, and trap placement. If particle spawn sampling consumed the same RNG stream, visual variation would alter gameplay outcomes across replays. The research note recommends isolation. This matches the library's convention: "consumer passes dependencies as parameters, library doesn't auto-resolve."
 
 ### 2. Reduced-Motion Adaptation
 
@@ -55,7 +55,7 @@ function particleSizeCurve(p: Particle, start: number, end: number): number;
 function particleAlphaCurve(p: Particle, start: number, end: number): number;
 ```
 
-**Justification:** Keeps `Particle` ultra-lightweight and serializable. Decouples physics from rendering — the same particle array can be drawn differently by different renderers. Matches Spitekeep's existing `drawParticle` pattern: `const alpha = p.maxLife > 0 ? Math.max(0, p.life / p.maxLife) : 0` (`sprites.ts:1719`). The helpers just formalize this.
+**Justification:** Keeps `Particle` ultra-lightweight and serializable. Decouples physics from rendering — the same particle array can be drawn differently by different renderers. Matches the reference implementation's existing `drawParticle` pattern: `const alpha = p.maxLife > 0 ? Math.max(0, p.life / p.maxLife) : 0` (`sprites.ts:1719`). The helpers just formalize this.
 
 ---
 
@@ -626,13 +626,13 @@ function render(dt: number, reduceMotion: boolean) {
 
 **v1 scope: Approach A primitives + Approach B pipeline + lifetime helpers + Particle extensions.**
 
-**Primary API (Approach B):** The bundled `Emitter` record + `createEmitter` + `stepEmitters` pattern is the best default. It matches the locomotion proposal's `advanceLocomotion`/`evaluateLocomotion` split, keeps consumer boilerplate minimal, and the configs are easy to serialize for editor tools. For Spitekeep's immediate needs (campfires, lava pools, death effects), Approach B provides the best ergonomics with zero performance concern — these effects use <50 particles.
+**Primary API (Approach B):** The bundled `Emitter` record + `createEmitter` + `stepEmitters` pattern is the best default. It matches the locomotion proposal's `advanceLocomotion`/`evaluateLocomotion` split, keeps consumer boilerplate minimal, and the configs are easy to serialize for editor tools. For the reference implementation's immediate needs (campfires, lava pools, death effects), Approach B provides the best ergonomics with zero performance concern — these effects use <50 particles.
 
 **Approach A primitives are NOT dropped.** They are the implementation substrate for Approach B's config types (`SpawnRegion`, `ConeConfig`). Approach A's `sampleRegion`, `sampleConeVelocity`, and `advanceEmitter` are exported as standalone functions for consumers who need custom spawn logic. Approach B's `stepEmitters` internally delegates to these primitives.
 
 **Lifetime helpers + Particle extensions ship in v1.** `particleAge`, `particleSizeCurve`, `particleAlphaCurve` are renderer-adjacent and trivially useful. The `gravityScale`/`dragScale` optional fields on `Particle` enable heterogeneous physics via the extended `advance()`.
 
-**Why not Approach A alone?** The boilerplate is significant. Spitekeep's dev iterating on a lava pool effect shouldn't need to write a spawn loop — that's library internals. The bundled `Emitter` record eliminates the parallel-array antipattern entirely; each emitter owns its config + accumulator + live particles, so the type system catches misalignment.
+**Why not Approach A alone?** The boilerplate is significant. the reference implementation's dev iterating on a lava pool effect shouldn't need to write a spawn loop — that's library internals. The bundled `Emitter` record eliminates the parallel-array antipattern entirely; each emitter owns its config + accumulator + live particles, so the type system catches misalignment.
 
 **Deferred: Approach C (mutable pool).** See [Phase 1b Follow-up](#phase-1b-follow-up-particle-pool) below.
 

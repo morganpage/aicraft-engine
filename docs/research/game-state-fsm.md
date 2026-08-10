@@ -10,7 +10,7 @@ The library has a fixed-step loop (`src/game-loop/fixed-step.ts`) that drives a 
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Extends **Pillar 1 (Primitives / Game Loop)**. Composes with the existing fixed-step accumulator, the particle-emitter state facade (`createEmitter` / `stepEmitters`), the easing tween driver (`createTweenState` / `advanceTween`), and the jump state machine (`createJumpState` / `advanceJump`). It is the missing connective tissue that lets a consumer wire all of these into a coherent game.
-- **Consumer Games**: Spitekeep (renamed IMP - Not a Troll) and every future Clone-to-Jest title. Every shipped game needs menu / playing / paused / gameover orchestration — currently every consumer reimplements it.
+- **Consumer Games**: The consumer game and every future consumer title. Every shipped game needs menu / playing / paused / gameover orchestration — currently every consumer reimplements it.
 - **Unlocks**:
   - **Replay-deterministic mode orchestration.** A pure reducer advanced by fixed `dt` means the same input sequence yields the same state sequence on every machine — the foundation for input-replay files, save-restore, and rollback netcode.
   - **Composable pause semantics.** The FSM's `paused` state is the single source of truth for "should the sim advance this tick?" — the consumer's `step` reads it and short-circuits. The loop's `visibilitychange` pause is orthogonal (it pauses the loop; the FSM pause pauses the sim within the loop).
@@ -302,4 +302,3 @@ function step(dt: number): void {
 - `docs/research/platformer-kernel.md` — The "State-Machine-Driven Ability Composition Pattern" — the FSM is the top-level mode orchestration; the platformer-kernel's sub-FSMs (jump, dash, wall slide) compose under it.
 - `docs/research/easing-tween.md` — The closest research-note analog: same pure-progression-ops discipline, same `dt`-driven advancement, same consumer-owned state. The FSM note deliberately mirrors its structure.
 - `docs/research/iap-bridge.md` — The deterministic-async-event-queue pattern. The FSM's event dispatch is the synchronous, deterministic-core analog: events are pure data, the reducer is pure, no host access.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — The canonical Sokpop reference. Sokpop's games (Llama Villa, Stacklands, Pyramida) all use top-level mode FSMs — the pattern is proven across genres.

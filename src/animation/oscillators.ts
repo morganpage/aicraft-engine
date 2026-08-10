@@ -8,7 +8,7 @@ import type { Vec2 } from './types';
  * where replay-perfect determinism matters — recorded footage, save replays,
  * and seeded procedural generation all reproduce exactly.
  *
- * For one-shot random-feeling shake (Spitekeep's death shake), use `sineShake`
+ * For one-shot random-feeling shake (e.g. a death shake), use `sineShake`
  * for determinism, or call `Math.random` directly in the renderer if the
  * result never feeds back into the simulation.
  *

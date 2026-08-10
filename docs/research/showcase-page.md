@@ -10,7 +10,7 @@ The showcase page for `aicraft-engine` must bridge the gap between technical cor
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Direct showcase of **Pillar 1 (Primitives & RNG)**, **Pillar 1b (Animation & IK)**, **Pillar 2 (Palette & Cosmetics)**, and **Pillar 4 (Fake-3D)**.
-- **Consumer Games**: Sibling games like *Spitekeep* and future Clone-to-Jest titles (such as card-based village builders or idle gardens) need to see the library "in action" to understand how it eliminates the asset pipeline.
+- **Consumer Games**: Consumer titles (such as card-based village builders or idle gardens) need to see the library "in action" to understand how it eliminates the asset pipeline.
 - **Unlocks**:
   - **Developer Trust**: Proves that a zero-dependency, Canvas2D-only library can produce fluid, organic, and beautiful animations and graphics at 60 FPS in the browser.
   - **Tangible Determinism**: Makes our core differentiator ("same seed = same output") visually undeniable and interactive.
@@ -311,4 +311,3 @@ Yes, tldraw and Excalidraw are the ultimate examples.
 
 - `docs/research/algorithmic-palette-substitution.md` — Core color and contrast repair research.
 - `docs/research/algorithmic-skin-variation.md` — Core cosmetics and skin manifest research.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Canonical Sokpop reference.

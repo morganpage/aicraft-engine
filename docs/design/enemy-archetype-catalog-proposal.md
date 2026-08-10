@@ -356,7 +356,7 @@ drawEnemies(ctx, result.enemies, tick);
 | **Consumer complexity** | ★★★ — Params require runtime type checking inside each handler (already the pattern). No type safety on param shapes. |
 | **Extensibility (6th archetype)** | ★★★ — Add one handler to registry, one case to renderer switch, one catalog entry. Three files to touch. |
 | **Level-schema migration** | ★★★★★ — Zero changes. `archetype` stays free string, `params` stays `Record<string, unknown>`. |
-| **Editor-catalog ergonomics** | ★★★ — Catalog entries are plain objects. Param editor requires consumer to build per-archetype form (same as trap `ParamSchema` pattern in Spitekeep). |
+| **Editor-catalog ergonomics** | ★★★ — Catalog entries are plain objects. Param editor requires consumer to build per-archetype form (same as trap `ParamSchema` pattern in the reference implementation). |
 
 **What this makes easy:**
 - Adding the 5 new archetypes (just add handlers + switch cases + catalog entries).
@@ -372,7 +372,7 @@ drawEnemies(ctx, result.enemies, tick);
 
 ## Approach B: Typed Metadata Registry
 
-**Source pattern:** Spitekeep's `TrapSchema` / `TRAP_SCHEMAS` pattern (`src/dev/editor/param-schemas.ts`). Each trap type has a declarative schema describing its params with labels, types, defaults, and bounds. The editor reads the schema to auto-generate param forms. We lift this pattern into the enemy system.
+**Source pattern:** the reference `TrapSchema` / `TRAP_SCHEMAS` pattern (`src/dev/editor/param-schemas.ts`). Each trap type has a declarative schema describing its params with labels, types, defaults, and bounds. The editor reads the schema to auto-generate param forms. We lift this pattern into the enemy system.
 
 ### Signature Sketch
 
@@ -381,7 +381,7 @@ drawEnemies(ctx, result.enemies, tick);
 
 /**
  * Describes a single editable parameter for an archetype.
- * Mirrors `ParamSchema` from Spitekeep's trap system.
+ * Mirrors `ParamSchema` from the reference implementation's trap system.
  */
 export interface ArchetypeParamSchema {
   /** Param key in `EnemyProps.params`. */
@@ -892,7 +892,7 @@ drawEnemies(ctx, result.enemies, tick);
 - Per-archetype param types: `ChargerParams`, `BursterParams` etc. are importable.
 - Renderer dispatch remains internal; consumers cannot register draw functions
   in the charger-only validation release.
-- The editor form generator reads `param-schemas.ts` directly (same pattern as Spitekeep's `TRAP_SCHEMAS`).
+- The editor form generator reads `param-schemas.ts` directly (same pattern as the reference `TRAP_SCHEMAS`).
 
 **What this makes hard:**
 - More files to create initially (5 archetype files + `los.ts` + `crawler-stepper.ts` + `param-schemas.ts`).

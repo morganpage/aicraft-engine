@@ -75,10 +75,10 @@ export const EXPLORATION_PLATFORMER: Readonly<PlatformerConfig> = {
 };
 
 /**
- * Puzzle / pit-death feel (Spitekeep-like). Tight grid movement, one jump,
+ * Puzzle / pit-death feel. Tight grid movement, one jump,
  * no abilities — every death is the player's fault, not the controller's.
  *
- * - Gravity 1200 px/s² for a quick, legible fall (Spitekeep's lava pits).
+ * - Gravity 1200 px/s² for a quick, legible fall (lava-pit pacing).
  * - Slow move speed (120 px/s) so tile-precise positioning is achievable.
  * - Very tight air control (0.3) — jumps are a commitment.
  * - No dash, no wall-slide, no double-jump.

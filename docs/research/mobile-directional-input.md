@@ -5,7 +5,7 @@
 
 ## TL;DR
 
-To support mobile web gameplay (Poki, CrazyGames, and Spitekeep mobile) within a zero-dependency TypeScript Canvas2D library, we must bridge the gap between continuous/multi-touch screen interactions and the engine's deterministic binary edge-accumulator core (`edges.ts`). Virtual directional inputs must handle multi-touch pointer tracking (isolating pointer IDs to prevent cross-talk between left-thumb steering and right-thumb jumping) and resolve host APIs defensively. Prototyping should focus on: (1) a **Composite Virtual D-Pad** that wraps discrete DOM elements using the existing `createTouchButton` and `orEdges` helpers, (2) an **Analog Virtual Thumbstick** that tracks dynamic/floating pointer origins and thresholds a continuous 2D vector into binary directional edges, and (3) a **Canvas-Wide Pointer-Region Hit-Tester** that avoids DOM overhead entirely by dividing the canvas viewport into touch zones.
+To support mobile web gameplay (Poki, CrazyGames, and the reference implementation mobile) within a zero-dependency TypeScript Canvas2D library, we must bridge the gap between continuous/multi-touch screen interactions and the engine's deterministic binary edge-accumulator core (`edges.ts`). Virtual directional inputs must handle multi-touch pointer tracking (isolating pointer IDs to prevent cross-talk between left-thumb steering and right-thumb jumping) and resolve host APIs defensively. Prototyping should focus on: (1) a **Composite Virtual D-Pad** that wraps discrete DOM elements using the existing `createTouchButton` and `orEdges` helpers, (2) an **Analog Virtual Thumbstick** that tracks dynamic/floating pointer origins and thresholds a continuous 2D vector into binary directional edges, and (3) a **Canvas-Wide Pointer-Region Hit-Tester** that avoids DOM overhead entirely by dividing the canvas viewport into touch zones.
 
 ## Why this matters for aicraft-engine
 
@@ -92,7 +92,7 @@ This technique directly touches **Pillar 1 (Primitives & secondary dynamics)** a
 - **Determinism profile**: Host-touching.
 - **Runtime cost**: Low. Uses basic trigonometry (`Math.atan2`).
 - **Dependencies**: None.
-- **Fit for our constraints**: Medium. Highly useful for top-down or isometric games (Pillar 4), but overkill for simple 2D side-scrolling platformers (like Spitekeep).
+- **Fit for our constraints**: Medium. Highly useful for top-down or isometric games (Pillar 4), but overkill for simple 2D side-scrolling platformers (like the reference implementation).
 - **What to steal**: The angle-sector mapping technique, which allows a single DOM element or canvas region to drive multiple directional accumulators simultaneously (e.g., touching the top-right sector presses both "up" and "right").
 - **What to avoid**: Dead-zones where the player's thumb sits on the boundary between sectors, causing rapid flickering between inputs.
 
@@ -435,8 +435,6 @@ The virtual directional input system adheres strictly to the library's architect
 
 - **Related notes in `docs/research/`**:
   - `docs/research/platformer-juice.md` (for mobile-friendly game-feel and responsiveness guidelines).
-- **Related strategic docs in `ai-craft-strategy/`**:
-  - `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (for minimalist rendering and mobile-web portal constraints).
 - **Existing modules in `src/`**:
   - `src/input/edges.ts` (the deterministic edge core).
   - `src/input/touch-button.ts` (the existing single-button touch adapter).

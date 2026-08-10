@@ -1,13 +1,12 @@
 /**
  * Defensive manifest migration (Pillar 2b).
  *
- * Mirrors Spitekeep's `migrateSave` (`platform/save.ts`): never throws on any
- * input — malformed JSON, non-objects, wrong versions, unknown fields, and
- * individually-broken skin entries all collapse gracefully to a valid
- * {@link CosmeticManifest}. The strategy is **parse → validate/dedupe each
- * skin by id → fall back to {@link DEFAULT_MANIFEST} if the result is empty**
- * (NOT Spitekeep's "rebuild default then overlay", which suits player saves,
- * not content manifests).
+ * Never throws on any input — malformed JSON, non-objects, wrong versions,
+ * unknown fields, and individually-broken skin entries all collapse
+ * gracefully to a valid {@link CosmeticManifest}. The strategy is **parse →
+ * validate/dedupe each skin by id → fall back to {@link DEFAULT_MANIFEST} if
+ * the result is empty** (NOT a "rebuild default then overlay" strategy,
+ * which suits player saves, not content manifests).
  *
  * All hex validation matches the {@link Palette} contract (`#rrggbb`); invalid
  * slots fall back to {@link DEFAULT_PALETTE}. No palette/OKLCH conversion runs

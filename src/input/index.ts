@@ -3,7 +3,7 @@
  *
  * Two layers:
  *   - **Pure core** (`edges.ts`, `merge.ts`) — DOM-free, deterministic, fully
- *     unit-testable under Node. Ports Spitekeep's `src/input/edges.ts`.
+ *     unit-testable under Node.
  *   - **Defensive adapters** (`keyboard.ts`, `touch-button.ts`,
  *     `touch-button-set.ts`, `gamepad.ts`) — host-touching; lazy `window` /
  *     `navigator` resolution, swallow errors, never throw, no-op fallback in

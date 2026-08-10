@@ -273,5 +273,5 @@ This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** an
 
 - `docs/research/elastic-rod-antenna.md` — Secondary dynamics using Verlet chains and Bézier smoothing.
 - `docs/research/walk-cycle-direction-conventions.md` — Locomotion phase and facing-direction conventions.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Strategic context on Sokpop's minimalist rendering.
+- The canonical Sokpop reference (sokpop.itch.io) — Strategic context on Sokpop's minimalist rendering.
 - `showcase/helpers/slime-knight.ts` — The canonical showcase character that this mouth will be integrated into.

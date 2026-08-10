@@ -27,8 +27,8 @@ export interface SpawnOptions {
  * `(x, y)`. Deterministic when `speedJitter` is `0` (default): the same call
  * always produces the same particles, given the same inputs.
  *
- * Matches Spitekeep's `core/update.ts:43-74` pattern (8 particles, evenly
- * distributed angles, deterministic by default).
+ * Matches the reference burst pattern (8 particles, evenly distributed
+ * angles, deterministic by default).
  *
  * @returns a new array of particles. Empty if `count <= 0` or `life <= 0`.
  * @throws if `speedJitter > 0` and no `rng` is provided.

@@ -5,7 +5,7 @@
 
 ## TL;DR
 
-The "Moving Gap Platform" (implemented as `movingVoid` in Spitekeep) is a procedural rendering and collision technique where a dynamic platform's walkable surface is split into two disjoint solid fragments around a traveling gap. Unlike standard moving hazards that kill on overlap, a moving gap kills by consequence (pit-fall) when a player's vertical support is removed. The core architectural insight is the strict separation of **motion** (where the gap wants to go) from **geometry** (what solid fragments are generated). By embedding the span clamp directly inside the geometry generator rather than the motion update code, we eliminate visual-solid desync bugs—such as the player standing on a rendered void—by construction. Prototyping should focus on: (1) a pure, self-clamping dual-fragment solid generator, (2) a functional/procedural solidity query interface to support tile-grid integration, and (3) a deterministic motion state machine supporting sweep, chase, and expand modes driven by the library's seeded `mulberry32` PRNG.
+The "Moving Gap Platform" (implemented as the reference `movingVoid`) is a procedural rendering and collision technique where a dynamic platform's walkable surface is split into two disjoint solid fragments around a traveling gap. Unlike standard moving hazards that kill on overlap, a moving gap kills by consequence (pit-fall) when a player's vertical support is removed. The core architectural insight is the strict separation of **motion** (where the gap wants to go) from **geometry** (what solid fragments are generated). By embedding the span clamp directly inside the geometry generator rather than the motion update code, we eliminate visual-solid desync bugs—such as the player standing on a rendered void—by construction. Prototyping should focus on: (1) a pure, self-clamping dual-fragment solid generator, (2) a functional/procedural solidity query interface to support tile-grid integration, and (3) a deterministic motion state machine supporting sweep, chase, and expand modes driven by the library's seeded `mulberry32` PRNG.
 
 ## Why this matters for aicraft-engine
 
@@ -18,12 +18,12 @@ This technique directly touches **Pillar 1 (Primitives & secondary dynamics)** a
 
 ## Prior Art Survey
 
-### Pattern 1: Spitekeep's `movingVoid` (In-House Anchor)
-- **Source**: `/src/core/traps/moving-void.ts` (Spitekeep) and GDD §6.13.
+### Pattern 1: The Reference `movingVoid` (In-House Anchor)
+- **Source**: `/src/core/traps/moving-void.ts` and GDD §6.13.
 - **What it does**: Represents a traveling absence of floor. The trap owns a floor span `[trap.x, trap.x + trap.width]` at height `trap.y`. The level author carves this span out of the static `level.platforms` so the trap's `getSolids()` is the sole source of floor collision. Each tick, the handler splits this span into two solid fragments around a traveling gap.
 - **Algorithmic shape**:
   ```typescript
-  // Spitekeep's getSolids() implementation
+  // The reference getSolids() implementation
   getSolids(trap: TrapEntity, runtime: TrapRuntimeEntry): Platform[] {
     const data = runtime.data as unknown as MovingVoidData;
     const gapCenterX = typeof data.gapCenterX === 'number' ? data.gapCenterX : trap.x + trap.width / 2;
@@ -112,7 +112,7 @@ This technique directly touches **Pillar 1 (Primitives & secondary dynamics)** a
 - **What it does**: Evaluates whether a body falls through a moving gap by checking continuous swept volumes vs. discrete tick-by-tick state checks.
 - **Algorithmic shape**:
   ```typescript
-  // Discrete support check (Spitekeep / aicraft-engine)
+  // Discrete support check (aicraft-engine)
   // Tick N: Player stands on Solid 1.
   // Tick N+1: Gap has moved under player. Gravity pulls player down.
   //           Y-resolution finds no solid → player falls.
@@ -128,10 +128,10 @@ This technique directly touches **Pillar 1 (Primitives & secondary dynamics)** a
 
 ## The Motion/Geometry Separation Insight
 
-In Spitekeep's original implementation of `movingVoid`, the span clamp was coupled to the motion update loop:
+In the reference implementation of `movingVoid`, the span clamp was coupled to the motion update loop:
 
 ```typescript
-// Spitekeep's update() clamp (lines ~313-319)
+// The reference update() clamp (lines ~313-319)
 const half = data.gapWidth / 2;
 const minCenter = trap.x + half;
 const maxCenter = trap.x + trap.width - half;
@@ -159,10 +159,10 @@ By making the geometry generator self-clamping, we guarantee that:
 
 ## Reference Implementations
 
-1. **Spitekeep `movingVoid` Trap**
+1. **The Reference `movingVoid` Trap**
    - *Path*: `/src/core/traps/moving-void.ts`
    - *Description*: The primary reference. Implements `sweep`, `chase`, and `expand` travel modes, the post-mortem `revealedHold` freeze, and the dual-fragment generation.
-2. **Spitekeep `hiddenPit` Trap**
+2. **The Reference `hiddenPit` Trap**
    - *Path*: `/src/core/traps/hidden-pit.ts`
    - *Description*: Sibling trap demonstrating multi-fragment geometry (`splitHorizontal`, `retractBothWays`) and deterministic debris velocity calculations.
 3. **aicraft-engine `resolve.ts`**
@@ -175,7 +175,7 @@ By making the geometry generator self-clamping, we guarantee that:
 
 | Reference | What it shows | Source |
 |---|---|---|
-| Spitekeep `movingVoid` GDD §6.13 | Detailed diagram of the two-fragment split, the sweep path, and the mandatory `revealedTrail` post-mortem visuals. | `GDD.md` §6.13 |
+| The reference `movingVoid` GDD §6.13 | Detailed diagram of the two-fragment split, the sweep path, and the mandatory `revealedTrail` post-mortem visuals. | `GDD.md` §6.13 |
 | `moving-void-demo.ts` | The "Shelter from the Storm" level layout, showing how static platforms are carved around the trap's span `[136..824]`. | `moving-void-demo.ts` |
 
 ---
@@ -213,8 +213,6 @@ By making the geometry generator self-clamping, we guarantee that:
 - **Related notes in `docs/research/`**:
   - `docs/research/platformer-juice.md` (for screen shake, hit-stop, and post-mortem visual guidelines).
   - `docs/research/jump-walk-locomotion.md` (for player movement and gravity interaction).
-- **Related strategic docs in `ai-craft-strategy/`**:
-  - `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (for minimalist rendering and visual-solid lockstep rules).
 - **Existing modules in `src/`**:
   - `src/collision/resolve.ts` (the collision resolver that consumes the generated fragments).
   - `src/rng/mulberry32.ts` (the PRNG driving the deterministic travel modes).

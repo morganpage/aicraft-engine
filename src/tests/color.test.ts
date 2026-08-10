@@ -134,7 +134,7 @@ describe('meetsWcagAa', () => {
   it('true for black on white', () => {
     expect(meetsWcagAa('#000000', '#ffffff')).toBe(true);
   });
-  it('true for Spitekeep devil orange on black', () => {
+  it('true for warm-orange on black', () => {
     expect(meetsWcagAa('#fe5701', '#000000')).toBe(true);
   });
   it('false for low-contrast pair', () => {

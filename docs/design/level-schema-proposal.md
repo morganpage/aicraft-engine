@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-A versioned, serializable 2D platformer level schema must support editor persistence (internal + UGC), runtime loading, forward-ladder migration, share-code generation, defensive validation of untrusted input, deterministic clear-check replay, and thumbnail rendering. The schema must compose with the existing `TileSolidityQuery` contract from `src/collision/types.ts` so the collision module consumes tile data without duplicating logic. It must work for Spitekeep's current `LevelData` shape (platforms, traps, decorations, exit, spawn, bottomLava, realExit, hints) while remaining general enough for future Clone-to-Jest siblings. Entity IDs must be stable across reorder/delete/undo without `Math.random` or array indices. The full schema is large, so the v1 must unblock the platformer kernel (Phase 2) and editor core (Phase 3) without over-engineering.
+A versioned, serializable 2D platformer level schema must support editor persistence (internal + UGC), runtime loading, forward-ladder migration, share-code generation, defensive validation of untrusted input, deterministic clear-check replay, and thumbnail rendering. The schema must compose with the existing `TileSolidityQuery` contract from `src/collision/types.ts` so the collision module consumes tile data without duplicating logic. It must work for the reference implementation's current `LevelData` shape (platforms, traps, decorations, exit, spawn, bottomLava, realExit, hints) while remaining general enough for future consumer titles. Entity IDs must be stable across reorder/delete/undo without `Math.random` or array indices. The full schema is large, so the v1 must unblock the platformer kernel (Phase 2) and editor core (Phase 3) without over-engineering.
 
 ---
 
@@ -184,9 +184,9 @@ const query: TileSolidityQuery = createTileQuery(level.tiles, (v) =>
 
 ## Approach B: Opinionated Platformer Schema (Shipped Taxonomy)
 
-**Source pattern:** Celeste's Solids/Entities/Triggers taxonomy + SMM2's constrained palette + Spitekeep's actual `LevelData` shape from `src/config/types.ts`.
+**Source pattern:** Celeste's Solids/Entities/Triggers taxonomy + SMM2's constrained palette + the reference implementation's actual `LevelData` shape from `src/config/types.ts`.
 
-The library ships a **complete platformer entity taxonomy** that mirrors Spitekeep's `LevelData` (platforms, traps, decorations, exit, spawn). Entity kinds are a typed union, not free strings. Consumer extends via `params: Record<string, unknown>` bags on each entity kind. The tile grid composes directly with `TileSolidityQuery`.
+The library ships a **complete platformer entity taxonomy** that mirrors the reference `LevelData` (platforms, traps, decorations, exit, spawn). Entity kinds are a typed union, not free strings. Consumer extends via `params: Record<string, unknown>` bags on each entity kind. The tile grid composes directly with `TileSolidityQuery`.
 
 ### Signature sketch
 
@@ -229,7 +229,7 @@ export interface PlatformProps {
 
 /**
  * Trap-specific props. Untyped bag — trap handlers dispatch on `type`.
- * Matches Spitekeep's `TrapEntity.params` exactly.
+ * Matches the reference `TrapEntity.params` exactly.
  */
 export interface TrapProps {
   readonly type: string;
@@ -296,7 +296,7 @@ export interface LevelData {
   readonly tiles: TileGrid;
   readonly entities: readonly LevelEntity[];
   readonly nextEntityId: EntityId;
-  /** Optional bottom lava sea — matches Spitekeep's LevelData.bottomLava. */
+  /** Optional bottom lava sea — matches the reference LevelData.bottomLava. */
   readonly bottomLava?: { readonly surfaceY: number };
   /** Optional hints shown after N deaths. */
   readonly hints?: readonly string[];
@@ -371,7 +371,7 @@ const query: TileSolidityQuery = createTileQuery(level.tiles, (v) =>
 
 | Dimension | Rating | Justification |
 |---|---|---|
-| Ergonomics (simple platformer) | **High** | Ships a complete platformer taxonomy. Consumer writes `kind: 'platform'` and gets typed props immediately. Matches Spitekeep's mental model. |
+| Ergonomics (simple platformer) | **High** | Ships a complete platformer taxonomy. Consumer writes `kind: 'platform'` and gets typed props immediately. Matches the reference implementation's mental model. |
 | Ergonomics (complex, 30+ types) | **Medium** | Adding custom entity kinds requires extending the union (non-breaking) but the `params: Record<string, unknown>` bags are untyped. Complex games may outgrow the shipped kinds. |
 | Determinism discipline | **High** | No `Math.random` or `Date.now`. Monotonic IDs. Pure-data shape. |
 | Type safety | **High** | Discriminated union gives exhaustive kind checking. Props bags are partially typed (platform/trap/exit have specific shapes). |
@@ -381,7 +381,7 @@ const query: TileSolidityQuery = createTileQuery(level.tiles, (v) =>
 | Migration path | **High** | Forward ladder identical to Approach A. |
 | Collaboration readiness | **Medium** | Same as Approach A — serialisable but no CRDT ops model. |
 
-**What this makes easy:** Getting started with a platformer. Matching Spitekeep's existing `LevelData` shape. Defensive parsing of UGC levels. **What this makes hard:** Games with entity types that don't fit the shipped taxonomy (e.g. a puzzle game with pressure plates, gates, conveyor belts).
+**What this makes easy:** Getting started with a platformer. Matching the reference implementation's existing `LevelData` shape. Defensive parsing of UGC levels. **What this makes hard:** Games with entity types that don't fit the shipped taxonomy (e.g. a puzzle game with pressure plates, gates, conveyor belts).
 
 ---
 
@@ -593,17 +593,17 @@ const query: TileSolidityQuery = createTileQuery(level.tiles, (v) =>
 
 **Approach B: Opinionated Platformer Schema.**
 
-The library's first consumer is Spitekeep, which already has a well-defined `LevelData` shape with platforms, traps, decorations, exit, spawn, bottomLava, and flags. Approach B maps directly onto this existing shape — Spitekeep's migration from its local `LevelData` to the library's `LevelData` would be a near-trivial field-by-field rename, not a conceptual redesign. The discriminated union gives Spitekeep exhaustive kind checking today, and the `params: Record<string, unknown>` bags on traps and triggers provide exactly the extensibility Spitekeep already uses (each trap type has its own params shape dispatched at runtime).
+The library's first consumer — the consumer game — already has a well-defined `LevelData` shape with platforms, traps, decorations, exit, spawn, bottomLava, and flags. Approach B maps directly onto this existing shape — its migration from a local `LevelData` to the library's `LevelData` would be a near-trivial field-by-field rename, not a conceptual redesign. The discriminated union gives it exhaustive kind checking today, and the `params: Record<string, unknown>` bags on traps and triggers provide exactly the extensibility it already uses (each trap type has its own params shape dispatched at runtime).
 
 The research note's three open questions resolve cleanly under Approach B:
 
-- **RLE for tile grids:** Not needed for v1. Spitekeep's levels are 960×540 at 16px tiles = 60×34 = 2,040 tiles. Flat array of 2,040 integers is 2 KB uncompressed — well within share-code budget. The `TileGrid` type is storage-agnostic; a future `encodeTiles(grid)` function can add RLE or sparse encoding without changing the schema.
+- **RLE for tile grids:** Not needed for v1. the reference implementation's levels are 960×540 at 16px tiles = 60×34 = 2,040 tiles. Flat array of 2,040 integers is 2 KB uncompressed — well within share-code budget. The `TileGrid` type is storage-agnostic; a future `encodeTiles(grid)` function can add RLE or sparse encoding without changing the schema.
 
 - **Thumbnail generation:** A `drawThumbnail(level, ctx)` helper can iterate `entities` filtered to `kind === 'platform'` or `kind === 'hazard'` and draw simplified rects. The shipped taxonomy makes this trivial — no registry lookup needed, just a switch on `kind`.
 
 - **Replay desync on engine version change:** Store `engineVersion` in `LevelData.metadata` (via the open `metadata: Record<string, unknown>` field). When the engine version doesn't match, skip clear-check replay validation and trust the original `verified: boolean` flag. This is the standard industry approach (SMM2 does the same).
 
-Approach B is the right balance: opinionated enough to be immediately useful, extensible enough to grow, and close enough to Spitekeep's existing shape to make migration effortless. If a future sibling game needs a radically different entity taxonomy (Approach A's strength) or CRDT merge semantics (Approach C's strength), the schema can evolve toward those patterns — but shipping the simple, correct thing first is the right call.
+Approach B is the right balance: opinionated enough to be immediately useful, extensible enough to grow, and close enough to the reference implementation's existing shape to make migration effortless. If a future sibling game needs a radically different entity taxonomy (Approach A's strength) or CRDT merge semantics (Approach C's strength), the schema can evolve toward those patterns — but shipping the simple, correct thing first is the right call.
 
 ---
 
@@ -632,10 +632,10 @@ Approach B is the right balance: opinionated enough to be immediately useful, ex
 
 ## Open Questions for @architect
 
-1. **Should `LevelEntity.props` be `Record<string, unknown>` (Approach B's current shape) or should each kind have a specific props interface exported from the library?** Specific interfaces give better type safety at the cost of more types to maintain. The current Spitekeep `TrapEntity.params` is `Record<string, unknown>` — matching that is pragmatic.
+1. **Should `LevelEntity.props` be `Record<string, unknown>` (Approach B's current shape) or should each kind have a specific props interface exported from the library?** Specific interfaces give better type safety at the cost of more types to maintain. The current the reference implementation `TrapEntity.params` is `Record<string, unknown>` — matching that is pragmatic.
 
 2. **Should `createTileQuery` live in `src/level/tiles.ts` or in `src/collision/`?** It bridges two modules. Putting it in `src/level/` keeps the collision module pure and avoids the level module importing collision internals. But it means the collision module's consumers must know to look in `src/level/` for the bridge function.
 
-3. **Should `validateLevel` check that spawn and exit are within level bounds?** Spitekeep's `validateLevelWellFormed` only checks the doorIsTrap invariant. Bounds checking is a "nice to have" for UGC safety but could reject valid edge-case levels (e.g. a spawn at the exact level edge). The researcher recommends clamping in the parser, not rejecting in the validator.
+3. **Should `validateLevel` check that spawn and exit are within level bounds?** the reference `validateLevelWellFormed` only checks the doorIsTrap invariant. Bounds checking is a "nice to have" for UGC safety but could reject valid edge-case levels (e.g. a spawn at the exact level edge). The researcher recommends clamping in the parser, not rejecting in the validator.
 
-4. **Should the v1 `LevelData` include `bottomLava` and `hints` fields, or should those be purely Spitekeep-specific and live in `metadata`?** They're Spitekeep-specific today but could become common across siblings. Keeping them as optional top-level fields is cleaner than burying them in an untyped bag.
+4. **Should the v1 `LevelData` include `bottomLava` and `hints` fields, or should those be purely consumer-specific and live in `metadata`?** They're consumer-specific today but could become common across siblings. Keeping them as optional top-level fields is cleaner than burying them in an untyped bag.

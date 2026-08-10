@@ -43,9 +43,9 @@ export function particleSizeCurve(
  * `startAlpha`; at age `1` returns `endAlpha`. Pure reader; clamps the result
  * to `[0, 1]` so renderers can assign it directly to `ctx.globalAlpha`.
  *
- * Matches Spitekeep's existing `sprites.ts:1719` linear-fade pattern
- * (`alpha = life / maxLife`); this helper formalizes it and makes the fade
- * shape configurable without touching the particle's physics fields.
+ * Matches the reference linear-fade pattern (`alpha = life / maxLife`);
+ * this helper formalizes it and makes the fade shape configurable without
+ * touching the particle's physics fields.
  *
  * @param p - the particle to read
  * @param startAlpha - alpha at spawn (age 0), clamped to `[0, 1]`

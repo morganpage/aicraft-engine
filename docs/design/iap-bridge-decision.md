@@ -13,7 +13,7 @@ Adopt **Approach A (Composable Primitives)** — separate pure entitlement ops +
 - **Pure ops** (`src/iap/entitlements.ts`): `grantEntitlement(save, sku, receipt?) → EntitlementSave` (manages only entitlements + receipts, NO `grantSkin` call), `revokeEntitlement(save, sku) → EntitlementSave`, `flushIAPEvents(save, events, resolver) → { save: EntitlementSave; grants: readonly GrantDescriptor[] }` (the consumer iterates `grants` and calls `grantSkin` themselves), `drainQueue(events) → { drained; next }`, `pushTransaction(events, tx) → readonly IAPEvent[]`.
 - **Event queue**: plain `IAPEvent[]` — NO wrapper type. Matches the library's collection convention (`Particle[]`, `Emitter[]`, `string[]`).
 - **Adapter interface** (`src/iap/bridge.ts` or `types.ts`): `IAPBridge` with `getCatalog()`, `getEntitlements()`, `purchase(sku)`, `restore()`, `onTransaction(cb)`. All async (return Promises); callbacks fire asynchronously.
-- **Adapters shipped in v1**: `createMemoryIAPAdapter()` (tests — in-memory mock store), `createLocalStorageIAPAdapter()` (dev — lazily resolves `window.localStorage`, matching `src/primitives/motion.ts`). Poki/Jest adapters deferred to Pillar 5.
+- **Adapters shipped in v1**: `createMemoryIAPAdapter()` (tests — in-memory mock store), `createLocalStorageIAPAdapter()` (dev — lazily resolves `window.localStorage`, matching `src/primitives/motion.ts`). Poki/direct-IAP platforms adapters deferred to Pillar 5.
 - **Scope**: non-consumable cosmetics only (no consumables, no subscriptions). Receipt validation delegated to the host/consumer (zero-dep invariant — no crypto bundled). Restore is consumer-triggered (`bridge.restore()` at startup), not automatic.
 
 ## Key inputs that drove the decision
@@ -32,7 +32,7 @@ Adopt **Approach A (Composable Primitives)** — separate pure entitlement ops +
 - **Consumables/subscriptions in v1** — client-side validation is spoofable; defer to v2 with server-side validation.
 - **Receipt validation in the library** — would require crypto deps. Delegated to the host/consumer.
 - **Automatic restore on init** — forces a network call on import. Consumer-triggered instead.
-- **Poki/Jest adapters in v1** — deferred to Pillar 5 (on-demand when a game targets those platforms).
+- **Poki/direct-IAP platforms adapters in v1** — deferred to Pillar 5 (on-demand when a game targets those platforms).
 
 ## Implementation-time verifications (from architect)
 

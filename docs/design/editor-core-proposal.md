@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-The editor core provides the headless state management, undo/redo, selection, snapping, playtest boundary, and validation diagnostic plumbing required to power both the internal developer level builder (Spitekeep/IMP's `src/dev/editor/`) and polished, player-facing UGC editors in future Clone-to-Jest siblings. It operates exclusively on `LevelData` from `src/level/` — no DOM, no rendering, no mouse handling. The core exposes serializable operations (no function closures) so that history can later be transmitted over a network for multi-player collaboration. It must compose cleanly with the existing `validateLevel` and `allocateEntityId` pure functions. One paragraph summary: the editor core is a deterministic, zero-dependency, never-throw reducer layer that sits between the host application's UI event loop and the level schema, providing the complete editing lifecycle — place, move, delete, undo, redo, transaction-grouped drags, multi-select transforms, grid snapping, playtest snapshot/restore, and validation diagnostics — as pure data transformations.
+The editor core provides the headless state management, undo/redo, selection, snapping, playtest boundary, and validation diagnostic plumbing required to power both the internal developer level builder (the reference implementation/IMP's `src/dev/editor/`) and polished, player-facing UGC editors in future consumer titles. It operates exclusively on `LevelData` from `src/level/` — no DOM, no rendering, no mouse handling. The core exposes serializable operations (no function closures) so that history can later be transmitted over a network for multi-player collaboration. It must compose cleanly with the existing `validateLevel` and `allocateEntityId` pure functions. One paragraph summary: the editor core is a deterministic, zero-dependency, never-throw reducer layer that sits between the host application's UI event loop and the level schema, providing the complete editing lifecycle — place, move, delete, undo, redo, transaction-grouped drags, multi-select transforms, grid snapping, playtest snapshot/restore, and validation diagnostics — as pure data transformations.
 
 ---
 
@@ -249,9 +249,9 @@ const playtestLevel = enterPlaytest(selected.level);
 
 ## Approach B: Stateful Editor Wrapper
 
-**Source pattern:** Spitekeep's `LevelStore` class (`src/dev/editor/store.ts`) combined with the Figma scene-graph pattern from `docs/research/editor-core.md` §Pattern 2.
+**Source pattern:** the reference `LevelStore` class (`src/dev/editor/store.ts`) combined with the Figma scene-graph pattern from `docs/research/editor-core.md` §Pattern 2.
 
-**Core idea:** A `LevelEditor` class owns the current `LevelData`, the undo/redo history (over full snapshots, like Spitekeep's existing `UndoRedoState<LevelData>`), the selection state, and the snap-to-grid toggle. Exposes imperative methods (`editor.addEntity(...)`, `editor.moveEntities(...)`, `editor.undo()`). Internally each method deep-clones the level, applies the mutation, and pushes onto the history stack. Operations are NOT individually serializable — only the snapshot history is.
+**Core idea:** A `LevelEditor` class owns the current `LevelData`, the undo/redo history (over full snapshots, like the reference implementation's existing `UndoRedoState<LevelData>`), the selection state, and the snap-to-grid toggle. Exposes imperative methods (`editor.addEntity(...)`, `editor.moveEntities(...)`, `editor.undo()`). Internally each method deep-clones the level, applies the mutation, and pushes onto the history stack. Operations are NOT individually serializable — only the snapshot history is.
 
 **Signature sketch:**
 
@@ -379,7 +379,7 @@ const playtestLevel = editor.enterPlaytest();
 | Public API stability | Medium | Adding methods is additive, but changing the class shape (e.g. adding a required config field) is breaking |
 | Playtest boundary | High | `enterPlaytest()` is a clean method that deep-clones |
 
-**What this makes easy:** Getting started — the consumer writes `editor.addEntity(...)` and it just works. Matches Spitekeep's existing `LevelStore` pattern almost 1:1, so migration is trivial.
+**What this makes easy:** Getting started — the consumer writes `editor.addEntity(...)` and it just works. Matches the reference implementation's existing `LevelStore` pattern almost 1:1, so migration is trivial.
 
 **What this makes hard:** Multi-player collaboration (no op log to transmit), memory-heavy for large levels, tree-shaking (you get the whole class or nothing), and the imperative API hides the operation history from consumers who need it.
 
@@ -578,7 +578,7 @@ const playtestLevel = enterPlaytest(state.level);
 
 Approach C is the right design because it solves the real tension the research identified: operations must be serializable for collaboration, but undo/redo must be cheap and simple. By storing snapshots for undo (like Approach B's simplicity) while recording operations for future transmission (like Approach A's collaboration readiness), we get both without the inverse-operation complexity that Approach A's op-history requires. The inverse-op reducer in Approach A is fragile — tile paint operations need to record `oldValue` for every cell, entity adds need to record the allocated ID for removal, and any new op type requires a matching inverse. Snapshot history eliminates this entirely: undo is just "restore the previous snapshot."
 
-For operation merging (the drag transaction question), Approach C handles it cleanly: the consumer calls `beginTransaction`, emits many `moveEntities` ops via `applyOp`, then calls `commitTransaction`. The ops are accumulated in `pendingOps` and the current level (after applying all ops) is pushed as one snapshot. The consumer controls the merge boundary — no heuristic needed in the core. This matches Spitekeep's existing `store.update(d => { d.platforms.push(...) })` pattern where the mutation closure IS the transaction boundary.
+For operation merging (the drag transaction question), Approach C handles it cleanly: the consumer calls `beginTransaction`, emits many `moveEntities` ops via `applyOp`, then calls `commitTransaction`. The ops are accumulated in `pendingOps` and the current level (after applying all ops) is pushed as one snapshot. The consumer controls the merge boundary — no heuristic needed in the core. This matches the reference implementation's existing `store.update(d => { d.platforms.push(...) })` pattern where the mutation closure IS the transaction boundary.
 
 For sparse tile grids and large levels, the snapshot approach does store more memory than op-replay. However, the `LevelData.tiles.data` flat array for a typical 100×50 level at 8px tiles is only ~2 KB per snapshot. Even at 500×500 (~100 KB per snapshot × 50 depth = 5 MB), this is negligible for an editor running in a browser. The research note's concern about sparse grids is premature optimization — ship snapshots first, add delta-history later if profiling shows it matters. The op types are already designed to support sparse deltas (`paintTiles` carries `oldValue`/`newValue` pairs), so the migration path is clear.
 
@@ -643,7 +643,7 @@ The v1 must support these operations. Every operation is a serializable discrimi
 
 ## Open Questions for @architect
 
-1. **Should `EditorState` be immutable or mutable?** Approach C's sketch uses immutable state (every function returns a new `EditorState`). This matches the library's pure-progression-ops discipline but means the consumer must thread `state` through every call (`state = addEntity(state, ...)`). Spitekeep's `LevelStore` is mutable (class with `update()` method). Should we offer both? Or commit to immutable-only?
+1. **Should `EditorState` be immutable or mutable?** Approach C's sketch uses immutable state (every function returns a new `EditorState`). This matches the library's pure-progression-ops discipline but means the consumer must thread `state` through every call (`state = addEntity(state, ...)`). the reference `LevelStore` is mutable (class with `update()` method). Should we offer both? Or commit to immutable-only?
 
 2. **Should the `LevelEditor` convenience class (Approach B's API shape) be a thin wrapper over Approach C's pure functions?** This would give consumers the ergonomic `editor.addEntity(...)` API while preserving the pure-function core for testing and collaboration. The class would own the `EditorState` and mutate it internally, exposing the same methods. This is essentially "Approach C with Approach B's ergonomics."
 

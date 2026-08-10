@@ -10,7 +10,7 @@ Procedural locomotion replaces traditional keyframed animations with real-time m
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly extends **Pillar 1 (Primitives / Animation)** and feeds into **Pillar 4 (Fake-3D / character stacks)**.
-- **Consumer Games**: Sibling games like *Spitekeep* (or future Clone-to-Jest titles like a card-based village builder or procedural RTS) need lively, responsive characters without the memory overhead of spritesheets or Spine files.
+- **Consumer Games**: Consumer titles like a card-based village builder or procedural RTS) need lively, responsive characters without the memory overhead of spritesheets or Spine files.
 - **Unlocks**:
   - **Zero-Asset Animation**: Characters are animated entirely via math, meaning we can ship hundreds of unique cosmetic skins (Pillar 2) that share the same locomotion code with zero extra asset bytes.
   - **Adaptive Gaits**: Walk and run cycles dynamically scale their frequency, stride, and bobbing based on the character's actual velocity and terrain, avoiding "foot sliding."

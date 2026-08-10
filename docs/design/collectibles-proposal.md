@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Every Clone-to-Jest title needs coins (score), keys (gating), and gems (meta-progression). Today, consumers abuse `trigger` with `action: 'pickup'` — a workaround that leaks through every layer: the editor has no catalog entry, the validator has no typed props, the renderer has no per-kind branch, and the runtime has no first-class collision surface. The fix is a schema change (additive union expansion) plus a new pure owned-state module that mirrors `cosmetics/ownership.ts`.
+Every consumer title needs coins (score), keys (gating), and gems (meta-progression). Today, consumers abuse `trigger` with `action: 'pickup'` — a workaround that leaks through every layer: the editor has no catalog entry, the validator has no typed props, the renderer has no per-kind branch, and the runtime has no first-class collision surface. The fix is a schema change (additive union expansion) plus a new pure owned-state module that mirrors `cosmetics/ownership.ts`.
 
 A level with 3 coins + 1 key should be declaratively specifiable, renderable with a distinct palette, validatable with typed props, and persistable with a clean `CollectibleSave` that survives JSON round-trip. Replays re-derive the same pickups from the same inputs — the kernel stays unaware.
 
@@ -268,7 +268,7 @@ const { collected } = derivePickups(playerRect, level.entities, save);
 
 ## Recommendation
 
-**Approach A: Closed Kind Taxonomy.** It matches the established `EnemyProps.archetype` pattern exactly (one `EntityKind`, multiple prefab entries via sub-kind dispatch), gives defensive parsing for free via the typed `CollectibleKind` union, has the smallest blast radius (one new `EntityKind` variant, not three), and is extensible via non-breaking union expansion. The research note recommends this approach for v1, and Spitekeep's existing enemy catalog (`spinny`/`turret`/`spider` all pointing to `kind: 'enemy'`) is the proven precedent.
+**Approach A: Closed Kind Taxonomy.** It matches the established `EnemyProps.archetype` pattern exactly (one `EntityKind`, multiple prefab entries via sub-kind dispatch), gives defensive parsing for free via the typed `CollectibleKind` union, has the smallest blast radius (one new `EntityKind` variant, not three), and is extensible via non-breaking union expansion. The research note recommends this approach for v1, and the reference implementation's existing enemy catalog (`spinny`/`turret`/`spider` all pointing to `kind: 'enemy'`) is the proven precedent.
 
 The closed `CollectibleKind` union (`'coin' | 'gem' | 'key'`) is the right trade-off: it covers the three archetypal use cases (score, gating, meta-progression) with compile-time safety, and adding a fourth kind later is a one-line union expansion — no blast radius. Consumers who need truly custom collectible types can use the `value` field to encode semantics and pick the closest built-in kind, or wait for the v2 union expansion.
 

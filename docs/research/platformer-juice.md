@@ -137,7 +137,7 @@ This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** an
 
 - `docs/research/README.md` — Research note conventions and backlog.
 - `docs/research/procedural-locomotion.md` — Procedural movement and walk cycle research.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Strategic context on Sokpop's minimalist rendering.
+- The canonical Sokpop reference (sokpop.itch.io) — Strategic context on Sokpop's minimalist rendering.
 - `src/animation/jump.ts` — The library's existing jump state machine.
 - `src/animation/squash-stretch.ts` — The library's volume-preserving scale helpers.
 - `src/particles/` — The library's deterministic particle system.

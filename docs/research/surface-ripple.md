@@ -10,7 +10,7 @@ Liquid surfaces in 2D side-scrollers (such as lava pools, acid pits, water hazar
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Extends **Pillar 1 (Primitives / Animation)** and lays the groundwork for **Pillar 4 (Fake-3D / liquid surfaces)**.
-- **Consumer Games**: Sibling games like *Spitekeep* (lava pools, acid pits, boiling slime hazards) and future Clone-to-Jest titles (such as a card-based village builder with shorelines, or a procedural RTS with ocean waves and river flows) need lively, responsive liquid surfaces.
+- **Consumer Games**: Consumer titles (such as a card-based village builder with shorelines, or a procedural RTS with ocean waves and river flows) need lively, responsive liquid surfaces.
 - **Unlocks**:
   - **Zero-Asset Liquid Surfaces**: Replaces heavy flipbook spritesheets or complex shader setups with lightweight, procedural math that can be rendered using standard Canvas2D vector paths.
   - **Dynamic Aesthetics**: Allows liquid surfaces to churn, bubble, or ripple dynamically based on game state, seed parameters, or environmental factors.
@@ -250,7 +250,7 @@ Liquid surfaces in 2D side-scrollers (such as lava pools, acid pits, water hazar
    - *Recommendation*: v1 of the library should focus on the stateless **Sum-of-Sines** and **Gerstner** generators (landing in `src/primitives/wave-line.ts`) to provide immediate, zero-setup rendering helpers. We should flag the stateful **Spring-Mass** column system as a v2 feature once the core rendering primitives are proven.
 3. **Sample Density and Pixel Snapping**:
    - *Problem*: How do we ensure the wave looks good at low resolutions (Sokpop ~16-32px tiles) without wasting CPU cycles?
-   - *Recommendation*: The library should recommend a default sample spacing of 8-16 pixels. To match the retro, pixel-art aesthetic of Spitekeep-family games, the generated vertices should support optional integer-pixel snapping (`Math.floor`) before rendering, creating a beautiful, stepped, retro-digital wave profile.
+   - *Recommendation*: The library should recommend a default sample spacing of 8-16 pixels. To match the retro, pixel-art aesthetic of the library's family of games, the generated vertices should support optional integer-pixel snapping (`Math.floor`) before rendering, creating a beautiful, stepped, retro-digital wave profile.
 
 ---
 

@@ -39,8 +39,8 @@ The library currently ships exactly one player character body plan (slime-knight
 
 ## Consumer Need
 
-- **Spitekeep (IMP - Not a Troll)**: Currently renders the slime-knight hero from showcase-local code. A platformer with a humanoid knight protagonist needs a humanoid biped body plan. Flying hazard enemies need a floater. Worm/snake bosses need serpentine.
-- **Future Clone-to-Jest siblings**: Card-based village builders, procedural RTSs, idle gardens — all need distinct character archetypes beyond the blob slime.
+- **Consumer game**: Currently renders the slime-knight hero from showcase-local code. A platformer with a humanoid knight protagonist needs a humanoid biped body plan. Flying hazard enemies need a floater. Worm/snake bosses need serpentine.
+- **Future consumer titles**: Card-based village builders, procedural RTSs, idle gardens — all need distinct character archetypes beyond the blob slime.
 - **Without this**: Each consumer hand-builds body plans from raw primitives (exactly what `showcase/helpers/slime-knight.ts` does today — 2200 lines of bespoke rendering). This is the antipattern the library exists to prevent.
 
 ---

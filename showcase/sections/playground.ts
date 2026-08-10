@@ -532,7 +532,7 @@ const COLOR_PLATFORM = '#5a3a24';
 const COLOR_PLATFORM_PASSTHROUGH = '#5a6a3a';
 /** Moving-platform fill — steel blue, reads as mechanical. */
 const COLOR_MOVING_PLATFORM = '#5a7a9a';
-/** Player fill — soft purple (cute cyclops, distinct from Spitekeep orange). */
+/** Player fill — soft purple (cute cyclops, distinct from warm-orange accents). */
 const COLOR_PLAYER = '#6c5ce7';
 /** Face feature color (eye + mouth). */
 const COLOR_FACE = '#1d1128';

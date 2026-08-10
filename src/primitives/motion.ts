@@ -2,7 +2,7 @@
  * Cached probe for the host's `prefers-reduced-motion: reduce` setting.
  *
  * The probe is read once at first call and cached for the lifetime of the
- * module. This mirrors Spitekeep's `render/renderer.ts:40-43` pattern.
+ * module.
  *
  * Returns `false` in any of these cases:
  *   - `window` is undefined (Node unit tests, SSR, workers)

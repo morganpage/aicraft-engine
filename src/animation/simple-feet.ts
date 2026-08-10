@@ -12,14 +12,11 @@ import type { LocomotionPose } from './locomotion';
  * `outlineRect` / `fillRect` positioned by the locomotion pose. The foot-lock
  * is emergent: when the character stops moving, displacement-driven phase
  * integration freezes the phase, and the feet stay planted.
- *
- * Ported from Spitekeep's `render/devil-sprite.ts:1436-1469`.
  */
 
 /**
- * Configuration for {@link drawSimpleFeet}. Matches Spitekeep's
- * `DEFAULT_DEVIL_DESIGN.legs` rect-style config. Every field is tunable; no
- * magic numbers in the renderer.
+ * Configuration for {@link drawSimpleFeet}. A rect-style legs config: every
+ * field is tunable; no magic numbers in the renderer.
  */
 export interface SimpleFeetConfig {
   /** Foot width in px. */
@@ -60,8 +57,8 @@ export interface SimpleFeetConfig {
 }
 
 /**
- * Default config matching Spitekeep's devil character. Consumers spread this
- * and override `color` (and optionally `outline`) with their palette:
+ * Default config. Consumers spread this and override `color` (and optionally
+ * `outline`) with their palette:
  * `{ ...DEFAULT_SIMPLE_FEET, color: palette.base, outline: palette.outline }`.
  */
 export const DEFAULT_SIMPLE_FEET: Readonly<SimpleFeetConfig> = {
@@ -153,7 +150,7 @@ export const IK_PARITY_FEET: Readonly<SimpleFeetConfig> = {
  *
  * If `config.outline` is provided, uses {@link outlineRect} (1px outline,
  * pixel-grid snapped). Otherwise uses bare `ctx.fillRect` (no outline —
- * faster, matches Spitekeep's `outlineFeet: false` option).
+ * faster, matches a no-outline option).
  *
  * **Orbital gait.** The foot CENTER positions are
  * `∓idleSpread ± cos(phase) · strideLength` (left / right). At

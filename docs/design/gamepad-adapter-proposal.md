@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep and future Clone-to-Jest siblings need gamepad support for desktop browser play (Poki, Steam web). Today, Spitekeep has no gamepad adapter — desktop players with controllers cannot play. The existing input layer (`src/input/`) ships keyboard + touch adapters that wrap host APIs and feed a deterministic binary edge-accumulator core (`edges.ts`). The gap is **gamepad support**: an adapter that polls `navigator.getGamepads()`, maps the W3C Standard Gamepad layout to logical actions, applies a deadzone to analog sticks, and latches threshold-crossings into the same `EdgeAccumulator` the keyboard and touch adapters already use.
+The consumer game and future consumer titles need gamepad support for desktop browser play (Poki, Steam web). Today, the consumer game has no gamepad adapter — desktop players with controllers cannot play. The existing input layer (`src/input/`) ships keyboard + touch adapters that wrap host APIs and feed a deterministic binary edge-accumulator core (`edges.ts`). The gap is **gamepad support**: an adapter that polls `navigator.getGamepads()`, maps the W3C Standard Gamepad layout to logical actions, applies a deadzone to analog sticks, and latches threshold-crossings into the same `EdgeAccumulator` the keyboard and touch adapters already use.
 
 The core consumer need: a player holds "right" with the left stick and taps "jump" with a face button. Both inputs must register independently and OR-merge with keyboard/touch edges. Analog sticks are the only input device that natively produces continuous 2D vectors — the deadzone + threshold-latching pattern bridges analog-to-binary so the gamepad feeds the same binary edge core without modification.
 

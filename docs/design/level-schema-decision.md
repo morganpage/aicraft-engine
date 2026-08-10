@@ -20,20 +20,20 @@ previous entity-only collision output.
 
 ## Why
 
-1. **Maps onto Spitekeep's existing `LevelData` shape near 1:1** — sibling migration is a field rename, not a redesign. This is the only consumer that exists today; optimizing for it is correct.
-2. **Discriminated union gives exhaustive kind checking** — when a new kind is added, TypeScript flags every switch statement that needs updating. The `params: Record<string, unknown>` bag on `trap`/`trigger` mirrors Spitekeep's existing trap-dispatch pattern (each trap type has its own params shape resolved at runtime).
+1. **Maps onto the reference implementation's existing `LevelData` shape near 1:1** — sibling migration is a field rename, not a redesign. This is the only consumer that exists today; optimizing for it is correct.
+2. **Discriminated union gives exhaustive kind checking** — when a new kind is added, TypeScript flags every switch statement that needs updating. The `params: Record<string, unknown>` bag on `trap`/`trigger` mirrors the reference implementation's existing trap-dispatch pattern (each trap type has its own params shape resolved at runtime).
 3. **Validates the v1 thesis cleanly** — the schema must unblock both the platformer kernel (Phase 2) and the editor core (Phase 3). Approach B's shipped taxonomy is enough for both: the kernel reads `tiles` via `createTileQuery`, the editor edits `entities` via kind-dispatched inspector panels.
 4. **Future escape hatches preserved** — if a second consumer needs radically different entity types, Approach C's registry pattern can be added later as an optional `validateLevelWithRegistry(level, registry)` overload. Approach B does not preclude it.
 
 ## Resolutions to open questions (from proposal §Open Questions)
 
-1. **Props typing**: keep `params: Record<string, unknown>` for `trap` and `trigger`. Matches Spitekeep. Compile-time type safety on these bags is a non-goal for v1; runtime validation via the `validateLevel` structural check is sufficient. Specific props interfaces (`PlatformProps`, `MovingPlatformProps`, `DecorationProps`, `TriggerProps`, `ExitProps`) ship for the kinds where the shape is known.
+1. **Props typing**: keep `params: Record<string, unknown>` for `trap` and `trigger`. Matches the reference implementation. Compile-time type safety on these bags is a non-goal for v1; runtime validation via the `validateLevel` structural check is sufficient. Specific props interfaces (`PlatformProps`, `MovingPlatformProps`, `DecorationProps`, `TriggerProps`, `ExitProps`) ship for the kinds where the shape is known.
 
 2. **`createTileQuery` home**: `src/level/tiles.ts`. The level module owns the bridge to collision, not the reverse. Keeps `src/collision/` pure (no upstream dependency on `src/level/`). Consumers discover the bridge via the level module's barrel.
 
 3. **Spawn/exit bounds checking**: validator CHECKS bounds and returns errors, never silently clamps. Silent clamping hides editor bugs and can corrupt level geometry. The editor surfaces validation errors as clickable diagnostics; the consumer decides whether to reject or fix.
 
-4. **`bottomLava` and `hints` placement**: ship as optional top-level fields on `LevelData`. Both are common enough across platformer siblings (bottomless pits, contextual hints) to escape the untyped `metadata` bag. Spitekeep uses both. If they turn out to be game-specific, a v2 migration can move them to `metadata` without breaking the schema version.
+4. **`bottomLava` and `hints` placement**: ship as optional top-level fields on `LevelData`. Both are common enough across platformer siblings (bottomless pits, contextual hints) to escape the untyped `metadata` bag. The consumer game uses both. If they turn out to be game-specific, a v2 migration can move them to `metadata` without breaking the schema version.
 
 ## Additional constraints discovered during review
 

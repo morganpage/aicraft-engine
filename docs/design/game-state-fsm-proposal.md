@@ -6,9 +6,9 @@
 
 ## Consumer Need
 
-Every game needs top-level mode orchestration: menu → playing → paused → gameover → levelComplete. Currently every consumer (Spitekeep/IMP, future Clone-to-Jest titles) reimplements this from scratch — ad-hoc `scene` string fields, manual `if (paused) return` guards, and scattered transition logic. The FSM module provides a **pure, deterministic, `dt`-driven reducer** that consumers wire into their `step(fixedDt)` callback, eliminating this duplication while enabling replay-deterministic mode orchestration and time-in-state driven UI (fade-ins, delayed transitions, "press any key" prompts).
+Every game needs top-level mode orchestration: menu → playing → paused → gameover → levelComplete. Currently every consumer (the reference implementation/IMP, future consumer titles) reimplements this from scratch — ad-hoc `scene` string fields, manual `if (paused) return` guards, and scattered transition logic. The FSM module provides a **pure, deterministic, `dt`-driven reducer** that consumers wire into their `step(fixedDt)` callback, eliminating this duplication while enabling replay-deterministic mode orchestration and time-in-state driven UI (fade-ins, delayed transitions, "press any key" prompts).
 
-Spitekeep (IMP) already has `Scene = 'title' | 'levelSelect' | 'playing' | 'paused' | 'won' | 'levelComplete'` in `src/main.ts:177` with a `GameSession.scene` field and `stepSession` managing transitions imperatively. The FSM module would replace this with a declarative adjacency table and a pure reducer call — the same transition logic, but data-driven and unit-testable.
+the reference implementation (IMP) already has `Scene = 'title' | 'levelSelect' | 'playing' | 'paused' | 'won' | 'levelComplete'` in `src/main.ts:177` with a `GameSession.scene` field and `stepSession` managing transitions imperatively. The FSM module would replace this with a declarative adjacency table and a pure reducer call — the same transition logic, but data-driven and unit-testable.
 
 ---
 
@@ -21,7 +21,7 @@ Before proposing approaches, here are the decisions on the 10 open questions and
 | # | Question | Decision | Rationale |
 |---|---|---|---|
 | 1 | Flat FSM vs HSM | **Flat FSM.** | 5–7 modes is well within flat-FSM scope (Socratopia diagnostic: 1–3 → FSM unambiguously; 4–8 → FSM or HFSM). HSM adds nesting overhead with no benefit here. Future sub-FSMs (player abilities, enemy AI) are separate modules. |
-| 2 | Canonical state set | **`menu` / `playing` / `paused` / `gameover` / `levelComplete`.** | Matches the research note and covers platformer needs. Spitekeep adds `title`, `levelSelect`, and `won` — these are consumer-specific states added via custom adjacency tables. The default set is the minimal platformer skeleton. |
+| 2 | Canonical state set | **`menu` / `playing` / `paused` / `gameover` / `levelComplete`.** | Matches the research note and covers platformer needs. The consumer game adds `title`, `levelSelect`, and `won` — these are consumer-specific states added via custom adjacency tables. The default set is the minimal platformer skeleton. |
 | 3 | Adjacency table as data | **Ship `DEFAULT_GAME_STATE_ADJACENCY` + consumer pass custom table (spread-override pattern).** | Mirrors `DEFAULT_JUMP` / `DEFAULT_TWEEN_CONFIG` / `DEFAULT_GAIT`. The reducer takes an optional `table?` parameter; omitting it uses the default. Consumers spread the default and override specific transitions. |
 | 4 | Pure reducer signature | **`reduceGameState(state, event, dt, table?) → state`.** | Matches `advanceJump(state, inputs, dt, config)` shape exactly. The consumer owns the state, the engine provides the pure function. |
 | 5 | Discriminated-union vs flat-record state | **Flat record as runtime default + optional type-only discriminated-union export.** | Flat record matches existing modules (`EntitlementSave`, `CosmeticSave`, `JumpState`). Discriminated union is a type-only export for consumers who want compile-time impossible-state prevention. Both share the same runtime shape. |
@@ -609,7 +609,7 @@ export interface GameStateConfig {
 
 **Reasoning:** Approach A is the simplest shape that matches every existing module in the library (`advanceJump`, `advanceTween`, `advanceEmitter`, `grantEntitlement`, `createHitStop`). The flat record is the convention; introducing a discriminated-union runtime shape would be the first of its kind in the codebase and would create a precedent that future modules might feel compelled to follow. The type-only `GameStateExact` export from Approach C is a zero-cost additive — consumers who want type safety can use it, consumers who don't can ignore it. But the runtime reducer returns the flat record.
 
-The key insight from Spitekeep's `stepSession` (line 317-357) is that the consumer's `switch` on `scene` already handles every variant — the FSM just needs to provide the data, not enforce the type narrowing. Spitekeep accesses `state.score`, `state.status`, and `state.winTimer` across multiple scenes — a flat record makes this trivial. A discriminated union would force narrowing at every access point.
+The key insight from the reference `stepSession` (line 317-357) is that the consumer's `switch` on `scene` already handles every variant — the FSM just needs to provide the data, not enforce the type narrowing. The consumer game accesses `state.score`, `state.status`, and `state.winTimer` across multiple scenes — a flat record makes this trivial. A discriminated union would force narrowing at every access point.
 
 ---
 
@@ -619,11 +619,11 @@ The key insight from Spitekeep's `stepSession` (line 317-357) is that the consum
 
 2. **`timeInState` granularity.** The reducer advances `timeInState` by `dt` (seconds). Should the consumer also get a `tickCount` (integer increment per call) for tick-precise delays? I chose no — `timeInState` with seconds is sufficient and matches the `advanceJump` convention (all timers in seconds). But tick-counting is trivially composable by the consumer (`if (gs.timeInState % (1/60) < dt) tick++`).
 
-3. **Payload on `start` event.** I defined `level?: number` on the `start` event. Should there be additional payload (e.g., `seed` for procedural levels, `difficulty`)? I chose minimal v1 payload — consumers can store additional data in their own state alongside the FSM state. The architect should confirm this is sufficient for Spitekeep's needs.
+3. **Payload on `start` event.** I defined `level?: number` on the `start` event. Should there be additional payload (e.g., `seed` for procedural levels, `difficulty`)? I chose minimal v1 payload — consumers can store additional data in their own state alongside the FSM state. The architect should confirm this is sufficient for the reference implementation's needs.
 
-4. **Self-transition semantics for `pause`/`resume`.** Dispatching `pause` while already `paused` is illegal (silent no-op). But Spitekeep's current code does `s.paused = !s.paused` (toggle). Should the FSM ship a `togglePause` event that dispatches `pause` or `resume` based on current state? I chose no — the consumer can implement toggle in one line: `gs = reduceGameState(gs, { type: gs.current === 'paused' ? 'resume' : 'pause' }, 0)`. The architect should confirm this is ergonomic enough.
+4. **Self-transition semantics for `pause`/`resume`.** Dispatching `pause` while already `paused` is illegal (silent no-op). But the reference implementation's current code does `s.paused = !s.paused` (toggle). Should the FSM ship a `togglePause` event that dispatches `pause` or `resume` based on current state? I chose no — the consumer can implement toggle in one line: `gs = reduceGameState(gs, { type: gs.current === 'paused' ? 'resume' : 'pause' }, 0)`. The architect should confirm this is ergonomic enough.
 
-5. **Module directory name.** I chose `game-state/` over `fsm/` because it describes what the module manages (game state orchestration) rather than the internal mechanism (finite state machine). It also matches Spitekeep's naming: `Scene`, `GameSession`, `GameStatus`. The architect should confirm.
+5. **Module directory name.** I chose `game-state/` over `fsm/` because it describes what the module manages (game state orchestration) rather than the internal mechanism (finite state machine). It also matches the reference implementation's naming: `Scene`, `GameSession`, `GameStatus`. The architect should confirm.
 
 ---
 

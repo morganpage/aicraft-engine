@@ -1,11 +1,10 @@
 /**
  * WebAudio SFX adapter factory.
  *
- * Ports Spitekeep's `src/audio/index.ts` synthesis engine into the library's
- * per-instance factory pattern (matching `createKeyboardAdapter` /
- * `createTouchButton`). Each {@link createAudioAdapter} call creates an
- * independent adapter with its own private closure state — no module-level
- * globals.
+ * Ports the reference synthesis engine into the library's per-instance
+ * factory pattern (matching `createKeyboardAdapter` / `createTouchButton`).
+ * Each {@link createAudioAdapter} call creates an independent adapter with
+ * its own private closure state — no module-level globals.
  *
  * Defensive adapter (host-touching layer). Follows `src/primitives/motion.ts`:
  *   - Lazy `AudioContext` resolution on first `unlock()` — never at module load
@@ -15,7 +14,7 @@
  *
  * The library ships the generic infrastructure — `playTone` / `playNoise` —
  * NOT the game-specific recipe table. Consumers compose sounds from these two
- * primitives (see Spitekeep's `playSound` switch for the recipe pattern).
+ * primitives (see the reference `playSound` switch for the recipe pattern).
  *
  * `Math.random()` is used to fill the white-noise buffer. This is explicitly
  * allowed: it is a decorative audio side-effect, NOT deterministic simulation

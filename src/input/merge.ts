@@ -2,8 +2,7 @@
  * Pure merge helpers for polled input edges.
  *
  * Extracted from the per-tick merge step so it can be unit-tested under Node
- * with no DOM. Mirrors Spitekeep's `mergeInputSnapshots` combinator
- * (`src/input/index.ts:40-55`): held is OR'd across sources (either device
+ * with no DOM. The merge rule: held is OR'd across sources (either device
  * holding = held); pressed / released edges are OR'd (either device producing
  * the edge = the edge fires this tick).
  *

@@ -10,7 +10,7 @@ Algorithmic palette substitution separates a game's visual design from concrete 
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly implements **Pillar 2 (Cosmetics)** and integrates with **Pillar 1 (Primitives/Color)** and **Pillar 4 (Fake-3D)**.
-- **Consumer Games**: Sibling games like *Spitekeep* (which uses high-contrast devil orange `#fe5701` and dark violet `#1d1128`) and future Clone-to-Jest titles (like a card-based village builder in the vein of *Stacklands*) require hundreds of procedural cosmetic skins and themes that can be unlocked via IAP (Pillar 3) without shipping a single byte of PNG art.
+- **Consumer Games**: Consumer titles require hundreds of procedural cosmetic skins and themes that can be unlocked via IAP (Pillar 3) without shipping a single byte of PNG art.
 - **Unlocks**:
   - **Zero-Asset Cosmetics**: We can generate infinite, beautiful, and guaranteed-readable character skins, card themes, and UI styles from a single 32-bit seed.
   - **Guaranteed Accessibility**: By automating contrast repair, we ensure that procedurally generated skins never violate WCAG AA contrast rules (GDD §11.3), preventing unreadable text or invisible character silhouettes on dark backgrounds.
@@ -242,7 +242,6 @@ Implementing these conversions in TypeScript requires exactly **54 lines of pure
 | Reference | What it shows | Source |
 |---|---|---|
 | `docs/research/procedural-locomotion.md` | How parameter presets define a character's "gait" — the palette is the color half of this skin definition. | Local file |
-| `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` | The canonical breakdown of Sokpop's zero-asset rendering pipeline and cosmetic surfaces. | Local file |
 
 ---
 
@@ -264,5 +263,4 @@ Implementing these conversions in TypeScript requires exactly **54 lines of pure
 ## Cross-References
 
 - `docs/research/procedural-locomotion.md` — Explains how character presets are structured; the palette is the color half of a skin.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — The strategic teardown of Sokpop's zero-asset rendering pipeline.
 - `src/primitives/color.ts` — The existing color math module containing `contrastRatio` and `meetsWcagAa` which this research directly extends.

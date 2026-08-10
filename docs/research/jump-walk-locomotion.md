@@ -10,7 +10,7 @@ Deterministic character locomotion beyond simple walk-in-place cycles requires a
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly extends **Pillar 1 (Primitives / Animation)** and prepares for **Pillar 4 (Fake-3D / character stacks)**.
-- **Consumer Games**: Sibling games like *Spitekeep* (and future platformers, RTS, or village builders) need characters that can traverse the screen, jump over obstacles, and land with satisfying physical weight without relying on heavy external physics engines or pre-baked sprite sheets.
+- **Consumer Games**: *the reference implementation* (and future platformers, RTS, or village builders) need characters that can traverse the screen, jump over obstacles, and land with satisfying physical weight without relying on heavy external physics engines or pre-baked sprite sheets.
 - **Unlocks**:
   - **Perfect Replay Determinism**: Because the jump trajectory and walk-cycle synchronization are driven by pure, fixed-timestep math, game replays, multiplayer sync, and client-side prediction are 100% stable and identical across devices.
   - **Expressive "Toy-Like" Movement**: By integrating squash/stretch anticipation and landing impacts directly into the locomotion state, characters feel alive, bouncy, and tactile—matching the beloved Sokpop aesthetic.

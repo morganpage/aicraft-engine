@@ -2,7 +2,7 @@
 
 ## Layer separation
 
-The library mirrors Spitekeep's layer discipline. Code is split by what it may touch:
+The library enforces a strict layer discipline. Code is split by what it may touch:
 
 | Layer | May touch DOM? | May use `Math.random`? | May have side effects? |
 |---|---|---|---|
@@ -10,7 +10,7 @@ The library mirrors Spitekeep's layer discipline. Code is split by what it may t
 | **Renderer-adjacent** (primitives, particles-spawn helpers, `animation/rig.ts` derived caches) | Reads `CanvasRenderingContext2D` passed in; no global DOM | Yes, only if result never feeds back to sim | No **simulation**-state mutation (rendering-output buffers may be mutated in place; see below) |
 | **Host-touching** (motion-probe, iap-adapters) | Yes (lazy + cached) | n/a | Yes, but always defensive (never-throw, swallow errors) |
 
-A consumer's deterministic core (e.g. Spitekeep's `src/core/`) may freely import from this library's deterministic core. A consumer's renderer may import anything.
+A consumer's deterministic core may freely import from this library's deterministic core. A consumer's renderer may import anything.
 
 **Renderer-output buffer exception.** Renderer-adjacent code may mutate its own rendering-output buffers (e.g., the world-space transform / position / rotation caches in `src/animation/rig.ts`) in place, provided those buffers are never read by deterministic simulation logic. Authoritative simulation state remains pure-clone per the pure-progression-ops discipline below. This is the only relaxation of "no state mutation" and applies solely to derived/cached rendering data that is recomputed from authoritative input each frame — not to authoritative pose or simulation state.
 
@@ -58,11 +58,11 @@ compilation, editor, behavior, and renderer consumers.
 2. **No `Date.now()`** or wall-clock reads in deterministic code. Take `tick` or `dt` as a parameter.
 3. **No global mutable state** in deterministic functions. Pure functions only.
 4. **No DOM reads** in deterministic code. Pass viewport / DPR / motion preference in as parameters.
-5. **Renderers may relax rules 2-4** only when the result cannot leak back into the simulation. Spitekeep's screen-shake `Math.random` is the canonical example (`renderer.ts:91-93`).
+5. **Renderers may relax rules 2-4** only when the result cannot leak back into the simulation. The canonical screen-shake example is a renderer-side `Math.random` whose result never feeds back into the sim.
 
 ## Adapter pattern
 
-Inspired by Spitekeep's `SaveStorage` (`platform/types.ts:72-75`). All host-touching functionality uses the same shape:
+All host-touching functionality uses the same shape:
 
 ```ts
 interface SomeAdapter {
@@ -80,7 +80,7 @@ Public APIs of adapters **never throw**. They degrade gracefully. This makes the
 
 ## Pure progression ops
 
-Mirrors Spitekeep's `platform/progress.ts`. Any function that mutates logical state (entitlements, ownership, settings):
+Any function that mutates logical state (entitlements, ownership, settings):
 
 1. Takes the current state as input.
 2. Returns a brand-new state object (via JSON-clone or shallow copy).

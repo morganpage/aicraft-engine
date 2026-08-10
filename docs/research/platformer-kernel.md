@@ -10,7 +10,7 @@ A deterministic 2D platformer kernel provides a headless, authoritative, fixed-s
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly establishes **Pillar 4 (Fake-3D / advanced kinematics)** and integrates **Pillar 1 (Primitives / Seeded RNG / Particles)** into a cohesive, playable game-state controller.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* (formerly *Spitekeep*) and future card-based sims or village builders need characters that can move, jump, dash, and ride moving platforms with absolute authority and perfect determinism.
+- **Consumer Games**: The consumer game and future card-based sims or village builders need characters that can move, jump, dash, and ride moving platforms with absolute authority and perfect determinism.
 - **Unlocks**:
   - **Authoritative Replay & Rollback**: A fully deterministic kernel allows the library to support 100% stable input-replay files (for leaderboards and anti-cheat) and client-side prediction with rollback networking (GGPO-style) without synchronization drift.
   - **Zero-Art Game Feel**: By embedding coyote time, jump buffering, wall slides, and dashes directly into the deterministic core, the library enables developers to build high-quality, professional-feeling games using only simple procedural shapes.
@@ -230,4 +230,3 @@ To guarantee determinism and prevent players from falling through moving platfor
 - `src/collision/resolve.ts` — Existing per-axis AABB resolver.
 - `src/collision/moving-gap.ts` — Existing dynamic geometry primitive.
 - `src/game-loop/fixed-step.ts` — Fixed-step accumulator.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Strategic context on Sokpop's minimalist rendering.

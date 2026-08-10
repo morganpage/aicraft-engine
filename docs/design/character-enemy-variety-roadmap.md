@@ -189,5 +189,3 @@ Every phase must clear before its decision is filed:
 - Existing decision: `docs/design/platformer-enemy-archetypes-decision.md`
 - Spider locomotion: `docs/research/procedural-spider-locomotion.md`
 - Skin variation: `docs/research/algorithmic-skin-variation.md`
-- Sokpop teardown: `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md`
-- Clone-to-Jest methodology: `ai-craft-strategy/knowledge/clone-to-jest-methodology.md`

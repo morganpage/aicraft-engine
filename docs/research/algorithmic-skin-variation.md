@@ -9,14 +9,14 @@ Algorithmic skin variation enables rich cosmetic monetization without the overhe
 
 ## Why this matters for aicraft-engine
 
-This technique directly supports **Pillar 2 (Cosmetics)** and provides the primary monetization engine for AI Craft games (such as *Spitekeep* and future *Stacklands* or *Tuin* clones). In a zero-runtime-dependency, Canvas2D-based library, shipping PNG spritesheets or heavy textures is a major constraint violation. By shifting the cosmetic surface to procedural parameters (colors, bone scale multipliers, skeletal shape flags, gait coefficients, and particle properties), we keep the library lightweight, highly performant, and infinitely customizable. Furthermore, establishing a standard, defensively parsed manifest format and pure ownership operations ensures that player progress and purchased items are never lost due to corrupted local storage or schema updates.
+This technique directly supports **Pillar 2 (Cosmetics)** and provides the primary monetization engine for AI Craft games (such as *Stacklands* or *Tuin* clones). In a zero-runtime-dependency, Canvas2D-based library, shipping PNG spritesheets or heavy textures is a major constraint violation. By shifting the cosmetic surface to procedural parameters (colors, bone scale multipliers, skeletal shape flags, gait coefficients, and particle properties), we keep the library lightweight, highly performant, and infinitely customizable. Furthermore, establishing a standard, defensively parsed manifest format and pure ownership operations ensures that player progress and purchased items are never lost due to corrupted local storage or schema updates.
 
 ---
 
 ## Prior Art Survey
 
 ### Pattern 1: Parameter-Driven Stack-of-Primitives (Sokpop Style)
-- **Source**: `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` & Sokpop's Fake-3D Demo
+- **Source**: Sokpop's Fake-3D Demo & canonical Sokpop reference (sokpop.itch.io)
 - **What it does**: Sokpop constructs characters as a stack of geometric primitives (cuboids, ellipsoids, billboards) with relative offsets from a root bone. Instead of swapping texture sheets, skins are defined by modifying these parameters (e.g., horn size, body scale, color palette) at runtime. The rendering function closes over these parameters to draw the character procedurally.
 - **Algorithmic shape**:
   ```ts
@@ -36,9 +36,9 @@ This technique directly supports **Pillar 2 (Cosmetics)** and provides the prima
 - **What to steal**: The concept of a skin being a JSON-serializable parameter preset that drives a procedural drawing callback, separating the serializable data model from the non-serializable drawing function.
 - **What to avoid**: Hardcoding drawing logic inside the preset. The preset should only contain raw numbers, strings, and booleans; the drawing function must interpret them.
 
-### Pattern 2: Defensive Parse & Schema-Lite Migration (Spitekeep Save Pattern)
-- **Source**: Sibling Spitekeep codebase (`src/platform/save.ts` and `src/platform/types.ts`)
-- **What it does**: Spitekeep enforces strict defensiveness when loading save data. It gates on a schema version, rebuilds a fresh default save, and overlays only the fields that survive strict validation and type-checking. It never throws on malformed, corrupted, or unknown fields, and gracefully migrates older versions.
+### Pattern 2: Defensive Parse & Schema-Lite Migration (Reference Save Pattern)
+- **Source**: Reference save implementation (`src/platform/save.ts` and `src/platform/types.ts`)
+- **What it does**: The reference implementation enforces strict defensiveness when loading save data. It gates on a schema version, rebuilds a fresh default save, and overlays only the fields that survive strict validation and type-checking. It never throws on malformed, corrupted, or unknown fields, and gracefully migrates older versions.
 - **Algorithmic shape**:
   ```ts
   export function migrateSave(raw: unknown): SaveData {
@@ -134,7 +134,7 @@ export interface CosmeticManifest {
 
 ### Defensive Manifest Parser (Hand-Rolled, Zero-Dep)
 
-Following Spitekeep's `save.ts` pattern, the manifest parser must be completely defensive. It never throws, clamps numeric values to safe ranges, and falls back gracefully to default values.
+Following the reference `save.ts` pattern, the manifest parser must be completely defensive. It never throws, clamps numeric values to safe ranges, and falls back gracefully to default values.
 
 ```ts
 const DEFAULT_PRESET: SkinPreset = {
@@ -355,12 +355,12 @@ To manage which cosmetics a player has unlocked and equipped, we define a dedica
 
 ### Save State Integration
 
-We extend Spitekeep's `SaveData` structure with optional or default-initialized cosmetics fields:
+We extend a reference `SaveData` structure with optional or default-initialized cosmetics fields:
 
 ```ts
 /** Extension of SaveData to support cosmetic ownership and equipment. */
 export interface SaveDataWithCosmetics {
-  // Existing Spitekeep SaveData fields
+  // Existing SaveData fields
   version: number;
   highestUnlockedLevel: number;
   levelStates: any[];
@@ -386,7 +386,7 @@ We strongly recommend a **multi-slot equipment system** (e.g., `'body'`, `'head'
 ### Pure Progression Operations
 
 ```ts
-/** Deep-clone helper matching Spitekeep's platform/progress.ts. */
+/** Deep-clone helper matching the reference platform/progress.ts. */
 function cloneSave(save: SaveDataWithCosmetics): SaveDataWithCosmetics {
   return JSON.parse(JSON.stringify(save)) as SaveDataWithCosmetics;
 }
@@ -510,8 +510,8 @@ function handlePurchaseSuccess(save: SaveDataWithCosmetics, sku: string): SaveDa
 
 ## Reference Implementations
 
-- **`src/platform/save.ts` (Spitekeep)**: Canonical reference for defensive parsing, versioned migrations, and fallback-safe structures.
-- **`src/platform/progress.ts` (Spitekeep)**: Canonical reference for pure progression operations, immutable state transitions, and JSON-cloning.
+- **`src/platform/save.ts` (reference)**: Canonical reference for defensive parsing, versioned migrations, and fallback-safe structures.
+- **`src/platform/progress.ts` (reference)**: Canonical reference for pure progression operations, immutable state transitions, and JSON-cloning.
 - **`src/rng/mulberry32.ts` (aicraft-engine)**: Seeded pseudo-random number generator used for all deterministic variant generation.
 
 ---
@@ -520,8 +520,7 @@ function handlePurchaseSuccess(save: SaveDataWithCosmetics, sku: string): SaveDa
 
 | Reference | What it shows | Source |
 |---|---|---|
-| `sokpop-minimalist-rendering-teardown.md` | Details of Sokpop's parameter-driven character stacks and fake-3D projection. | `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` |
-| `GDD.md` (Spitekeep) | GDD §10 save data structure and persistence rules. | `/Users/morganpage/Documents/VSCODE/OPENCODE/ai-craft-game-dev-devil/GDD.md` |
+| Sokpop catalog | Details of Sokpop's parameter-driven character stacks and fake-3D projection. | [sokpop.itch.io](https://sokpop.itch.io) |
 
 ---
 
@@ -546,4 +545,4 @@ function handlePurchaseSuccess(save: SaveDataWithCosmetics, sku: string): SaveDa
 
 - `docs/architecture.md` — Section on Pure Progression Ops and Adapter Pattern.
 - `docs/conventions.md` — Section on TS strictness and JSDoc-everywhere.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Strategic context on Sokpop's procedural cosmetics.
+- The canonical Sokpop reference (sokpop.itch.io) — Strategic context on Sokpop's procedural cosmetics.

@@ -3,8 +3,8 @@
  *
  * Approach B (opinionated platformer schema): the library ships a complete
  * platformer entity taxonomy as a discriminated union on `kind`. The shape
- * mirrors Spitekeep's existing `LevelData` near 1:1 — sibling migration is a
- * field rename, not a redesign.
+ * is a field rename, not a redesign, for consumers porting from a reference
+ * platformer save.
  *
  * Determinism note: every field below is a primitive or plain readonly
  * object so the whole shape survives a JSON round-trip and reproduces
@@ -54,7 +54,7 @@ export type EntityKind =
   | 'collectible';
 
 /**
- * Props for the `'exit'` kind. `isTrap` marks decoy/failure exits (Spitekeep's
+ * Props for the `'exit'` kind. `isTrap` marks decoy/failure exits (the
  * `doorIsTrap` invariant); `locked` gates progression until the consumer
  * unlocks it.
  */
@@ -74,7 +74,7 @@ export interface PlatformProps {
 /**
  * Props for the `'trap'` kind. The `params` bag is intentionally untyped —
  * each `type` dispatches to a consumer-supplied trap handler that owns its
- * own param shape (matches Spitekeep's `TrapEntity.params`).
+ * own param shape (matches the reference `TrapEntity.params` shape).
  */
 export interface TrapProps {
   /** Trap type identifier (e.g. `'hiddenPit'`, `'spikes'`). Dispatch key. */
@@ -241,7 +241,7 @@ export interface LevelData {
   readonly entities: readonly LevelEntity[];
   /** Next monotonic entity id to allocate. */
   readonly nextEntityId: EntityId;
-  /** Optional bottom lava sea — matches Spitekeep's `LevelData.bottomLava`. */
+  /** Optional bottom lava sea — matches the reference `LevelData.bottomLava` shape. */
   readonly bottomLava?: { readonly surfaceY: number };
   /** Optional contextual hints shown after N deaths, etc. */
   readonly hints?: readonly string[];

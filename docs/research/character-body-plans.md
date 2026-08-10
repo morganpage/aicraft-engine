@@ -10,7 +10,7 @@ This research note surveys player character and enemy body-plan variety to expan
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly drives **Pillar 1 (Primitives / Animation)** and **Pillar 4 (Fake-3D / character stacks)**, and integrates with **Pillar 2 (Cosmetics / Skins)**.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* (side-view platformer) and future Clone-to-Jest titles (such as card-based village builders, procedural RTSs, or idle gardens) require distinct player characters and enemy archetypes to build legible, engaging gameplay.
+- **Consumer Games**: Consumer titles (such as card-based village builders, procedural RTSs, or idle gardens) require distinct player characters and enemy archetypes to build legible, engaging gameplay.
 - **Unlocks**:
   - **Silhouette Legibility**: In fast-paced 2D platformers, players must instantly distinguish between friendly characters and enemy threats. Expanding our body-plan catalog provides creators with highly distinct silhouette archetypes.
   - **Combinatorial Variety**: Combining 4 distinct body plans (slime-knight + 3 new plans) with our existing palette substitution and Phase 4 silhouette-diversity parameters yields thousands of unique, seed-driven procedural characters with zero asset footprint.
@@ -52,7 +52,6 @@ This research note surveys player character and enemy body-plan variety to expan
   - **Minimalist Legibility**: At small scales, legs can be drawn as simple 1px or 2px lines, and the body as a single block, relying on squash/stretch to convey weight and momentum.
 
 ### Sokpop Catalog (Sokpop Collective)
-- **Source**: `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` and Sokpop's Fake-3D Demo.
 - **What it does**: Sokpop games build characters entirely from stacked geometric primitives (cubes, cylinders, spheres, rounded rects) with relative offsets from a root bone. They bypass complex skeletal meshes, drawing billboarded 2D shapes that always face the camera.
 - **Key takeaways**:
   - **Primitive Stacking**: Highly expressive characters can be built by stacking a few simple shapes (e.g., a circle for a head, a rounded rect for a torso, lines for limbs).
@@ -189,4 +188,3 @@ This research note surveys player character and enemy body-plan variety to expan
 - `docs/research/algorithmic-skin-variation.md` (cosmetic skin presets and defensive parsing)
 - `docs/research/humanoid-platformer-visual-reference.md` (pose-specific
   platformer references and the permanent humanoid validation baseline)
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (Sokpop's primitive-stack character construction)

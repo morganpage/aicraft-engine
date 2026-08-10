@@ -10,7 +10,7 @@ The `EntityKind` discriminated union in `src/level/types.ts` currently has no `c
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Extends **Pillar 4 (Fake-3D / Level Loading)** with a new entity kind; integrates with **Pillar 2 (Cosmetics)** via the pure-progression-ops save discipline; supports **Pillar 1 (Primitives)** via the renderer dispatch.
-- **Consumer Games**: Spitekeep (now IMP - Not a Troll) and every future Clone-to-Jest title needs coins/gems/keys for score, gating, and meta-progression. The current "abuse `trigger`" workaround leaks through every layer (editor catalog, validator, renderer, runtime) and forces every consumer to write the same boilerplate.
+- **Consumer Games**: the reference implementation and every future consumer title needs coins/gems/keys for score, gating, and meta-progression. The current "abuse `trigger`" workaround leaks through every layer (editor catalog, validator, renderer, runtime) and forces every consumer to write the same boilerplate.
 - **Unlocks**:
   - **Editor catalog gets real prefab entries** (`Add Coin`, `Add Gem`, `Add Key`) instead of a generic `Add Trigger` with a magic `action` string.
   - **Validator gets typed props** (`CollectibleProps.kind` is a typed union, not a free string) — defensive parsing becomes trivial.
@@ -276,4 +276,3 @@ The `EntityKind` discriminated union in `src/level/types.ts` currently has no `c
 - `docs/research/level-schema.md` — The forward-ladder migration pattern (Pattern 5) and canonical serialization (Pattern 7) — both relevant for the `collectible` schema change
 - `docs/research/easing-tween.md` — The pure-function + stateless-advance pattern — relevant for `derivePickups` (pure function, no state)
 - `docs/research/platformer-kernel.md` — The deterministic platformer kernel — confirms pickups are derived from deterministic collision (no replay impact)
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — The canonical Sokpop reference — confirms the minimalist-procedural philosophy applies to collectibles (one kind, multiple prefab entries, derived collision)

@@ -7,7 +7,7 @@
 
 ## What this is
 
-A small TypeScript library extracted from the [Spitekeep](https://github.com/) codebase (now renamed **IMP - Not a Troll**) and generalised for reuse across every game in the [Clone-to-Jest pipeline](../ai-craft-strategy/knowledge/clone-to-jest-methodology.md). Three principles drive every design decision:
+A small TypeScript library of procedural rendering primitives, algorithmic cosmetics, and an IAP bridge, generalised for reuse across many games. Three principles drive every design decision:
 
 1. **Procedural-first rendering** — characters, worlds, and effects are drawn from vector primitives in code. Inspired by [Sokpop Collective](https://sokpop.itch.io/)'s ~100-title catalog and their public [fake-3D demo](https://sokpop.itch.io/sokpop-fake-3d-demo). CC0/PD pixel art is also a first-class citizen: the `src/sprites` pipeline plays Aseprite-JSON sprite sheets (one `.json` + one `.png` = a whole game's cast), and the two can be mixed per-entity in one scene.
 2. **Algorithmic cosmetics** — skins, themes, and content variants are parameter presets, not art files. The algorithm IS the art. This gives a full IAP cosmetics surface with zero asset pipeline.
@@ -52,9 +52,9 @@ A small TypeScript library extracted from the [Spitekeep](https://github.com/) c
 | **2. Editor core** | Headless level-editor operations: serializable ops + snapshot undo/redo, transactions, multi-select, grid + edge snapping, in-memory clipboard, sandbox playtest boundary, prefab catalog. `applyOp`, `undo`, `beginTransaction`, `selectInRect`, `snapToEdges`, `enterPlaytest`, `DEFAULT_CATALOG` | **Shipped** |
 | **2. Level testing** | Platformer level verification — jump-arc trajectory sampling, static reachability BFS, platformer simulation adapter, three bot policies (cautious/direct/collector), win conditions, and tri-state `verifyLevel`/`verifyCompiledLevel` (proven-beatable / proven-unreachable / inconclusive) | **Shipped** |
 | **Cross-cutting simulation testing** | Generic deterministic simulation-test core — fixed-tick orchestration, policy execution, trace recording/playback, and honest `verifyScenario` / `playSimulationTrace` / `simulationTraceHash`. Zero imports from platformer/level/editor; `leveltest` is the platformer adapter | **Shipped** |
-| **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (Poki/Jest/StoreKit/Play Billing deferred to Phase 5) | **Shipped** |
+| **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (native platform SDKs deferred to Phase 5) | **Shipped** |
 | **4. Fake-3D** | Billboarding, isometric tiles, orthographic cube, heightmap | Phase 4 |
-| **5. Platform adapters** | Jest SDK, Poki SDK | Phase 5 (on-demand) |
+| **5. Platform adapters** | Platform SDKs (Poki, StoreKit, Play Billing) | Phase 5 (on-demand) |
 
 ---
 
@@ -144,7 +144,7 @@ The parallax section is the first to consume raster art, validating that the lib
 
 ## Conventions
 
-This library is a sibling of [Spitekeep](../ai-craft-game-dev-devil/) (now renamed **IMP - Not a Troll**) and shares its conventions exactly. See `docs/conventions.md` for the full list. Highlights:
+The library follows strict conventions; see `docs/conventions.md` for the full list. Highlights:
 
 - **Zero runtime dependencies.** Adding one is a breaking change.
 - **Strict TypeScript.** `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, `isolatedModules`.
@@ -215,11 +215,4 @@ See `prompts/team.md` for the full orchestrator instructions.
 
 MIT — see [LICENSE](./LICENSE).
 
----
 
-## Cross-references
-
-- [Spitekeep source](../ai-craft-game-dev-devil/) — the codebase this was extracted from (now renamed **IMP - Not a Troll**)
-- [Clone-to-Jest methodology](../ai-craft-strategy/knowledge/clone-to-jest-methodology.md) — the pipeline this serves
-- [Sokpop teardown](../ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md) — reference study informing the design
-- [IAP redesign patterns](../ai-craft-strategy/knowledge/iap-redesign-patterns.md) — what the cosmetics + IAP pillars must support

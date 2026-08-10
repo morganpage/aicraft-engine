@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-**Primary consumer:** Spitekeep's slime-knight antenna. Currently, `advanceSpringChain` (pure distance-constraint PBD) produces a rope/chain with free-hinge joints. The showcase-local `applyAntennaRestPose` compensates by pulling each node toward a world-space absolute rest position with tapered stiffness — but this 1-body directional spring gets overwhelmed by inertia during jumps and landings, causing the antenna to buckle and whip instead of bending as a smooth elastic rod. Additionally, `drawAntenna` strokes the chain as a polyline (C0 continuity), compounding the kink read.
+**Primary consumer:** the reference implementation's slime-knight antenna. Currently, `advanceSpringChain` (pure distance-constraint PBD) produces a rope/chain with free-hinge joints. The showcase-local `applyAntennaRestPose` compensates by pulling each node toward a world-space absolute rest position with tapered stiffness — but this 1-body directional spring gets overwhelmed by inertia during jumps and landings, causing the antenna to buckle and whip instead of bending as a smooth elastic rod. Additionally, `drawAntenna` strokes the chain as a polyline (C0 continuity), compounding the kink read.
 
 **What becomes possible:** Bending-resistant secondary dynamics for antennae, tails, hair strands, vines, and capes. Any short Verlet chain that should read as a "bendy solid rod" rather than a "floppy rope."
 

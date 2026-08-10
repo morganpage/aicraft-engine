@@ -1,11 +1,11 @@
 /**
  * Audio module — WebAudio synthesized SFX defensive adapter.
  *
- * Ports Spitekeep's `src/audio/index.ts` synthesis engine into the library's
- * per-instance factory pattern (see `src/input/keyboard.ts`,
- * `src/input/touch-button.ts`). The library ships the generic infrastructure —
- * `playTone` / `playNoise` — NOT the game-specific recipe table. Consumers
- * compose sounds from these two primitives.
+ * Ports the reference synthesis engine into the library's per-instance
+ * factory pattern (see `src/input/keyboard.ts`, `src/input/touch-button.ts`).
+ * The library ships the generic infrastructure — `playTone` / `playNoise` —
+ * NOT the game-specific recipe table. Consumers compose sounds from these
+ * two primitives.
  *
  * Defensive adapter (host-touching layer). Follows `src/primitives/motion.ts`:
  *   - Lazy `AudioContext` resolution on first `unlock()` — never at module load.

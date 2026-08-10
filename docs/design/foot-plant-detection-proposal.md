@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Both the playground showcase and Spitekeep's `dust-fx.ts` implement identical inline foot-plant detection: track previous per-foot lift heights, detect the `>0 → 0` edge, fire dust + audio. The logic is copy-pasted across consumers with minor variations (playground stores `prevLeftFootY`/`prevRightFootY` as local `let`s; Spitekeep bundles them into `DustFxState`). Extracting this into the engine eliminates the duplication, guarantees identical detection behavior across all games, and gives future Clone-to-Jest siblings a turnkey primitive.
+Both the playground showcase and the reference `dust-fx.ts` implement identical inline foot-plant detection: track previous per-foot lift heights, detect the `>0 → 0` edge, fire dust + audio. The logic is copy-pasted across consumers with minor variations (playground stores `prevLeftFootY`/`prevRightFootY` as local `let`s; the reference implementation bundles them into `DustFxState`). Extracting this into the engine eliminates the duplication, guarantees identical detection behavior across all games, and gives future consumer titles a turnkey primitive.
 
 ## Naming Decision: `advanceFootPlant` (not `detectFootPlant`)
 
@@ -121,7 +121,7 @@ if (plant.events.rightPlanted && Math.abs(player.vx) > FOOTSTEP_MIN_SPEED) {
 }
 ```
 
-**Usage example — Spitekeep dust-fx refactor:**
+**Usage example — the reference implementation dust-fx refactor:**
 
 ```ts
 // Before (DustFxState owns prevLeftLift / prevRightLift):
@@ -211,7 +211,7 @@ The compound condition `prevLeftFootY > 0 && leftLift === 0 && Math.abs(player.v
 ## Prior Art
 
 - **Primary:** `showcase/sections/playground.ts` lines 500-511 (state init) + 1138-1157 (inline detection). This is the reference implementation being generalized.
-- **Secondary:** `src/render/dust-fx.ts` lines 109-279 (Spitekeep's bundled version in `DustFxState`). Same logic, slightly different state management (module-local object vs local `let`s).
+- **Secondary:** `src/render/dust-fx.ts` lines 109-279 (the reference implementation's bundled version in `DustFxState`). Same logic, slightly different state management (module-local object vs local `let`s).
 - **Pattern template:** `src/animation/foot-lock.ts` — `FootLockState` / `createFootLockState` (implicit via default `{isLocked: false, ...}`) / `advanceFootLock`. The new primitive follows this exact shape.
 
 ## Implementation Notes for @coder

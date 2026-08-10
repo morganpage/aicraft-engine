@@ -10,7 +10,7 @@ The library has no text rendering primitive anywhere — every HUD, score, menu,
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly extends **Pillar 1 (Primitives / Rendering)**. Composes with `outlineRect` (the existing flat-fill + 1px-outline primitive) for the per-pixel draw call, with `color.ts` for the WCAG-AA contrast check on text colors, and with `motion.ts` for the `prefers-reduced-motion` probe (text shouldn't blink or scroll if the user opted out).
-- **Consumer Games**: Spitekeep (HUD score, death-screen text, level-title cards, dialogue boxes), any future Clone-to-Jest title (idle-game counters, card labels, village-builder item names, platformer level intros). Every game in the Sokpop catalog has at least one text overlay — this is the most-requested missing primitive.
+- **Consumer Games**: the reference implementation (HUD score, death-screen text, level-title cards, dialogue boxes), any future consumer title (idle-game counters, card labels, village-builder item names, platformer level intros). Every game in the Sokpop catalog has at least one text overlay — this is the most-requested missing primitive.
 - **Unlocks**:
   - **Zero-asset text**: HUDs, scores, menus, and dialogue boxes render from code, no webfont fetch, no PNG atlas, no font-loader race condition. The library stays asset-less end-to-end.
   - **Pixel-grid integrity**: Webfonts render with sub-pixel anti-aliasing that bleeds across the integer-pixel grid and breaks the "flat colors, 1px outline, integer pixels" GDD §11.3 rule. Bitmap fonts snap cleanly to the grid.
@@ -258,7 +258,7 @@ Game HUDs and score displays need a small, well-defined character set. The full 
 **Why monospace-only in v1:**
 - **Trivial `measureText`**: every glyph has the same advance width, so `width = charCount × cellWidth`. No per-glyph width table needed.
 - **Pixel-grid integrity**: monospace cells align cleanly to the integer-pixel grid, no sub-pixel rounding.
-- **Game HUD convention**: scores, timers, and counters are almost always monospace (think Sokpop's Stacklands, Spitekeep's score display, every arcade game ever made).
+- **Game HUD convention**: scores, timers, and counters are almost always monospace (think Sokpop's Stacklands, the reference implementation's score display, every arcade game ever made).
 - **Non-breaking expansion**: a proportional variant can be added later by adding a `glyphWidths: Uint8Array` field to the font object. Existing monospace code keeps working.
 
 ---
@@ -417,4 +417,3 @@ function alignX(x: number, text: string, font: BitmapFont, scale: number, align:
 - `docs/research/easing-tween.md` — The easing curves that text-fade-in / text-scroll animations should use (not linear lerp)
 - `docs/research/algorithmic-palette-substitution.md` — The palette-slot model that text colors should reference (`outline` for text-on-light-bg, `feature` for highlighted text)
 - `docs/research/spritesheet-pipelines.md` — The REJECTED spritesheet approach; confirms the asset-less ethos that bitmap fonts serve
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — The canonical Sokpop reference; every Sokpop game has at least one text overlay, confirming the demand

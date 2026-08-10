@@ -19,8 +19,7 @@ import { CHARGER_HEIGHT, CHARGER_WIDTH } from '../level/enemy-schema';
  * Sensible default rect (in pixels) for each {@link EntityKind} when
  * placed via the catalog. Spawn / exit / trap / hazard / decoration /
  * trigger are 16×16 (one tile); platform / passthrough are 32×16
- * (two tiles wide, matching Spitekeep's typical platform);
- * movingPlatform is 48×16.
+ * (two tiles wide, a typical platform width); movingPlatform is 48×16.
  */
 const DEFAULT_RECT_BY_KIND: Readonly<Record<EntityKind, LevelRect>> = {
   spawn: { x: 0, y: 0, width: 16, height: 16 },

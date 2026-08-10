@@ -422,6 +422,11 @@ recorded in `assets/ldtk/README.md`:
   project files. These are the oracle and they must stay.
 - **Showcase assets** (redistributed): only the already-cleared CC0/PD tilesets
   in `assets/ldtk/{sunny-land,cavernas,inca}/`.
+
+> **Update (2026-08-10):** the `assets/ldtk/{sunny-land,cavernas,inca}/` starter
+> dirs were removed in the asset audit — they were byte-duplicates / unused
+> variants of the atlas copies under `assets/ldtk/samples/atlas/`, which is what
+> the sample projects actually reference via `relPath`. See `assets/README.md`.
 - **Drop in Phase 0:** `thumbs/` (424 KB), `atlas/NuclearBlaze_by_deepnight.aseprite`
   (CC-BY-SA), and both WorldMap projects (4.2 MB; multi-world is out of scope
   per §8). Net saving ~4.6 MB, with every rule-bearing fixture retained.
@@ -447,7 +452,9 @@ Fallbacks, in order:
 1. **Multi-file picker** — user selects the `.ldtk` and its PNGs together;
    `relPath` is matched by basename. Save produces a download.
 2. **Bundled tilesets** — name-match against `assets/ldtk/{sunny-land,cavernas,inca}/`
-   so the showcase demo works with no file access at all.
+   so the showcase demo works with no file access at all. _(The standalone
+   starter dirs were removed in the 2026-08-10 audit; the showcase resolves
+   tilesets via the `samples/atlas/` copies the `.ldtk` projects reference.)_
 
 Per `docs/conventions.md`, all three paths resolve host APIs lazily inside the
 function that uses them, never at module load, and degrade without throwing.

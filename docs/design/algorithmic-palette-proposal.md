@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep and future Clone-to-Jest siblings need infinite procedural cosmetic variety without shipping PNG assets. Today, Spitekeep's `src/config/palette.ts` is a flat `as const` object with ~30 hardcoded hex strings — every new skin theme requires hand-authoring a new palette object and manually verifying contrast. Without a palette module:
+The consumer game and future consumer titles need infinite procedural cosmetic variety without shipping PNG assets. Today, the reference `src/config/palette.ts` is a flat `as const` object with ~30 hardcoded hex strings — every new skin theme requires hand-authoring a new palette object and manually verifying contrast. Without a palette module:
 
 - **No procedural skins.** Every cosmetic variant is a manually authored hex map. Generating 100 skins means authoring 100 objects.
 - **No contrast guarantees.** The GDD §11.3 WCAG AA rule is checked manually (or not at all). A bad combination produces unreadable text or invisible silhouettes.
@@ -132,7 +132,7 @@ const neonPalette = resolvePalette(basePalette, {
 - **Runtime cost:** Zero. It's a plain object with 5 string properties.
 - **Consumer complexity:** Low. Draw callbacks destructure `{ base, outline, accent, feature, background }` — no lookup tables, no string keys.
 - **Tree-shake-ability:** Types-only import costs nothing.
-- **Convention fit:** Matches the `as const` palette pattern Spitekeep already uses (`palette.devilBody`, `palette.devilOutline`), but generalized to semantic roles.
+- **Convention fit:** Matches the `as const` palette pattern the reference implementation already uses (`palette.devilBody`, `palette.devilOutline`), but generalized to semantic roles.
 
 **What this makes easy:**
 - Compile-time type safety: `palette.typo` is a TS error.
@@ -182,7 +182,7 @@ ctx.fillStyle = palette['horns'] ?? palette.accent;
 
 **What this makes easy:**
 - Adding new slots without breaking changes.
-- Per-game slot customization (Spitekeep adds `horns`, a card game adds `border`).
+- Per-game slot customization (the reference implementation adds `horns`, a card game adds `border`).
 
 **What this makes hard:**
 - Automated contrast repair: the engine cannot know which keys represent foreground vs background.
@@ -253,7 +253,7 @@ const palette: Palette = {
 
 **Rationale:** The 5-slot model is the canonical contract. The library has no consumers yet — this is the moment to get the shape right. The slots are motivated by concrete rendering needs:
 
-| Slot | Spitekeep mapping | Why it's essential |
+| Slot | the reference implementation mapping | Why it's essential |
 |---|---|---|
 | `outline` | `devilOutline (#1d1128)` | Every interactive entity has a 1px dark outline (GDD §11.3). Must contrast with `base`. |
 | `base` | `devilBody (#e63946)` | Primary body fill. The dominant color of any character/sprite. |
@@ -342,7 +342,7 @@ export function oklchToHex(oklch: Oklch): string;
 import { hexToOklch, oklchToHex } from 'aicraft-engine/src/palette';
 
 // Rotate hue 30° while preserving perceived brightness
-const original = hexToOklch('#e63946'); // Spitekeep red
+const original = hexToOklch('#e63946'); // the reference implementation red
 const shifted = { ...original, h: (original.h + 30) % 360 };
 const newColor = oklchToHex(shifted); // A harmonious warm orange
 ```

@@ -44,7 +44,7 @@ For every proposed change, evaluate:
 
 9. **Scope discipline** — Is this in-scope for the current pillar/phase, or scope creep? Does it imply unimplemented dependencies or unvalidated platform assumptions?
 
-10. **Accessibility** — Does it respect `prefers-reduced-motion` (cached-at-module-load pattern)? Does any new gameplay-critical color combination meet WCAG AA (≥4.5:1) per GDD §11.3 / Spitekeep convention?
+10. **Accessibility** — Does it respect `prefers-reduced-motion` (cached-at-module-load pattern)? Does any new gameplay-critical color combination meet WCAG AA (≥4.5:1) per the library's contrast conventions?
 
 ## Output Format
 

@@ -10,7 +10,7 @@ A 2D platformer level schema defines a versioned, serializable, and highly compa
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Establishes the core data representation for **Pillar 4 (Fake-3D / Level Loading)**, integrates with **Pillar 1 (Primitives / Seeded RNG)**, and supports **Pillar 2 (Cosmetics / Skin Manifests)**.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* (formerly Spitekeep) and future Clone-to-Jest titles require a robust, flexible level format. A unified schema allows creators to build levels in an editor, share them via short text codes, and play them deterministically across platforms.
+- **Consumer Games**: Consumer titles require a robust, flexible level format. A unified schema allows creators to build levels in an editor, share them via short text codes, and play them deterministically across platforms.
 - **Unlocks**:
   - **Player-Facing UGC Editors**: Enables players to build, playtest, and share custom levels directly within the game client, driving organic virality and long-term retention.
   - **Deterministic Clear-Check Replays**: Since the simulation is 100% deterministic, a level can store a sequence of player input frames (a "clear-check"). The server or client can replay these inputs to verify the level is winnable before allowing it to be shared, completely eliminating unwinnable spam.
@@ -213,7 +213,7 @@ A 2D platformer level schema defines a versioned, serializable, and highly compa
 - **Celeste Map Format** ([GitHub: CelesteREST/CelesteMapFormat](https://github.com/CelesteREST/CelesteMapFormat)): A community documentation of Celeste's binary level format, highlighting the decoupling of static authored data and runtime state.
 - **SMM2 Level Format** ([GitHub: thegreatestgiant/SMM2-Level-Format](https://github.com/thegreatestgiant/SMM2-Level-Format)): A community-documented file format for Super Mario Maker 2, illustrating palette-based entity constraints.
 - **RFC 8785 (JSON Canonicalization Scheme)** ([RFC Editor](https://www.rfc-editor.org/rfc/rfc8785)): The official specification for standardizing JSON serialization.
-- **Spitekeep Config Types** (`src/config/types.ts`): The sibling game's level data structure, serving as the canonical consumer pattern.
+- **Consumer config types** (`src/config/types.ts`): The consumer game's level data structure, serving as the canonical consumer pattern.
 
 ---
 
@@ -283,4 +283,3 @@ The following diagram illustrates the lifecycle of a level from the editor, thro
 - `src/cosmetics/migrate.ts` (the existing forward-ladder migration pattern to generalize)
 - `src/collision/types.ts` (`TileSolidityQuery` and `TileType` contracts to compose with)
 - `src/save/storage.ts` (defensive storage and parsing patterns)
-- `ai-craft-game-dev-devil/src/config/types.ts` (the sibling game's level data structure)

@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep currently hand-codes procedural motion inline in its renderer:
+The consumer game currently hand-codes procedural motion inline in its renderer:
 - **Idle bob**: `Math.round(Math.sin(tick * 0.15))` hardcoded in `sprites.ts:1111`
 - **Squash/stretch**: `sx = 0.92; sy = 1.1` hardcoded per state in `sprites.ts:1114-1123`
 - **Key collectible bob**: `Math.round(Math.sin(tick * 0.1) * 2)` hardcoded in `sprites.ts:1209`
@@ -47,7 +47,7 @@ The spring module needs a `VerletNode` type. This is spring-specific, not a gene
 
 ### Consumer Need
 
-Spitekeep's `drawDevil` hand-codes a bob via `Math.sin(tick * 0.15)`. This doesn't adapt to speed, doesn't produce foot offsets, and can't drive a rig. A locomotion system produces smooth hip/foot offsets from a phase accumulator, enabling:
+the reference `drawDevil` hand-codes a bob via `Math.sin(tick * 0.15)`. This doesn't adapt to speed, doesn't produce foot offsets, and can't drive a rig. A locomotion system produces smooth hip/foot offsets from a phase accumulator, enabling:
 - Walk/run cycles that scale frequency and amplitude with velocity
 - Idle→walk→run transitions with no phase-jump glitches (phase integrates continuously)
 - Per-character gait variation via `GaitConfig` (troll vs spider vs slime)
@@ -81,7 +81,7 @@ export interface GaitConfig {
   hipSwayWidth: number;
 }
 
-/** Default gait config matching Spitekeep's devil character scale. */
+/** Default gait config matching the reference implementation's devil character scale. */
 export const DEFAULT_GAIT: Readonly<GaitConfig>;
 
 /** Character pose offsets relative to root. */
@@ -153,7 +153,7 @@ function updatePlayer(dt: number, speed: number, reduceMotion: boolean) {
 
 ### Approach B: Single evaluateLocomotion(tick, speed, config) — no state
 
-**Source pattern:** Current Spitekeep inline `Math.sin(tick * 0.15)` — direct function of tick.
+**Source pattern:** Current the reference implementation inline `Math.sin(tick * 0.15)` — direct function of tick.
 
 **Signature sketch:**
 
@@ -181,18 +181,18 @@ ctx.translate(player.x + pose.hipOffset.x, player.y + pose.hipOffset.y);
 ```
 
 **Trade-offs:**
-- **Ergonomics:** Single call, no state. Dead simple. Matches current Spitekeep pattern exactly.
+- **Ergonomics:** Single call, no state. Dead simple. Matches current the reference implementation pattern exactly.
 - **Determinism:** Phase jumps when speed changes. If speed goes from 0→5 in one frame, phase jumps by `5 * freq * 2π` — causing a visible glitch (character snaps to mid-stride). This is the exact problem the research note warns against.
 - **Runtime cost:** Same as A (~2 μs).
 - **Consumer complexity:** Lowest. No state variable.
 - **Tree-shake-ability:** Single function, trivially tree-shakeable.
 
-**What this makes easy:** Drop-in replacement for Spitekeep's inline `Math.sin(tick * 0.15)`.
+**What this makes easy:** Drop-in replacement for the reference implementation's inline `Math.sin(tick * 0.15)`.
 **What this makes hard:** Variable-speed locomotion is broken (phase jumps). Walk→run transitions will glitch.
 
 ### Approach C: Stateful locomotion object
 
-**Source pattern:** Spitekeep's `PlayerState` — an object that owns mutable state and advances itself.
+**Source pattern:** the reference `PlayerState` — an object that owns mutable state and advances itself.
 
 **Signature sketch:**
 
@@ -230,7 +230,7 @@ export class Locomotion {
 | Ergonomics | Medium (2 calls) | High (1 call, no state) | High (1 call) |
 | Determinism | Maximum | Broken on speed change | Maximum |
 | Runtime cost | ~2 μs | ~2 μs | ~2 μs |
-| Convention fit | Matches particles exactly | Matches current Spitekeep | Conflicts (classes) |
+| Convention fit | Matches particles exactly | Matches current the reference implementation | Conflicts (classes) |
 | Speed transitions | Smooth | Glitchy | Smooth |
 | Replay snapshot | Phase is a plain number | N/A (no state) | Must extract .phase |
 | Tree-shake | Excellent | Excellent | Poor (whole class) |
@@ -248,7 +248,7 @@ export class Locomotion {
 
 ### Consumer Need
 
-Spitekeep hand-codes squash/stretch per state in `sprites.ts:1114-1123`:
+The consumer game hand-codes squash/stretch per state in `sprites.ts:1114-1123`:
 ```ts
 if (player.state === 'jumping') { sx = 0.92; sy = 1.1; }
 else if (player.state === 'falling') { sx = 1.08; sy = 0.92; }
@@ -355,7 +355,7 @@ ctx.restore();
 
 ### Approach B: Unified `squashStretch(tick, state, config)` returning a composed transform
 
-**Source pattern:** Spitekeep's `drawDevil` — one code path applies all transforms at once.
+**Source pattern:** the reference `drawDevil` — one code path applies all transforms at once.
 
 **Signature sketch:**
 
@@ -397,7 +397,7 @@ export function squashStretch(
 | Runtime cost | ~1 μs/call | ~2 μs/call |
 | Per-bone composition | Easy | Hard |
 | Tree-shake | Excellent | Poor (bundled) |
-| Convention fit | Matches library style | Matches Spitekeep style |
+| Convention fit | Matches library style | Matches the reference implementation style |
 
 ### Recommendation
 
@@ -412,7 +412,7 @@ export function squashStretch(
 
 ### Consumer Need
 
-No current Spitekeep use case — this is forward-looking for:
+No current the reference implementation use case — this is forward-looking for:
 - Hair/cloak/tail secondary dynamics on characters
 - Antenna/flag physics on enemies
 - Rope/chain rendering in puzzles
@@ -648,7 +648,7 @@ For springs, the consumer reduces `gravityY` and `drag` in the config.
 1. **Follows the convention.** "Every tunable number lives in a config object the consumer can spread into their own." The amplitude scale IS a tunable number.
 2. **Flexible.** Consumer can use any reduction factor (0.2, 0.5, 0.0) or animate the transition.
 3. **Pure.** No host API dependency in the animation module. The consumer reads `prefersReducedMotion()` in their own code (renderer layer) and passes the result as a config value.
-4. **Matches Spitekeep.** Spitekeep already does this: `const bob = bobbing && !reduceMotion ? Math.round(Math.sin(tick * 0.15)) : 0` — it gates the amplitude at the call site, not inside the library.
+4. **Matches the consumer game.** The consumer game already does this: `const bob = bobbing && !reduceMotion ? Math.round(Math.sin(tick * 0.15)) : 0` — it gates the amplitude at the call site, not inside the library.
 
 **Library provides convenience:** Export a `scaledGait(config, motionScale)` helper that multiplies all amplitude fields by a scale factor:
 

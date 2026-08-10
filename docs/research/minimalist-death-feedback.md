@@ -12,7 +12,7 @@ Player-death feedback in minimalist 2D procedural games must deliver a high-impa
 This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** and **Pillar 2 (Cosmetics & palettes)**.
 - **Pillar 1 Validation**: It exercises and integrates multiple core modules: `src/primitives/hit-stop.ts` (temporal freeze), `src/particles/` (deterministic particle systems), and `src/animation/oscillators.ts` (screen shake).
 - **Pillar 2 Integration**: It leverages the semantic-slot palette model of `src/palette/` to perform instant, asset-free color flashes and palette inversions on impact, aligning perfectly with the library's "the algorithm IS the art" thesis.
-- **Consumer Games**: Sibling games like *IMP: Not a Troll* (formerly *Spitekeep*) or future Clone-to-Jest titles (such as *Embertomb*, a side-view platformer, or a *Stacklands*-like card game) require highly polished, responsive, and satisfying death feedback to elevate game-feel without shipping heavy art assets.
+- **Consumer Games**: Consumer titles (such as *Embertomb*, a side-view platformer, or a *Stacklands*-like card game) require highly polished, responsive, and satisfying death feedback to elevate game-feel without shipping heavy art assets.
 - **Replay-Perfect Determinism**: By modeling death state transitions and particle trajectories in the pure core, we ensure that game replays and multiplayer syncs reproduce the exact same death sequences.
 
 ---
@@ -95,7 +95,7 @@ This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** an
 - **What to avoid**: Linear scaling, which looks lifeless and lacks the "snap" of professional animation.
 
 ### Pattern 3: Deterministic Particle Bursts (Kinetic Dispersion)
-- **Source**: JS13k winners (*Space Huggers*) and Spitekeep's particle burst pattern.
+- **Source**: JS13k winners (*Space Huggers*) and the reference implementation's particle burst pattern.
 - **What it does**: Spawns a radial or directional burst of simple geometric particles (squares, circles, or outline rects) at the player's death position. The particles fly outward with high initial velocity, decaying over time due to drag, and optionally falling due to gravity.
 - **Algorithmic shape**:
   ```typescript
@@ -185,7 +185,7 @@ This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** an
 - **What to avoid**: Pure random camera offsets per frame (e.g., `Math.random() * magnitude`), which can look "buzzy" or "jittery" rather than weighty, and are non-deterministic.
 
 ### Pattern 6: Procedural Audio Cues (Synthesized Feedback)
-- **Source**: JS13k synth engines, Spitekeep's Web Audio synthesis.
+- **Source**: JS13k synth engines, the reference Web Audio synthesis.
 - **What it does**: Generates a low-frequency noise burst (explosion) or a descending square/triangle wave pitch sweep (defeat boop) entirely in code using the Web Audio API.
 - **Algorithmic shape**:
   ```typescript

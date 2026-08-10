@@ -12,7 +12,6 @@ Procedural platformer level generation has a 15-year research literature and a h
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: This is the natural next step after **Pillar 2 (Level Schema)** and **Pillar 4 (Platformer Kernel)**. A procedural generator emits `LevelData` (already shipped) and is consumed by `compileLevel` (already shipped). It also feeds the existing **Replay** cross-cutting pillar — a deterministic generator + deterministic kernel + deterministic replay hash = shareable "daily seed" levels.
-- **Consumer Games**: *IMP - Not a Troll* and future Clone-to-Jest titles need infinite content without per-level manual authoring. Sokpop's catalog is hand-crafted, but the Clone-to-Jest pipeline (per `ai-craft-strategy/knowledge/clone-to-jest-methodology.md`) calls for many small games that each need many small levels — procgen is the only way to ship at that cadence without a level designer per game.
 - **Unlocks**:
   - **Daily-seed / shareable levels**: A `seed: number` parameter produces a deterministic `LevelData`. The same seed always produces the same level. Combined with the existing `replayHash` fingerprint, this gives "share this level + this run" links.
   - **Difficulty scaling**: A `difficulty: number` parameter (0..1) drives gap widths, hazard density, and rhythm complexity — the same generator emits a tutorial level at 0.0 and a brutal level at 1.0.
@@ -292,7 +291,6 @@ Procedural platformer level generation has a 15-year research literature and a h
 
 ### Pattern 9: Sokpop Catalog — Hand-Crafted Minimalism
 
-- **Source**: Sokpop Collective's catalog at [sokpop.itch.io](https://sokpop.itch.io) — particularly *Pyramida* ([sokpop.itch.io/pyramida](https://sokpop.itch.io/pyramida)) and *Stacklands* ([sokpop.itch.io/stacklands](https://sokpop.itch.io/stacklands)). The library's aesthetic anchor per `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md`.
 - **What it does**: Sokpop games are **hand-crafted, not procedurally generated**. Each game is a small, tight, carefully-designed experience. Levels are short, the mechanics are few, and the difficulty curve is hand-tuned. The Sokpop philosophy is "small games, made often, by hand."
 - **Algorithmic shape**: N/A — Sokpop doesn't use procgen. But the **design philosophy** is directly applicable to our generator's output: levels should be **small** (16–60 tiles wide), **tight** (every tile matters), and **hand-tuned-feeling** (even though they're procedurally generated).
 - **Determinism profile**: N/A.
@@ -300,7 +298,7 @@ Procedural platformer level generation has a 15-year research literature and a h
 - **Dependencies**: N/A.
 - **Fit for our constraints**: **Strong (as a design target, not as an algorithm).** Our generator should produce levels that **feel** like Sokpop levels — short, tight, hand-crafted — even though they're procedurally generated. This means: small level dimensions (16–60 tiles wide, 10–15 tiles tall), few entity types per level (3–6), and a narrow difficulty band (the generator's `difficulty` parameter should produce levels that feel hand-tuned at every value, not just at the default).
 - **What to steal**: The **design philosophy**. Short levels. Few mechanics per level. Hand-tuned feel. The generator should produce levels that a player can complete in 30–90 seconds, not 5-minute marathon levels.
-- **What to avoid**: Sokpop's **lack of procgen**. We need procgen for Clone-to-Jest cadence; Sokpop is a design inspiration, not a procedural technique.
+- **What to avoid**: Sokpop's **lack of procgen**. We need procgen for a fast release cadence; Sokpop is a design inspiration, not a procedural technique.
 
 ### Pattern 10: Difficulty Parameterization via Gap Width and Hazard Density
 
@@ -404,5 +402,3 @@ Procedural platformer level generation has a 15-year research literature and a h
 - `src/platformer/level-runtime.ts` — The `compileLevel` function that consumes the generator's output.
 - `src/editor/operations.ts` — The `applyOp` / `applyBatch` functions the generator could use to emit operations.
 - `src/rng/mulberry32.ts` — The seeded PRNG the generator uses for all randomness.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — The library's aesthetic anchor; Sokpop's hand-crafted minimalism informs the generator's design target.
-- `ai-craft-strategy/knowledge/clone-to-jest-methodology.md` — The Clone-to-Jest pipeline that motivates procgen for level content.

@@ -47,8 +47,8 @@ export interface GaitConfig {
 }
 
 /**
- * Default gait matching the Spitekeep devil character scale. Tunable; consumers
- * spread this into their own config (`{ ...DEFAULT_GAIT, strideLength: 6 }`).
+ * Default gait. Tunable; consumers spread this into their own config
+ * (`{ ...DEFAULT_GAIT, strideLength: 6 }`).
  */
 export const DEFAULT_GAIT: Readonly<GaitConfig> = {
   baseFrequency: 0.05,

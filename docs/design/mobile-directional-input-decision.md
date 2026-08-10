@@ -32,7 +32,7 @@ The composite recipe — 4× `createTouchButton` + `orEdges` — works for the c
 1. **`pointerleave` spurious release** — a thumb drifting off a button fires release + re-press, causing input stutter.
 2. **No global safety net** — a missed `pointercancel`/viewport-exit `pointerleave` leaves a button stuck.
 
-Centralizing the pointer-ID tracking + safety net prevents every future consumer from re-inventing it (and getting the `pointerleave` case wrong). Spitekeep's hand-rolled `TouchControls` is 414 lines including CSS/capability/DOM concerns; the reusable core the engine needs is ~120 lines — modest, but exactly the kind of edge-case-heavy logic that benefits from being written and tested once.
+Centralizing the pointer-ID tracking + safety net prevents every future consumer from re-inventing it (and getting the `pointerleave` case wrong). the reference implementation's hand-rolled `TouchControls` is 414 lines including CSS/capability/DOM concerns; the reusable core the engine needs is ~120 lines — modest, but exactly the kind of edge-case-heavy logic that benefits from being written and tested once.
 
 ## What drove the decision
 

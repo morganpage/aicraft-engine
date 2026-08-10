@@ -1,6 +1,6 @@
 # Conventions
 
-This library mirrors [Spitekeep's conventions](../../ai-craft-game-dev-devil/) exactly. New code must follow these rules.
+This library follows a strict set of conventions. New code must follow these rules.
 
 ## TypeScript
 
@@ -17,7 +17,7 @@ This library mirrors [Spitekeep's conventions](../../ai-craft-game-dev-devil/) e
 
 ## Code style
 
-- **No comments unless asked.** Code must be self-documenting through good names and types. (Spitekeep has heavy inline rationale, but that is in-service of explaining *non-obvious decisions*; routine comments are not added.)
+- **No comments unless asked.** Code must be self-documenting through good names and types. (Heavy inline rationale is acceptable when in-service of explaining *non-obvious decisions*; routine comments are not added.)
 - **Extensive JSDoc on every public export.** Document the contract, not the implementation.
 - **Inline rationale for non-obvious decisions.** If you made a choice that isn't self-evident from the code, explain it in a comment.
 - **No magic numbers.** Every tunable value lives in a config object the consumer can spread into their own.
@@ -54,7 +54,7 @@ This library mirrors [Spitekeep's conventions](../../ai-craft-game-dev-devil/) e
 - **`describe` / `it` / `expect`** BDD style.
 - **Public-surface assertions.** Tests treat the public API as the contract; they don't reach into private internals.
 - **TDD for new deterministic logic.** Write the test first; implement until it passes.
-- **Visual verification deferred to consumer** (Playwright tests in Spitekeep, not in this library).
+- **Visual verification deferred to consumer** (Playwright tests in the consumer, not in this library).
 
 ## Naming patterns
 

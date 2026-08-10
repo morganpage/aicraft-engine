@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep currently draws the devil character as a single hardcoded function (`drawDevil` in `src/render/sprites.ts:1096`) that manually calls `ctx.translate` + `ctx.scale` and draws every body part at fixed pixel offsets. This works for one character but doesn't scale: you can't swap skins, you can't animate limbs independently, you can't plant feet via IK, and you can't procedurally adapt gaits to speed/terrain.
+The consumer game currently draws the devil character as a single hardcoded function (`drawDevil` in `src/render/sprites.ts:1096`) that manually calls `ctx.translate` + `ctx.scale` and draws every body part at fixed pixel offsets. This works for one character but doesn't scale: you can't swap skins, you can't animate limbs independently, you can't plant feet via IK, and you can't procedurally adapt gaits to speed/terrain.
 
 A skeletal rig provides the mathematical substrate that unlocks:
 - **Pillar 2 Cosmetics**: Same bone hierarchy, different draw functions = different "skins" (robot, goblin, slime) with zero extra assets.
@@ -282,7 +282,7 @@ computeWorldTransforms(nextRig);
 
 ### Approach B: In-Place Mutation (Renderer-Style Exception) — REJECTED
 
-**Source pattern:** Spitekeep's `drawDevil` mutates the canvas transform in-place; the renderer never feeds back into the sim.
+**Source pattern:** the reference `drawDevil` mutates the canvas transform in-place; the renderer never feeds back into the sim.
 
 ```ts
 // Every tick:
@@ -297,7 +297,7 @@ computeWorldTransforms(rig);
 - **Ergonomics:** Most natural. `rig.localPoses[boneIdx].rotation = newAngle` — direct, obvious, no return-value gymnastics.
 - **Determinism:** Risk of accidental shared-state bugs if two systems read/write the same rig. But the architecture layer rule ("renderer may relax rules when result cannot leak back into simulation") already handles this — the rig is a renderer-adjacent construct.
 - **Runtime cost:** Zero clone overhead. Only the matrix computation happens. Cheapest option.
-- **Consumer complexity:** Lowest. Direct mutation is how Spitekeep already works (`state.player.x = newX`).
+- **Consumer complexity:** Lowest. Direct mutation is how the reference implementation already works (`state.player.x = newX`).
 
 ### Approach C: Hybrid — Mutable Poses, Mutable Derived Cache (DECIDED)
 

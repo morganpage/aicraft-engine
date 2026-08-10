@@ -220,4 +220,4 @@ To guarantee that a spring chain can never blow up or produce a "line covering h
 - `docs/research/elastic-rod-antenna.md` — Initial antenna simulation notes.
 - `src/animation/spring.ts` — The current Verlet/PBD distance solver.
 - `showcase/helpers/slime-knight.ts` — The current showcase character composition and antenna drawing.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Strategic context on Sokpop's minimalist rendering.
+- The canonical Sokpop reference (sokpop.itch.io) — Strategic context on Sokpop's minimalist rendering.

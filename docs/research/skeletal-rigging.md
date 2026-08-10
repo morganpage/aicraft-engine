@@ -10,7 +10,7 @@ Skeletal rigging establishes a hierarchical tree of 2D bone nodes with local Tra
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Touches **Pillar 1 (Primitives / Animation)** and **Pillar 4 (Fake-3D / billboarding / character stacks)**.
-- **Consumer Games**: Sibling games like *Spitekeep* (or future Clone-to-Jest titles like a card-based village builder or procedural RTS) need lively, responsive characters without the memory overhead of spritesheets or Spine files.
+- **Consumer Games**: Consumer titles like a card-based village builder or procedural RTS) need lively, responsive characters without the memory overhead of spritesheets or Spine files.
 - **Unlocks**:
   - **Procedural Locomotion**: Dynamic gaits (walking, running, limping) that adapt to speed and terrain in real-time.
   - **Dynamic Combat/Interactions**: Characters reaching for targets (swords, items, door handles) using Inverse Kinematics (IK).
@@ -168,5 +168,4 @@ Skeletal rigging establishes a hierarchical tree of 2D bone nodes with local Tra
 
 - `inverse-kinematics.md` (parallel note on IK effectors reaching for targets)
 - `procedural-locomotion.md` (parallel note on gait-driven bone TRS)
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (Sokpop's primitive-stack character construction)
 - `src/primitives/` (where the vector drawing helpers live)

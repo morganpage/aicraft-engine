@@ -58,5 +58,5 @@ The showcase `sprite-demo` section proves it end-to-end against the Kenney 1-Bit
 - `docs/research/procedural-locomotion.md` — Active sibling note for procedural movement math.
 - `docs/research/skeletal-rigging.md` — Active sibling note for code-based bone transformations.
 - `docs/research/inverse-kinematics.md` — Active sibling note for procedural joint positioning.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Canonical reference for asset-free procedural rendering.
+- The canonical Sokpop reference (sokpop.itch.io) — Canonical reference for asset-free procedural rendering.
 - `README.md` — Core principles (no imported art assets, algorithmic cosmetics).

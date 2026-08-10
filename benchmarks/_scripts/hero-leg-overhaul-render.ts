@@ -173,7 +173,7 @@ function renderLegOverhaul() {
     ctx.clip();
 
     // 1. Background
-    ctx.fillStyle = '#1e293b'; // Slate-800 (Dark background to match Spitekeep)
+    ctx.fillStyle = '#1e293b'; // Slate-800 dark background
     ctx.fillRect(0, 0, panelSize, panelSize);
 
     // 2. Ground line

@@ -10,7 +10,7 @@
 import type { CameraConfig } from './types';
 
 /**
- * Default camera config. Mirrors Spitekeep's GDD §16 values:
+ * Default camera config:
  *   - `lerp: 0.1` — smooth follow without noticeable lag.
  *   - `snapThreshold: 0.5` — converge exactly within half a pixel so the
  *     lerp terminates (and the renderer's integer rounding lands on the

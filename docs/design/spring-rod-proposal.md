@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep's slime-knight antenna, any future tail/mane/cape secondary element, and every Clone-to-Jest sibling that needs springy secondary dynamics all face the same problem: `advanceSpringChain` enforces only adjacent-node distances, so the chain buckles, kinks, and — critically — **numerically blows out** under extreme conditions (teleport, lag spike, violent anchor motion). The showcase's good antenna exists only because `showcase/helpers/slime-knight.ts` layers three local corrections (`applyAntennaBendConstraints`, `applyAntennaRestPose`, `applyAntennaTipWeight`) on top. Those corrections are production-quality but showcase-local: they allocate 4 arrays per frame (GC churn), they're error-prone to compose in the right order, and no other consumer gets them.
+the reference implementation's slime-knight antenna, any future tail/mane/cape secondary element, and every consumer sibling that needs springy secondary dynamics all face the same problem: `advanceSpringChain` enforces only adjacent-node distances, so the chain buckles, kinks, and — critically — **numerically blows out** under extreme conditions (teleport, lag spike, violent anchor motion). The showcase's good antenna exists only because `showcase/helpers/slime-knight.ts` layers three local corrections (`applyAntennaBendConstraints`, `applyAntennaRestPose`, `applyAntennaTipWeight`) on top. Those corrections are production-quality but showcase-local: they allocate 4 arrays per frame (GC churn), they're error-prone to compose in the right order, and no other consumer gets them.
 
 When this ships, a consumer writes:
 
@@ -45,7 +45,7 @@ The rest pose for all target use cases (antenna, tail, mane, swimmer) is a strai
 | Backward-flowing mane | `{ x: -1, y: 0 }` | Flows behind the character |
 | Horizontal swimmer | `{ x: 1, y: 0 }` | Extends forward |
 
-**Why not per-node rest angles?** Curved rest poses (e.g. a C-curved tail) would need per-node angle arrays. This adds significant API complexity for a feature no current consumer needs. The straight-rod-with-tilt covers every use case in Spitekeep and the planned siblings. A curved-rest extension can be added later as a config overload without breaking the base API.
+**Why not per-node rest angles?** Curved rest poses (e.g. a C-curved tail) would need per-node angle arrays. This adds significant API complexity for a feature no current consumer needs. The straight-rod-with-tilt covers every use case in the reference implementation and the planned siblings. A curved-rest extension can be added later as a config overload without breaking the base API.
 
 **Why not a `restAngle: number` (radians)?** A Vec2 is more expressive (supports asymmetric rest poses in the future), avoids trig at the call site, and matches the `Vec2` type already used throughout the animation pillar. The consumer can trivially derive it: `{ x: Math.cos(angle), y: Math.sin(angle) }`.
 

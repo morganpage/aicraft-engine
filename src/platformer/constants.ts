@@ -16,7 +16,7 @@ import type { PlatformerConfig, Contacts, PlatformerEvents } from './types';
  * Default platformer tuning. All values in px/s or seconds. No magic numbers
  * in the kernel hot path — every tunable lives here.
  *
- * Math: `gravity` (980 px/s²) was derived by scaling the Spitekeep devil's
+ * Math: `gravity` (980 px/s²) was derived by scaling a `0.5 px/tick²`
  * `0.5 px/tick²` feel by `60²` to convert tick-rate to seconds, then tuned
  * down for snappy precision control. The `jump` sub-config delegates to
  * `DEFAULT_JUMP` from `src/animation/jump.ts` — that is the source of truth
@@ -46,10 +46,10 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   stepHeight: 0,
 };
 
-/** Default player body width in world units (Spitekeep devil scale). */
+/** Default player body width in world units (compact platformer scale). */
 export const DEFAULT_PLAYER_WIDTH = 16;
 
-/** Default player body height in world units (Spitekeep devil scale). */
+/** Default player body height in world units (compact platformer scale). */
 export const DEFAULT_PLAYER_HEIGHT = 24;
 
 /**

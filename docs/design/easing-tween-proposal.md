@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep currently inlines easing math in three separate places:
+The consumer game currently inlines easing math in three separate places:
 1. `src/core/traps/hidden-pit.ts:272` — a local `easing(t, name)` switch over quadratic curves only (`easeIn`/`easeOut`/`easeInOut`)
 2. `src/death-cinematography/zoom.ts:75` — inline `1 - Math.pow(1 - t, 3)` for easeOutCubic
 3. `src/render/camera.ts` — another inline easeOutCubic for the intro zoom
@@ -290,7 +290,7 @@ const alpha = easeOutCubic(particleAge(p));
 - **Ergonomics:** Minimal. Covers the particle-lifetime use case but forces consumers to re-implement everything else.
 - **Determinism:** Perfect.
 - **Runtime cost:** Lowest (fewest exports, smallest bundle).
-- **Consumer complexity:** High for anything beyond particle curves. Spitekeep still needs to implement its own back/elastic/bounce for trap easing and zoom.
+- **Consumer complexity:** High for anything beyond particle curves. The consumer game still needs to implement its own back/elastic/bounce for trap easing and zoom.
 - **Tree-shake-ability:** Perfect.
 - **Convention fit:** Matches the module structure but underserves the consumer.
 
@@ -316,7 +316,7 @@ const alpha = easeOutCubic(particleAge(p));
 | Hot-path allocation | 0 | 1 object/tick | 0 |
 | Convention fit | ✅ | ✅ Strongest | ✅ |
 | Bundle size | Small | Medium | Tiny |
-| Spitekeep fit | ⚠️ Still needs tween state | ✅ Matches advanceJump pattern | ❌ Too minimal |
+| the reference implementation fit | ⚠️ Still needs tween state | ✅ Matches advanceJump pattern | ❌ Too minimal |
 
 ## Recommendation
 
@@ -326,7 +326,7 @@ Reasoning:
 
 1. **Matches the library's existing pattern exactly.** `advanceTween(state, dt, config) → { state, value, done }` is structurally identical to `advanceJump(state, inputs, dt, config) → JumpState` and `advanceEmission(state, dt, config) → { next, spawnCount }`. The consumer already knows this pattern.
 
-2. **Serves all three Spitekeep call sites.** The particle curves get `easeOutCubic(particleAge(p))` (direct curve import, no tween needed). The death zoom gets a tween with `easeOutCubic` + duration. The trap system gets a `resolveEasing` that maps string names to curve functions.
+2. **Serves all three the reference implementation call sites.** The particle curves get `easeOutCubic(particleAge(p))` (direct curve import, no tween needed). The death zoom gets a tween with `easeOutCubic` + duration. The trap system gets a `resolveEasing` that maps string names to curve functions.
 
 3. **The object allocation is a non-issue.** `advanceEmission` already allocates `{ next, spawnCount }` per call in the particle hot path. The `TweenResult` is the same shape. Modern V8 stack-allocates these. If profiling later shows a problem, we can add an output-parameter overload — but that's a v2 optimisation, not a v1 design constraint.
 
@@ -342,7 +342,7 @@ Reasoning:
 
 2. **Should `advanceTween` accept negative `dt`?** I recommend clamping to 0 (silent no-op) rather than throwing, matching the pure-ops discipline. Negative dt would mean "time running backwards" which is undefined for yoyo/loop counting.
 
-3. **Should we ship a `resolveEasing(name)` helper that maps string names to curve functions?** Spitekeep already has this pattern in `hidden-pit.ts`. A library-provided version would standardise the mapping across games. But it adds a string-switch that consumers could write themselves. I lean toward NOT shipping it — let consumers write their own `resolveEasing` with only the curves they need. This keeps the library focused on math, not dispatch.
+3. **Should we ship a `resolveEasing(name)` helper that maps string names to curve functions?** the reference implementation already has this pattern in `hidden-pit.ts`. A library-provided version would standardise the mapping across games. But it adds a string-switch that consumers could write themselves. I lean toward NOT shipping it — let consumers write their own `resolveEasing` with only the curves they need. This keeps the library focused on math, not dispatch.
 
 4. **File structure: one file or two?** I propose `src/easing/curves.ts` (all curve functions + inversion helpers) and `src/easing/tween.ts` (TweenState + advanceTween + createTweenState). Separate files so consumers who only need curves don't pull in tween state types. Both re-exported from `src/easing/index.ts`.
 

@@ -10,7 +10,7 @@ The library's input layer (`src/input/`) ships keyboard + touch adapters that wr
 ## Why this matters for aicraft-engine
 
 - **Pillars touched**: Directly extends **Pillar 1 (Primitives / Input)**. Composes with the existing `createKeyboardAdapter` and `createTouchButton` via `orEdges` — gamepad becomes a third source feeding the same `EdgeAccumulator` core.
-- **Consumer games**: Spitekeep (desktop players with controllers), any future Clone-to-Jest title targeting Poki/Steam web, the upcoming `fake3d/` isometric titles where a gamepad's analog stick is the natural input for 360-degree camera control.
+- **Consumer games**: the reference implementation (desktop players with controllers), any future consumer title targeting Poki/Steam web, the upcoming `fake3d/` isometric titles where a gamepad's analog stick is the natural input for 360-degree camera control.
 - **Unlocks**:
   - **Desktop parity** — keyboard-only is a non-starter for desktop browser games shipped on Steam web; gamepad support is table-stakes.
   - **Analog input** — gamepads are the only consumer input device that natively produces continuous 2D vectors; the existing keyboard/touch adapters are purely binary. The deadzone + threshold-latch pattern unlocks analog-feel controls (variable-speed movement, 360-degree aiming) while still feeding the binary edge core.
@@ -282,7 +282,7 @@ The library's input layer (`src/input/`) ships keyboard + touch adapters that wr
 
 ## Open Questions
 
-1. **Multi-gamepad in v1 or v2?** Phaser ships `pad1..pad4`; many web games support 2-player local co-op. The argument for v1: the adapter is small, the multi-pad pattern is just a `Map<index, EdgeAccumulator>`. The argument for v2: most consumer games (Spitekeep, the upcoming Sokpop-style titles) are single-player; shipping multi-pad adds API surface that may never be used. **Recommendation: ship `pad1` only in v1; document the v2 path (consumer creates a second adapter for player 2).** This is a design decision for `@api-designer`.
+1. **Multi-gamepad in v1 or v2?** Phaser ships `pad1..pad4`; many web games support 2-player local co-op. The argument for v1: the adapter is small, the multi-pad pattern is just a `Map<index, EdgeAccumulator>`. The argument for v2: most consumer games (the reference implementation, the upcoming Sokpop-style titles) are single-player; shipping multi-pad adds API surface that may never be used. **Recommendation: ship `pad1` only in v1; document the v2 path (consumer creates a second adapter for player 2).** This is a design decision for `@api-designer`.
 
 2. **Analog stick → continuous vector OR threshold-latched edges?** The existing core is purely binary (`PolledEdge`). The gamepad adapter could either:
    - (a) Latch threshold-crossings into `EdgeAccumulator`s (composes with `orEdges`, but loses analog feel — stick position is binary).
@@ -320,8 +320,6 @@ The library's input layer (`src/input/`) ships keyboard + touch adapters that wr
 
 - **Related notes in `docs/research/`**:
   - `docs/research/mobile-directional-input.md` — The closest analog: virtual thumbsticks that threshold analog 2D vectors into binary edges. The gamepad adapter uses the same threshold-latching pattern but with a different input source (gamepad axes vs pointer coordinates). The deadzone math is also shared (the mobile thumbstick uses a `deadZone` config; the gamepad adapter should use the same name).
-- **Related strategic docs in `ai-craft-strategy/`**:
-  - `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Sokpop games are desktop-first; gamepad support is table-stakes for the minimalist-procedural genre.
 - **Existing modules in `src/`**:
   - `src/input/edges.ts` — The deterministic edge-accumulator core that the adapter feeds. UNCHANGED by this work.
   - `src/input/keyboard.ts` — The canonical defensive-adapter pattern this adapter must mirror (lazy host resolution, swallow errors, never-throw, `{}` fallback in Node/SSR, `dispose()` idempotent teardown).

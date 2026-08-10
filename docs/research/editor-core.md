@@ -10,7 +10,7 @@ A headless level-editor core provides the state management, transaction history,
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly establishes **Pillar 4 (Fake-3D / Level Loading)** editor capabilities, integrates with **Pillar 1 (Primitives / Seeded RNG)** for procedural placement and snapping, and supports **Pillar 2 (Cosmetics / Skin Manifests)** by enabling custom entity and theme selection.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* (formerly Spitekeep) and future Clone-to-Jest titles require a robust, flexible level editor. Providing a headless core allows us to write the complex state, undo/redo, selection, and snapping logic once in the library, while letting each game build its own custom, highly polished UI (e.g., using React, Canvas2D, or Svelte).
+- **Consumer Games**: Consumer titles require a robust, flexible level editor. Providing a headless core allows us to write the complex state, undo/redo, selection, and snapping logic once in the library, while letting each game build its own custom, highly polished UI (e.g., using React, Canvas2D, or Svelte).
 - **Unlocks**:
   - **Unified Editor Logic**: Developers use the exact same editor core for internal level design that players use for UGC creation, guaranteeing feature parity and eliminating duplicate bug-fixing.
   - **Multiplayer Collaboration Readiness**: By enforcing serializable, data-only operations (instead of closure-based commands), the editor is natively ready for real-time multiplayer editing via WebSockets or WebRTC.
@@ -416,4 +416,3 @@ To guarantee that runtime gameplay simulation never corrupts the authoritative e
 - `src/level/entity-id.ts` (stable entity ID allocation)
 - `src/cosmetics/ownership.ts` (the existing pure-progression-ops pattern)
 - `docs/research/level-schema.md` (the related level-schema research)
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (Sokpop's fake-3D and primitive-stack patterns)

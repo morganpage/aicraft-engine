@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep and future Clone-to-Jest siblings need a cosmetic system that lets players own, equip, and visually distinguish character skins without shipping heavy PNG assets. The skin-as-data approach (parameter presets driving procedural draw callbacks) is the only path compatible with the zero-dep, Canvas2D, deterministic architecture. Without this module, every cosmetic is a hand-drawn spritesheet; with it, a single seed generates infinite visual variety and the monetisation surface multiplies.
+Consumer titles need a cosmetic system that lets players own, equip, and visually distinguish character skins without shipping heavy PNG assets. The skin-as-data approach (parameter presets driving procedural draw callbacks) is the only path compatible with the zero-dep, Canvas2D, deterministic architecture. Without this module, every cosmetic is a hand-drawn spritesheet; with it, a single seed generates infinite visual variety and the monetisation surface multiplies.
 
 The palette module (`src/palette/`) is settled and shipped. This proposal covers everything ABOVE the color layer: skin presets, manifests, defensive migration, seeded generation, and ownership state.
 
@@ -54,7 +54,7 @@ save = equipSkin(save, 'trail', 'flame-trail');  // fire trail
 
 **What this makes easy:** Mix-and-match cosmetics, independent IAP per slot, skeletal alignment, future slot additions.
 
-**What this makes hard:** Nothing the game's UI doesn't already support. The equip menu in Spitekeep already has separate slots.
+**What this makes hard:** Nothing a consumer game's UI doesn't already support. A typical equip menu already has separate slots.
 
 #### Approach B: Single-Slot Equipment
 
@@ -205,7 +205,7 @@ interface SkinPreset {
 
 #### Recommendation
 
-**Approach A: Minimal Viable Skin (id + name + rarity + palette + scale).** The research sketch's `features`, `gait`, and `particles` are game-specific — Spitekeep's devil has horns and a tail, but a slime or skeleton does not. Shipping game-specific fields in the library forces every consumer to pass irrelevant defaults. `scale` is the only truly universal parameter (every character has a body, head, and limbs). `gait` multipliers are tempting but overlap with `GaitConfig` in `src/animation/locomotion.ts` — the consumer can compose these themselves via `scaledGait(config, skin.scale.gaitMultiplier)`. The versioned manifest makes it trivially safe to add `features`/`gait`/`particles` in manifest v2 when a concrete consumer needs them.
+**Approach A: Minimal Viable Skin (id + name + rarity + palette + scale).** The research sketch's `features`, `gait`, and `particles` are game-specific — one consumer's devil has horns and a tail, but a slime or skeleton does not. Shipping game-specific fields in the library forces every consumer to pass irrelevant defaults. `scale` is the only truly universal parameter (every character has a body, head, and limbs). `gait` multipliers are tempting but overlap with `GaitConfig` in `src/animation/locomotion.ts` — the consumer can compose these themselves via `scaledGait(config, skin.scale.gaitMultiplier)`. The versioned manifest makes it trivially safe to add `features`/`gait`/`particles` in manifest v2 when a concrete consumer needs them.
 
 ---
 
@@ -329,10 +329,10 @@ Which malformed inputs are silently dropped vs clamped vs trigger fallback-to-de
 | Unknown top-level fields | Silently ignored | Forward-compat; future fields don't break old parsers |
 | Unknown sub-fields (e.g. `features` in v1) | Silently ignored | Forward-compat; consumers may store extra data |
 
-**Never throws. Always returns a valid manifest.** This mirrors Spitekeep's `migrateSave` pattern exactly:
+**Never throws. Always returns a valid manifest.** This mirrors the canonical defensive-migration pattern exactly:
 
 ```ts
-// Spitekeep's pattern (src/platform/save.ts:132-179):
+// Canonical pattern (defensive save migration):
 export function migrateSave(raw: unknown): SaveData {
   if (typeof raw !== 'object' || raw === null) return createDefaultSave();
   const r = raw as Record<string, unknown>;
@@ -583,7 +583,7 @@ export function migrateSkinPreset(raw: unknown): SkinPreset {
 /**
  * Defensively parse a raw manifest. Never throws.
  *
- * Strategy (mirrors Spitekeep's `migrateSave`):
+ * Strategy (mirrors the canonical defensive-migration pattern):
  * 1. Gate on `version === MANIFEST_VERSION`.
  * 2. Rebuild a fresh default manifest.
  * 3. Overlay only fields that survive validation.
@@ -720,7 +720,7 @@ export function generateSkinVariants(
 import type { CosmeticSave, EquipSlot } from './types';
 import { DEFAULT_COSMETIC_SAVE, EQUIP_SLOTS } from './constants';
 
-// --- Deep clone (mirrors Spitekeep's platform/progress.ts:17-19) ---
+// --- Deep clone (mirrors the library's pure-progression-ops discipline) ---
 
 /**
  * Deep-clone a `CosmeticSave` via JSON round-trip.
@@ -943,9 +943,9 @@ Ship **Approach A (Multi-Slot)** for equip model and **Approach A (Minimal Skin)
 
 1. **`owned` sort stability:** The proposal sorts `owned` alphabetically after each `grantSkin` call. Is this the right determinism guarantee, or should it be insertion-order (append-only, no sort)? Insertion-order is cheaper but means two players with the same skins in different grant order would have different `owned` arrays. Alphabetical sort makes the array canonical regardless of grant order.
 
-2. **`cloneSave` cost vs safety:** The proposal uses `JSON.parse(JSON.stringify())` for deep cloning (matching Spitekeep's `progress.ts`). An alternative is structured clone (`structuredClone()`), which is available in ES2021+ and handles more edge cases. However, `JSON.parse/JSON.stringify` is the Spitekeep convention and is guaranteed to produce plain objects (no `Uint8Array` copies, no prototype chains). Recommend sticking with JSON round-trip for convention consistency.
+2. **`cloneSave` cost vs safety:** The proposal uses `JSON.parse(JSON.stringify())` for deep cloning (matching the library's pure-progression-ops convention). An alternative is structured clone (`structuredClone()`), which is available in ES2021+ and handles more edge cases. However, `JSON.parse/JSON.stringify` is the library convention and is guaranteed to produce plain objects (no `Uint8Array` copies, no prototype chains). Recommend sticking with JSON round-trip for convention consistency.
 
-3. **Manifest `skins` mutability:** The proposal declares `skins: readonly SkinPreset[]` in `CosmeticManifest`. Should `migrateManifest` return a mutable array (matching Spitekeep's pattern where `migrateSave` returns a mutable `SaveData`)? The `readonly` modifier is a compile-time hint only — it doesn't affect runtime. But it signals intent: manifests are load-once, read-many.
+3. **Manifest `skins` mutability:** The proposal declares `skins: readonly SkinPreset[]` in `CosmeticManifest`. Should `migrateManifest` return a mutable array (matching the pattern where a defensive parser returns a mutable save record)? The `readonly` modifier is a compile-time hint only — it doesn't affect runtime. But it signals intent: manifests are load-once, read-many.
 
 4. **`equipSkin` ownership verification:** The proposal verifies ownership before equipping (matching the research sketch). Should it also verify the skin ID exists in the manifest? Or is ownership alone sufficient (the skin might come from a generated batch not in the shipped manifest)?
 

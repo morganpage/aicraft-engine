@@ -10,7 +10,7 @@
 
 ## Consumer Need
 
-**Games:** Spitekeep / IMP - Not a Troll needs "is this user-uploaded level beatable?" before allowing UGC share. Future Clone-to-Jest titles need CI gates that catch "I shipped an impossible level."
+**Games:** The consumer game needs "is this user-uploaded level beatable?" before allowing UGC share. Future consumer titles need CI gates that catch "I shipped an impossible level."
 
 **Without this:** Level designers manually playtest every level. `validateLevel` catches structural bugs (missing spawn, bad IDs) but knows nothing about playability. A level can pass validation and still be unbeatable (exit 5 tiles above the highest platform, spawn inside a wall, one-way platform loop).
 

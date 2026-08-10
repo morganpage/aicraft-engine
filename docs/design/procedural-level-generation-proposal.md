@@ -10,7 +10,7 @@
 
 ## Consumer Need
 
-Clone-to-Jest games (Spitekeep/IMP, future siblings) need many short, deterministic, solvable platformer levels without per-level manual authoring. The library already ships `LevelData`, `validateLevel`, `compileLevel`, editor operations (`EditorOperation[]`), and a seeded RNG (`mulberry32`). A level generator plugs into this pipeline: `generate → validate → compile → play`. The same seed must always produce the same level (daily-seed / shareable levels). Difficulty must be a single knob (0..1) that maps to gap widths, hazard density, and rhythm complexity.
+consumer games (the reference implementation/IMP, future siblings) need many short, deterministic, solvable platformer levels without per-level manual authoring. The library already ships `LevelData`, `validateLevel`, `compileLevel`, editor operations (`EditorOperation[]`), and a seeded RNG (`mulberry32`). A level generator plugs into this pipeline: `generate → validate → compile → play`. The same seed must always produce the same level (daily-seed / shareable levels). Difficulty must be a single knob (0..1) that maps to gap widths, hazard density, and rhythm complexity.
 
 ---
 
@@ -390,7 +390,7 @@ The physics-constrained editor-ops generator is the strongest starting point for
 
 1. **Physics-aware construction.** It derives conservative placement constraints from the platformer kernel's configuration, eliminating many impossible candidates cheaply. Joint trajectory checks and replay verification are still required because independent horizontal/vertical maxima do not prove a fixed-step route.
 
-2. **Editor integration.** The `EditorOperation[]` output means generated levels load directly into the editor with undo/redo. This is critical for the "generate → edit → playtest → share" workflow that Clone-to-Jest games need. The consumer doesn't need to convert `LevelData` to ops manually.
+2. **Editor integration.** The `EditorOperation[]` output means generated levels load directly into the editor with undo/redo. This is critical for the "generate → edit → playtest → share" workflow that consumer games need. The consumer doesn't need to convert `LevelData` to ops manually.
 
 3. **Dual output without complexity.** The `GeneratedLevel` return type gives the consumer both `level` (for direct `compileLevel` use) and `ops` (for editor integration) without extra API surface. The consumer picks which output they need.
 

@@ -6,13 +6,13 @@
 
 ## Consumer Need
 
-All three showcase sections (hero, lava-pool, playground) create canvases with fixed intrinsic resolution (320×320, 480×280, 600×400) and no `devicePixelRatio` handling. On 2×/3× Retina displays, the browser upscales these canvases → blurry rendering. Spitekeep already handles DPR inline in `main.ts:374` and `devil-studio.ts:1117` with a hand-rolled `window.devicePixelRatio || 1` pattern. The library should provide a defensive, reusable helper so consumers get crisp rendering without repeating the same boilerplate.
+All three showcase sections (hero, lava-pool, playground) create canvases with fixed intrinsic resolution (320×320, 480×280, 600×400) and no `devicePixelRatio` handling. On 2×/3× Retina displays, the browser upscales these canvases → blurry rendering. The consumer game already handles DPR inline in `main.ts:374` and `devil-studio.ts:1117` with a hand-rolled `window.devicePixelRatio || 1` pattern. The library should provide a defensive, reusable helper so consumers get crisp rendering without repeating the same boilerplate.
 
 **What becomes possible:** Crisp canvas rendering on all DPR displays. Consumers call one function at canvas setup, pass the returned DPR into their render code, and their pixel-art / procedural art renders sharp.
 
 ## Approach A: Two Functions — Reader + Applier
 
-**Source pattern:** Mirrors `src/primitives/motion.ts` (cached defensive host reader) + Spitekeep's `main.ts:373-387` (canvas sizing boilerplate extracted into a reusable call).
+**Source pattern:** Mirrors `src/primitives/motion.ts` (cached defensive host reader) + the reference `main.ts:373-387` (canvas sizing boilerplate extracted into a reusable call).
 
 **Signature sketch:**
 
@@ -233,7 +233,7 @@ ctx.fillRect(10, 10, 32, 32);
 
 ## Recommendation
 
-**Approach A: Two Functions.** The `getDevicePixelRatio()` reader + `resizeCanvasToBackingStore()` applier split is the right API. It matches the `motion.ts` defensive-adapter pattern exactly, keeps CSS ownership with the consumer (the library must not fight layouts), gives consumers full control over the transform stack (critical for camera/zoom/letterbox compositions like Spitekeep's `main.ts:768`), and each export is independently tree-shakeable. The 1-line convenience of Approach B is not worth the composability cost — consumers with real games (camera, zoom, viewport clamping) would immediately outgrow it and fall back to calling `getDevicePixelRatio()` directly anyway.
+**Approach A: Two Functions.** The `getDevicePixelRatio()` reader + `resizeCanvasToBackingStore()` applier split is the right API. It matches the `motion.ts` defensive-adapter pattern exactly, keeps CSS ownership with the consumer (the library must not fight layouts), gives consumers full control over the transform stack (critical for camera/zoom/letterbox compositions like the reference `main.ts:768`), and each export is independently tree-shakeable. The 1-line convenience of Approach B is not worth the composability cost — consumers with real games (camera, zoom, viewport clamping) would immediately outgrow it and fall back to calling `getDevicePixelRatio()` directly anyway.
 
 ## Open Questions for @architect
 

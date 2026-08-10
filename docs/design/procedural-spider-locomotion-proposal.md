@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep (IMP - Not a Troll) and future Clone-to-Jest siblings need terrifying, procedurally-animated multi-legged spider enemies. Without this, the only option is pre-baked spritesheet animation — which costs memory, looks stiff, and can't adapt to terrain. This unlocks:
+The consumer game and future consumer titles need terrifying, procedurally-animated multi-legged spider enemies. Without this, the only option is pre-baked spritesheet animation — which costs memory, looks stiff, and can't adapt to terrain. This unlocks:
 
 - **Zero-Asset Scary Enemies:** Procedural scuttling reads as far more organic and creepy than pre-baked sprites, making spider-like enemies genuinely scary while keeping asset sizes at zero.
 - **Dynamic Procedural Variety:** Swapping leg counts, leg lengths, body segmentation, eye counts, and colors allows generating infinite arachnid/insectoid variety from a single codebase.

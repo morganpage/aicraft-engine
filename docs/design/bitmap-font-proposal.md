@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Every game in the Spitekeep family needs text rendering — HUD scores ("SCORE 1200"), death screens ("GAME OVER"), level titles, dialogue boxes, counters. Today Spitekeep uses `ctx.fillText` with webfonts (`system-ui, sans-serif`) which:
+Every game in the the library family needs text rendering — HUD scores ("SCORE 1200"), death screens ("GAME OVER"), level titles, dialogue boxes, counters. Today the reference implementation uses `ctx.fillText` with webfonts (`system-ui, sans-serif`) which:
 1. **Breaks pixel-grid integrity** — anti-aliased sub-pixel rendering bleeds across the integer-pixel grid (GDD §11.3 violation).
 2. **Is non-deterministic** — `ctx.measureText` returns browser/OS-dependent widths, breaking replay determinism.
 3. **Requires a host font** — `ctx.font` triggers a font-load race; no webfont = no text in SSR/headless/benchmarks.
@@ -445,7 +445,7 @@ The following five points were reviewed by `@architect` and confirmed as-is (no 
 
 2. **`addGlyph` copy cost** — Acceptable. `addGlyph` shallow-copies the `glyphs` Map (95 entries for the default font). This is a setup-time-only operation (called once per custom font, not per frame). Documented in its JSDoc as "setup-time only".
 
-3. **`DEFAULT_TEXT_SCALE = 3` (21px)** — Confirmed. Spitekeep's existing HUD uses `ctx.font = 'bold 14px sans-serif'` (≈scale 2), but `scale = 3` is the right library default for legibility per XAG 101. Consumers who want the 14px look pass `scale: 2` explicitly — the options bag makes this trivial.
+3. **`DEFAULT_TEXT_SCALE = 3` (21px)** — Confirmed. the reference implementation's existing HUD uses `ctx.font = 'bold 14px sans-serif'` (≈scale 2), but `scale = 3` is the right library default for legibility per XAG 101. Consumers who want the 14px look pass `scale: 2` explicitly — the options bag makes this trivial.
 
 4. **`drawTextOutlined` reuses `DEFAULT_OUTLINE_COLOR` (#1d1128)** — Confirmed. The `TextDrawOptions.outline` field defaults to `DEFAULT_OUTLINE_COLOR`, matching the existing outline primitive. Overridable per-call via `options.outline`.
 

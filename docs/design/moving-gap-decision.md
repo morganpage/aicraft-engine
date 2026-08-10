@@ -10,7 +10,7 @@ A gap (hole) that moves along an arbitrarily long platform. A player standing on
 
 ## The bug this exists to prevent
 
-Spitekeep's `movingVoid` trap (GDD §6.13) already ships this feature, but it coupled **gap motion** (where the center wants to be) and **gap geometry** (what solid fragments exist) inside one handler, producing fragments from a raw, unclamped `gapCenterX`. In `chase` mode the center followed `player.x` past the span edge, so the rendered void extended over a still-colliding static platform — **the player appeared to stand on the void.** The user's fix added a span clamp *after every travel mode*. That fix is correct but fragile: it makes the clamp a per-motion-mode responsibility, easy to forget when adding a new mode.
+the reference `movingVoid` trap (GDD §6.13) already ships this feature, but it coupled **gap motion** (where the center wants to be) and **gap geometry** (what solid fragments exist) inside one handler, producing fragments from a raw, unclamped `gapCenterX`. In `chase` mode the center followed `player.x` past the span edge, so the rendered void extended over a still-colliding static platform — **the player appeared to stand on the void.** The user's fix added a span clamp *after every travel mode*. That fix is correct but fragile: it makes the clamp a per-motion-mode responsibility, easy to forget when adding a new mode.
 
 ## The chosen abstraction
 
@@ -24,9 +24,9 @@ Spitekeep's `movingVoid` trap (GDD §6.13) already ships this feature, but it co
 
 | Input | What it contributed |
 |---|---|
-| `docs/research/moving-gap-platform.md` (@researcher) | Codified Spitekeep's `movingVoid` as the in-house anchor and surfaced the **motion/geometry separation** as the design driver. Confirmed the every-tick solid-list rebuild + gravity-before-move-Y means no tunneling for a resting player. |
+| `docs/research/moving-gap-platform.md` (@researcher) | Codified the reference `movingVoid` as the in-house anchor and surfaced the **motion/geometry separation** as the design driver. Confirmed the every-tick solid-list rebuild + gravity-before-move-Y means no tunneling for a resting player. |
 | `docs/design/moving-gap-proposal.md` (@api-designer, 2 loops) | Three approaches with trade-offs. After the architect's hard-block on the underspecified clamp, the designer added the explicit **four-guard clamp algorithm** that makes "void never standable" true by construction. |
-| Architect critique | Caught that the inherited Spitekeep clamp formula inverts (`minCenter > maxCenter`) when `gapWidth ≥ span.width`, and that `NaN` propagates into fragment rects. Both are now guard-claused. Also resolved: `Solid[]` return (matches `querySolidTiles`), `gapTileQuery` lives in `moving-gap.ts`, `GapState` → renamed `GapGeometry`. |
+| Architect critique | Caught that the inherited the reference implementation clamp formula inverts (`minCenter > maxCenter`) when `gapWidth ≥ span.width`, and that `NaN` propagates into fragment rects. Both are now guard-claused. Also resolved: `Solid[]` return (matches `querySolidTiles`), `gapTileQuery` lives in `moving-gap.ts`, `GapState` → renamed `GapGeometry`. |
 | Prototype `src/_prototype/moving-gap.ts` (@coder) | Confirmed the four-guard clamp is bulletproof across every pathological input; `Solid[]` composes trivially with `[...statics, ...gapSolids]`. Flagged one correctness item for production (`gapTileQuery` membership test) and one ergonomics nicety (`initialCenterX`). |
 | Benchmark `benchmarks/moving-gap/sample-sheet.png` (@benchmarker) | Visually confirmed all six scenes, especially the three load-bearing edge cases: `gapWidth = span.width` → **0 fragments** (no stray sliver); `gapWidth ≤ 0` → **1 full-span fragment**; `centerX = ±9999` → gap clamped **flush to span edge, never past it**. The sweep frame shows a player standing safely on a fragment while another falls through the gap in the same frame. |
 
@@ -36,7 +36,7 @@ Spitekeep's `movingVoid` trap (GDD §6.13) already ships this feature, but it co
 
 **Functions:** `gapSolids(span, gap): Solid[]`, `createGapMotion(config): GapMotionState`, `advanceGapMotion(state, dt, config, targetX?): GapMotionState`, `gapTileQuery(base, span, gap, tileSize): TileSolidityQuery`.
 
-**Constants:** `DEFAULT_GAP_WIDTH = 64`, `DEFAULT_GAP_SPEED = 2`, `DEFAULT_CHASE_GIVE_UP_RADIUS = 200` (~3× default gap width; mirrors Spitekeep chase-disengage feel).
+**Constants:** `DEFAULT_GAP_WIDTH = 64`, `DEFAULT_GAP_SPEED = 2`, `DEFAULT_CHASE_GIVE_UP_RADIUS = 200` (~3× default gap width; mirrors the reference implementation chase-disengage feel).
 
 **Location:** `src/collision/moving-gap.ts`, re-exported from `src/collision/index.ts`.
 
@@ -65,14 +65,13 @@ Same `(state, dt, config, targetX?)` → byte-identical returned `GapMotionState
 
 ## Out of scope for this work
 
-- **Spitekeep migration.** Spitekeep's in-repo `movingVoid` is not refactored to consume this primitive. It works, it's tested, and Spitekeep doesn't yet consume `src/collision/` at all. The primitive is designed so a future migration is *possible*, but that's a separate decision.
+- **Consumer migration.** The consumer's in-repo `movingVoid` is not refactored to consume this primitive. It works, it's tested, and the consumer doesn't yet consume `src/collision/` at all. The primitive is designed so a future migration is *possible*, but that's a separate decision.
 - **Player carrying.** The primitive is "absence of floor," full stop. Carrying (moving-platform semantics) is a separate concern.
-- **Post-mortem reveal / disguise / chase-speed lint.** Those are game-design rules in Spitekeep's GDD, not engine concerns.
+- **Post-mortem reveal / disguise / chase-speed lint.** Those are game-design rules in the reference implementation's GDD, not engine concerns.
 
 ## Cross-references
 
 - Proposal: `docs/design/moving-gap-proposal.md`
 - Research: `docs/research/moving-gap-platform.md`
 - Benchmark: `benchmarks/moving-gap/sample-sheet.png` (+ `README.md`, script `benchmarks/_scripts/moving-gap-render.ts`)
-- Spitekeep reference: `ai-craft-game-dev-devil/src/core/traps/moving-void.ts`, GDD §6.13
 - Composes with: `src/collision/resolve.ts` (`resolveAxisX/Y`), `src/collision/tiles.ts` (`resolveTileX/Y`, `TileSolidityQuery`)

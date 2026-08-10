@@ -10,7 +10,7 @@ This catalog establishes the prior-art foundation for expanding the `aicraft-eng
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly expands **Pillar 4 (Fake-3D / Level Loading / Editor)** and leverages **Pillar 1 (Primitives / Seeded RNG / Particles / Collision)**.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* and future Clone-to-Jest titles require a rich palette of enemy behaviors to create engaging, varied levels without bloating the bundle size.
+- **Consumer Games**: Consumer titles require a rich palette of enemy behaviors to create engaging, varied levels without bloating the bundle size.
 - **Unlocks**:
   - **Telegraph System Synergy**: Establishes clear hooks for Phase 3's deterministic windup → active → recovery state-machine, making enemy attacks readable and fair.
   - **Level Design Depth**: Moves beyond static hazards and simple patrols into active player tracking, aerial zoning, and terrain-adaptive movement.
@@ -323,4 +323,3 @@ This catalog establishes the prior-art foundation for expanding the `aicraft-eng
 - `docs/design/character-enemy-variety-roadmap.md` — The strategic roadmap for character and enemy variety.
 - `src/platformer/enemy/types.ts` — The `EnemyBehaviorHandler` and `EnemyState` type definitions.
 - `src/platformer/enemy/registry.ts` — The existing `spinny`, `turret`, and `spider` behavior implementations.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Sokpop's procedural rendering and movement principles.

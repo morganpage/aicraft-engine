@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep's `movingVoid` trap is a traveling absence of floor: a gap sweeps/chases/expands along a platform span, and the player falls through when the gap reaches them. Without this primitive, consumers must hand-roll the span-splitting geometry, remember the span clamp, and wire the fragments into the resolver themselves — exactly the pattern that produced the visual-solid desync bug (player standing on rendered void).
+the reference `movingVoid` trap is a traveling absence of floor: a gap sweeps/chases/expands along a platform span, and the player falls through when the gap reaches them. Without this primitive, consumers must hand-roll the span-splitting geometry, remember the span clamp, and wire the fragments into the resolver themselves — exactly the pattern that produced the visual-solid desync bug (player standing on rendered void).
 
 When this ships, consumers get a deterministic, self-clamping geometry helper that makes the "void never standable" invariant impossible to violate, plus an optional deterministic motion state machine for the common sweep/chase/expand patterns.
 
@@ -16,7 +16,7 @@ When this ships, consumers get a deterministic, self-clamping geometry helper th
 
 ### Approach A: Composable Pure Helpers (Geometry + Motion Separated)
 
-**Source pattern:** Pattern 1 (Spitekeep `movingVoid` `getSolids`) + Pattern 3 (procedural solidity query), split into two independent layers. The research note's central insight — clamp inside geometry, not motion — is the structural anchor.
+**Source pattern:** Pattern 1 (the reference implementation `movingVoid` `getSolids`) + Pattern 3 (procedural solidity query), split into two independent layers. The research note's central insight — clamp inside geometry, not motion — is the structural anchor.
 
 **Signature sketch:**
 
@@ -178,7 +178,7 @@ const r = resolveTileY(player, player.vy, wrappedQuery, 16, prevBottom);
 
 ### Approach B: Single Stateful `MovingGap` Entity
 
-**Source pattern:** Pattern 1 (Spitekeep `movingVoid` as a `TrapHandler` with bundled state + geometry + motion), but with the clamp moved into `getSolids` to fix the invariant.
+**Source pattern:** Pattern 1 (the reference implementation `movingVoid` as a `TrapHandler` with bundled state + geometry + motion), but with the clamp moved into `getSolids` to fix the invariant.
 
 **Signature sketch:**
 
@@ -248,7 +248,7 @@ const r = resolveAxisY(player, player.vy, allSolids, prevBottom);
 - **Runtime cost:** Identical to Approach A (same operations, just bundled).
 - **Consumer complexity:** Lower wiring cost. But: the consumer cannot easily hand-drive the geometry without creating a fake `MovingGap` object.
 - **Invariant enforcement:** **Structural, but coupled.** The clamp lives inside `getSolids`, which is correct. However, the geometry helper is NOT independently reusable — you must have a `MovingGap` to get fragments. This is a regression from Approach A for consumers who want scripted/manual gaps.
-- **Convention fit:** Slightly breaks the library's existing pattern. The collision module exports pure functions over plain data, not stateful entities. `resolveAxisX/Y` don't own state; they take it. A `MovingGap` object is closer to Spitekeep's `TrapHandler` (which bundles state + behavior) than to the library's existing composable-function pattern.
+- **Convention fit:** Slightly breaks the library's existing pattern. The collision module exports pure functions over plain data, not stateful entities. `resolveAxisX/Y` don't own state; they take it. A `MovingGap` object is closer to the reference `TrapHandler` (which bundles state + behavior) than to the library's existing composable-function pattern.
 
 **What this makes easy:**
 - The common case (create → step → read) is a clean three-call pattern
@@ -344,7 +344,7 @@ const r = resolveTileY(player, player.vy, wrappedQuery, 16, prevBottom);
 
 **Why:** The research note's central insight — separate motion from geometry, put the clamp inside geometry — demands that the geometry helper is independently reusable. Approach A's `gapSolids` is that helper: it takes a span + a gap state, returns `Solid[]`, and clamps internally. It works for rect-list consumers, it works for hand-driven scripted gaps, and it composes with the existing resolver. Approach C's `gapTileQuery` adds tile-grid support by wrapping the same clamping logic into a `TileSolidityQuery` closure. Together, A + C cover both collision paths (rect-list and tile-grid) without any duplication of the clamp invariant.
 
-Approach B adds no value that A doesn't already provide. The only advantage is "fewer variables to hold," but that advantage is offset by the coupling of motion + geometry (exactly what the bug analysis says to avoid) and the break from the library's pure-function convention. The `MovingGap` entity pattern belongs in Spitekeep's game layer (where the `TrapHandler` already bundles state), not in the library's collision primitives.
+Approach B adds no value that A doesn't already provide. The only advantage is "fewer variables to hold," but that advantage is offset by the coupling of motion + geometry (exactly what the bug analysis says to avoid) and the break from the library's pure-function convention. The `MovingGap` entity pattern belongs in the reference implementation's game layer (where the `TrapHandler` already bundles state), not in the library's collision primitives.
 
 The clamp lives in one place: `gapSolids`. Both `advanceGapMotion` (which may produce unclamped centerX values) and `gapTileQuery` (which clamps per-tile) delegate to or mirror the same clamping logic. The invariant is structural and impossible to violate by construction.
 
@@ -402,7 +402,7 @@ function gapSolids(span, gap):
 
 2. **Guard 2** handles `gapWidth <= 0` by returning the full span as a single solid. This is a degenerate case that should never occur in normal gameplay, but the clamp math would fail if we tried to compute `half` with a non-positive width.
 
-3. **Guard 3** is the critical fix for the Spitekeep reference implementation's failure mode. When `gapWidth >= span.width`, the naive clamp formula `minCenter = x + half; maxCenter = x + width - half` produces `minCenter > maxCenter` (or `minCenter === maxCenter` at equality), and a standard `Math.max(min, Math.min(max, v))` would return `min` — which is the leftmost edge of the gap, producing a spurious right fragment that covers part of the span. By returning 0 fragments *before* attempting the clamp, we avoid this entirely.
+3. **Guard 3** is the critical fix for the the reference implementation reference implementation's failure mode. When `gapWidth >= span.width`, the naive clamp formula `minCenter = x + half; maxCenter = x + width - half` produces `minCenter > maxCenter` (or `minCenter === maxCenter` at equality), and a standard `Math.max(min, Math.min(max, v))` would return `min` — which is the leftmost edge of the gap, producing a spurious right fragment that covers part of the span. By returning 0 fragments *before* attempting the clamp, we avoid this entirely.
 
 4. **Guard 4** handles the normal case. Because `gapWidth < span.width` (guaranteed by Guard 3), `half < span.width / 2`, so `minCenter < maxCenter`. The clamp is well-defined and produces a `clampedCenter` that keeps the gap strictly within the span. The fragment emission checks (`gapLeft > span.x`, `span.x + span.width > gapRight`) correctly produce 0, 1, or 2 fragments.
 
@@ -496,7 +496,7 @@ This strictness is load-bearing for the resolver: a body resting exactly on a pl
 
 Consider a player standing on the left fragment of a gap-split span. The gap is approaching from the right. At tick N:
 
-1. **Gravity applied** (before move-Y, per Spitekeep's `player.ts` discipline): `player.vy += GRAVITY * dt`.
+1. **Gravity applied** (before move-Y, per the reference `player.ts` discipline): `player.vy += GRAVITY * dt`.
 2. **Move Y**: `player.y += player.vy`.
 3. **Resolve Y** (`resolveAxisY`): the player's moved body is checked against each solid. The left fragment is a `Solid` at a specific Y position. The player's bottom edge was previously resting on this surface — after gravity + move-Y, the player has moved down by `vy * dt` pixels (typically 1–2 px at 60fps). `aabbOverlap` detects the overlap and snaps the player back to the surface. `landed = true`. Net effect: player stays on the fragment.
 
@@ -517,7 +517,7 @@ The critical insight is that **gravity is applied every tick before move-Y**, so
 
 ### Tunneling guard
 
-Per-tick gap movement should stay below the player's body width to prevent the gap from jumping past the player in a single tick. The research note's context: Spitekeep's `speed ≤ 3.0` (px/tick) vs player width of ~16px ensures this. The gap moves at most 3px per tick; the player is 16px wide. The gap cannot traverse the player's entire width in one tick, so the player always has at least one tick where the fragment still exists beneath them.
+Per-tick gap movement should stay below the player's body width to prevent the gap from jumping past the player in a single tick. The research note's context: the reference `speed ≤ 3.0` (px/tick) vs player width of ~16px ensures this. The gap moves at most 3px per tick; the player is 16px wide. The gap cannot traverse the player's entire width in one tick, so the player always has at least one tick where the fragment still exists beneath them.
 
 This is a **consumer-side constraint**, not enforced by the library. The library's `advanceGapMotion` produces the gap center; it does not validate speed against player dimensions. Documenting this constraint in the JSDoc of `GapMotionConfig.speed` is sufficient.
 
@@ -527,7 +527,7 @@ This is a **consumer-side constraint**, not enforced by the library. The library
 
 ### Does the gap carry the player?
 
-**No.** The moving gap primitive is "absence of floor," full stop. Carrying is a separate concern. Spitekeep's `movingPlatform` carries via `carryX`/`carryY` modifiers; `movingVoid` explicitly does NOT carry. This matches the physics: a gap removes floor, it doesn't move the player. If a consumer needs a "moving platform that kills by falling," they compose the gap with their own carry logic. The primitive stays focused.
+**No.** The moving gap primitive is "absence of floor," full stop. Carrying is a separate concern. the reference `movingPlatform` carries via `carryX`/`carryY` modifiers; `movingVoid` explicitly does NOT carry. This matches the physics: a gap removes floor, it doesn't move the player. If a consumer needs a "moving platform that kills by falling," they compose the gap with their own carry logic. The primitive stays focused.
 
 ### Do fragments inherit `passthrough`?
 
@@ -546,16 +546,16 @@ This is a **consumer-side constraint**, not enforced by the library. The library
 Named at the top of `moving-gap.ts` (or in a `constants.ts` if the collision module grows):
 
 ```ts
-/** Default gap width in pixels. Matches Spitekeep GDD §6.13. */
+/** Default gap width in pixels. Matches the reference implementation GDD §6.13. */
 export const DEFAULT_GAP_WIDTH = 64;
 
-/** Default movement speed in px/tick. Matches Spitekeep GDD §6.13. */
+/** Default movement speed in px/tick. Matches the reference implementation GDD §6.13. */
 export const DEFAULT_GAP_SPEED = 2;
 
 /**
  * Default give-up radius for chase mode in pixels. Approximately 3× the
  * default gap width (64 × 3 ≈ 200), so chase disengages cleanly when the
- * player escapes beyond the gap's reach. Mirrors Spitekeep's chase-disengage
+ * player escapes beyond the gap's reach. Mirrors the reference implementation's chase-disengage
  * feel where the gap stops pursuing once the player is far enough ahead.
  */
 export const DEFAULT_CHASE_GIVE_UP_RADIUS = 200;

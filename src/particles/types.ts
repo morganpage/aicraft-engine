@@ -1,7 +1,7 @@
 /**
  * Particle type. Pure data — no methods, no behavior.
  *
- * Matches Spitekeep `config/types.ts:140`:
+ * Reference shape:
  *   `{ x, y, vx, vy, life, maxLife, size }` with an optional color.
  *
  * Particles are treated as immutable by `advance()` and `cull()`: operations

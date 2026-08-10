@@ -52,7 +52,7 @@ From the research note + proposal + two architect loops:
    `drawTextOutlined` (1px outline via `outlineRect`/`DEFAULT_OUTLINE_COLOR`).
    Both take a `CanvasRenderingContext2D`. NEVER `ctx.fillText` / `ctx.font`.
 6. **Scale semantics:** "pixels per glyph cell" (`scale=3` → 15×21 per glyph).
-7. **`DEFAULT_TEXT_SCALE = 3`** (~21px, XAG-legible). Document that Spitekeep's
+7. **`DEFAULT_TEXT_SCALE = 3`** (~21px, XAG-legible). Document that the reference implementation's
    existing HUD uses ~14px (scale 2) and should override per-call.
 8. **No kerning in v1** (monospace; add when proportional fonts arrive).
 9. **Named constants exported:** `DEFAULT_TEXT_COLOR` (#ffffff),

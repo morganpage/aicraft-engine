@@ -12,7 +12,7 @@ Automated level testing answers two questions for a deterministic platformer lib
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: extends **Pillar 2 (Platformer)** and **Pillar 4 (Replay)**. The replay module is already shipping; this note is about what consumes it.
-- **Consumer Games**: Spitekeep / IMP - Not a Troll needs "is this user-uploaded level beatable?" before allowing share; future Clone-to-Jest titles need CI gates that catch the "I shipped an impossible level" embarrassment (`platval`'s origin story).
+- **Consumer Games**: The consumer game needs "is this user-uploaded level beatable?" before allowing share; future consumer titles need CI gates that catch the "I shipped an impossible level" embarrassment (`platval`'s origin story).
 - **Unlocks**:
   - **UGC clear-check**: a `Replay` recorded by a bot is the cheapest possible "this level is beatable" proof — the hash is the share-code, the replay is the receipt. Same shape as Super Mario Maker's clear-check.
   - **CI regression for levels**: a `tests/fixtures/levels/*.json` + `tests/fixtures/replays/*.json` pair lets `npm test` assert "every shipped level still produces the same `replayHash`" — catches physics regressions, level-schema migrations, and accidental edits.
@@ -337,4 +337,3 @@ Automated level testing answers two questions for a deterministic platformer lib
 - `docs/research/platformer-kernel.md` — the kernel's determinism contract; the bot inherits it.
 - `docs/research/level-schema.md` — the level schema the validator operates on.
 - `docs/research/platformer-enemy-archetypes.md` — enemy behavior patterns; the bot's "avoid hazards" logic composes with these.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — the canonical Sokpop reference; the validator + bot are the "no shipped impossible level" guarantee Sokpop achieves via manual playtesting.

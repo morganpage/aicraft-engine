@@ -38,11 +38,11 @@ If submodule overhead is unwanted, copy the library into `src/lib/aicraft-engine
 cp -r /path/to/aicraft-engine/src /path/to/game/src/lib/aicraft-engine/
 ```
 
-### Option C: npm package (NOT recommended for Spitekeep-family games)
+### Option C: npm package (NOT recommended for zero-dep games)
 
-The library is structured to be publishable, but doing so adds a `dependencies` entry to the consumer's `package.json`. Spitekeep deliberately has zero `dependencies` as a minimalist invariant; publishing would break that.
+The library is structured to be publishable, but doing so adds a `dependencies` entry to the consumer's `package.json`. Many consumer titles deliberately ship with zero `dependencies` as a minimalist invariant; publishing would break that.
 
-This option is fine for **external consumers** (Premium AI Craft customers building their own games outside the Spitekeep family), but not for sibling games in the Clone-to-Jest pipeline.
+This option is fine for **external consumers** (Premium AI Craft customers building their own games outside the zero-dep family), but not for sibling games that share the zero-dependency invariant.
 
 ---
 
@@ -164,7 +164,7 @@ const loop = createGameLoop({
       drawLevelEntity(ctx, entity);
     }
 
-    // Draw player (default palette uses Spitekeep orange #fe5701; spread a custom palette to override)
+    // Draw player (default palette uses orange #fe5701; spread a custom palette to override)
     drawActor(ctx, platformerState.core);
   },
 });
@@ -303,7 +303,7 @@ Why this matters:
 
 The library's `EntityKind` is a closed union: `spawn | exit | platform | passthrough | trap | hazard | decoration | trigger | movingPlatform`. Adding a new kind requires either a library update or a fork.
 
-**Simplest path: use `trap` or `trigger` with a `type` discriminator.** This matches Spitekeep's existing pattern — a "spring" entity is a `trap` with `props: { type: 'spring', params: { bounceVelocity: -400 } }`.
+**Simplest path: use `trap` or `trigger` with a `type` discriminator.** A "spring" entity is a `trap` with `props: { type: 'spring', params: { bounceVelocity: -400 } }`.
 
 ```ts
 // Authoring in the editor
@@ -1044,14 +1044,15 @@ Collision comes from the translated `LevelData` (`ldtkLevelToLevelData` writes
 the IntGrid into `tiles.data`), so `compileGeneratedLevel` and the rest of the
 runtime work unchanged.
 
-### Bundled starter tilesets
+### Bundled atlas tilesets
 
-The engine ships three CC0/public-domain tilesets under `assets/ldtk/`
-(Cavernas by Adam Saltsman, SunnyLand by Ansimuz, Inca by Kronbits). LDtk's own
-sample projects are vendored under `assets/ldtk/samples/` as **test fixtures**
-— they are the auto-tiler's correctness oracle, not shipped art. See
-`assets/ldtk/README.md` and `THIRD_PARTY.md` for attribution. Nuclear Blaze is
-deliberately excluded (CC-BY-SA).
+CC0/public-domain tilesets live under `assets/ldtk/samples/atlas/` (Cavernas by
+Adam Saltsman, SunnyLand by Ansimuz, Inca by Kronbits) so the LDtk sample
+projects resolve their `relPath`s. LDtk's own sample projects are vendored
+under `assets/ldtk/samples/` as **test fixtures** — they are the auto-tiler's
+correctness oracle, not shipped art. See `assets/README.md` and
+`THIRD_PARTY.md` for attribution. Nuclear Blaze is deliberately excluded
+(CC-BY-SA).
 
 ### Entity mapping
 

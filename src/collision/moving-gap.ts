@@ -8,11 +8,11 @@
  *
  * ## Architecture: motion and geometry are separated
  *
- * The bug this module exists to prevent (Spitekeep `movingVoid`, GDD §6.13)
- * coupled gap motion and gap geometry in one handler, producing fragments from
- * a raw, unclamped `gapCenterX`. In `chase` mode the center followed the player
- * past the span edge, so the rendered void extended over a still-colliding
- * static platform — the player appeared to stand on the void.
+ * The bug this module exists to prevent (the reference `movingVoid` handler,
+ * GDD §6.13) coupled gap motion and gap geometry in one handler, producing
+ * fragments from a raw, unclamped `gapCenterX`. In `chase` mode the center
+ * followed the player past the span edge, so the rendered void extended over
+ * a still-colliding static platform — the player appeared to stand on the void.
  *
  * The fix is structural: the **clamp** (which keeps the gap inside the span)
  * lives in the geometry half ({@link gapSolids}), not the motion half
@@ -41,13 +41,13 @@ import type { Solid, TileSolidityQuery } from './types';
 // ---------------------------------------------------------------------------
 
 /**
- * Default gap width in pixels. Matches Spitekeep GDD §6.13 (`movingVoid`).
+ * Default gap width in pixels. Matches GDD §6.13 (`movingVoid`).
  * Consumers override per-instance via `GapMotionConfig.gapWidth`.
  */
 export const DEFAULT_GAP_WIDTH = 64;
 
 /**
- * Default movement speed in px/tick. Matches Spitekeep GDD §6.13.
+ * Default movement speed in px/tick. Matches GDD §6.13.
  *
  * **Tunneling note:** the library does not own `dt` and is not a physics
  * enforcer. The consumer should keep per-tick gap movement (`speed * dt`)
@@ -59,7 +59,7 @@ export const DEFAULT_GAP_SPEED = 2;
 /**
  * Default give-up radius for chase mode in pixels (~3× the default gap width:
  * 64 × 3 ≈ 200). Chase disengages cleanly when the player escapes beyond the
- * gap's reach, mirroring Spitekeep's chase-disengage feel.
+ * gap's reach, mirroring a chase-disengage feel.
  */
 export const DEFAULT_CHASE_GIVE_UP_RADIUS = 200;
 

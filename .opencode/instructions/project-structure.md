@@ -1,6 +1,6 @@
 # Project Structure
 
-This is `aicraft-engine` — a TypeScript library of procedural rendering primitives, algorithmic cosmetics, and an IAP bridge. It is consumed by AI Craft games (Spitekeep and future Clone-to-Jest siblings) via git submodule or vendored copy.
+This is `aicraft-engine` — a TypeScript library of procedural rendering primitives, algorithmic cosmetics, and an IAP bridge. It is consumed by other games via git submodule or vendored copy.
 
 ## Directory Layout
 
@@ -50,7 +50,7 @@ aicraft-engine/
 │   └── instructions/          # Always-loaded context (this file + tech-stack.md)
 ├── opencode.json              # Agent team configuration
 ├── package.json               # devDependencies only — no runtime deps
-├── tsconfig.json              # Strict TS, mirrors Spitekeep exactly
+├── tsconfig.json              # Strict TS
 ├── tsconfig.build.json        # Emits dist/ (.js + .d.ts) for npm publish
 ├── tsconfig.node.json         # For vite.config.ts
 └── vite.config.ts             # Vitest config (node env)
@@ -73,7 +73,7 @@ the live status table. `levelgen/`, `leveltest/`, and `simtest/` are shipped;
 | **Cross-cutting simulation testing** | `simtest/`, `leveltest/` | Generic deterministic scenario verification plus the standard platformer/LevelData adapter. `simtest` is the generic core (zero platformer imports); `leveltest` is the platformer adapter built on top |
 | **3. IAP** | `iap/` | Bridge adapter interface, entitlement store, memory + localStorage dev adapters |
 | **4. Fake-3D** | `fake3d/` (planned) | Billboarding, isometric, orthographic cube, heightmap |
-| **5. Platform adapters** | (extends `iap/`) | Jest SDK, Poki SDK — on-demand |
+| **5. Platform adapters** | (extends `iap/`) | Poki SDK, StoreKit, Play Billing — on-demand |
 | **— Replay** | `replay/` | Record/playback + deterministic hash fingerprint (cross-cutting, consumes the kernel) |
 
 ## File naming
@@ -109,11 +109,6 @@ import { outlineRect, mulberry32 } from './lib/aicraft-engine/src';
 
 The top-level barrel re-exports everything from each pillar. Tree-shaking still works because each module has its own barrel too.
 
-## Sibling projects
+## Scope
 
-| Sibling | Path | Relationship |
-|---|---|---|
-| Spitekeep (now renamed **IMP - Not a Troll**) | `~/Documents/VSCODE/OPENCODE/ai-craft-game-dev-devil` | The codebase this library was extracted from; future consumer via submodule. (The Spitekeep project was renamed to "IMP - Not a Troll" — both names refer to the same repo at the path below.) |
-| AI Craft Strategy | `~/Documents/VSCODE/OPENCODE/ai-craft-strategy` | Strategic context — Clone-to-Jest methodology, Sokpop teardown, etc. |
-
-When researching or designing, the Sokpop teardown at `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` is the canonical reference for what the library must support.
+This library is self-contained. It has no parent game, no private sibling repos, and no internal codenames. When researching or designing, the public Sokpop catalog ([sokpop.itch.io](https://sokpop.itch.io)) is the canonical external reference for the minimalist-procedural rendering style the library aims to support.

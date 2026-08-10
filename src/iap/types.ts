@@ -140,12 +140,13 @@ export interface GrantDescriptor {
 export type SkuResolver = (sku: string) => readonly GrantDescriptor[];
 
 /**
- * Host-touching adapter interface. Mirrors Spitekeep's `SaveStorage` shape.
+ * Host-touching adapter interface.
  *
  * Public APIs of adapters **never throw** and **never reject** — they degrade
  * gracefully. This makes them safe to call from code that must not crash the
  * sim. Implementations: `createMemoryIAPAdapter` (tests),
- * `createLocalStorageIAPAdapter` (dev). Poki/Jest adapters ship in Pillar 5.
+ * `createLocalStorageIAPAdapter` (dev). Poki and direct-IAP platform adapters
+ * ship in Pillar 5.
  */
 export interface IAPBridge {
   /** Initialise the adapter (lazy host probe, network warm-up, etc.). */

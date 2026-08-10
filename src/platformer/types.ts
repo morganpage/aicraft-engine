@@ -315,8 +315,7 @@ export interface PlatformerState {
  * Math note: gravity and jump apex parameterization are independent. The
  * kernel's `gravity` (applied during the integrate step) controls fall speed
  * after the apex; `jump`'s derived `physics.gravity` controls rise trajectory
- * inside `advanceJump`. Spitekeep uses the same split — see
- * `core/player.ts`.
+ * inside `advanceJump`. This split keeps rise and fall independently tunable.
  */
 export interface PlatformerConfig {
   /** Signed gravity in px/s². Positive pulls down; negative pulls up. */

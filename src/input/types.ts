@@ -1,8 +1,7 @@
 /**
  * Type definitions for the input module.
  *
- * The module splits input handling into two layers (mirrors Spitekeep's
- * `src/input/`):
+ * The module splits input handling into two layers:
  *   - **Pure core** (`edges.ts`, `merge.ts`) — DOM-free edge-accumulator logic
  *     that is safe to unit-test under Node / vitest with no jsdom.
  *   - **Defensive adapters** (`keyboard.ts`, `touch-button.ts`) — host-touching

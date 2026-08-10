@@ -4,11 +4,9 @@
  *
  * Coordinates are floored so outlines land on the pixel grid (no anti-alias
  * seams). Matches GDD §11.3 art rules: flat colors, 1px outline, integer pixels.
- *
- * Extracted from Spitekeep `render/sprites.ts:66`.
  */
 
-/** Default outline color (Spitekeep's near-black devil outline). */
+/** Default outline color (near-black). */
 export const DEFAULT_OUTLINE_COLOR = '#1d1128';
 
 /**

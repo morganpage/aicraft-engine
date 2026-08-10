@@ -10,7 +10,7 @@ A deterministic platformer enemy system provides a headless, modular, and serial
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly establishes **Pillar 4 (Fake-3D / Level Loading / Editor)** and integrates with **Pillar 1 (Primitives / Seeded RNG / Particles / Collision)**.
-- **Consumer Games**: Sibling games like *IMP - Not a Troll* and future Clone-to-Jest titles need interactive hazards and enemies to create challenging, engaging levels.
+- **Consumer Games**: Consumer titles need interactive hazards and enemies to create challenging, engaging levels.
 - **Unlocks**:
   - **Level-Editor Integration**: Allows creators to place, configure, and path enemies visually in the level editor, saving them directly to the serializable `LevelData` schema.
   - **Deterministic Replays & Clear-Checks**: Since enemy behaviors and projectile timings are 100% deterministic, level clear-checks (verifying a level is winnable) remain completely stable across replays.
@@ -242,4 +242,3 @@ This schema is fully JSON-serializable, contains no closures or non-finite numbe
 - `docs/research/level-schema.md` — Serializable level formats and entity taxonomies.
 - `src/collision/resolve.ts` — Existing per-axis AABB resolver.
 - `src/level/types.ts` — Shipped level entity types.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Sokpop's procedural rendering patterns.

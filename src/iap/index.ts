@@ -3,7 +3,7 @@
  *
  * Provides types, pure entitlement ops + queue primitives, and defensive
  * adapters for memory (tests) and localStorage (dev). Platform-specific
- * adapters (Poki, Jest) ship in Pillar 5.
+ * adapters (Poki, direct-IAP platforms) ship in Pillar 5.
  *
  * Determinism summary:
  *   - Pure ops (`grantEntitlement`, `revokeEntitlement`, `flushIAPEvents`,

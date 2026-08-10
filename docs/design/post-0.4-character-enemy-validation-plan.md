@@ -2258,4 +2258,3 @@ The plan is complete when:
 - Enemy catalog proposal: `docs/design/enemy-archetype-catalog-proposal.md`
 - Prior enemy decision: `docs/design/platformer-enemy-archetypes-decision.md`
 - 0.4.0 plan: `docs/design/game-prompts-engine-0.4.0-plan.md`
-- Sokpop teardown: `../ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md`

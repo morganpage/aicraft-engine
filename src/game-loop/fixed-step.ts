@@ -12,8 +12,7 @@
  *     throws. In environments without RAF (Node / SSR), `start()` is a silent
  *     no-op.
  *
- * The pattern is extracted from Spitekeep (`src/main.ts` ~L442-530): a 60 Hz
- * fixed-step simulation with a variable-rate render, an accumulator that
+ * The pattern is a 60 Hz fixed-step simulation with a variable-rate render, an accumulator that
  * carries sub-step remainder across frames, a `maxFrameDelta` clamp to prevent
  * the spiral-of-death, and a `visibilitychange` reset so a backgrounded tab
  * doesn't explode into a giant catch-up burst on regain.

@@ -10,7 +10,7 @@ Infinite-scroll parallax backgrounds create the illusion of depth in 2D games by
 ## Why this matters for aicraft-engine
 
 This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** and **Pillar 4 (Fake-3D & advanced rendering)**.
-- **Visual Depth with Zero Assets:** Sibling games like *Spitekeep* and future Clone-to-Jest titles (such as card-based village builders in the vein of *Stacklands*) require rich, atmospheric backgrounds. By providing a robust, seamless tiling utility, developers can generate infinite scrolling backgrounds (e.g., starfields, clouds, distant mountains) procedurally using simple code-drawn shapes or minimal seamless textures.
+- **Visual Depth with Zero Assets:** Sibling games like *the reference implementation* and future consumer titles (such as card-based village builders in the vein of *Stacklands*) require rich, atmospheric backgrounds. By providing a robust, seamless tiling utility, developers can generate infinite scrolling backgrounds (e.g., starfields, clouds, distant mountains) procedurally using simple code-drawn shapes or minimal seamless textures.
 - **Determinism and Performance:** Infinite loops must be 100% deterministic and safe from memory leaks or infinite loop hangs. A pure mathematical helper allows the rendering layer to remain decoupled from the simulation while guaranteeing that identical camera inputs yield identical draw coordinates across frames.
 - **Eliminating Visual Bugs:** Hand-rolled parallax math in HTML5 Canvas games is notoriously prone to edge cases: off-by-one gaps when panning left, micro-stutters, and 1px semi-transparent seams at sub-pixel camera positions. Solving these at the library level ensures professional-grade visual polish.
 
@@ -80,7 +80,7 @@ This research directly impacts **Pillar 1 (Primitives & secondary dynamics)** an
      - *How*: Set `ctx.imageSmoothingEnabled = false` on the canvas context.
      - *Pros*: Fits the pixel-art aesthetic.
      - *Cons*: Does not fully solve the seam if coordinates are still floats, as the browser's rasterizer must still round coordinates, which can still leave a 1px gap depending on the browser's rounding direction.
-- **Fit for our constraints**: Strong. The library should support both **Integer Snapping** (for crisp pixel-art games like *Spitekeep*) and **Overscan** (for smooth high-res scrolling) as configurable options or recommended patterns.
+- **Fit for our constraints**: Strong. The library should support both **Integer Snapping** (for crisp pixel-art games like *the reference implementation*) and **Overscan** (for smooth high-res scrolling) as configurable options or recommended patterns.
 
 ### Pattern 4: "Set Piece" / Non-Looping Overlay Hybrid
 - **Source**: Celeste background layering, Hollow Knight parallax design.
@@ -127,12 +127,10 @@ The following table evaluates how the **Optimal Branching Remainder** formula ha
 - **Source**: `textures_tiled_drawing.c` ([raylib Examples](https://www.raylib.com/examples/textures/loader.html?name=textures_tiled_drawing))
 - **What it teaches**: raylib implements tiling by running a nested loop over both the X and Y axes, drawing the texture repeatedly using source and destination rectangles. This confirms that for 2D rendering, a simple, explicit drawing loop is highly performant and easy to understand.
 
-### 4. Sibling Project Spitekeep Parity Check
-- **Source**: `ai-craft-game-dev-devil/src/render/renderer.ts`
-- **Finding**: **No existing implementation**. Sibling project *Spitekeep* currently draws a static, screen-space linear gradient for its background (`drawBackground` in `renderer.ts:122-146`). It does not support parallax scrolling or tiling sprites. Introducing a seamless-tiled parallax module in `aicraft-engine` will be a major upgrade, allowing *Spitekeep* to transition from a flat static background to rich, multi-layered scrolling environments.
+### 4. Consumer Game Parity Check
+- **Finding**: **No existing implementation**. The consumer game currently draws a static, screen-space linear gradient for its background (`drawBackground` in `renderer.ts:122-146`). It does not support parallax scrolling or tiling sprites. Introducing a seamless-tiled parallax module in `aicraft-engine` will be a major upgrade, allowing the consumer game to transition from a flat static background to rich, multi-layered scrolling environments.
 
 ### 5. Sokpop Collective Relevance
-- **Source**: `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md`
 - **Finding**: Sokpop titles (such as *Mistward*, *Uniseas*, and *Pyramida*) rely heavily on layered, atmospheric backgrounds to convey scale and mood without using high-resolution art assets. They combine subtle background color gradients with simple, code-drawn parallax layers (e.g., repeating wave lines, distant mountain silhouettes, and drifting fog particles). This confirms that a lightweight, pure parallax wrapping utility is a foundational requirement for the "algorithmic cosmetics" thesis.
 
 ---
@@ -161,5 +159,4 @@ The following table evaluates how the **Optimal Branching Remainder** formula ha
 
 - `docs/research/platformer-juice.md` — Explores game-feel, camera lookahead, and screen shake.
 - `docs/research/spritesheet-pipelines.md` — Evaluates and rejects asset-heavy spritesheet pipelines in favor of procedural rendering.
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` — Canonical reference for Sokpop's minimalist rendering patterns.
 - `src/primitives/parallax.ts` — Contains the existing `parallaxOffset` helper which this new wrapping logic will extend.

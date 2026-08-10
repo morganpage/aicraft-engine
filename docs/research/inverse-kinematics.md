@@ -10,7 +10,7 @@ Inverse Kinematics (IK) in 2D calculates the joint angles or positions of a skel
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Touches **Pillar 1 (Primitives / Animation)** and **Pillar 4 (Fake-3D / character stacks)**, and directly integrates with the skeletal bone hierarchy in `src/animation/rig.ts` (see `docs/research/skeletal-rigging.md`).
-- **Consumer Games**: Sibling games like *Spitekeep* (or future Clone-to-Jest titles like a card-based village builder or procedural RTS) need characters that can dynamically plant their feet on uneven terrain, reach for weapons, or swing tails without heavy pre-baked asset footprints.
+- **Consumer Games**: Consumer titles like a card-based village builder or procedural RTS) need characters that can dynamically plant their feet on uneven terrain, reach for weapons, or swing tails without heavy pre-baked asset footprints.
 - **Unlocks**:
   - **No-Slide Foot Placement**: Lock feet to the ground during a walk cycle, adjusting the leg joints dynamically to match body motion.
   - **Dynamic Reaching**: Arms that procedurally reach for doors, levers, or enemies, reacting to real-time physics and player inputs.
@@ -457,5 +457,4 @@ for (let iter = 0; iter < fixedIterations; iter++) { ... }
 
 - `docs/research/skeletal-rigging.md` (the hierarchical bone tree that IK transforms)
 - `docs/research/procedural-locomotion.md` (dynamic walking gaits that drive IK targets)
-- `ai-craft-strategy/knowledge/sokpop-minimalist-rendering-teardown.md` (Sokpop's character rendering and fake-3D techniques)
 - `src/rng/mulberry32.ts` (the deterministic PRNG used for procedural variation)

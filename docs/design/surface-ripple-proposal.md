@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep currently has no liquid-surface rendering. The motivating use case is a **lava pool** at the bottom of a level whose surface ripples. The technique must generalize to water, slime, acid, energy fields — any horizontal (or arbitrary-direction) liquid surface in a 2D side-scroller.
+The consumer game currently has no liquid-surface rendering. The motivating use case is a **lava pool** at the bottom of a level whose surface ripples. The technique must generalize to water, slime, acid, energy fields — any horizontal (or arbitrary-direction) liquid surface in a 2D side-scroller.
 
 Without this module:
 - No zero-asset liquid surfaces (requires hand-authored flipbook spritesheets or complex shader setups).
@@ -17,7 +17,7 @@ With this module shipped:
 - A single `generateWaveLine(ctx, ...)` call replaces 30+ lines of inline sin math.
 - Sum-of-Sines produces soft, rolling water; Gerstner produces sharp, crested lava/acid.
 - Arbitrary-line support means horizontal pools, vertical waterfalls, and diagonal barriers all use the same API.
-- Pixel-snapping option matches the retro-digital aesthetic of Spitekeep-family games.
+- Pixel-snapping option matches the retro-digital aesthetic of the library's family of games.
 
 ---
 
@@ -35,7 +35,7 @@ With this module shipped:
 
 ### Q2: Direction Generalization vs Axis-Aligned
 
-**Position: Arbitrary-line support from day one.** The math generalizes cheaply (one `atan2` + `cos`/`sin` projection per vertex), and consumers need diagonal/vertical surfaces immediately (waterfalls in Spitekeep's level editor, diagonal acid channels).
+**Position: Arbitrary-line support from day one.** The math generalizes cheaply (one `atan2` + `cos`/`sin` projection per vertex), and consumers need diagonal/vertical surfaces immediately (waterfalls in the reference implementation's level editor, diagonal acid channels).
 
 **Justification:**
 - The research note's formula — `P(s, t) = A + s·u + d(s,t)·n` — is trivial to implement. It adds ~2 multiply-adds per vertex over the horizontal-only case.
@@ -564,7 +564,7 @@ const isOnLava = mouseY > lavaY;
 
 1. **The lava-pool use case demands the polyline generator** (Approach B). No consumer wants to write the polyline loop 15 times across 15 liquid surfaces. The generator is the 90% case.
 
-2. **Hit-testing demands the low-level evaluator** (Approach A). "Is this enemy standing in the lava?" requires evaluating the wave at a single x coordinate without generating 40 vertices. The research note doesn't mention this, but Spitekeep's trap system needs it — `hidden-pit.ts` checks player-vs-hazard bounds, and a lava pool with a wavy surface needs the same.
+2. **Hit-testing demands the low-level evaluator** (Approach A). "Is this enemy standing in the lava?" requires evaluating the wave at a single x coordinate without generating 40 vertices. The research note doesn't mention this, but the reference implementation's trap system needs it — `hidden-pit.ts` checks player-vs-hazard bounds, and a lava pool with a wavy surface needs the same.
 
 3. **The naming is clear.** `waveDisplacement` (low-level, returns a number) vs `generateWaveLine` (high-level, returns `WavePoint[]`). No ambiguity.
 

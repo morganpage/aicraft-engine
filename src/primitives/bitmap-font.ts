@@ -32,8 +32,7 @@ export const DEFAULT_TEXT_COLOR = '#ffffff';
 
 /**
  * Default text scale: 3 (21px tall — comfortable for primary HUD text per
- * XAG 101). Consumers wanting Spitekeep's existing ~14px HUD look pass
- * `scale: 2` explicitly.
+ * XAG 101). Consumers wanting a ~14px HUD look pass `scale: 2` explicitly.
  */
 export const DEFAULT_TEXT_SCALE = 3;
 

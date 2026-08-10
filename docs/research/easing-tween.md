@@ -10,7 +10,7 @@ The library has `lerp`/`approach` for scalar interpolation and repeating oscilla
 ## Why this matters for aicraft-engine
 
 - **Pillars Touched**: Directly extends **Pillar 1 (Primitives / Animation)**. Complements the existing oscillators and the blend/lerp modules.
-- **Consumer Games**: Spitekeep (death animations, UI transitions, card flip), any future Clone-to-Jest title (menu transitions, particle curve evaluation, hit-feedback easing). The particle-emitters research note already identified that particle lifetime curves (`evaluateAlphaCurve`, `evaluateSizeCurve`) need easing functions beyond linear lerp.
+- **Consumer Games**: the reference implementation (death animations, UI transitions, card flip), any future consumer title (menu transitions, particle curve evaluation, hit-feedback easing). The particle-emitters research note already identified that particle lifetime curves (`evaluateAlphaCurve`, `evaluateSizeCurve`) need easing functions beyond linear lerp.
 - **Unlocks**:
   - **One-shot animation curves** for UI, card transitions, hit feedback, and procedural motion that goes beyond linear or sine-based interpolation.
   - **Tween-driven state progression** that is replay-deterministic under the fixed-step loop — critical for save replays and deterministic gameplay.

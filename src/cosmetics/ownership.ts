@@ -1,8 +1,7 @@
 /**
  * Pure progression ops for cosmetic ownership (Pillar 2b).
  *
- * Mirrors Spitekeep's `platform/progress.ts` (`markCompleted`-style shape) and
- * the pure-progression-ops discipline in `docs/architecture.md`:
+ * Follows the pure-progression-ops discipline in `docs/architecture.md`:
  *
  *   - **Immutable in** → the input {@link CosmeticSave} is never mutated.
  *   - **JSON-clone out** → a fresh, deep-cloned state is returned every call.
@@ -27,11 +26,10 @@ import { EQUIP_SLOTS } from './constants';
  * Deep-clone a {@link CosmeticSave} via JSON round-trip, then normalise any
  * missing/wrong-typed fields. Returns a fresh object every call.
  *
- * JSON round-trip (matches Spitekeep's `cloneSave` exactly) is guaranteed safe
- * here: `CosmeticSave` holds only plain arrays/objects/primitives — no `Set`,
- * `Map`, functions, or circular refs. The post-clone normalisation makes the
- * ops defensive against corrupt saves where `owned`/`equipped` are missing or
- * wrong-typed at runtime.
+ * JSON round-trip is guaranteed safe here: `CosmeticSave` holds only plain
+ * arrays/objects/primitives — no `Set`, `Map`, functions, or circular refs.
+ * The post-clone normalisation makes the ops defensive against corrupt saves
+ * where `owned`/`equipped` are missing or wrong-typed at runtime.
  */
 function cloneSave(save: CosmeticSave): CosmeticSave {
   const src = save !== null && typeof save === 'object' ? save : {};

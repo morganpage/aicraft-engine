@@ -8,13 +8,13 @@
 
 ## Problem Statement
 
-The library already ships the primitives a precision platformer needs — `advanceJump` (apex-parameterized jump with coyote, buffering, variable height), `resolveAxisX`/`resolveAxisY` (per-axis AABB collision), `advanceLocomotionByDisplacement` (walk-cycle phase), `updateCamera` (follow camera), and `pollEdge` (input edges). But every consumer must hand-wire these into a ~300-line tick function (see `showcase/sections/playground.ts` lines 930–1189 and `core/player.ts` in Spitekeep). The kernel module composes these existing primitives into a single authoritative, deterministic step function that supports a full precision-platformer conformance suite — coyote time, jump buffering, wall slide/jump, dash, double-jump, and moving-platform push-and-carry — without duplicating any underlying logic. It is NOT a new physics engine; it is the orchestration layer that connects the primitives in the correct update order and manages the persistent state each ability needs between ticks.
+The library already ships the primitives a precision platformer needs — `advanceJump` (apex-parameterized jump with coyote, buffering, variable height), `resolveAxisX`/`resolveAxisY` (per-axis AABB collision), `advanceLocomotionByDisplacement` (walk-cycle phase), `updateCamera` (follow camera), and `pollEdge` (input edges). But every consumer must hand-wire these into a ~300-line tick function (see `showcase/sections/playground.ts` lines 930–1189 and `core/player.ts` in the reference implementation). The kernel module composes these existing primitives into a single authoritative, deterministic step function that supports a full precision-platformer conformance suite — coyote time, jump buffering, wall slide/jump, dash, double-jump, and moving-platform push-and-carry — without duplicating any underlying logic. It is NOT a new physics engine; it is the orchestration layer that connects the primitives in the correct update order and manages the persistent state each ability needs between ticks.
 
 ---
 
 ## Approach A: Flat-Config Step Function
 
-**Source pattern:** Spitekeep's `updatePlayer` (`core/player.ts`) — a single function with a flat config, no ability abstraction. The research note flags this as the simplest viable approach but warns of god-function risk.
+**Source pattern:** the reference `updatePlayer` (`core/player.ts`) — a single function with a flat config, no ability abstraction. The research note flags this as the simplest viable approach but warns of god-function risk.
 
 **Core idea:** One `PlatformerState` record containing everything (position, velocity, jump sub-state, wall-slide timers, dash timers, contact info). One `PlatformerConfig` with all tunable knobs. One `stepPlatformer(state, input, world, dt, config)` function that runs the full tick inline with `if` branches for each ability.
 
@@ -246,7 +246,7 @@ console.log(result.state.contacts.groundId); // string | null
 - Unit-testing individual abilities in isolation.
 - Supporting multiple platformer families (precision vs combat vs momentum) via composition — every family variant touches the same function.
 
-**Prior-art pattern:** Spitekeep's `updatePlayer` (`core/player.ts:124-238`). Single function, flat config, inline ability branches.
+**Prior-art pattern:** the reference `updatePlayer` (`core/player.ts:124-238`). Single function, flat config, inline ability branches.
 
 ---
 
@@ -686,7 +686,7 @@ console.log(result.events.justLanded);
 | **Public API stability** | Low | High | Medium |
 | **Replay friendliness** | High | High | High |
 | **Convention fit** | High | High | Medium |
-| **Spitekeep integration** | High | High | Medium |
+| **Consumer integration** | High | High | Medium |
 
 ---
 
@@ -696,11 +696,11 @@ console.log(result.events.justLanded);
 
 Approach B is the right composition axis for this library. The research note's §Open Question 1 ("How to compose abilities without a god-class?") is answered directly: each ability is a self-contained `AbilityProcessor` with its own state slice, independently testable, independently serializable, and independently replaceable. The controller is a thin orchestration shell that runs the pipeline in fixed order — it never grows because abilities live outside it.
 
-The key insight is that this library serves *multiple consumers* (Spitekeep, future clone-to-jest siblings). A grapple hook in one game must not require touching the kernel that another game depends on. Approach B achieves this: the kernel ships a default pipeline (`[jumpAbility, wallSlideAbility, dashAbility, doubleJumpAbility]`) for the common case, and consumers can swap, extend, or reorder it without the library author's involvement. Approach A cannot do this — every new ability requires a library release. Approach C partially can, but adding a new phase is a breaking change to the `CharacterPhase` union, and the phase-gated model fights against `advanceJump`'s single-call design (the jump state machine manages its own phases internally; wrapping it in an outer phase machine creates redundant state).
+The key insight is that this library serves *multiple consumers* (the reference implementation, future consumer titles). A grapple hook in one game must not require touching the kernel that another game depends on. Approach B achieves this: the kernel ships a default pipeline (`[jumpAbility, wallSlideAbility, dashAbility, doubleJumpAbility]`) for the common case, and consumers can swap, extend, or reorder it without the library author's involvement. Approach A cannot do this — every new ability requires a library release. Approach C partially can, but adding a new phase is a breaking change to the `CharacterPhase` union, and the phase-gated model fights against `advanceJump`'s single-call design (the jump state machine manages its own phases internally; wrapping it in an outer phase machine creates redundant state).
 
-For the moving-platform carry problem, Approach B handles it naturally: the controller's orchestration shell applies platform displacement before running ability processors (step 0 in the update order), exactly as Spitekeep's `updatePlayer` does (`modifiers.carryX`/`carryY` at line 139-144). The `ActorCore` that abilities read and write through already carries the post-carry position. No ability needs to know about platforms — the carry is applied once, globally, before any ability sees the state.
+For the moving-platform carry problem, Approach B handles it naturally: the controller's orchestration shell applies platform displacement before running ability processors (step 0 in the update order), exactly as the reference `updatePlayer` does (`modifiers.carryX`/`carryY` at line 139-144). The `ActorCore` that abilities read and write through already carries the post-carry position. No ability needs to know about platforms — the carry is applied once, globally, before any ability sees the state.
 
-For stable contact identity, the `contacts` record on `ActorCore` is updated after collision resolution (step 8 in the update order) and persisted in `PlatformerState`. Each solid has an optional `id` field (consumers assign stable string identifiers to their level geometry), and the kernel's collision loop records which solid the actor landed on / touched. This is exactly how Spitekeep's `player.ts` tracks `onGround` — extended with wall/ceiling identity.
+For stable contact identity, the `contacts` record on `ActorCore` is updated after collision resolution (step 8 in the update order) and persisted in `PlatformerState`. Each solid has an optional `id` field (consumers assign stable string identifiers to their level geometry), and the kernel's collision loop records which solid the actor landed on / touched. This is exactly how the reference `player.ts` tracks `onGround` — extended with wall/ceiling identity.
 
 For multiple platformer families, Approach B supports this via config presets + pipeline configuration. A "precision" preset uses `[jumpAbility, wallSlideAbility, dashAbility]` with snappy acceleration. A "momentum" preset uses `[jumpAbility, dashAbility]` with high air control and no wall-slide. A "combat" preset adds a `hitboxAbility` to the pipeline. The kernel itself never changes.
 
@@ -807,7 +807,7 @@ The per-tick order below is refined from the research note's recommendation (§R
 
 2. **Solid identity for contacts:** The kernel needs stable solid IDs for `contacts.groundId`. Should `Solid` gain an optional `id?: string` field, or should the kernel track contacts by index/reference? Index breaks when solids are added/removed between ticks. Reference equality is fragile across serialized replays. String ID is cleanest but requires consumer discipline.
 
-3. **Carry tracking scope:** The kernel applies carry displacement in step 2, but tracking *which* solid the actor is riding (to know what displacement to apply) is a non-trivial problem. Should the kernel include a built-in `RidingTracker` that detects ground-contact-with-moving-solid, or should this be the consumer's responsibility? The research note recommends the latter; Spitekeep's `computeModifier` does it inline.
+3. **Carry tracking scope:** The kernel applies carry displacement in step 2, but tracking *which* solid the actor is riding (to know what displacement to apply) is a non-trivial problem. Should the kernel include a built-in `RidingTracker` that detects ground-contact-with-moving-solid, or should this be the consumer's responsibility? The research note recommends the latter; the reference `computeModifier` does it inline.
 
 4. **Pipeline serialization:** For replay, the pipeline's ability order must be deterministic. Should the `AbilityPipeline` be serializable (array of string ability IDs that the consumer resolves), or is a fixed pipeline configuration sufficient (replay records the config, not the pipeline)?
 

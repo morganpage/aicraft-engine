@@ -4,5 +4,5 @@
  * @module
  */
 
-/** Default SFX volume. Matches Spitekeep's default. */
+/** Default SFX volume. */
 export const DEFAULT_AUDIO_VOLUME = 0.7;

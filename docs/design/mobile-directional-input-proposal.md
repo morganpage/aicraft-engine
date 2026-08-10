@@ -6,14 +6,14 @@
 
 ## Consumer Need
 
-Spitekeep (and future Clone-to-Jest siblings) need on-screen directional input for mobile web play (Poki, CrazyGames). Today, Spitekeep hand-rolls a `TouchControls` class (`src/input/touch.ts`) with pointer-ID tracking, CSS injection, capability detection, and multi-touch safety nets. The full class is 414 lines including CSS injection (~60 lines), touch-capability detection via `matchMedia` (~15 lines), DOM button creation and layout (~50 lines), class architecture boilerplate, and the reusable pointer-ID tracking core (~120 lines). The engine needs only the reusable core — the hard, multi-touch-safe logic that tracks per-button pointer sets and provides a global safety net.
+The consumer game (and future consumer titles) needs on-screen directional input for mobile web play (Poki, CrazyGames). Today, it hand-rolls a `TouchControls` class (`src/input/touch.ts`) with pointer-ID tracking, CSS injection, capability detection, and multi-touch safety nets. The full class is 414 lines including CSS injection (~60 lines), touch-capability detection via `matchMedia` (~15 lines), DOM button creation and layout (~50 lines), class architecture boilerplate, and the reusable pointer-ID tracking core (~120 lines). The engine needs only the reusable core — the hard, multi-touch-safe logic that tracks per-button pointer sets and provides a global safety net.
 
 The core consumer need: a player holds "right" with their left thumb and taps "jump" with their right thumb. Both inputs must register independently, without the second finger's release clearing the first finger's held state. This is the **load-bearing mobile constraint**.
 
 But the stronger justifications — which affect every consumer, not just those with 4-direction D-pads — are:
 
 1. **The `pointerleave` spurious-release bug.** When a thumb drifts off a button element, `pointerleave` fires and releases the held state. If the finger re-enters, `pointerdown` fires a press. The consumer sees a spurious released+pressed edge pair on the next poll — the character momentarily stops and restarts. This is a real bug in the existing `createTouchButton` adapter (`src/input/touch-button.ts:65`), which treats `pointerleave` as a release.
-2. **The missing global safety net.** If a finger leaves the browser viewport entirely (swipe to notification bar, edge gesture, OS interruption), the browser fires `pointerleave` on the element but NOT `pointerup`/`pointercancel` on `window`. The per-element handler may miss the event (browser quirk, rapid event ordering). Without a global fallback, the button stays stuck — the character walks right indefinitely. Spitekeep's `TouchControls` handles this with a window `pointerup`/`pointercancel` listener (lines 214-215), but `createTouchButton` does not.
+2. **The missing global safety net.** If a finger leaves the browser viewport entirely (swipe to notification bar, edge gesture, OS interruption), the browser fires `pointerleave` on the element but NOT `pointerup`/`pointercancel` on `window`. The per-element handler may miss the event (browser quirk, rapid event ordering). Without a global fallback, the button stays stuck — the character walks right indefinitely. the reference `TouchControls` handles this with a window `pointerup`/`pointercancel` listener (lines 214-215), but `createTouchButton` does not.
 3. **Multi-touch pointer-ID isolation.** Two fingers on the same button element causes the second finger's release to clear the held state, even though the first finger is still down. This is the "cross-talk on same element" bug that pointer-ID tracking solves.
 
 ## Approach A: Documented Composite (No New Code)
@@ -53,9 +53,9 @@ const right = orEdges(kbPoll['right'], touchRight.poll());
 
 ## Approach B: Generic `createTouchButtonSet` (Multi-Touch-Safe Button Group)
 
-**Source pattern:** Spitekeep's `TouchControls` (`src/input/touch.ts`) — the proven multi-touch pointer-ID tracking pattern, extracted into a generic, element-count-agnostic adapter.
+**Source pattern:** the reference `TouchControls` (`src/input/touch.ts`) — the proven multi-touch pointer-ID tracking pattern, extracted into a generic, element-count-agnostic adapter.
 
-**Concept:** A first-class adapter that takes an array of DOM elements (or nulls for missing slots) and returns a multi-touch-safe button set. Internally tracks `pointerId` sets per element (matching Spitekeep's `pointersByButton` pattern), fires pressed/released on 0→≥1 / 1→0 pointer transitions, and installs a global safety net for `pointerup`/`pointercancel`/`pointerleave` on `document`. The adapter is **direction-agnostic** — it handles N buttons, not hardcoded to 4 directions. The consumer maps positional results to directional semantics.
+**Concept:** A first-class adapter that takes an array of DOM elements (or nulls for missing slots) and returns a multi-touch-safe button set. Internally tracks `pointerId` sets per element (matching the reference `pointersByButton` pattern), fires pressed/released on 0→≥1 / 1→0 pointer transitions, and installs a global safety net for `pointerup`/`pointercancel`/`pointerleave` on `document`. The adapter is **direction-agnostic** — it handles N buttons, not hardcoded to 4 directions. The consumer maps positional results to directional semantics.
 
 **Why generic wins over directional:** The genuinely hard, reusable logic — multi-touch pointer-ID tracking, per-element accumulator management, and the global safety net — is element-count-agnostic. A directional `createVirtualDpad` would bake 4-way semantics into the engine when only one consumer exists today. The generic `createTouchButtonSet` captures the hard part once, and the consumer composes directions from it (via a thin wrapper or inline mapping). If a second consumer needs the ergonomic shorthand, the engine can add `createVirtualDpad` as a convenience wrapper that calls `createTouchButtonSet` internally.
 
@@ -143,7 +143,7 @@ const [touchJump, touchAttack, touchDash] = actions.poll();
 
 4. **Per-element `touchAction` guard.** Setting `touchAction = 'none'` may throw on cross-origin iframes or restricted elements. The adapter wraps it in try/catch, matching the defensive-adapter pattern.
 
-**Internal state (matching Spitekeep's proven pattern):**
+**Internal state (matching the reference implementation's proven pattern):**
 
 ```ts
 // Per element: Set<number> of active pointer IDs
@@ -162,8 +162,8 @@ const accs: EdgeAccumulator[] = elements.map(() => createEdgeAccumulator());
 - **Ergonomics (consumer-developer):** Good. One `createTouchButtonSet` call replaces N× `createTouchButton` + N× pointer-ID tracking boilerplate. The consumer maps array indices to semantics (e.g., `[left, right, up, down]`). Slightly less discoverable than named fields (`left`, `right`) for the directional case, but the positional mapping is explicit and obvious.
 - **Ergonomics (player):** Depends on consumer's DOM. Engine doesn't dictate visual layout.
 - **Determinism:** Correct. N `EdgeAccumulator`s, drained via `pollEdge` once per tick. The pointer-ID tracking is host-touching (defensive adapter); the edge core is deterministic. Clean layer separation.
-- **Multi-touch robustness:** **Strong.** Per-element `Set<number>` pointer tracking with 0→≥1 / 1→0 transitions. Global `document` `pointerup`/`pointercancel`/`pointerleave` safety net. Matches Spitekeep's proven pattern. Two fingers on the same button work correctly — the button stays held until ALL pointers lift.
-- **Scope risk:** Low. This centralizes a pattern that Spitekeep already ships. The engine version is simpler (~100-120 lines): no CSS injection, no touch-capability detection, no class architecture, no DOM creation — just the reusable multi-touch core.
+- **Multi-touch robustness:** **Strong.** Per-element `Set<number>` pointer tracking with 0→≥1 / 1→0 transitions. Global `document` `pointerup`/`pointercancel`/`pointerleave` safety net. Matches the reference implementation's proven pattern. Two fingers on the same button work correctly — the button stays held until ALL pointers lift.
+- **Scope risk:** Low. This centralizes a pattern that the reference implementation already ships. The engine version is simpler (~100-120 lines): no CSS injection, no touch-capability detection, no class architecture, no DOM creation — just the reusable multi-touch core.
 - **Convention fit:** Good. Follows defensive-adapter pattern (null elements → no-op, try/catch, never-throw). File: `src/input/touch-button-set.ts`. Types extend `types.ts`.
 - **Tree-shakeability:** Good. Consumer imports only what they need. The adapter has no dependencies beyond the existing edge core.
 
@@ -267,7 +267,7 @@ if (stickPoll.vector) {
 
 **What this makes easy:** Rich analog input for top-down games, racing games, or any game that benefits from continuous 2D movement. The floating stick is superior ergonomics for extended play sessions.
 
-**What this makes hard:** The threshold-to-binary conversion is a footgun for platformers. A player tilting slightly diagonally might trigger "up" when they only meant "right". The consumer must tune `deadZone` and `threshold` per-game. The adapter's complexity (vector math, angle calculations, dead-zone clamping) is 3-4× the code of B, all to solve a problem (analog input) that the current consumer (Spitekeep, a platformer) doesn't have.
+**What this makes hard:** The threshold-to-binary conversion is a footgun for platformers. A player tilting slightly diagonally might trigger "up" when they only meant "right". The consumer must tune `deadZone` and `threshold` per-game. The adapter's complexity (vector math, angle calculations, dead-zone clamping) is 3-4× the code of B, all to solve a problem (analog input) that the current consumer (the reference implementation, a platformer) doesn't have.
 
 ## Multi-Touch Pointer-ID Isolation: How Each Approach Handles It
 
@@ -300,7 +300,7 @@ const pointerToIndex: Map<number, number> = new Map();
 
 **Failure modes:** None for the button-set use case. Two fingers on the same button: both tracked, release only fires when the set empties. Finger slides between buttons: `pointerleave` releases from old button, `pointerdown` presses on new button (acceptable behavior for discrete buttons). Viewport exit: caught by the global `document`-level `pointerleave` listener.
 
-**Assessment:** Bulletproof. Matches Spitekeep's proven pattern.
+**Assessment:** Bulletproof. Matches the reference implementation's proven pattern.
 
 ### Approach C (Thumbstick)
 
@@ -321,7 +321,7 @@ The engine adapters capture pointer coordinates and manage edge accumulators. Th
 Rationale:
 1. **DPR scaling.** Canvas-rendered controls fight Device Pixel Ratio — the research note flagged this. DOM elements get DPR handling for free from the browser layout engine.
 2. **Accessibility.** DOM elements can have ARIA roles, screen-reader labels, and keyboard focus. Canvas-rendered controls are invisible to accessibility tools.
-3. **Styling flexibility.** Consumers have different visual languages (Spitekeep uses semi-transparent CSS buttons; another game might use pixel-art sprites). The engine shouldn't dictate visual style.
+3. **Styling flexibility.** Consumers have different visual languages (the reference implementation uses semi-transparent CSS buttons; another game might use pixel-art sprites). The engine shouldn't dictate visual style.
 4. **Consistency.** This matches the existing `createTouchButton` pattern: consumer provides the element, engine attaches listeners.
 
 The thumbstick adapter (C) needs to expose the knob position for the consumer to render (via CSS transform or canvas draw), but the adapter itself does not touch the DOM for visual updates.
@@ -358,14 +358,14 @@ Both B and C add barrel re-exports from `src/input/index.ts`.
 | Code complexity | 0 lines | ~100-120 lines | ~200 lines |
 | Composes with orEdges | Yes | Yes | Yes |
 | Solves the real problem | Partially | Yes | Yes (but adds analog) |
-| Prior art pattern | Research §Pattern 1 | Spitekeep `TouchControls` | Research §Pattern 2 |
+| Prior art pattern | Research §Pattern 1 | the reference implementation `TouchControls` | Research §Pattern 2 |
 | Element-count-agnostic | Yes (by composition) | Yes (native) | N/A (single element) |
 
 ## Recommendation
 
 **Ship B (`createTouchButtonSet`) as the single new export. Document A (Composite) as the escape hatch. Defer C (Thumbstick).**
 
-Rationale: The two failure modes that affect every consumer — the `pointerleave` spurious-release bug and the missing global safety net (stuck-button bug) — are real, demonstrated by the gap between `createTouchButton` (no safety net, treats `pointerleave` as release) and Spitekeep's `TouchControls` (which installs window `pointerup`/`pointercancel` listeners). The multi-touch pointer-ID tracking on top is the hard logic that Spitekeep already proved is necessary (~120 lines of the 414-line class; the rest is CSS injection, capability detection, and DOM creation). Centralizing it in the engine prevents every future consumer from re-inventing it — and getting it wrong.
+Rationale: The two failure modes that affect every consumer — the `pointerleave` spurious-release bug and the missing global safety net (stuck-button bug) — are real, demonstrated by the gap between `createTouchButton` (no safety net, treats `pointerleave` as release) and the reference `TouchControls` (which installs window `pointerup`/`pointercancel` listeners). The multi-touch pointer-ID tracking on top is the hard logic that the reference implementation already proved is necessary (~120 lines of the 414-line class; the rest is CSS injection, capability detection, and DOM creation). Centralizing it in the engine prevents every future consumer from re-inventing it — and getting it wrong.
 
 The generic `createTouchButtonSet` (not a directional `createVirtualDpad`) is the right v1 shape because the genuinely-hard reusable logic — multi-touch pointer-ID tracking, per-element accumulators, and the global safety net — is element-count-agnostic. Shipping a generic primitive avoids baking directional semantics into the engine when only one consumer exists today. The consumer maps array indices to directions via simple destructuring (`const [left, right, up, down] = dpad.poll()`), which is explicit and obvious. A directional convenience wrapper (`createVirtualDpad`) can be added later if a second consumer wants named-field ergonomics.
 

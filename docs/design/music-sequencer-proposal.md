@@ -6,7 +6,7 @@
 
 ## Consumer Need
 
-Spitekeep (idle/menu music, level themes) and future Clone-to-Jest siblings (Stacklands-style ambient, Sokpop-style generative soundtracks) need asset-less procedural music: zero audio files, zero samples, zero licenses — every note synthesized from the existing `AudioAdapter.playTone`/`playNoise`. The library's "the algorithm IS the art" thesis extends to music: a `SkinPreset` can carry a serializable `Pattern` that generates a unique soundtrack per skin seed. Without this module, consumers must hand-roll Chris Wilson's two-clock scheduler, reimplement MIDI→Hz math, and invent a pattern data model — all error-prone, all non-deterministic if done naively.
+the reference implementation (idle/menu music, level themes) and future consumer titles (Stacklands-style ambient, Sokpop-style generative soundtracks) need asset-less procedural music: zero audio files, zero samples, zero licenses — every note synthesized from the existing `AudioAdapter.playTone`/`playNoise`. The library's "the algorithm IS the art" thesis extends to music: a `SkinPreset` can carry a serializable `Pattern` that generates a unique soundtrack per skin seed. Without this module, consumers must hand-roll Chris Wilson's two-clock scheduler, reimplement MIDI→Hz math, and invent a pattern data model — all error-prone, all non-deterministic if done naively.
 
 ---
 
@@ -57,7 +57,6 @@ export function secondsPerStep(bpm: number, stepsPerBeat: number): number;
  * Pure.
  */
 export function swingLongDuration(pairDuration: number, swingRatio: number): number;
-
 
 // ── Layer 2: src/music/pattern.ts ── Pure data + seeded generator ──
 
@@ -139,7 +138,6 @@ export interface TrackGenConfig {
  */
 export function generatePattern(seed: number, config?: PatternGenConfig): Pattern;
 
-
 // ── Layer 3: src/music/advance.ts ── Pure sequencer state + step walker ──
 
 /**
@@ -198,7 +196,6 @@ export function advanceSequencer(
   dt: number,
   pattern: Pattern,
 ): { readonly next: SequencerState; readonly events: readonly NoteFire[] };
-
 
 // ── Layer 4: src/music/sequencer.ts ── Host-touching adapter ──
 

@@ -50,7 +50,7 @@ Anything that mutates logical state (entitlements, ownership, settings):
 - Never mutates input.
 - Never throws.
 
-Mirrors the discipline of `platform/progress.ts` in the sibling Spitekeep codebase (Spitekeep has been renamed to **IMP - Not a Troll** — same repo).
+Mirrors the pure-progression-ops discipline: immutable in, JSON-clone out, never mutate input, never throw.
 
 ## When in doubt
 

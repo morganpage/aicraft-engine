@@ -7,7 +7,7 @@
 
 ## Orchestrator Decision
 
-**Chosen scope:** Showcase-local pure lifecycle/effect composition for prototyping. Do NOT add a public `src/primitives/death-feedback.ts`. The consumer (Spitekeep/showcase) composes the deterministic lifecycle and effects locally using existing engine primitives. No new types, no new config objects, no new functions ship from the library.
+**Chosen scope:** Showcase-local pure lifecycle/effect composition for prototyping. Do NOT add a public `src/primitives/death-feedback.ts`. The consumer (the reference implementation/showcase) composes the deterministic lifecycle and effects locally using existing engine primitives. No new types, no new config objects, no new functions ship from the library.
 
 **Rejected approaches:**
 - **Approach A (Pure Config + Effect Descriptors):** Would add `DeathFeedbackConfig`, `DeathEffectDescriptors`, `resolveDeathEffects()`, `resolveDeathConfig()`, `isDying()`, `deathProgress()`, `shouldRespawn()` to `src/primitives/`. Rejected because: (a) the consumer already owns `GameState.status` and `deathTimer`; (b) the "6-7 lines per tick" wiring is trivial and game-specific; (c) shipping a config type now locks in parameters before any game has actually shipped the death feel. Extract to library only when a second consumer arrives.
@@ -18,7 +18,7 @@
 
 ## Consumer Need
 
-Spitekeep hand-wires death feedback across 4+ files. Every sibling game will need the same pattern. The question was: where does the reusable abstraction live? The answer: the **recipe** is reusable (documented here); the **code** stays in the consumer until a second game proves the pattern.
+The consumer game hand-wires death feedback across 4+ files. Every sibling game will need the same pattern. The question was: where does the reusable abstraction live? The answer: the **recipe** is reusable (documented here); the **code** stays in the consumer until a second game proves the pattern.
 
 The engine provides the building blocks (hit-stop, particles, sineShake, shakeEnvelope, prefersReducedMotion, playTone/playNoise). The consumer composes them into a death sequence.
 

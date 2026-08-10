@@ -57,9 +57,9 @@ harness is the final slab on the foundation the determinism work already laid.
   collision + RNG → recorded inputs reproduce identical runs. Same pattern,
   smaller scope.
 
-- **Spitekeep / IMP - Not a Troll**: the canonical sibling codebase
-  already records+replays via FNV-1a hashing. This module ports that
-  pattern to the library.
+- **Consumer reference**: the canonical consumer codebase already
+  records+replays via FNV-1a hashing. This module ports that pattern to the
+  library.
 
 ## Why this matters for aicraft-engine
 
@@ -67,7 +67,7 @@ harness is the final slab on the foundation the determinism work already laid.
   replay surface complements the consumer-facing ability to share
   arbitrary-difficulty levels (`LevelData` is reproducible from
   `canonicalize` + FNV-1a hash).
-- **Consumer Games:** Spitekeep "share my best run" feature, Clone-to-Jest
+- **Consumer Games:** the reference implementation "share my best run" feature, consumer
   marketing (deterministic run GIFs, bug-report reproducibility).
 - **Determinism Discipline:** unlocks **verifiable replays** (hash the
   final state; compare against an expected hash) — the @architect's

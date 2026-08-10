@@ -1,8 +1,7 @@
 /**
  * Type definitions for the game-loop module.
  *
- * The module splits the fixed-step game loop into two layers (mirrors
- * Spitekeep's `src/main.ts` ~L442-530):
+ * The module splits the fixed-step game loop into two layers:
  *   - **Pure accumulator** (`advanceAccumulator` in `fixed-step.ts`) — DOM-free
  *     fixed-timestep math, unit-testable under Node with no mocking.
  *   - **Defensive loop adapter** (`createGameLoop` in `fixed-step.ts`) —

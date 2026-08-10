@@ -9,8 +9,6 @@
  *
  * Pure rendering helper — takes a `CanvasRenderingContext2D`, draws, and
  * restores state (composite + fillStyle) on exit. No state leak.
- *
- * Extracted conceptually from the Spitekeep "feature" palette slot.
  */
 
 import { parseHex } from './color';

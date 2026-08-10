@@ -62,7 +62,7 @@ export function toHex({ r, g, b }: RGB): string {
 
 /**
  * Multiply a color's channels by `factor` (<1 darkens, >1 lightens).
- * Channels are clamped to 0..255. Extracted from Spitekeep `render/sprites.ts:38`.
+ * Channels are clamped to 0..255.
  */
 export function shade(hex: string, factor: number): string {
   const { r, g, b } = parseHex(hex);
@@ -120,7 +120,7 @@ export function contrastRatio(a: string, b: string): number {
 
 /**
  * Check WCAG AA contrast (≥4.5:1). This is the rule enforced by GDD §11.3
- * for all gameplay art in Spitekeep-family games.
+ * for all gameplay art.
  */
 export function meetsWcagAa(a: string, b: string): boolean {
   return contrastRatio(a, b) >= 4.5;
