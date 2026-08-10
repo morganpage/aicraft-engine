@@ -1,23 +1,33 @@
 # Third-party notices
 
-This engine is zero-dependency at runtime. The assets below are bundled under
-`assets/ldtk/` for the showcase and for consumer convenience; they are not part
-of the compiled library (`dist/`).
+This engine is zero-dependency at runtime. The assets below live under
+`assets/` for the showcase, the LDtk rules oracle, and the sprite-animation
+tests; they are not part of the compiled library (`dist/`). The published
+package ships `dist/` alone, so nothing under `assets/` reaches consumers via
+npm.
 
-## LDtk sample tilesets
+## LDtk sample atlas tilesets
 
-Bundled under `assets/ldtk/`. See [`assets/ldtk/README.md`](assets/ldtk/README.md)
-for the per-asset breakdown. All are public domain or CC0 — no attribution
-required, freely redistributable including commercially.
+Vendored under `assets/ldtk/samples/atlas/`. See
+[`assets/README.md`](assets/README.md) for the master index. All are public
+domain or CC0 — no attribution required, freely redistributable including
+commercially.
 
 | Asset | Author | License |
 | --- | --- | --- |
-| `SunnyLand_by_Ansimuz.png` | Ansimuz | CC0 1.0 Universal |
 | `Cavernas_by_Adam_Saltsman.png` | Adam Saltsman | Public domain |
-| `Inca_front_by_Kronbits.png` | Kronbits | CC0 / public domain |
+| `SunnyLand_by_Ansimuz-extended.png` | Ansimuz | CC0 1.0 Universal |
+| `Inca_front_by_Kronbits-extended.png` | Kronbits | CC0 / public domain |
+| `Inca_back2_by_Kronbits.png` | Kronbits | CC0 / public domain |
 
 Sourced from LDtk's bundled sample tilesets at
 <https://github.com/deepnight/ldtk/tree/master/app/extraFiles/samples/atlas>.
+
+> Note: the `SunnyLand_by_Ansimuz-extended.png` and `Inca_front_by_Kronbits-extended.png`
+> atlas variants are *different images* (different dimensions) from the
+> upstream non-extended originals. The non-extended starter copies that once
+> lived under `assets/ldtk/{sunny-land,inca,cavernas}/` were removed in the
+> 2026-08-10 asset audit — they duplicated the atlas and were unreferenced.
 
 ## LDtk sample projects (test fixtures)
 
@@ -53,8 +63,11 @@ The `.ldtk` file format is plain JSON documented at
 
 `assets/vendor/kenney-pixel-platformer/` contains assets from
 [Kenney's "Pixel Platformer" pack](https://kenney.nl/assets/pixel-platformer),
-licensed under CC0 (public domain). Used by the legacy tileset-import showcase
-panel; being superseded by the LDtk pipeline.
+licensed under CC0 (public domain). Only the packed sheet is vendored
+(`Tilemap/tilemap_packed.png` + `License.txt`); the rest of the upstream pack
+(unpacked per-tile PNGs, Tiled/Construct 3 project files, previews) was removed
+in the 2026-08-10 asset audit as unreferenced. Used by the tileset-import
+showcase panel; re-download from kenney.nl if the full pack is needed.
 
 ## Kenney — 1-Bit Platformer
 
@@ -64,3 +77,13 @@ licensed under CC0 (public domain). Only the transparent packed sheet is
 vendored (`Tilemap/monochrome_tilemap_transparent_packed.png`, 320×320 at 16px
 tiles); it is consumed by the LDtk editor showcase panel via the
 `Typical_1-bit_platformer.ldtk` sample.
+
+## 0x72 — Dungeon Tileset II
+
+`assets/vendor/0x72/` contains `0x72_DungeonTilesetII_v1.7.png` from
+[0x72's "Dungeon Tileset II"](https://0x72.itch.io/dungeontileset-ii), licensed
+under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)
+(per the vendored `LICENSE.txt`). It is the showcase sprite-animation sample
+for the full-color LDtk 2D platformer — consumed via
+`assets/sprites/samples/knight-0x72.json` as the playable knight
+(see `showcase/tests/knight-0x72-sprites.test.ts`).
