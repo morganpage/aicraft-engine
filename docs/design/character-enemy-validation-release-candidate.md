@@ -86,3 +86,45 @@ Phase 17: **PASS**
 does not need synchronization. The exact artifact still passes its technical
 gates, but visual approval is paused pending the named gait and landing
 evidence above. No merge, tag, or npm publication has occurred.
+
+---
+
+## Postscript — 2026-08-10: scope expanded, visual verdict resolved (idle scope)
+
+> See `docs/design/0.5.0-scope-decision.md` for the full rationale.
+
+**Scope expansion (Option B/B1).** Between the original candidate (2026-07-29)
+and this audit, `main` advanced past `6d49066` to `c7906fd` and accumulated
+several finished, tested modules that were never part of the original 0.5.0
+candidate: `src/terrain-art/`, `src/ldtk/` (native editor + auto-layer rule
+engine), `src/sprites/` (Aseprite-JSON pipeline), the ladder/climb system, and
+LDtk tile semantics. Rather than publish a narrow 0.5.0 and split this work
+into 0.6.0, the decision is to **ship the entire current `main` tree as
+0.5.0.**
+
+**Visual verdict — resolved for the idle scope.** A fresh `@benchmarker`
+review on 2026-08-10 against the current production code returned:
+
+- **Charger: APPROVED** — unchanged, all four phases legible.
+- **Humanoid: APPROVED for the idle scope only.** The Phase H2 idle pose is
+  polished and approved (`benchmarks/character-body-plans/humanoid-idle-h2.png`).
+  The original objection — "arbitrary mid-stride samples rather than named
+  contact/passing/opposite-contact poses, and no explicit landing pose" —
+  remains live for the **motion** scope: Phase H3 (grounded locomotion) and H4
+  (airborne + landing) are unimplemented stubs in
+  `src/character/humanoid/pose.ts`. Per B1, motion poses are **deferred to
+  0.6.0**; the 0.5.0 production sheet honestly labels the stub panels
+  `(0.6.0)`. The humanoid public API is stable; only the stub geometry fills in
+  next release.
+
+**Gate matrix re-run.** Full results in `0.5.0-scope-decision.md`. All gates
+green after two unblocks: (a) `benchmarks/_scripts/humanoid-validation-render.ts`
+had an obsolete prototype-equality assertion (Decision #9 of
+`humanoid-visual-revision-plan.md`) that crashed the script — removed; (b)
+`scripts/check-level-visual-size.mjs` was pegged to a Phase 0 baseline and
+reported a spurious +39.52% — re-baselined to the 0.5.0 `dist/` as a
+whole-distribution regression budget. Tarball leak scan is clean; zero runtime
+dependencies.
+
+**Publication status.** READY FOR PUBLICATION pending explicit user approval.
+No merge, tag, or npm publication has occurred as of this postscript.

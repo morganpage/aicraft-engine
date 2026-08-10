@@ -663,6 +663,8 @@ Slime-knight body plan. Migrated from `showcase/helpers/slime-knight.ts`; showca
 
 Humanoid biped body plan. Head + torso + 2 arms + 2 legs, driven by existing `evaluateLocomotion` + `solveLimb` + skeletal rig.
 
+**0.5.0 scope:** the idle pose is polished. Gait (H3), airborne/landing/ceiling (H4) contributions are wired into `composePose`'s blend order but emit idle-equivalent geometry (marked `// H3` / `// H4` TODOs in `src/character/humanoid/pose.ts`) — deferred to 0.6.0.
+
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `HumanoidConfig` | type | Seed-derived config: seed, palette, torsoWidth/Height, headRadius, arm/leg bone lengths, gaitConfig, breathConfig, speed | `src/character/humanoid/types.ts` |
@@ -707,6 +709,31 @@ Serpentine/multi-segment body plan. Head + N body segments + tail, driven by `ad
 - _proposal: `docs/design/character-body-plans-proposal.md`_
 - _research: `docs/research/character-body-plans.md`_
 - _active candidate composes with: `src/animation/locomotion.ts` (`advanceLocomotionByDisplacement`, `evaluateLocomotion`), `src/animation/ik/limb.ts` (`solveLimb`), `src/animation/squash-stretch.ts` (`breathe`), `src/palette/generate.ts` (`generatePalette`), `src/rng/mulberry32.ts` (seeded variant generation). The platformer kernel remains the sole jump/position authority._
+
+### `src/sprites/` (SHIPPED)
+
+Aseprite-JSON-superset sprite animation pipeline: one authored `.json` + one `.png` defines a whole game's cast, mirroring how one `.ldtk` + a tileset defines a whole level. Mirrors `src/ldtk/`'s layering — wire schema (`types.ts`), defensive never-throws parser (`parse.ts`), compile to the runtime model (`compile.ts`), deterministic per-frame-duration frame-player (`resolve.ts`), character-agnostic physics→anim-kind deriver (`anim-state.ts`), and a pure draw path with facing mirror + silhouette tint (`render.ts`). The consumer loads the PNG and injects it; the engine never imports `Image` or calls `fetch`.
+
+> Research: `docs/research/spritesheet-pipelines.md` (revised verdict: PARTIALLY ACCEPTED).
+> Plan: `docs/design/sprite-animation-plan.md`.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SpriteSheetJSON`, `SpriteFrameJSON`, `SpriteMetaJSON`, `SpriteGridJSON`, `SpriteFrameTagJSON`, `SpriteCharacterJSON`, `SpriteFramesJSON`, `SpriteRectJSON`, `SpriteSizeJSON`, `SpriteTagDirection`, `SpriteDiagnostic`, `SpriteParseResult` | types | Readonly Aseprite-JSON-superset wire schema. Field names follow Aseprite verbatim so real exports drop in; additive `meta.grid` (uniform grid) and top-level `characters[]` (semantic anim keys per character) extensions | `src/sprites/types.ts` |
+| `parseSpriteSheet(json)` | function | Defensive never-throws parse → `{ ok, sheet?, errors }` with path-addressed diagnostics. Accepts Aseprite `frames` hash or array form; grid-only sheets allowed | `src/sprites/parse.ts` |
+| `compileSpriteSheet(sheet)` | function | Compile to `CompiledSpriteSheet`: synthesize grid frame rects, expand `frameTags` into ordered clips (forward/reverse/pingpong), group by `characters[]`. Never throws; malformed references warn and drop | `src/sprites/compile.ts` |
+| `CompiledSpriteSheet`, `CompiledAnim`, `CompiledCharacter`, `FrameRect`, `CompileResult` | types | Runtime model: resolved frame rects, per-frame durations, ordered frame-index clips, per-character animation tables | `src/sprites/compile.ts` |
+| `resolveAnim(compiled, characterName, animKey)` | function | Resolve a semantic anim key → `CompiledAnim`; falls back to the character's `defaultAnim`, then any animation | `src/sprites/compile.ts` |
+| `DEFAULT_FRAME_DURATION_MS` | const | `100` — per-frame duration used when a frame's `duration` is 0/missing or the sheet is grid-based | `src/sprites/compile.ts` |
+| `SpriteAnimState`, `createSpriteAnimState()`, `advanceSpriteAnim(state, dtMs)`, `currentFrameIndex(state, anim)`, `currentFrameIndexAt(elapsedMs, anim)`, `animTotalDuration(anim)` | types/functions | Pure deterministic frame-player: accumulated-time clock mapped onto per-frame durations; loop / reverse (pre-reversed at compile) / pingpong (reflected doubled cycle) | `src/sprites/resolve.ts` |
+| `deriveSpriteAnimKind(inputs)` | function | Character-agnostic physics→anim-kind deriver (`idle`/`walk`/`ascent`/`apex`/`descent`); shared by player and enemies; branching parity with `src/character/humanoid/state.ts` | `src/sprites/anim-state.ts` |
+| `SpriteAnimKind`, `SpriteAnimInputs` | types | Semantic anim keys + minimal physics surface (`supported`, `speedX`, `velocityY`, `gravityDir?`, `walkThreshold?`) | `src/sprites/anim-state.ts` |
+| `drawSprite(ctx, image, sheet, frameIndex, destX, destY, options?)` | function | Pure 9-arg `drawImage` blit; facing mirror via `SpriteFacing`, silhouette tint via offscreen `source-in` composite, alpha; never throws (returns `false` on bad index/draw error) | `src/sprites/render.ts` |
+| `resolveDrawSource(image, sheet, frameIndex, options)` | function | Resolve the source rect + optional pre-tinted image for consumers composing their own draw call | `src/sprites/render.ts` |
+| `createSpriteTintCache(createCanvas?)` | function | Long-lived offscreen-canvas cache keyed by `frameIndex|color` for tinted frames; host canvas factory optional | `src/sprites/render.ts` |
+| `SpriteFacing`, `DrawSpriteOptions`, `SpriteTintCache`, `TintCanvas`, `TintCanvasFactory` | types | Renderer inputs: facing, dest scale, tint, alpha, tint cache + host canvas factory | `src/sprites/render.ts` |
+
+- _composes with: `src/character/humanoid/state.ts` (`deriveSpriteAnimKind` branching parity), `src/platformer/kernel.ts` (`PlatformerState.core` → `SpriteAnimInputs`), `src/platformer/enemy/` (`EnemyState` → `SpriteAnimInputs`)_
 
 ### `src/collision/`
 
@@ -985,7 +1012,7 @@ dependency; material normalization and drawing are Phase 2.
 | `TerrainRectRole` | type | `solid`, `passthrough`, `moving`, or `hazard` rectangle role | `src/terrain/types.ts` |
 | `drawTerrainRect(ctx, rect, options)` | function | Leaf, span-aware role renderer with optional consumer-injected detail callback; includes mechanical and pointed hazard silhouettes without importing built-in themes, tiles, or the detail catalog | `src/terrain/rect-renderer.ts` |
 
-### `src/terrain-art/`
+### `src/terrain-art/` (SHIPPED)
 
 Versioned source-art foundation for semantic dual-grid terrain authoring. This
 module is DOM-free and keeps editable appearance outside `LevelData`.
@@ -1779,7 +1806,7 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 - _research: `docs/research/level-schema.md`_
 - _composes with: `src/collision/types.ts` (`TileSolidityQuery`, `TileType`)_
 
-### `src/ldtk/`
+### `src/ldtk/` (SHIPPED)
 
 Read, **edit**, render and write [LDtk](https://ldtk.io) `.ldtk` level files. Self-contained, zero-dependency.
 
@@ -2370,8 +2397,11 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`,
 `./palette`, `./cosmetics`, `./iap`, `./collision`, `./camera`, `./input`,
 `./game-loop`, `./game-state`, `./audio`, `./save`, `./blend`, `./easing`,
-`./music`, `./platformer`, `./level`, `./editor`, `./collectibles`, and
-`./replay`. Planned modules are added only after their implementations and contract
+`./music`, `./platformer`, `./level`, `./ldtk`, `./editor`, `./collectibles`,
+`./replay`, `./simtest`, `./terrain`, `./terrain-art`, `./character`, and
+`./sprites`. `./leveltest` and `./levelgen` are re-exported explicitly (types +
+values, omitting the names they share with each other to avoid ambiguity).
+Planned modules are added only after their implementations and contract
 tests ship.
 
 ```ts
@@ -2394,9 +2424,17 @@ export * from './easing';
 export * from './music';
 export * from './platformer';
 export * from './level';
+export * from './ldtk';
 export * from './editor';
 export * from './collectibles';
 export * from './replay';
+export * from './simtest';
+export * from './terrain';
+export * from './terrain-art';
+export * from './character';
+export * from './sprites';
+// leveltest — values and types for the verification module (explicit, see src/index.ts)
+// levelgen — explicit exports (omitting names defined in leveltest to avoid ambiguity)
 // Phase 4: export * from './fake3d';
 ```
 

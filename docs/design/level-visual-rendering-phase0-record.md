@@ -82,7 +82,10 @@ Recorded after `npm run build:dist` on a clean `dist/`, Node v24.3.0.
 | `npm pack` unpacked | 1,678,612 |
 | `npm pack` tarball | 507,715 |
 
-This is the number the Phase 6 ceiling is set against. Note that `.d.ts` is 41%
+This is the number the Phase 6 ceiling is set against. Note: the live gate
+(`scripts/check-level-visual-size.mjs`) was re-baselined to the 0.5.0 `dist/` on
+publication; these Phase 0 figures remain the original historical baseline only
+(see `docs/design/0.5.0-scope-decision.md`). Note that `.d.ts` is 41%
 of `dist`: a terrain module with a large public type surface moves this number
 without shipping a byte of runtime, so the Phase 2 and Phase 4 deltas should be
 recorded as `.js` and `.d.ts` **separately** rather than as one total.
