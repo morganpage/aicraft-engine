@@ -1,7 +1,9 @@
 # aicraft-engine
 
-> Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for AI Craft games.
+> Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for indie and procedural games.
 > Zero runtime dependencies. Canvas2D-only. Strict TypeScript. Vitest.
+
+Part of the [Create Games with AI](https://www.skool.com/ai-craft/about) community.
 
 ---
 

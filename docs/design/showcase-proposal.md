@@ -798,7 +798,7 @@ The Sokpop aesthetic is achieved in CSS, not canvas. The palette is documented w
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>aicraft-engine — Zero-Dependency Procedural Rendering for Games</title>
-  <meta name="description" content="Ultra-minimalist Canvas2D rendering library. Zero runtime dependencies. Seeded determinism. Algorithmic cosmetics. Built for AI Craft games." />
+  <meta name="description" content="Ultra-minimalist Canvas2D rendering library. Zero runtime dependencies. Seeded determinism. Algorithmic cosmetics. Built for indie and procedural games." />
 
   <!-- Open Graph -->
   <meta property="og:title" content="aicraft-engine" />

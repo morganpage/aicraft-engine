@@ -9,7 +9,7 @@ Algorithmic skin variation enables rich cosmetic monetization without the overhe
 
 ## Why this matters for aicraft-engine
 
-This technique directly supports **Pillar 2 (Cosmetics)** and provides the primary monetization engine for AI Craft games (such as *Stacklands* or *Tuin* clones). In a zero-runtime-dependency, Canvas2D-based library, shipping PNG spritesheets or heavy textures is a major constraint violation. By shifting the cosmetic surface to procedural parameters (colors, bone scale multipliers, skeletal shape flags, gait coefficients, and particle properties), we keep the library lightweight, highly performant, and infinitely customizable. Furthermore, establishing a standard, defensively parsed manifest format and pure ownership operations ensures that player progress and purchased items are never lost due to corrupted local storage or schema updates.
+This technique directly supports **Pillar 2 (Cosmetics)** and provides the primary monetization engine for consumer games (such as *Stacklands* or *Tuin* clones). In a zero-runtime-dependency, Canvas2D-based library, shipping PNG spritesheets or heavy textures is a major constraint violation. By shifting the cosmetic surface to procedural parameters (colors, bone scale multipliers, skeletal shape flags, gait coefficients, and particle properties), we keep the library lightweight, highly performant, and infinitely customizable. Furthermore, establishing a standard, defensively parsed manifest format and pure ownership operations ensures that player progress and purchased items are never lost due to corrupted local storage or schema updates.
 
 ---
 

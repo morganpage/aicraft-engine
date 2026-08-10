@@ -513,7 +513,7 @@ If a future `drawTiledParallax` convenience wrapper gains a `snapToPixel` option
 **Recommendation: 1D only.** The helper takes one axis at a time. The consumer calls it twice for 2D (once for X, once for Y) if needed.
 
 **Reasoning:**
-1. **Side-scrollers dominate.** the reference implementation and most AI Craft games scroll horizontally with a fixed vertical offset. A 2D variant would force Y-axis computation on every call even when Y is static (factor = 0, no tiling needed).
+1. **Side-scrollers dominate.** the reference implementation and most consumer side-scrollers scroll horizontally with a fixed vertical offset. A 2D variant would force Y-axis computation on every call even when Y is static (factor = 0, no tiling needed).
 2. **Independent axes.** X and Y often have different tile sizes, different factors, and different tiling needs (X wraps, Y doesn't). A 2D helper would need `{ tileWidth, tileHeight, factorX, factorY }` — more parameters, more confusion.
 3. **Matches `parallaxOffset`.** The existing helper takes `(cameraX, cameraY, factor)` but the consumer can trivially call it per-axis. The new helper follows the same pattern.
 4. **Composability.** A consumer who wants 2D tiling wraps the 1D helper in a 4-line function. A consumer who wants 1D tiling doesn't pay for Y-axis math they don't need.

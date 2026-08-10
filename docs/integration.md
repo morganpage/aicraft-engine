@@ -42,7 +42,7 @@ cp -r /path/to/aicraft-engine/src /path/to/game/src/lib/aicraft-engine/
 
 The library is structured to be publishable, but doing so adds a `dependencies` entry to the consumer's `package.json`. Many consumer titles deliberately ship with zero `dependencies` as a minimalist invariant; publishing would break that.
 
-This option is fine for **external consumers** (Premium AI Craft customers building their own games outside the zero-dep family), but not for sibling games that share the zero-dependency invariant.
+This option is fine for **external consumers** (Premium customers building their own games outside the zero-dep family), but not for sibling games that share the zero-dependency invariant.
 
 ---
 

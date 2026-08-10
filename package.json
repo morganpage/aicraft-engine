@@ -1,8 +1,20 @@
 {
   "name": "aicraft-engine",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
-  "description": "Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for AI Craft games. Zero runtime dependencies.",
+  "description": "Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for indie and procedural games. Zero runtime dependencies.",
+  "keywords": [
+    "canvas2d", "procedural", "pixel-art", "platformer", "game-engine",
+    "game-development", "typescript", "deterministic", "ldtk", "aseprite",
+    "spritesheet", "cosmetics", "iap", "procedural-generation", "game-library"
+  ],
+  "homepage": "https://github.com/morganpage/aicraft-engine",
+  "bugs": { "url": "https://github.com/morganpage/aicraft-engine/issues" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/morganpage/aicraft-engine.git"
+  },
+  "author": "Morgan Page",
   "license": "MIT",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
