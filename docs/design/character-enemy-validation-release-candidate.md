@@ -126,5 +126,8 @@ reported a spurious +39.52% — re-baselined to the 0.5.0 `dist/` as a
 whole-distribution regression budget. Tarball leak scan is clean; zero runtime
 dependencies.
 
-**Publication status.** READY FOR PUBLICATION pending explicit user approval.
-No merge, tag, or npm publication has occurred as of this postscript.
+**Publication status.** **PUBLISHED.** `aicraft-engine@0.5.0` went live on npm
+at 2026-08-10T12:37:10.635Z. Release commit `a71b189`, tag `v0.5.0`. Registry
+integrity `sha512-J//xe073JWyXoM22aEPf9k+I4EdwxWRw7DSfiilfKJFNKXyD4LxvQ4sAQOsVn/uXdJOrs8Y5kAXs4j543Rq8cg==`,
+shasum `7072dcef938edfd654d1112502a86b951d06a531` (byte-identical to the
+smoke-tested tarball). Full details in `docs/design/0.5.0-scope-decision.md`.
