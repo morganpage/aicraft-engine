@@ -88,15 +88,22 @@ export function initCameraBrainDemo(root: HTMLElement, _store: Store<GlobalState
     ctx.lineWidth = 2 / brain.zoom;
     ctx.strokeRect(0, 0, DEMO_BOUNDS.width, DEMO_BOUNDS.height);
 
-    // Fixed director-focus marker (a crosshair + rect).
+    // Fixed director-focus marker (a crosshair + rect). DIRECTOR_FOCUS.x/y is the
+    // viewport's TOP-LEFT (not its centre), and zoom shrinks the visible world
+    // area to VIEW_W/zoom × VIEW_H/zoom, so the guide rect uses that size and
+    // the crosshair sits at the rect's centre.
+    const dVW = VIEW_W / DIRECTOR_FOCUS.zoom;
+    const dVH = VIEW_H / DIRECTOR_FOCUS.zoom;
+    const dCx = DIRECTOR_FOCUS.x + dVW / 2;
+    const dCy = DIRECTOR_FOCUS.y + dVH / 2;
     ctx.strokeStyle = COLOR_FOCUS;
     ctx.lineWidth = 2 / brain.zoom;
-    ctx.strokeRect(DIRECTOR_FOCUS.x, DIRECTOR_FOCUS.y, VIEW_W, VIEW_H);
+    ctx.strokeRect(DIRECTOR_FOCUS.x, DIRECTOR_FOCUS.y, dVW, dVH);
     ctx.beginPath();
-    ctx.moveTo(DIRECTOR_FOCUS.x - 12, DIRECTOR_FOCUS.y);
-    ctx.lineTo(DIRECTOR_FOCUS.x + 12, DIRECTOR_FOCUS.y);
-    ctx.moveTo(DIRECTOR_FOCUS.x, DIRECTOR_FOCUS.y - 12);
-    ctx.lineTo(DIRECTOR_FOCUS.x, DIRECTOR_FOCUS.y + 12);
+    ctx.moveTo(dCx - 12, dCy);
+    ctx.lineTo(dCx + 12, dCy);
+    ctx.moveTo(dCx, dCy - 12);
+    ctx.lineTo(dCx, dCy + 12);
     ctx.stroke();
 
     // Moving follow target.

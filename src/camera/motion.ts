@@ -123,7 +123,10 @@ export function clampTopLeft(
  *
  * Properties:
  *   - Never overshoots: the result always lies between `current` and `desired`.
- *   - Snaps exactly: returns `desired` when within `snapThreshold`.
+ *   - Never moves on a zero-time step: a non-positive or non-finite `dt`
+ *     returns `current` unchanged, even when already within `snapThreshold`.
+ *   - Snaps exactly: with a positive `dt`, returns `desired` when within
+ *     `snapThreshold`.
  *   - Partition-invariant in exact arithmetic for a static target (the capped
  *     ODE has the semigroup property), including a step that crosses the cap
  *     boundary. The monotone snap projection preserves that in exact
@@ -148,8 +151,8 @@ export function converge(
   const cur = Number.isFinite(current) ? current : 0;
   const diff = desired - cur;
   const r = Math.abs(diff);
+  if (t === 0) return cur; // no time elapsed → no movement (takes precedence over snap)
   if (r <= m.snapThreshold) return desired;
-  if (t === 0) return cur;
 
   const lambda = Math.LN2 / m.halfLife;
   const capDistance = m.maxSpeed / lambda;

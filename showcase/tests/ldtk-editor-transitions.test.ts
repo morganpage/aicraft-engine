@@ -218,7 +218,7 @@ describe('resetRoomCameraBrain — room-local cut policy', () => {
       activeId: 'room-a',
       bodyCamera: { x: 432.5, y: 120 },
       lensZoom: 1.4,
-      blend: { fromId: 'room-a', toId: 'room-a', elapsed: 0.1, duration: 0.3, fromCenter: { x: 100, y: 100 }, fromZoom: 1.2 },
+      blend: { fromId: 'room-a', toId: 'room-a', elapsed: 0.1, duration: 0.3, fromCenter: { x: 100, y: 100 }, fromZoom: 1.2, fromPadding: 0 },
     };
     const reset = resetRoomCameraBrain(before);
     expect(reset.camera).toEqual({ x: 0, y: 0 });

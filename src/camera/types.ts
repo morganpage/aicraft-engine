@@ -167,6 +167,8 @@ export interface CameraBrain {
     /** Frozen world-space centre of the rendered source view. */
     readonly fromCenter: Readonly<{ x: number; y: number }>;
     readonly fromZoom: number;
+    /** Frozen clamp padding of the source view (its body's padding). */
+    readonly fromPadding: number;
   };
 }
 

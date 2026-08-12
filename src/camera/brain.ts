@@ -312,8 +312,10 @@ function inactiveHold(repaired: Readonly<CameraBrain>): CameraBrain {
  *  5. Without a blend, publish the live state as the rendered state.
  *  6. With a blend, advance `elapsed`, smoothstep-interpolate the frozen source
  *     centre/zoom toward the live centre/zoom, and derive the rendered top-left.
- *  7. Clamp the rendered top-left using the incoming body's padding + rendered
- *     zoom; at `t >= 1` publish the live state exactly and clear the blend.
+ *  7. Clamp the rendered top-left. During a blend, crossfade the clamp padding
+ *     from the frozen source view's padding to the incoming body's (so the
+ *     first frame reproduces the previous render); at `t >= 1` publish the
+ *     live state exactly and clear the blend.
  */
 export function updateCameraBrain(
   state: Readonly<CameraBrain>,
@@ -355,6 +357,8 @@ export function updateCameraBrain(
     // Switch (also an interrupted blend): start a new blend from the CURRENTLY
     // RENDERED view, re-seeding the incoming live state from it (already done
     // above). This guarantees visual continuity mid-transition.
+    const oldVcam = normalized.find((v) => v.id === oldActiveId);
+    const fromPadding = oldVcam?.body?.padding ?? 0;
     blend =
       selectedVcam.blend > 0
         ? {
@@ -364,6 +368,7 @@ export function updateCameraBrain(
             duration: selectedVcam.blend,
             fromCenter: viewCentre(repaired.camera, viewport, repaired.zoom),
             fromZoom: repaired.zoom,
+            fromPadding,
           }
         : null;
   }
@@ -452,10 +457,14 @@ export function updateCameraBrain(
   const renderedZoom = lerp(blend.fromZoom, lensZoom, e);
   const ivw = viewport.width / renderedZoom;
   const ivh = viewport.height / renderedZoom;
+  // Crossfade the clamp padding from the source view's padding to the incoming
+  // body's: at e=0 the clamp reproduces the previous render exactly (no jump),
+  // and at e=1 it matches the live/finished clamp.
+  const blendPadding = lerp(blend.fromPadding, incomingPadding, e);
   return {
     camera: {
-      x: clampTopLeft(cx - ivw / 2, bounds.width, ivw, incomingPadding),
-      y: clampTopLeft(cy - ivh / 2, bounds.height, ivh, incomingPadding),
+      x: clampTopLeft(cx - ivw / 2, bounds.width, ivw, blendPadding),
+      y: clampTopLeft(cy - ivh / 2, bounds.height, ivh, blendPadding),
     },
     zoom: renderedZoom,
     activeId,
@@ -468,6 +477,7 @@ export function updateCameraBrain(
       duration: blend.duration,
       fromCenter: blend.fromCenter,
       fromZoom: blend.fromZoom,
+      fromPadding: blend.fromPadding,
     },
   };
 }

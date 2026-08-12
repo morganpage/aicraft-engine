@@ -90,6 +90,15 @@ describe('converge — basic response', () => {
     expect(converge(10, 100, Infinity)).toBe(10);
   });
 
+  it('a zero-time step holds current even when within the snap threshold', () => {
+    // Within snapThreshold but dt = 0: must not snap (no time elapsed → no move).
+    expect(converge(0, 0.4, 0, { snapThreshold: 0.5 })).toBe(0);
+    expect(converge(5, 5.3, 0, { snapThreshold: 0.5 })).toBe(5);
+    expect(converge(5, 5.3, -1, { snapThreshold: 0.5 })).toBe(5);
+    // With a positive dt the same input snaps to the target.
+    expect(converge(5, 5.3, DT, { snapThreshold: 0.5 })).toBe(5.3);
+  });
+
   it('holds current when desired is non-finite', () => {
     expect(converge(10, NaN, DT)).toBe(10);
   });
@@ -486,6 +495,34 @@ describe('brain — normal switch & blend', () => {
     expect(fc.x).toBeCloseTo(expected.x, 6);
     expect(fc.y).toBeCloseTo(expected.y, 6);
     expect(brain.blend!.fromZoom).toBeCloseTo(interruptedRendered.zoom, 6);
+  });
+
+  it('a blend starting inside the source padding overscan does not jump on the first frame', () => {
+    // Source vcam allows 100px of overscan and is rendered at x = -100 (valid
+    // only because of that padding). Destination vcam allows no overscan and
+    // blends in over 1s. Switching with zero elapsed time, the first blend
+    // frame must reproduce the previous render exactly — clamping with the new
+    // (zero) padding would otherwise snap x from -100 to 0 before any blending.
+    const wide: VirtualCamera = {
+      id: 'wide', priority: 1, blend: 0,
+      body: { mode: 'fixed', x: -100, y: 0, padding: 100 },
+    };
+    const tight: VirtualCamera = {
+      id: 'tight', priority: 100, blend: 1.0,
+      body: { mode: 'fixed', x: 480, y: 270, padding: 0 },
+    };
+    const before: CameraBrain = {
+      camera: { x: -100, y: 0 },
+      zoom: 1,
+      activeId: 'wide',
+      bodyCamera: { x: -100, y: 0 },
+      lensZoom: 1,
+      blend: null,
+    };
+    const brain = updateCameraBrain(before, baseOptions({ vcams: [wide, tight], activeId: 'tight', dt: 0 }));
+    expect(brain.blend).not.toBeNull();
+    expect(brain.camera).toEqual({ x: -100, y: 0 });
+    expect(brain.zoom).toBe(1);
   });
 });
 
