@@ -8,12 +8,14 @@
  *
  * The ability owns detection and the vertical-velocity decision only; the
  * kernel owns the cross-ability coordination (gravity skip, climb-authoritative
- * Y restore, and jump-state reset) via the `isClimbActive` flag this ability
- * sets — the same ability/kernel separation dash uses.
+ * Y restore, and jump-state reset) via `resolveLocomotionMode`, which reads
+ * `ClimbAbilityState.climbing` to resolve the exclusive `'ladder'` mode — the
+ * same ability/kernel separation dash uses.
  *
  * When `climbEnabled` and the body overlaps a `ladder`-flagged solid (climb
  * space; the resolvers skip ladder solids so they never block movement) and the
  * player is not jumping this tick:
+ *   - read the vertical intent from `input.moveY` (-1 up, +1 down),
  *   - set `core.vy = climbIntent * climbSpeed` (0 sticks; ±climbSpeed climbs),
  *   - set `core.onGround = true`,
  *   - mark the state `climbing: true`.
@@ -86,6 +88,7 @@ export const climbAbility: AbilityProcessor<ClimbAbilityState> = {
       hitWall: false,
       startedWallSlide: false,
       wallJumpLaunched: false,
+      dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
     };
@@ -111,8 +114,9 @@ export const climbAbility: AbilityProcessor<ClimbAbilityState> = {
 
     let nextCore = core;
     if (climbing) {
-      const climbIntent = input.climb ?? 0;
-      // climbIntent: -1 = up, +1 = down. vy: negative = up, positive = down.
+      const climbIntent = input.moveY ?? 0;
+      // climbIntent: -1 = up, +1 = down (same semantics as the retired `climb`
+      // field, now unified on `moveY`). vy: negative = up, positive = down.
       let vy = climbIntent * config.climbSpeed;
       if (climbIntent < 0 && solids !== undefined) {
         // Top-of-ladder guard: only rise if the feet band would still overlap a

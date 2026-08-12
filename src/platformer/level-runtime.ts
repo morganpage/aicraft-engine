@@ -167,6 +167,31 @@ function compileLevelUnsafe(
   const staticSolids: Solid[] = [];
   const movingPlatforms: CompiledMovingPlatform[] = [];
 
+  // Parse config + player dimensions FIRST so the entity loop can read spring
+  // launch velocities from `config.springBounceVy` / `config.springSuperBounceVy`
+  // (Phase 8). Previously this ran after the entity loop; moving it up is a
+  // pure reorder — config parsing has no dependency on entities or tiles.
+  let config: Readonly<PlatformerConfig> = DEFAULT_PLATFORMER_CONFIG;
+  let playerWidth = DEFAULT_PLAYER_WIDTH;
+  let playerHeight = DEFAULT_PLAYER_HEIGHT;
+  try {
+    config = options?.config ?? DEFAULT_PLATFORMER_CONFIG;
+  } catch {
+    config = DEFAULT_PLATFORMER_CONFIG;
+  }
+  try {
+    const value = options?.playerWidth;
+    if (typeof value === 'number' && Number.isFinite(value)) playerWidth = value;
+  } catch {
+    playerWidth = DEFAULT_PLAYER_WIDTH;
+  }
+  try {
+    const value = options?.playerHeight;
+    if (typeof value === 'number' && Number.isFinite(value)) playerHeight = value;
+  } catch {
+    playerHeight = DEFAULT_PLAYER_HEIGHT;
+  }
+
   let entities: readonly import('../level/types').LevelEntity[] = [];
   try {
     entities = level && Array.isArray(level.entities) ? level.entities : [];
@@ -237,9 +262,39 @@ function compileLevelUnsafe(
           targetIndex,
           direction: 1,
         });
+      } else if (entity.kind === 'spring') {
+        // Phase 8 — spring trigger volume. NON-BLOCKING (the resolvers skip
+        // `spring` solids, same as `passthrough`/`ladder`). `launch` is the
+        // pre-computed upward velocity from the entity's `power` + config, so
+        // the kernel reads a single ready value via `solid.spring.launch`.
+        // Routed through a `LaunchIntent { source: 'spring' }` by the kernel.
+        const power = entity.props?.power;
+        const launch =
+          power === 'super' ? config.springSuperBounceVy : config.springBounceVy;
+        staticSolids.push({
+          id: makeSolidId(entity.id),
+          x: rx,
+          y: ry,
+          width: rw,
+          height: rh,
+          spring: { launch },
+        });
+      } else if (entity.kind === 'dashRefill') {
+        // Phase 8 — dash crystal trigger volume. NON-BLOCKING; the kernel
+        // refills `dashesRemaining` on overlap and emits an interaction; the
+        // consumer owns the respawn cycle (removes the solid on interaction).
+        staticSolids.push({
+          id: makeSolidId(entity.id),
+          x: rx,
+          y: ry,
+          width: rw,
+          height: rh,
+          dashRefill: true,
+        });
       }
-      // Other kinds (spawn, exit, trap, hazard, decoration, trigger) are not
-      // collision surfaces and are intentionally ignored here.
+      // Other kinds (spawn, exit, trap, hazard, decoration, trigger, enemy,
+      // collectible) are not collision surfaces and are intentionally ignored
+      // here.
     } catch {
       // A hostile entity is skipped without preventing later entities.
     }
@@ -263,27 +318,6 @@ function compileLevelUnsafe(
     for (const solid of tileSolids) staticSolids.push(solid);
   } catch {
     captured = emptyCapturedTiles();
-  }
-
-  let config: Readonly<PlatformerConfig> = DEFAULT_PLATFORMER_CONFIG;
-  let playerWidth = DEFAULT_PLAYER_WIDTH;
-  let playerHeight = DEFAULT_PLAYER_HEIGHT;
-  try {
-    config = options?.config ?? DEFAULT_PLATFORMER_CONFIG;
-  } catch {
-    config = DEFAULT_PLATFORMER_CONFIG;
-  }
-  try {
-    const value = options?.playerWidth;
-    if (typeof value === 'number' && Number.isFinite(value)) playerWidth = value;
-  } catch {
-    playerWidth = DEFAULT_PLAYER_WIDTH;
-  }
-  try {
-    const value = options?.playerHeight;
-    if (typeof value === 'number' && Number.isFinite(value)) playerHeight = value;
-  } catch {
-    playerHeight = DEFAULT_PLAYER_HEIGHT;
   }
 
   let spawnX = 0;

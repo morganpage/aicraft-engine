@@ -3,10 +3,14 @@ import {
   createReplayRecorder,
   playReplay,
   replayHash,
+  assertPhysicsVersion,
+  PhysicsVersionMismatchError,
+  CURRENT_PHYSICS_VERSION,
 } from '../replay';
 import type { Replay, ReplayFrame, ReplayConfig } from '../replay';
 import type { PlatformerState, PlatformerInput } from '../platformer/types';
 import { stepPlatformer } from '../platformer';
+import { EMPTY_LOCOMOTION } from '../platformer/constants';
 
 /**
  * Build a minimal but valid initial PlatformerState. The platformer kernel
@@ -32,6 +36,7 @@ function buildInitialState(tick = 0): PlatformerState {
       }),
     }),
     abilities: Object.freeze({}),
+    locomotion: EMPTY_LOCOMOTION,
     events: Object.freeze({
       justLanded: false,
       justLaunched: false,
@@ -39,9 +44,12 @@ function buildInitialState(tick = 0): PlatformerState {
       hitWall: false,
       startedWallSlide: false,
       wallJumpLaunched: false,
+      dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
     }),
+    // Phase 8 — no surface interactions on the test initial state.
+    interactions: Object.freeze([]),
     tick,
   }) as PlatformerState;
 }
@@ -52,7 +60,9 @@ const POLLED_IDLE = Object.freeze({
   released: false,
 });
 
-function frame(moveX: -1 | 0 | 1 = 0): PlatformerInput {
+// Phase 9 — `moveX` widened to `number` (analog-friendly). The test still
+// feeds digital -1/0/1; the annotation matches the widened `PlatformerInput`.
+function frame(moveX: number = 0): PlatformerInput {
   return Object.freeze({
     moveX,
     jump: POLLED_IDLE,
@@ -60,7 +70,10 @@ function frame(moveX: -1 | 0 | 1 = 0): PlatformerInput {
   });
 }
 
-const STD_CONFIG: ReplayConfig = Object.freeze({ tickRate: 60 });
+const STD_CONFIG: ReplayConfig = Object.freeze({
+  tickRate: 60,
+  physicsVersion: CURRENT_PHYSICS_VERSION,
+});
 
 describe('createReplayRecorder — purity + append semantics', () => {
   it('records inputs in order', () => {
@@ -264,8 +277,16 @@ describe('replayHash — determinism + tamper detection', () => {
     const initial = buildInitialState(0);
     // Two configs with the same logical content but different insertion
     // order. canonicalize sorts keys → same hash.
-    const cfgA: ReplayConfig = Object.freeze({ tickRate: 60, label: 'test' } as ReplayConfig);
-    const cfgB: ReplayConfig = Object.freeze({ label: 'test', tickRate: 60 } as ReplayConfig);
+    const cfgA: ReplayConfig = Object.freeze({
+      tickRate: 60,
+      physicsVersion: CURRENT_PHYSICS_VERSION,
+      label: 'test',
+    } as ReplayConfig);
+    const cfgB: ReplayConfig = Object.freeze({
+      label: 'test',
+      tickRate: 60,
+      physicsVersion: CURRENT_PHYSICS_VERSION,
+    } as ReplayConfig);
     const rA = createReplayRecorder(0, initial).record(frame(0)).finish(cfgA);
     const rB = createReplayRecorder(0, initial).record(frame(0)).finish(cfgB);
     // cfgA === cfgB content-wise, canonicalization normalizes order.
@@ -288,5 +309,120 @@ describe('replayHash — determinism + tamper detection', () => {
     expect(Number.isInteger(h)).toBe(true);
     expect(h).toBeGreaterThanOrEqual(0);
     expect(h).toBeLessThan(2 ** 32);
+  });
+});
+
+describe('physicsVersion mismatch', () => {
+  // Helper: build a frozen Replay with an explicit physicsVersion (bypassing
+  // the type's required-field check so we can simulate an old / foreign
+  // recording). Mirrors the shape createReplayRecorder produces.
+  function buildReplayWithVersion(
+    physicsVersion: number | undefined,
+  ): Replay {
+    const initial = buildInitialState(0);
+    const recorder = createReplayRecorder(0, initial);
+    recorder.record(frame(1));
+    recorder.record(frame(0));
+    // Build the config explicitly so we can omit physicsVersion (pre-collapse
+    // shape) when needed. The recorder just stores what we pass.
+    const config = {
+      tickRate: 60,
+      ...(physicsVersion !== undefined ? { physicsVersion } : {}),
+    } as unknown as ReplayConfig;
+    return recorder.finish(config);
+  }
+
+  it('a matching physicsVersion plays without throwing', () => {
+    const replay = buildReplayWithVersion(CURRENT_PHYSICS_VERSION);
+    expect(() =>
+      playReplay(replay, (s) => s, 1 / 60),
+    ).not.toThrow();
+    // And assertPhysicsVersion is a no-op on the same replay.
+    expect(() => assertPhysicsVersion(replay)).not.toThrow();
+  });
+
+  it('a replay whose physicsVersion differs from CURRENT throws PhysicsVersionMismatchError', () => {
+    // Simulate an old recording made under physics version 0 (pre-collapse).
+    const replay = buildReplayWithVersion(0);
+    const err = (() => {
+      try {
+        playReplay(replay, (s) => s, 1 / 60);
+      } catch (e) {
+        return e as unknown;
+      }
+      return null;
+    })();
+    expect(err).toBeInstanceOf(PhysicsVersionMismatchError);
+    const typed = err as PhysicsVersionMismatchError;
+    expect(typed.name).toBe('PhysicsVersionMismatchError');
+    expect(typed.expected).toBe(CURRENT_PHYSICS_VERSION);
+    expect(typed.actual).toBe(0);
+    // Message names BOTH versions so the failure is self-diagnosing.
+    expect(String(typed.message)).toContain(String(CURRENT_PHYSICS_VERSION));
+    expect(String(typed.message)).toContain('0');
+  });
+
+  it('a replay whose physicsVersion is a different non-current number also throws', () => {
+    // A future/hypothetical version 999 — still a mismatch, still rejected.
+    const replay = buildReplayWithVersion(999);
+    expect(() => playReplay(replay, (s) => s, 1 / 60)).toThrow(
+      PhysicsVersionMismatchError,
+    );
+  });
+
+  it('a replay with NO physicsVersion (absent = pre-collapse = 0) is rejected', () => {
+    const replay = buildReplayWithVersion(undefined);
+    expect(() => assertPhysicsVersion(replay)).toThrow(
+      PhysicsVersionMismatchError,
+    );
+    // And playReplay surfaces the same error.
+    let caught: PhysicsVersionMismatchError | null = null;
+    try {
+      playReplay(replay, (s) => s, 1 / 60);
+    } catch (e) {
+      caught = e as PhysicsVersionMismatchError;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught?.actual).toBe(0);
+    expect(caught?.expected).toBe(CURRENT_PHYSICS_VERSION);
+  });
+
+  it('assertPhysicsVersion is a no-op on match and throws on mismatch', () => {
+    const ok = buildReplayWithVersion(CURRENT_PHYSICS_VERSION);
+    expect(() => assertPhysicsVersion(ok)).not.toThrow();
+
+    // Use a clearly-not-current version (999) so this test does not need
+    // updating on every physicsVersion bump.
+    const bad = buildReplayWithVersion(999);
+    expect(() => assertPhysicsVersion(bad)).toThrow(PhysicsVersionMismatchError);
+    let caught: PhysicsVersionMismatchError | null = null;
+    try {
+      assertPhysicsVersion(bad);
+    } catch (e) {
+      caught = e as PhysicsVersionMismatchError;
+    }
+    expect(caught?.expected).toBe(CURRENT_PHYSICS_VERSION);
+    expect(caught?.actual).toBe(999);
+  });
+
+  it('assertPhysicsVersion skips malformed replays (null / non-object) without throwing', () => {
+    // These shapes have no config to check; the player's defensive path
+    // handles them. Version rejection only applies to real replay objects.
+    expect(() => assertPhysicsVersion(null)).not.toThrow();
+    expect(() => assertPhysicsVersion(undefined)).not.toThrow();
+    expect(() => assertPhysicsVersion(42 as unknown as Replay)).not.toThrow();
+  });
+
+  it('the version check fires BEFORE any ticking (no step calls on mismatch)', () => {
+    const replay = buildReplayWithVersion(0);
+    let stepCalls = 0;
+    const step = (s: PlatformerState): PlatformerState => {
+      stepCalls++;
+      return s;
+    };
+    expect(() => playReplay(replay, step, 1 / 60)).toThrow(
+      PhysicsVersionMismatchError,
+    );
+    expect(stepCalls).toBe(0);
   });
 });

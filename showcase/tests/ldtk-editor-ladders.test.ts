@@ -88,7 +88,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 30; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: 0 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: 0 },
         solids,
         DT,
         CLIMB_CONFIG,
@@ -115,7 +115,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 30; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 1, jump: IDLE, dash: null, climb: 0 },
+        { moveX: 1, jump: IDLE, dash: null, moveY: 0 },
         openLadder,
         DT,
         CLIMB_CONFIG,
@@ -133,7 +133,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 30; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: -1 },
         solids,
         DT,
         CLIMB_CONFIG,
@@ -153,7 +153,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 30; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: 1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: 1 },
         solids,
         DT,
         CLIMB_CONFIG,
@@ -174,7 +174,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 60; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: -1 },
         solids,
         DT,
         CLIMB_CONFIG,
@@ -217,7 +217,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 60; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: -1 },
         shaftSolids,
         DT,
         CLIMB_CONFIG,
@@ -232,7 +232,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 90; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 1, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 1, jump: IDLE, dash: null, moveY: -1 },
         shaftSolids,
         DT,
         CLIMB_CONFIG,
@@ -270,7 +270,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 30; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: -1 },
         openTopSolids,
         DT,
         CLIMB_CONFIG,
@@ -289,7 +289,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     // stick. With no floor, gravity begins a fall (y increases).
     const after = stepPlatformer(
       state,
-      { moveX: 0, jump: { pressed: true, released: false, held: true }, dash: null, climb: -1 },
+      { moveX: 0, jump: { pressed: true, released: false, held: true }, dash: null, moveY: -1 },
       solids,
       DT,
       CLIMB_CONFIG,
@@ -306,7 +306,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 5; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: -1 },
         solids,
         DT,
         CLIMB_CONFIG,
@@ -329,7 +329,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 3; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: 0 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: 0 },
         floor,
         DT,
         CLIMB_CONFIG,
@@ -339,7 +339,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 6; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, dash: null, climb: 0 },
+        { moveX: 0, jump: { pressed: i === 0, released: false, held: true }, dash: null, moveY: 0 },
         floor,
         DT,
         CLIMB_CONFIG,
@@ -357,7 +357,7 @@ describe('LDtk play-mode ladders (engine climb ability)', () => {
     for (let i = 0; i < 30; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 0, jump: IDLE, dash: null, climb: -1 },
+        { moveX: 0, jump: IDLE, dash: null, moveY: -1 },
         noSolids,
         DT,
         CLIMB_CONFIG,
@@ -518,7 +518,7 @@ describe('LDtk play-mode — ladders do not turn adjacent walls into passthrough
     for (let i = 0; i < 20; i++) {
       state = stepPlatformer(
         state,
-        { moveX: 1, jump: IDLE, dash: null, climb: 0 },
+        { moveX: 1, jump: IDLE, dash: null, moveY: 0 },
         solids,
         DT,
         CLIMB_CONFIG,

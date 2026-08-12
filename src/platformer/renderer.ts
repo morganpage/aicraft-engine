@@ -50,6 +50,10 @@ export interface EntityPalette {
   readonly collectibleGem?: string;
   /** Key collectible color (silver). */
   readonly collectibleKey?: string;
+  /** Spring trigger-volume color (Phase 8). */
+  readonly spring?: string;
+  /** Dash-refill crystal color (Phase 8). */
+  readonly dashRefill?: string;
   /** Default player body color. */
   readonly player?: string;
 }
@@ -91,6 +95,10 @@ export const DEFAULT_ENTITY_PALETTE: Readonly<EntityPalette> = {
   collectibleCoin: '#ffd700',
   collectibleGem: '#4a9eff',
   collectibleKey: '#c0c0c0',
+  // Phase 8 — spring (bright cyan, energetic) + dash crystal (magenta, rare
+  // pickup). Both WCAG AA against the near-black outline (#1d1128).
+  spring: '#3affc8',
+  dashRefill: '#ff5adf',
 };
 
 /**
@@ -121,6 +129,10 @@ export interface DrawLevelEntityOverrideMap {
   readonly enemy?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
   /** Override for `collectible` entities. */
   readonly collectible?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
+  /** Override for `spring` entities (Phase 8). */
+  readonly spring?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
+  /** Override for `dashRefill` entities (Phase 8). */
+  readonly dashRefill?: (ctx: CanvasRenderingContext2D, entity: LevelEntity) => boolean;
 }
 
 /**

@@ -135,7 +135,9 @@ function defineEntityKindPartition<
 
 export const [TERRAIN_ROLE_KINDS, NON_TERRAIN_KINDS] = defineEntityKindPartition(
   ['platform', 'passthrough', 'movingPlatform', 'hazard'] as const,
-  ['spawn', 'exit', 'trap', 'decoration', 'trigger', 'enemy', 'collectible'] as const,
+  // Phase 8 — springs + dash crystals are non-terrain interactive objects
+  // (trigger volumes), not collision geometry for theme rendering.
+  ['spawn', 'exit', 'trap', 'decoration', 'trigger', 'enemy', 'collectible', 'spring', 'dashRefill'] as const,
   true,
   true,
 );

@@ -33,19 +33,33 @@ export type ReplayFrame = PlatformerInput;
 /**
  * Configuration captured at `finish()` time. Carries the simulation tick
  * rate so replay can run at the same wall-clock-to-tick ratio the recording
- * session used.
+ * session used, AND the `physicsVersion` so playback can reject a replay
+ * recorded against different physics math.
  *
  * The shape is intentionally OPEN (`Record<string, unknown>` extension) so
  * consumers can add their own per-game config (e.g. level id, asset
- * checksum) into the canonical hash without a library update.
+ * checksum) into the canonical hash without a library update. Named fields
+ * (`tickRate`, `physicsVersion`) are owned by the library; consumers MUST
+ * NOT set them to anything other than the values supplied by the library
+ * (`tickRate` from the session, `physicsVersion` always
+ * `CURRENT_PHYSICS_VERSION`).
  */
 export interface ReplayConfig {
   /** Simulation tick rate in Hz (e.g. 60). Default 60. */
   readonly tickRate: number;
   /**
+   * Physics version the replay was recorded against. MUST match the engine's
+   * current `CURRENT_PHYSICS_VERSION` on playback, else `playReplay` throws a
+   * `PhysicsVersionMismatchError` (no silent best-effort replay). Set by
+   * library code to `CURRENT_PHYSICS_VERSION` at record time; consumers MUST
+   * NOT override it. A replay with no `physicsVersion` (e.g. one serialized
+   * before this field existed) is treated as version `0` and rejected.
+   */
+  readonly physicsVersion: number;
+  /**
    * Consumer extension surface — consumers can attach their own metadata
-   * (level id, physics version, seed-replay-keys, etc.) and it lands in the
-   * canonical hash. Library code MUST NOT set anything here.
+   * (level id, seed-replay-keys, etc.) and it lands in the canonical hash.
+   * Library code MUST NOT set anything here.
    */
   readonly [key: string]: unknown;
 }

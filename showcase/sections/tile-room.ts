@@ -196,7 +196,7 @@ const TILE_ROOM_CONFIG: Readonly<PlatformerConfig> = {
   gravity: 1800,
   maxFallSpeed: 720,
   moveSpeed: 180,
-  airControl: 0.5,
+  airAccelMultiplier: 0.5,
   jump: {
     ...DEFAULT_JUMP,
     apexHeight: 81,

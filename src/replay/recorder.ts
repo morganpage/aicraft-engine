@@ -54,7 +54,7 @@ function normalizeSeed(seed: unknown): number {
  * const replay = recorder
  *   .record(currentInput)
  *   .record(nextInput)
- *   .finish({ tickRate: 60 });
+ *   .finish({ tickRate: 60, physicsVersion: CURRENT_PHYSICS_VERSION });
  * // Later, in a verifier:
  * const final = playReplay(replay, (s, i, dt) => stepPlatformer(s, i, solids, dt).state, 1 / 60);
  * assert(replayHash(replay) === expectedHash);

@@ -144,6 +144,7 @@ describe('jumpAbility', () => {
     let core = makeGroundedCore();
     let state = makeJumpState();
     let launched = false;
+    let launchVy = 0;
     for (let i = 0; i < 12; i += 1) {
       const result = jumpAbility.advance(
         makeCtx(core, makeInput(i === 0 ? pressEdge(true) : heldEdge(true)), config),
@@ -152,9 +153,13 @@ describe('jumpAbility', () => {
       core = result.core;
       state = result.state;
       launched ||= result.events.justLaunched === true;
+      if (result.launch) launchVy = result.launch.vy;
     }
     expect(launched).toBe(true);
-    expect(core.vy).toBeLessThan(0);
+    // Phase 0b: the ability emits a LaunchIntent (negative vy) instead of
+    // writing core.vy. The kernel applies the launch; here we assert the
+    // intent was emitted with an upward impulse.
+    expect(launchVy).toBeLessThan(0);
   });
 
   it('ground jump: grounded + jump.pressed → justLaunched fires on launch tick with negative vy', () => {
@@ -163,7 +168,10 @@ describe('jumpAbility', () => {
     }));
     const launchIdx = traj.findIndex((r) => r.events.justLaunched);
     expect(launchIdx).toBeGreaterThanOrEqual(0);
-    expect(traj[launchIdx].core.vy).toBeLessThan(0);
+    // Phase 0b: the launch impulse is on `result.launch`, not `core.vy`.
+    expect(traj[launchIdx].launch).toBeDefined();
+    expect(traj[launchIdx].launch?.vy).toBeLessThan(0);
+    expect(traj[launchIdx].launch?.source).toBe('jump');
     expect(traj[launchIdx].state.jump.phase).toBe('rising');
   });
 
@@ -188,7 +196,7 @@ describe('jumpAbility', () => {
     expect(traj[0].state.jump.phase).toBe('anticipating');
     const launchIdx = traj.findIndex((r) => r.events.justLaunched);
     expect(launchIdx).toBeGreaterThanOrEqual(0);
-    expect(traj[launchIdx].core.vy).toBeLessThan(0);
+    expect(traj[launchIdx].launch?.vy).toBeLessThan(0);
   });
 
   it('coyote expired: airborne + coyoteTimer = 0 + jump.pressed → no launch', () => {
@@ -220,7 +228,7 @@ describe('jumpAbility', () => {
     // Eventually launches.
     const launchIdx = traj.findIndex((r) => r.events.justLaunched);
     expect(launchIdx).toBeGreaterThanOrEqual(0);
-    expect(traj[launchIdx].core.vy).toBeLessThan(0);
+    expect(traj[launchIdx].launch?.vy).toBeLessThan(0);
   });
 
   it('variable height (full): held for entire rise → reaches near-apex height', () => {
@@ -247,14 +255,18 @@ describe('jumpAbility', () => {
   it('variable height (short hop): on release tick, vy cut toward jumpCutoffFactor * launch', () => {
     // Phase trajectory: tick 0 press (anticipating), ticks 1-3 anticipation,
     // tick 4 launch (vy = launchVelocity), tick 5 release → cutoff applied.
+    // Phase 0b: the ability no longer writes core.vy; the variable-height
+    // cutoff is observed on the jump slice's internal pose vy (which
+    // `advanceJump` still integrates for the pose). The authoritative physics
+    // cutoff is verified at the kernel level (platformer-velocity-authority).
     const traj = runAbility(makeGroundedCore(), makeJumpState(), 8, (i) => ({
       input: makeInput(i === 0 ? pressEdge(true) : heldEdge(i <= 4)),
     }));
     const launchIdx = traj.findIndex((r) => r.events.justLaunched);
     expect(launchIdx).toBeGreaterThanOrEqual(0);
     const releaseIdx = launchIdx + 1;
-    const launchVy = traj[launchIdx].core.vy;
-    const releaseVy = traj[releaseIdx].core.vy;
+    const launchVy = traj[launchIdx].state.jump.vy;
+    const releaseVy = traj[releaseIdx].state.jump.vy;
     // After release, vy is closer to 0 than launch (cut + gravity).
     expect(Math.abs(releaseVy)).toBeLessThan(Math.abs(launchVy));
     // The cutoff value should be near launch * jumpCutoffFactor + gravity tick.
@@ -277,13 +289,17 @@ describe('jumpAbility', () => {
     expect(input).toEqual(inputSnap);
   });
 
-  it('pure: result core is a new reference (not the input)', () => {
+  it('pure: core is returned untouched (no velocity written — Phase 0b)', () => {
+    // Phase 0b: the jump ability no longer copies core to write vy. It returns
+    // the input core by reference (unchanged) and emits a LaunchIntent for the
+    // kernel to apply. Purity holds: the input is never mutated.
     const core = makeGroundedCore();
-    const r = jumpAbility.advance(
+    const coreBefore = JSON.parse(JSON.stringify(core)) as ActorCore;
+    jumpAbility.advance(
       makeCtx(core, makeInput(pressEdge(true))),
       makeJumpState(),
     );
-    expect(r.core).not.toBe(core);
+    expect(core).toEqual(coreBefore);
   });
 
   it('hitCeiling input propagates: rising state + ceilingId set → vy zeroed, phase falling', () => {
@@ -306,7 +322,11 @@ describe('jumpAbility', () => {
     };
     const r = jumpAbility.advance(makeCtx(core, makeInput(idleEdge())), initial);
     expect(r.state.jump.phase).toBe('falling');
-    expect(r.core.vy).toBe(0);
+    // Phase 0b: the ability zeroes the jump slice's internal pose vy on a
+    // ceiling hit (advanceJump rising→falling). core.vy is owned by the
+    // kernel; the ceiling-zeroing of core.vy happens via the collision
+    // resolver at the kernel level (ry.hitCeiling → nextVy = 0).
+    expect(r.state.jump.vy).toBe(0);
   });
 
   it('idle grounded state: no input → stays grounded, no launch', () => {

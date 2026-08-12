@@ -88,7 +88,7 @@ describe('doubleJumpAbility', () => {
     expect(r.events).toEqual({});
   });
 
-  it('second jump fires: airborne + jump.pressed + jumpsRemaining > 0 → vy=launch, jumpsRemaining -= 1, event', () => {
+  it('second jump fires: airborne + jump.pressed + jumpsRemaining > 0 → emits launch, jumpsRemaining -= 1, event', () => {
     const core = makeCore({ vy: 100 });
     const state = makeState({ jumpsRemaining: 1 });
     const expectedLaunch = -(2 * DEFAULT_JUMP.apexHeight) / DEFAULT_JUMP.timeToApex;
@@ -97,7 +97,11 @@ describe('doubleJumpAbility', () => {
       state,
     );
     expect(r.state.jumpsRemaining).toBe(0);
-    expect(r.core.vy).toBeCloseTo(expectedLaunch, 5);
+    // Phase 0b: the impulse is emitted as a LaunchIntent (kernel applies it),
+    // not written to core.vy.
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vy).toBeCloseTo(expectedLaunch, 5);
+    expect(r.launch?.source).toBe('doubleJump');
     expect(r.events.doubleJumped).toBe(true);
   });
 
@@ -178,14 +182,15 @@ describe('doubleJumpAbility', () => {
     expect(state).toEqual(stateSnap);
   });
 
-  it('pure: result core is a new reference when double jump fires', () => {
+  it('pure: core returned untouched + launch emitted when double jump fires (Phase 0b)', () => {
     const core = makeCore({ vy: 100 });
     const state = makeState({ jumpsRemaining: 1 });
     const r = doubleJumpAbility.advance(
       makeCtx(core, makeInput(pressEdge(true)), enabledConfig(1)),
       state,
     );
-    expect(r.core).not.toBe(core);
-    expect(r.core.vy).toBeLessThan(0);
+    // Phase 0b: the ability no longer writes core.vy — it emits a launch.
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vy).toBeLessThan(0);
   });
 });

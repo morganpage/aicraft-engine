@@ -25,6 +25,9 @@ import {
   EMPTY_CONTACTS,
   stepPlatformer,
   PRECISION_PLATFORMER,
+  advanceSquash,
+  DEFAULT_SQUASH_CONFIG,
+  IDENTITY_SCALE,
   type CompiledLevel,
   type PlatformerConfig,
   type PlatformerInput,
@@ -120,7 +123,7 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
     gravity: 1800 * s,
     maxFallSpeed: 720 * s,
     moveSpeed: 180 * s,
-    airControl: 0.5,
+    airAccelMultiplier: 0.5,
     jump: {
       ...DEFAULT_JUMP,
       apexHeight: 81 * s,
@@ -128,6 +131,10 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
     },
     climbEnabled: true,
     climbSpeed: CLIMB_SPEED_TILES * tileSize,
+    // Phase 6 — wall-grab on (the KeyK binding above feeds `input.grab`). The
+    // ability is OFF in DEFAULT_PLATFORMER_CONFIG; the showcase opts in so the
+    // grab key does something in play mode.
+    wallGrabEnabled: true,
     // Let the player walk up small steps: stair lips, minor ledges, and the
     // last few px of a ladder-top exit (the climb guard leaves the player one
     // climb step below a flush platform). Half a tile is enough to bridge those
@@ -422,6 +429,13 @@ export function createPlaySession(
 
   let state: PlatformerState = active.compiled.initialState;
   let camera: Camera = createCamera();
+  // Phase 8c — per-event squash & stretch FX. The TRANSIENT scale lives HERE in
+  // the play-session closure (the renderer), NOT on `PlatformerState` — it is
+  // pure presentation, never affects physics trajectories or replay state, and
+  // carries no `physicsVersion` impact. Advanced once per tick from the
+  // kernel's emitted events; applied to the player draw in `render`.
+  let currentSquash = IDENTITY_SCALE;
+  const squashConfig = config.squash ?? DEFAULT_SQUASH_CONFIG;
   const keyboard: KeyboardAdapter = createKeyboardAdapter({
     codeToAction: {
       ArrowLeft: 'left',
@@ -434,6 +448,16 @@ export function createPlaySession(
       ArrowDown: 'down',
       KeyS: 'down',
       KeyR: 'reset',
+      // Dash is bound to Left Shift (ShiftLeft) — the Celeste/industry-standard
+      // dash key, and non-conflicting with the move/jump/climb/reset mappings
+      // above. The dash ability runs once `input.dash` is non-null; `dashEnabled`
+      // is inherited as `true` from `PRECISION_PLATFORMER` via `playConfigFor`.
+      ShiftLeft: 'dash',
+      // Wall-grab is bound to KeyK (Phase 6 — Celeste uses `C`/`Z` for grab;
+      // KeyK is the common non-conflicting alternative, clear of the WASD
+      // cluster and ShiftLeft dash). The grab ability runs once `input.grab` is
+      // non-null; `wallGrabEnabled` is turned on below in `playConfigFor`.
+      KeyK: 'grab',
     },
   });
 
@@ -458,19 +482,45 @@ export function createPlaySession(
       const right = edges['right'] ?? IDLE_EDGE;
       const up = edges['up'] ?? IDLE_EDGE;
       const down = edges['down'] ?? IDLE_EDGE;
-      if (edges['reset']?.pressed === true) state = active.compiled.initialState;
+      if (edges['reset']?.pressed === true) {
+        state = active.compiled.initialState;
+        // Reset the render-only squash with the respawned character.
+        currentSquash = IDENTITY_SCALE;
+      }
 
       const moveX = left.held === right.held ? 0 : left.held ? -1 : 1;
-      // Vertical climb intent consumed by the climb ability while on a ladder:
-      // -1 (up), +1 (down), 0 (idle / both held).
-      const climb = up.held === down.held ? 0 : up.held ? -1 : 1;
+      // Vertical intent (Phase 4): drives the climb ability while on a ladder
+      // (-1 up / +1 down) AND the fast-fall cap (holding down eases the max-fall
+      // cap up toward `fastMaxFallSpeed`). 0 when idle / both held.
+      const moveY = up.held === down.held ? 0 : up.held ? -1 : 1;
       const input: PlatformerInput = {
         moveX,
+        moveY,
         jump: edges['jump'] ?? IDLE_EDGE,
-        dash: null,
-        climb,
+        dash: edges['dash'] ?? IDLE_EDGE,
+        // Phase 6 — wall-grab edge. `null` (absent) would disable grab; the
+        // KeyK binding above feeds a real edge, so `IDLE_EDGE` (held=false) is
+        // the correct "mapped but not pressed" default rather than `null`.
+        grab: edges['grab'] ?? IDLE_EDGE,
       };
       state = stepPlatformer(state, input, active.solids, dt, config).state;
+
+      // Phase 8c — advance the render-only squash from this tick's emitted
+      // events + the resolved core velocity. `moveY === 1 && vy > 0` is the
+      // fast-fall signal (holding down while descending). Held in the session
+      // closure, never on PlatformerState — pure presentation.
+      const fastFalling = moveY === 1 && state.core.vy > 0;
+      currentSquash = advanceSquash(
+        currentSquash,
+        {
+          events: state.events,
+          coreVx: state.core.vx,
+          coreVy: state.core.vy,
+          fastFalling,
+          dt,
+        },
+        squashConfig,
+      );
 
       // Level transition: did the player leave the active room through a linked
       // edge? Resolve the neighbour, compile it (cached), and reposition the
@@ -505,6 +555,8 @@ export function createPlaySession(
       // unfinished room, so respawn rather than letting the actor vanish.
       if (state.core.y > active.levelData.height + active.levelData.tileSize * 4) {
         state = active.compiled.initialState;
+        // Reset the render-only squash with the respawned character.
+        currentSquash = IDENTITY_SCALE;
       }
       camera = updateCamera(
         camera,
@@ -556,6 +608,19 @@ export function createPlaySession(
       // the sprite is bottom-anchored to the body's feet and horizontally
       // centred on the narrow body. Dest coords are snapped to whole pixels so
       // the float physics position doesn't bleed across edges mid-stride.
+      //
+      // Phase 8c — the per-event squash & stretch scale (held in this closure,
+      // never on PlatformerState) is applied around the player draw, pivoted at
+      // the FEET (bottom-center of the body) so a launch stretch reads as
+      // pushing off the ground and a landing squash reads as compressing into
+      // it. Identity (`1, 1`) is a no-op transform, so the squash only changes
+      // the silhouette when an event fired or the ease-back is mid-recovery.
+      const feetX = core.x + offsetX + core.width / 2;
+      const feetY = core.y + offsetY + core.height;
+      context.save();
+      context.translate(feetX, feetY);
+      context.scale(currentSquash.scaleX, currentSquash.scaleY);
+      context.translate(-feetX, -feetY);
       let drewSprite = false;
       if (sprites !== undefined && playerAnim !== null) {
         const kind = deriveSpriteAnimKind({
@@ -591,6 +656,7 @@ export function createPlaySession(
           core.height - 1 / zoom,
         );
       }
+      context.restore();
       context.restore();
     },
 

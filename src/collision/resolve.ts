@@ -21,8 +21,10 @@ import { aabbOverlap } from './aabb';
  *
  * The body is moved by `vx`, then checked against each solid. Passthrough
  * solids are skipped entirely on the X axis (they only ever block downward
- * movement — see {@link resolveAxisY}). If the moved body overlaps a
- * fully-solid surface, it is snapped flush against that solid's edge:
+ * movement — see {@link resolveAxisY}). Phase 8: `spring` and `dashRefill`
+ * marker solids are ALSO skipped — they are non-blocking trigger volumes, not
+ * walls. If the moved body overlaps a fully-solid surface, it is snapped flush
+ * against that solid's edge:
  * - moving right (`vx > 0`) → body's right edge meets solid's left edge,
  * - moving left (`vx < 0`) → body's left edge meets solid's right edge,
  * and `vx` is zeroed. Iteration continues so a body wedged between multiple
@@ -43,7 +45,7 @@ import { aabbOverlap } from './aabb';
  *
  * @param body   - Current body position (BEFORE applying `vx`).
  * @param vx     - Horizontal velocity to apply this tick.
- * @param solids - Static collision surfaces (passthrough ignored on X).
+ * @param solids - Static collision surfaces (passthrough/spring/dashRefill ignored on X).
  * @returns Resolved position, adjusted velocity, and wall-hit flag.
  */
 export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): ResolveXResult {
@@ -57,6 +59,8 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
   for (const solid of solids) {
     if (solid.passthrough) continue;
     if (solid.ladder) continue;
+    if (solid.spring !== undefined) continue;
+    if (solid.dashRefill) continue;
     const moved: Rect = { x: newX, y: body.y, width: body.width, height: body.height };
     if (!aabbOverlap(moved, solid)) continue;
     newX = dir > 0 ? solid.x - body.width : solid.x + solid.width;
@@ -77,6 +81,9 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
  *   body was above the platform last tick (`prevBottom <= solid.y`). This lets
  *   a body rise clean through from below and only land when descending onto
  *   the top face — the classic one-way platform.
+ * - Phase 8: `spring` and `dashRefill` marker solids are skipped entirely —
+ *   they are non-blocking trigger volumes (springs launch via a `LaunchIntent`,
+ *   dash crystals refill via `dashesRemaining`), not collision geometry.
  *
  * Landing snaps the body so its bottom edge meets the solid's top
  * (`y = solid.y - body.height`); ceiling hits snap the body so its top edge
@@ -103,7 +110,7 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
  *                     that explicitly as `prevBottom` so this helper stays a
  *                     pure reader of a single moment in time.
  * @param vy         - Vertical velocity to apply this tick.
- * @param solids     - Static collision surfaces.
+ * @param solids     - Static collision surfaces (spring/dashRefill ignored).
  * @param prevBottom - The body's bottom Y (`body.y + body.height`) BEFORE this
  *                     tick's vertical move. Drives the passthrough rule.
  * @returns Resolved position, adjusted velocity, landed flag, and ceiling flag.
@@ -124,6 +131,8 @@ export function resolveAxisY(
 
   for (const solid of solids) {
     if (solid.ladder) continue;
+    if (solid.spring !== undefined) continue;
+    if (solid.dashRefill) continue;
     if (solid.passthrough) {
       if (!falling || prevBottom > solid.y) continue;
     }

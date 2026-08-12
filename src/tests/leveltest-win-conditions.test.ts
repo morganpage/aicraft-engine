@@ -15,7 +15,7 @@ import type { WinCondition } from '../leveltest/win-conditions';
 import type { PlatformerState } from '../platformer/types';
 import type { CollectibleSave } from '../collectibles/types';
 import type { LevelEntity } from '../level/types';
-import { EMPTY_CONTACTS, EMPTY_EVENTS } from '../platformer/constants';
+import { EMPTY_CONTACTS, EMPTY_EVENTS, EMPTY_INTERACTIONS, EMPTY_LOCOMOTION } from '../platformer/constants';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,7 +36,9 @@ function makeState(x: number, y: number): PlatformerState {
       contacts: EMPTY_CONTACTS,
     },
     abilities: {},
+    locomotion: EMPTY_LOCOMOTION,
     events: EMPTY_EVENTS,
+    interactions: EMPTY_INTERACTIONS,
     tick: 0,
   };
 }

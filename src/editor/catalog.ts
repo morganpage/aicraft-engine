@@ -33,6 +33,10 @@ const DEFAULT_RECT_BY_KIND: Readonly<Record<EntityKind, LevelRect>> = {
   movingPlatform: { x: 0, y: 0, width: 48, height: 16 },
   enemy: { x: 0, y: 0, width: 16, height: 16 },
   collectible: { x: 0, y: 0, width: 16, height: 16 },
+  // Phase 8 — springs/dash crystals. Spring is a single-tile trigger volume
+  // (the actor descends onto it); dash crystal is a single-tile pickup.
+  spring: { x: 0, y: 0, width: 16, height: 16 },
+  dashRefill: { x: 0, y: 0, width: 16, height: 16 },
 };
 
 /**
@@ -52,6 +56,9 @@ const DEFAULT_PROPS_BY_KIND: Readonly<Record<EntityKind, Record<string, unknown>
   movingPlatform: { speed: 60, path: [{ x: 0, y: 0 }, { x: 48, y: 0 }], loopMode: 'loop' },
   enemy: { archetype: 'spinny', params: {} },
   collectible: { kind: 'coin', value: 1 },
+  // Phase 8 — normal spring (Celeste `BounceSpeed`); dash crystal has no props.
+  spring: { power: 'normal' },
+  dashRefill: {},
 };
 
 /**
@@ -69,6 +76,9 @@ const DEFAULT_LABEL_BY_KIND: Readonly<Record<EntityKind, string>> = {
   movingPlatform: 'Moving Platform',
   enemy: 'Enemy',
   collectible: 'Collectible',
+  // Phase 8 — spring / dash crystal labels.
+  spring: 'Spring',
+  dashRefill: 'Dash Refill',
 };
 
 /**
@@ -206,6 +216,27 @@ export const DEFAULT_CATALOG: EntityCatalog = {
       label: 'Key',
       defaultRect: { x: 0, y: 0, width: 16, height: 16 },
       defaultProps: { kind: 'key', persists: false },
+    },
+    // Phase 8 — spring / dash crystal trigger volumes. Spring has a `power`
+    // sub-variant (normal/super) following the same one-EntityKind-multi-prefab
+    // pattern as collectible coin/gem/key and enemy spinny/turret/spider.
+    spring: {
+      kind: 'spring',
+      label: 'Spring',
+      defaultRect: DEFAULT_RECT_BY_KIND.spring,
+      defaultProps: DEFAULT_PROPS_BY_KIND.spring,
+    },
+    superSpring: {
+      kind: 'spring',
+      label: 'Super Spring',
+      defaultRect: DEFAULT_RECT_BY_KIND.spring,
+      defaultProps: { power: 'super' },
+    },
+    dashRefill: {
+      kind: 'dashRefill',
+      label: DEFAULT_LABEL_BY_KIND.dashRefill,
+      defaultRect: DEFAULT_RECT_BY_KIND.dashRefill,
+      defaultProps: DEFAULT_PROPS_BY_KIND.dashRefill,
     },
   },
 };

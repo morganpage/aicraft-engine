@@ -26,6 +26,7 @@
 
 import type { Replay, ReplayConfig } from '../replay/types';
 import { replayHash } from '../replay/hash';
+import { CURRENT_PHYSICS_VERSION } from '../replay/constants';
 import type { LevelData, ValidationResult } from '../level/types';
 import type { CompileLevelOptions, CompiledLevel } from '../platformer/level-runtime';
 import { compileLevel } from '../platformer/level-runtime';
@@ -270,7 +271,7 @@ function runVerificationPipeline(
         seed: trace.seed,
         initial,
         frames: (trace.actions as unknown) as any,
-        config: Object.freeze({ tickRate } as ReplayConfig),
+        config: Object.freeze({ tickRate, physicsVersion: CURRENT_PHYSICS_VERSION } as ReplayConfig),
       }) as unknown as Replay;
 
       winningReplayHashValue = replayHash(winningReplay);

@@ -34,7 +34,7 @@ export const PRECISION_PLATFORMER: Readonly<PlatformerConfig> = {
  *
  * - Gravity bumped to ~1400 px/s² for a punchier fall.
  * - Move speed up to 240 px/s.
- * - Reduced air control (0.5) — stiffer in the air like the genre classic.
+ * - Reduced air accel (0.5) — stiffer in the air like the genre classic.
  * - No dash, no wall-slide, no double-jump.
  */
 export const CLASSIC_PLATFORMER: Readonly<PlatformerConfig> = {
@@ -42,7 +42,7 @@ export const CLASSIC_PLATFORMER: Readonly<PlatformerConfig> = {
   gravity: 1400,
   maxFallSpeed: 700,
   moveSpeed: 240,
-  airControl: 0.5,
+  airAccelMultiplier: 0.5,
   wallSlideEnabled: false,
   dashEnabled: false,
   maxDashes: 0,
@@ -51,13 +51,13 @@ export const CLASSIC_PLATFORMER: Readonly<PlatformerConfig> = {
 };
 
 /**
- * Exploration feel (Hollow Knight-like). Floaty jumps, generous air control,
+ * Exploration feel (Hollow Knight-like). Floaty jumps, generous air accel,
  * wall-slide for vertical traversal — but no dash (add it later via your own
  * override if your build unlocks it as an ability).
  *
  * - Gravity lowered to ~800 px/s² for longer hangs.
  * - Slower run (180 px/s).
- * - Air control 0.9 — almost full ground control while airborne.
+ * - Air accel 0.9 — almost full ground control while airborne.
  * - Wall-slide on (no wall-jump lock change).
  * - No dash, no double-jump.
  */
@@ -66,7 +66,7 @@ export const EXPLORATION_PLATFORMER: Readonly<PlatformerConfig> = {
   gravity: 800,
   maxFallSpeed: 500,
   moveSpeed: 180,
-  airControl: 0.9,
+  airAccelMultiplier: 0.9,
   wallSlideEnabled: true,
   dashEnabled: false,
   maxDashes: 0,
@@ -80,7 +80,7 @@ export const EXPLORATION_PLATFORMER: Readonly<PlatformerConfig> = {
  *
  * - Gravity 1200 px/s² for a quick, legible fall (lava-pit pacing).
  * - Slow move speed (120 px/s) so tile-precise positioning is achievable.
- * - Very tight air control (0.3) — jumps are a commitment.
+ * - Very tight air accel (0.3) — jumps are a commitment.
  * - No dash, no wall-slide, no double-jump.
  */
 export const PUZZLE_PLATFORMER: Readonly<PlatformerConfig> = {
@@ -88,7 +88,7 @@ export const PUZZLE_PLATFORMER: Readonly<PlatformerConfig> = {
   gravity: 1200,
   maxFallSpeed: 600,
   moveSpeed: 120,
-  airControl: 0.3,
+  airAccelMultiplier: 0.3,
   wallSlideEnabled: false,
   dashEnabled: false,
   maxDashes: 0,

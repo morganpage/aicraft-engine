@@ -399,6 +399,32 @@ function validatePropsByKind(
       // Forward-compat: unknown extra props are ignored (not rejected).
       break;
     }
+    case 'spring': {
+      // Phase 8 — `power` defaults to `'normal'` when absent; when present it
+      // must be one of the two Celeste bounce tiers. `facing` is reserved
+      // (sideways springs are future); validate its shape so LDtk data carrying
+      // it is checked at the schema boundary.
+      if (
+        props.power !== undefined &&
+        !(typeof props.power === 'string' && (props.power === 'normal' || props.power === 'super'))
+      ) {
+        errors.push(err(`${base}.power`, 'spring.power must be "normal" | "super" or undefined'));
+      }
+      if (
+        props.facing !== undefined &&
+        !(typeof props.facing === 'string' && (props.facing === 'up' || props.facing === 'left' || props.facing === 'right'))
+      ) {
+        errors.push(
+          err(`${base}.facing`, 'spring.facing must be "up" | "left" | "right" or undefined'),
+        );
+      }
+      break;
+    }
+    case 'dashRefill': {
+      // Phase 8 — no kind-specific configuration. Unknown extra props are
+      // ignored (forward-compat), same as `spawn`/`passthrough`/`hazard`.
+      break;
+    }
     default:
       errors.push(err(entityBase, `unknown entity kind "${kind}"`));
       break;

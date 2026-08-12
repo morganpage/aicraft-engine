@@ -119,15 +119,57 @@ export type JumpPhase = 'grounded' | 'anticipating' | 'rising' | 'falling' | 'la
 /**
  * Persistent jump state (one instance per character; cloned each tick).
  *
+ * **Authority split (Phase 0b):** when driven through the platformer kernel,
+ * `core.vy` (kernel-owned) is the SOLE physics authority — the kernel applies
+ * the winning `LaunchIntent` and integrates gravity exactly once per tick. The
+ * `vy`/`y` fields below are VISUAL-ONLY: they simulate the jump arc purely to
+ * drive `evaluateJump`'s pose (`yOffset`, squash, airborne blend). The jump
+ * ability therefore calls `advanceJump` to advance the pose/phase state machine
+ * but does NOT write `nextJump.vy` back onto `core`.
+ *
+ * **Re-sync after a non-jump launch (Phase 0b hardening):** when a launch from
+ * a source OTHER than `'jump'` wins arbitration (`'doubleJump'`, `'wallJump'`,
+ * `'spring'`), `advanceJump` integrated `vy`/`y` from the stale pre-launch arc
+ * (it has no idea a different launch won). The kernel therefore RE-SYNCS this
+ * slice's `vy` to the winning `intent.vy` — the same value it just applied to
+ * `core.vy` — so `JumpState.vy` (and consequently `JumpState.y`, which
+ * `advanceJump` integrates from `vy` on subsequent ticks) tracks `core.vy`
+ * across ALL launch types instead of diverging along the stale arc. (For a
+ * `'jump'`-source launch this is a no-op: `advanceJump` already set `vy` to the
+ * same launch velocity on the anticipating → rising transition.) Because the
+ * kernel integrates `core.vy` after the re-sync while `advanceJump` ran earlier
+ * in the pipeline, `JumpState.vy` lags `core.vy` by exactly one gravity tick —
+ * they stay on the same trajectory.
+ *
+ * (`advanceJump` is also used as a fully self-contained jump simulator by
+ * `showcase/helpers/slime-knight.ts` and `src/tests/jump.test.ts`, where it
+ * remains the sole authority — those callers do not route through the kernel.)
+ *
+ * **Kernel-path consumer warning:** you MAY read `evaluateJump()` for pose
+ * (`scale`, `airborne`, `airborneBlend`, `impactVelocity`). But do NOT add
+ * `evaluateJump().yOffset` on top of `core.y`: `yOffset` is NOT an absolute
+ * position — it is the accumulated vertical offset from the jump slice's own
+ * launch point (negative = up), driven by the pose-only `JumpState.y`
+ * integration. Adding it to `core.y` double-counts vertical motion (the kernel
+ * already moved `core.y`). It exists for standalone-`advanceJump` consumers
+ * that use it as a render offset within a self-simulated arc.
+ *
  * All fields are `readonly` — `advanceJump` returns a fresh record and never
  * mutates the input (pure-progression-ops discipline).
  */
 export interface JumpState {
   /** Current phase. */
   readonly phase: JumpPhase;
-  /** Vertical velocity in px/s (+Y is down, so upward motion is negative). */
+  /**
+   * Vertical velocity in px/s (+Y is down, so upward motion is negative).
+   * Pose-only within the kernel path (see authority split on {@link JumpState});
+   * authoritative when `advanceJump` is used standalone.
+   */
   readonly vy: number;
-  /** Accumulated vertical offset from the launch point in px (negative = up). */
+  /**
+   * Accumulated vertical offset from the launch point in px (negative = up).
+   * Pose-only within the kernel path; drives `evaluateJump().yOffset`.
+   */
   readonly y: number;
   /** Coyote-time grace remaining, in seconds (`> 0` ⇒ a jump may still fire). */
   readonly coyoteTimer: number;
@@ -217,6 +259,20 @@ function deriveJumpPhysics(config: JumpConfig): JumpPhysics {
   const gravity = (2 * config.apexHeight) / (config.timeToApex * config.timeToApex);
   const launchVelocity = -(2 * config.apexHeight) / config.timeToApex;
   return { gravity, launchVelocity };
+}
+
+/**
+ * Derive the jump launch velocity (negative — upward) from a jump config.
+ *
+ * Phase 0b: the single shared source of truth for the launch impulse used by
+ * the jump, double-jump, and wall-jump abilities (via `LaunchIntent.vy`).
+ * `double-jump-ability.ts` previously kept a local mirror of this two-line
+ * formula; both now call this so the impulse can never drift between copies.
+ *
+ * Pure: a pure function of `config`.
+ */
+export function jumpLaunchVelocity(config: JumpConfig): number {
+  return -(2 * config.apexHeight) / config.timeToApex;
 }
 
 /**

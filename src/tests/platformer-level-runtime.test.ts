@@ -373,7 +373,7 @@ describe('compileLevel', () => {
       moveSpeed: 999,
       gravity: 1,
       maxFallSpeed: 1,
-      airControl: 1,
+      airAccelMultiplier: 1,
       wallSlideEnabled: false,
       dashEnabled: false,
       doubleJumpEnabled: false,

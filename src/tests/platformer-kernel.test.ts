@@ -89,8 +89,10 @@ describe('createPlatformerState', () => {
     expect(Object.keys(s.abilities).sort()).toEqual([
       'climb',
       'dash',
+      'dashTech',
       'doubleJump',
       'jump',
+      'wallGrab',
       'wallSlide',
     ]);
   });
@@ -261,14 +263,20 @@ describe('stepPlatformer (integration)', () => {
   });
 
   it('clamps positive-gravity velocity to positive terminal speed', () => {
-    const controller = createPlatformerController([], {
+    const config = {
       ...DEFAULT_PLATFORMER_CONFIG,
       gravity: 1_000,
       maxFallSpeed: 75,
       jumpEnabled: false,
-    });
+    };
+    const controller = createPlatformerController([], config);
+    // Phase 4: the terminal-speed cap is now the MUTABLE `locomotion.maxFallCurrent`
+    // (eased between `maxFallSpeed` and `fastMaxFallSpeed`). Build the state with
+    // this config's cap so it starts at 75 (not the default 600) — otherwise the
+    // easing would have to ramp down from 600 before the clamp bites.
+    const base = makeState({ vy: 74 });
     const next = controller.step(
-      makeState({ vy: 74 }),
+      { ...base, locomotion: { ...base.locomotion, maxFallCurrent: config.maxFallSpeed } },
       idleInput(),
       [],
       1,
@@ -277,6 +285,14 @@ describe('stepPlatformer (integration)', () => {
   });
 
   it('snapshots positive-gravity freefall progression', () => {
+    // Phase 3: applyHorizontalInput is now rate-based, so releasing direction
+    // in air (idleInput → moveX=0) DECELERATES vx toward 0 at
+    // runAccel*airAccelMultiplier (Celeste release uses RunAccel). The actor
+    // starts with vx=6 and no input; with dt=0.25 the decel maxDelta
+    // (2220*0.65*0.25 ≈ 360.75) far exceeds 6, so vx snaps to 0 on tick 1 and
+    // x stays at 12. (Pre-Phase-3 the air branch preserved vx when moveX=0,
+    // carrying the 6 px/s through the fall; that lerp is gone.)
+    // vy/y are gravity-only and unchanged.
     const controller = createPlatformerController([], {
       ...DEFAULT_PLATFORMER_CONFIG,
       gravity: 120,
@@ -308,9 +324,9 @@ describe('stepPlatformer (integration)', () => {
           },
           "onGround": false,
           "tick": 1,
-          "vx": 6,
+          "vx": 0,
           "vy": 30,
-          "x": 13.5,
+          "x": 12,
           "y": 41.5,
         },
         {
@@ -322,9 +338,9 @@ describe('stepPlatformer (integration)', () => {
           },
           "onGround": false,
           "tick": 2,
-          "vx": 6,
+          "vx": 0,
           "vy": 60,
-          "x": 15,
+          "x": 12,
           "y": 56.5,
         },
         {
@@ -336,9 +352,9 @@ describe('stepPlatformer (integration)', () => {
           },
           "onGround": false,
           "tick": 3,
-          "vx": 6,
+          "vx": 0,
           "vy": 90,
-          "x": 16.5,
+          "x": 12,
           "y": 79,
         },
       ]
@@ -346,14 +362,18 @@ describe('stepPlatformer (integration)', () => {
   });
 
   it('clamps negative-gravity velocity to negative terminal speed', () => {
-    const controller = createPlatformerController([], {
+    const config = {
       ...DEFAULT_PLATFORMER_CONFIG,
       gravity: -1_000,
       maxFallSpeed: 75,
       jumpEnabled: false,
-    });
+    };
+    const controller = createPlatformerController([], config);
+    // Phase 4: see positive-gravity sibling — initialize the mutable cap to this
+    // config's `maxFallSpeed` (75) so the clamp bites on the first tick.
+    const base = makeState({ vy: -74 });
     const next = controller.step(
-      makeState({ vy: -74 }),
+      { ...base, locomotion: { ...base.locomotion, maxFallCurrent: config.maxFallSpeed } },
       idleInput(),
       [],
       1,
@@ -711,6 +731,14 @@ describe('stepPlatformer (integration)', () => {
   it('dash fires in the kernel when dash input is provided airborne', () => {
     const solids: Solid[] = [{ id: 'floor', x: 0, y: 300, width: 400, height: 16 }];
     let state = makeState({ x: 100, y: 200, onGround: false, vy: 0 });
+    // Phase 2b: the dash now has a startup freeze BEFORE the velocity applies.
+    //   tick 0 (press) → `dashStarting` fires, dash enters `'startup'`, actor
+    //                    frozen (vx=vy=0), budget consumed.
+    //   ticks 1-2       → still frozen in `'startup'` (dashStartupTime=0.05s).
+    //   tick 3          → startup ends, `dashStarted` fires, dash velocity
+    //                    applies.
+    // So `dashStarted` fires on tick 3, NOT tick 0. (Was `toBe(0)` pre-Phase-2b.)
+    let dashStartingTick = -1;
     let dashStartedTick = -1;
     for (let i = 0; i < 20; i++) {
       const input: PlatformerInput = {
@@ -720,14 +748,19 @@ describe('stepPlatformer (integration)', () => {
       };
       const result = stepPlatformer(state, input, solids, DT);
       state = result.state;
-      if (state.events.dashStarted) {
+      if (dashStartingTick === -1 && state.events.dashStarting) {
+        dashStartingTick = i;
+      }
+      if (dashStartedTick === -1 && state.events.dashStarted) {
         dashStartedTick = i;
         break;
       }
     }
-    expect(dashStartedTick).toBe(0);
+    expect(dashStartingTick).toBe(0);
+    expect(dashStartedTick).toBe(3);
     const dash = state.abilities['dash'];
     if (dash && dash.kind === 'dash') {
+      // Budget consumed on the press tick (during startup).
       expect(dash.dashesRemaining).toBe(0);
     }
   });

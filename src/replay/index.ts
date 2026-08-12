@@ -21,6 +21,7 @@
 export type { Replay, ReplayFrame, ReplayConfig, ReplayRecorder } from './types';
 export type { ReplayStep } from './player';
 
+export { CURRENT_PHYSICS_VERSION } from './constants';
 export { createReplayRecorder } from './recorder';
-export { playReplay } from './player';
+export { playReplay, assertPhysicsVersion, PhysicsVersionMismatchError } from './player';
 export { replayHash } from './hash';

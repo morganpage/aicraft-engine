@@ -35,10 +35,13 @@ export type {
   DashAbilityState,
   DoubleJumpAbilityState,
   ClimbAbilityState,
+  WallGrabAbilityState,
   AnyAbilityState,
   PlatformerState,
   PlatformerConfig,
   MoveInput,
+  InteractionEvent,
+  InteractionKind,
 } from './types';
 
 export {
@@ -47,7 +50,16 @@ export {
   DEFAULT_PLAYER_HEIGHT,
   EMPTY_CONTACTS,
   EMPTY_EVENTS,
+  EMPTY_INTERACTIONS,
 } from './constants';
+
+export {
+  advanceSquash,
+  DEFAULT_SQUASH_CONFIG,
+  IDENTITY_SCALE,
+  type SquashConfig,
+  type SquashInput,
+} from './squash';
 
 export {
   createRidingTracker,
@@ -71,6 +83,7 @@ export { wallSlideAbility } from './abilities/wall-slide-ability';
 export { dashAbility } from './abilities/dash-ability';
 export { doubleJumpAbility } from './abilities/double-jump-ability';
 export { climbAbility } from './abilities/climb-ability';
+export { wallGrabAbility } from './abilities/wall-grab-ability';
 
 export {
   compileLevel,

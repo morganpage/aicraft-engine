@@ -50,6 +50,33 @@ export interface Solid extends Rect {
    */
   ladder?: boolean;
   /**
+   * Phase 8 — spring trigger volume. When present, the solid is a NON-BLOCKING
+   * trigger volume (the AABB resolvers SKIP it, like `passthrough`/`ladder`)
+   * that launches the actor upward when overlapped. `launch` is the
+   * pre-computed upward launch velocity in px/s (negative — upward, +Y is
+   * down), set at level-compile time from the entity's `power` and the
+   * platformer config (`springBounceVy` / `springSuperBounceVy`). The
+   * platformer kernel's `springAbility` reads this via `aabbOverlap` and emits
+   * a `LaunchIntent { source: 'spring' }` so the impulse routes through the
+   * §0b launch contract (otherwise the jump slice would discard it). The
+   * matched `InteractionEvent { kind: 'spring', entityId: solid.id }` lets the
+   * consumer own per-spring cooldown / visuals.
+   *
+   * Default: `undefined` (not a spring).
+   */
+  readonly spring?: { readonly launch: number };
+  /**
+   * Phase 8 — dash-refill (dash crystal) trigger volume. When `true`, the
+   * solid is a NON-BLOCKING trigger volume (the AABB resolvers SKIP it, like
+   * `passthrough`/`ladder`) that refills the actor's `dashesRemaining` to
+   * `config.maxDashes` when overlapped. The kernel emits
+   * `InteractionEvent { kind: 'dashRefill', entityId: solid.id }`; the consumer
+   * then REMOVES the crystal from the per-tick `solids[]` (its respawn cycle)
+   * so it cannot refill again until re-added. Uses `solid.id` as the
+   * `entityId`. Default `undefined`/`false`.
+   */
+  readonly dashRefill?: boolean;
+  /**
    * Optional stable identity string for this solid. The platformer kernel
    * (`src/platformer/`) reads this to populate `Contacts.groundId` /
    * `leftWallId` / `rightWallId` / `ceilingId` — the durable "which solid am

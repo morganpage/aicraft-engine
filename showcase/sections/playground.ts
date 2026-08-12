@@ -407,8 +407,8 @@ const PLAYGROUND_GRAVITY = 1800;
 const PLAYGROUND_MAX_FALL = 720;
 /** Ground move speed in px/s. Original `MOVE_SPEED = 3 px/tick` × 60 = 180. */
 const PLAYGROUND_MOVE_SPEED = 180;
-/** Air-control multiplier in [0,1] (dimensionless). Original `AIR_CONTROL = 0.5`. */
-const PLAYGROUND_AIR_CONTROL = 0.5;
+/** Air-accel multiplier in [0,1] (dimensionless, multiplies the accel rate). Original `AIR_CONTROL = 0.5`. */
+const PLAYGROUND_AIR_ACCEL_MULT = 0.5;
 
 /**
  * Tuning for the playground's platformer kernel. Spread
@@ -423,7 +423,7 @@ const PLAYGROUND_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   gravity: PLAYGROUND_GRAVITY,
   maxFallSpeed: PLAYGROUND_MAX_FALL,
   moveSpeed: PLAYGROUND_MOVE_SPEED,
-  airControl: PLAYGROUND_AIR_CONTROL,
+  airAccelMultiplier: PLAYGROUND_AIR_ACCEL_MULT,
   jump: {
     ...DEFAULT_JUMP,
     apexHeight: 81,

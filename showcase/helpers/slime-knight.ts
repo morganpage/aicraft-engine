@@ -1243,6 +1243,15 @@ export function drawSlimeKnight(
   //     DOWN so the hip drops and the knees bend — the proper squat read.
   // This is center-origin scaling, so the bottom tracks `bodyCy + h/2 · scaleY`.
   const breath = breathe(tick, config.breathConfig);
+  // TODO(Phase 8c): the event-driven squash layer (`advanceSquash` in
+  // `src/platformer/squash.ts`) is NOT wired here. This hero uses `advanceJump`
+  // STANDALONE (it is the hero/cosmetics character, not the platformer-kernel
+  // player), so it has no `PlatformerEvents` stream to drive the per-event
+  // pairs. It therefore keeps the jump slice's own anticipation/launch/landing
+  // squash (`jumpPose.scale`) as its scale source. The kernel-driven LDtk play
+  // host (`showcase/sections/ldtk-editor/play.ts`) is the canonical consumer of
+  // the event-driven layer. Wiring this hero would require either deriving
+  // events from the jump state machine or plumbing kernel events in.
   const composedScaleX = breath.scaleX * jumpPose.scale.scaleX;
   const composedScaleY = breath.scaleY * jumpPose.scale.scaleY;
 

@@ -22,7 +22,7 @@ function isPlatformerConfig(c: unknown): c is PlatformerConfig {
     typeof r.gravity === 'number' &&
     typeof r.maxFallSpeed === 'number' &&
     typeof r.moveSpeed === 'number' &&
-    typeof r.airControl === 'number' &&
+    typeof r.airAccelMultiplier === 'number' &&
     typeof r.wallSlideEnabled === 'boolean' &&
     typeof r.dashEnabled === 'boolean' &&
     typeof r.doubleJumpEnabled === 'boolean'
@@ -67,9 +67,9 @@ describe('presets', () => {
     expect(EXPLORATION_PLATFORMER.doubleJumpEnabled).toBe(false);
   });
 
-  it('EXPLORATION_PLATFORMER has lower gravity and more generous air control than the default', () => {
+  it('EXPLORATION_PLATFORMER has lower gravity and more generous air accel than the default', () => {
     expect(EXPLORATION_PLATFORMER.gravity).toBeLessThan(DEFAULT_PLATFORMER_CONFIG.gravity);
-    expect(EXPLORATION_PLATFORMER.airControl).toBeGreaterThan(DEFAULT_PLATFORMER_CONFIG.airControl);
+    expect(EXPLORATION_PLATFORMER.airAccelMultiplier).toBeGreaterThan(DEFAULT_PLATFORMER_CONFIG.airAccelMultiplier);
   });
 
   it('PUZZLE_PLATFORMER is a valid PlatformerConfig', () => {

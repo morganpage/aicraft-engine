@@ -15,13 +15,14 @@ import type { BotPolicy, BotContext } from '../leveltest/policies';
 import type { PlatformerState } from '../platformer/types';
 import type { LevelEntity } from '../level/types';
 import type { Solid } from '../collision/types';
-import { EMPTY_CONTACTS, EMPTY_EVENTS, DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
+import { EMPTY_CONTACTS, EMPTY_EVENTS, EMPTY_INTERACTIONS, DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 import { createJumpState } from '../animation/jump';
+import { EMPTY_LOCOMOTION } from '../platformer/constants';
 
 function makeState(x: number, y: number, onGround: boolean = true): PlatformerState {
   return {
@@ -38,9 +39,11 @@ function makeState(x: number, y: number, onGround: boolean = true): PlatformerSt
     },
     abilities: {
       jump: { kind: 'jump' as const, jump: createJumpState(DEFAULT_PLATFORMER_CONFIG.jump) },
-      dash: { kind: 'dash' as const, timer: 0, cooldown: 0, dashesRemaining: 1, dirX: 0, dirY: 0 },
+      dash: { kind: 'dash' as const, phase: 'idle', startupTimer: 0, timer: 0, cooldown: 0, dashesRemaining: 1, dirX: 0, dirY: 0, beforeDashVx: 0, dashStartedOnGround: false, hyperSlide: false },
     },
+    locomotion: EMPTY_LOCOMOTION,
     events: EMPTY_EVENTS,
+    interactions: EMPTY_INTERACTIONS,
     tick: 0,
   };
 }

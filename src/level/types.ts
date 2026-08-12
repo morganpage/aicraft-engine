@@ -51,7 +51,9 @@ export type EntityKind =
   | 'trigger'
   | 'movingPlatform'
   | 'enemy'
-  | 'collectible';
+  | 'collectible'
+  | 'spring'
+  | 'dashRefill';
 
 /**
  * Props for the `'exit'` kind. `isTrap` marks decoy/failure exits (the
@@ -149,8 +151,8 @@ export interface CollectibleProps {
   readonly kind: CollectibleKind;
   /**
    * Opaque numeric value (score, currency, etc.). The consumer owns the
-   * semantics — the library does not interpret this field. Must be a
-   * finite number `>= 0` when present.
+   * semantics — the library does not interpret this field. Must be a finite
+   * number `>= 0` when present.
    */
   readonly value?: number;
   /**
@@ -160,6 +162,47 @@ export interface CollectibleProps {
    */
   readonly persists?: boolean;
 }
+
+/**
+ * Props for the `'spring'` kind (Phase 8 — Celeste `BounceSpeed` /
+ * `SuperBounceSpeed`, `Player.cs:64,66`). The `power` field selects the
+ * launch velocity the compiled `Solid.spring.launch` carries: `'normal'` →
+ * `config.springBounceVy` (≈ -460), `'super'` → `config.springSuperBounceVy`
+ * (≈ -605). The level→solid compile path (`compileLevel`) pre-computes the
+ * launch from `power` + the platformer config, so the kernel reads a single
+ * ready velocity.
+ *
+ * Celeste springs can also face sideways (`facing`/`dir`); that variant is
+ * future work — only the upward bounce is wired this wave. The field is
+ * reserved on the props type (optional) so LDtk layers can carry it without a
+ * schema migration when sideways springs land.
+ */
+export interface SpringProps {
+  /**
+   * Spring power. `'normal'` → `BounceSpeed`, `'super'` → `SuperBounceSpeed`.
+   * Default `'normal'` when omitted (a defensive fallback for hand-rolled
+   * levels; the editor catalog always supplies it).
+   */
+  readonly power?: 'normal' | 'super';
+  /**
+   * Reserved: facing direction for sideways springs (`'up'` default,
+   * `'left'`/`'right'` future). Not yet wired into the kernel mechanic — the
+   * spring currently always launches upward. Present on the props so LDtk
+   * data carrying it survives a round-trip without a migration.
+   */
+  readonly facing?: 'up' | 'left' | 'right';
+}
+
+/**
+ * Props for the `'dashRefill'` kind (Phase 8 — Celeste dash crystal). The
+ * crystal is a non-blocking trigger volume that refills `dashesRemaining` to
+ * `config.maxDashes` on overlap; the consumer owns the respawn cycle (it
+ * removes the solid from the per-tick `solids[]` on seeing the
+   * `InteractionEvent { kind: 'dashRefill' }`). Carries no kind-specific
+ * configuration — an empty props object is the only legal value (mirrors
+ * `spawn` / `passthrough` / `hazard`).
+ */
+export type DashRefillProps = Record<string, never>;
 
 /**
  * Entity with kind-specific props via a discriminated union on `kind`.
@@ -179,7 +222,9 @@ export type LevelEntity =
   | { readonly id: EntityId; readonly kind: 'trigger'; readonly rect: LevelRect; readonly props: TriggerProps }
   | { readonly id: EntityId; readonly kind: 'movingPlatform'; readonly rect: LevelRect; readonly props: MovingPlatformProps }
   | { readonly id: EntityId; readonly kind: 'enemy'; readonly rect: LevelRect; readonly props: EnemyProps }
-  | { readonly id: EntityId; readonly kind: 'collectible'; readonly rect: LevelRect; readonly props: CollectibleProps };
+  | { readonly id: EntityId; readonly kind: 'collectible'; readonly rect: LevelRect; readonly props: CollectibleProps }
+  | { readonly id: EntityId; readonly kind: 'spring'; readonly rect: LevelRect; readonly props: SpringProps }
+  | { readonly id: EntityId; readonly kind: 'dashRefill'; readonly rect: LevelRect; readonly props: DashRefillProps };
 
 /**
  * Flat tile grid. Indexing: `data[tileY * cols + tileX]`. `0` is empty by

@@ -56,8 +56,8 @@ describe('level theme facade', () => {
     const all = [...TERRAIN_ROLE_KINDS, ...NON_TERRAIN_KINDS];
     expect(new Set(all).size).toBe(all.length);
     expect(all.sort()).toEqual([
-      'collectible', 'decoration', 'enemy', 'exit', 'hazard', 'movingPlatform',
-      'passthrough', 'platform', 'spawn', 'trap', 'trigger',
+      'collectible', 'dashRefill', 'decoration', 'enemy', 'exit', 'hazard', 'movingPlatform',
+      'passthrough', 'platform', 'spawn', 'spring', 'trap', 'trigger',
     ]);
   });
 

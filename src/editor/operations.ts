@@ -176,6 +176,20 @@ function makeEntity(
         rect,
         props: props as unknown as Extract<LevelEntity, { kind: 'collectible' }>['props'],
       };
+    case 'spring':
+      return {
+        id,
+        kind,
+        rect,
+        props: props as unknown as Extract<LevelEntity, { kind: 'spring' }>['props'],
+      };
+    case 'dashRefill':
+      return {
+        id,
+        kind,
+        rect,
+        props: props as unknown as Record<string, never>,
+      };
   }
 }
 
