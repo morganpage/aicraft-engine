@@ -16,8 +16,14 @@ import { describe, expect, it } from 'vitest';
 import {
   transitionFor,
   entryPoint,
+  resetRoomCameraBrain,
   type CardinalDir,
 } from '../sections/ldtk-editor/play';
+import {
+  updateCameraBrain,
+  type CameraBrain,
+  type VirtualCamera,
+} from '../../src/camera';
 import type { LdtkLevel, LdtkNeighbour } from '../../src/ldtk';
 
 // --- the platformer sample's world geometry --------------------------------
@@ -181,5 +187,86 @@ describe('transitionFor — type coverage', () => {
     // Confirm the cardinal set the helper recognises.
     const cards: readonly CardinalDir[] = ['n', 's', 'e', 'w'];
     expect(cards).toHaveLength(4);
+  });
+});
+
+// --- room-transition camera policy ----------------------------------------
+//
+// The showcase renders only the active room in room-local coordinates, so on a
+// room transition it cuts position to the destination-local origin via
+// `resetRoomCameraBrain` (preserving the previous rendered zoom) rather than
+// blending across coordinate spaces. These pin that policy.
+
+const CAM_VIEWPORT = { width: 960, height: 540 };
+
+function roomVcam(id: string, zoom: number): VirtualCamera {
+  return {
+    id,
+    priority: 0,
+    blend: 0,
+    body: { mode: 'follow', targetKey: 'player', followX: { trail: 0.25, lead: 0.5 }, followY: { trail: 0.35, lead: 0.65 }, padding: 0 },
+    lens: { zoom },
+  };
+}
+
+describe('resetRoomCameraBrain — room-local cut policy', () => {
+  it('cuts position to the origin, goes inactive, and clears any blend', () => {
+    // A brain mid-flight in room A (non-origin position, mid-blend).
+    const before: CameraBrain = {
+      camera: { x: 432.5, y: 120 },
+      zoom: 1.4,
+      activeId: 'room-a',
+      bodyCamera: { x: 432.5, y: 120 },
+      lensZoom: 1.4,
+      blend: { fromId: 'room-a', toId: 'room-a', elapsed: 0.1, duration: 0.3, fromCenter: { x: 100, y: 100 }, fromZoom: 1.2 },
+    };
+    const reset = resetRoomCameraBrain(before);
+    expect(reset.camera).toEqual({ x: 0, y: 0 });
+    expect(reset.activeId).toBeNull();
+    expect(reset.blend).toBeNull();
+    expect(reset.bodyCamera).toEqual({ x: 0, y: 0 });
+  });
+
+  it('preserves the previous rendered zoom as the new lens solver starting value', () => {
+    const before: CameraBrain = {
+      camera: { x: 100, y: 80 },
+      zoom: 1.4,
+      activeId: 'room-a',
+      bodyCamera: { x: 100, y: 80 },
+      lensZoom: 1.4,
+      blend: null,
+    };
+    const reset = resetRoomCameraBrain(before);
+    expect(reset.zoom).toBe(1.4);
+    expect(reset.lensZoom).toBe(1.4); // lens solver starts from the preserved zoom
+  });
+
+  it('makes the new room a first activation (no brain blend) on the next step', () => {
+    // Reset from room A (zoom 1.4), then step into room B whose fitZoom is 2.0.
+    const before: CameraBrain = {
+      camera: { x: 100, y: 80 },
+      zoom: 1.4,
+      activeId: 'room-a',
+      bodyCamera: { x: 100, y: 80 },
+      lensZoom: 1.4,
+      blend: null,
+    };
+    let brain = resetRoomCameraBrain(before);
+    brain = updateCameraBrain(brain, {
+      vcams: [roomVcam('room-b', 2.0)],
+      targets: { player: { x: 30, y: 30, width: 16, height: 24 } },
+      bounds: { width: 848, height: 336 },
+      viewport: CAM_VIEWPORT,
+      activeId: 'room-b',
+      dt: 1 / 60,
+    });
+    expect(brain.activeId).toBe('room-b');
+    expect(brain.blend).toBeNull(); // first activation never blends
+    // The lens solver is converging from the preserved 1.4 toward 2.0.
+    expect(brain.lensZoom).toBeGreaterThan(1.4);
+    expect(brain.lensZoom).toBeLessThan(2.0);
+    // The follow body begins from the origin (level-start pin).
+    expect(brain.bodyCamera.x).toBeGreaterThanOrEqual(0);
+    expect(brain.bodyCamera.y).toBeGreaterThanOrEqual(0);
   });
 });

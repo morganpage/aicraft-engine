@@ -989,6 +989,41 @@ drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
           ></canvas>
         </div>
       </section>
+
+      <section id="camera-brain" class="section camera-brain-section">
+        <div class="camera-brain-copy">
+          <h2 class="camera-brain-title">Camera brain.</h2>
+          <p class="camera-brain-blurb">
+            A light Cinemachine-style camera: virtual cameras as plain config,
+            a stateful-but-pure brain that selects by priority and blends
+            between them, and a Celeste-style deadzone follow body with
+            analytic <span class="kbd">dt</span>-based convergence. Two vcams
+            share one world: a follow cam (priority 10) and a fixed
+            <em>director focus</em> (priority 20 when on, 0 when off). Toggling
+            the focus drives a real position-and-zoom blend in both directions
+            — selection, frozen-source blending, centre-based zoom, and
+            interruption if you toggle mid-transition. No
+            <span class="kbd">activeId</span> is supplied, so priority selection
+            is real, not an override.
+          </p>
+          <div class="camera-brain-controls">
+            <button type="button" class="camera-brain-focus" aria-pressed="false">
+              Director focus: off
+            </button>
+            <button type="button" class="camera-brain-reset">Reset demo</button>
+          </div>
+          <p class="camera-brain-status" aria-live="polite"></p>
+        </div>
+
+        <div class="camera-brain-stage">
+          <canvas
+            class="camera-brain"
+            width="640"
+            height="360"
+            aria-label="Camera brain blend demo"
+          ></canvas>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">

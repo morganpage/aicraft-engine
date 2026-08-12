@@ -48,7 +48,12 @@ import {
 } from './mob-sprites';
 import type { Solid } from '../../../src/collision';
 import { DEFAULT_JUMP } from '../../../src/animation/jump';
-import { createCamera, updateCamera, type Camera } from '../../../src/camera';
+import {
+  createCameraBrain,
+  updateCameraBrain,
+  type CameraBrain,
+  type VirtualCamera,
+} from '../../../src/camera';
 import {
   createKeyboardAdapter,
   type KeyboardAdapter,
@@ -191,6 +196,25 @@ function fitZoom(
   if (!fitsWidth || !fitsHeight) return 1;
   const fit = Math.min(canvas.width / level.width, canvas.height / level.height);
   return fit * 0.98;
+}
+
+/**
+ * Reset a camera brain for a new room-local coordinate space.
+ *
+ * The showcase renders only the active room in room-local coordinates, so on a
+ * room transition it must NOT blend a position captured in one room directly
+ * into another room's local space. Cutting position to the destination-local
+ * origin (0, 0) makes the new room a first activation (no brain blend), while
+ * retaining the previous rendered zoom as the new lens solver's starting value
+ * — so the lens eases smoothly from the old room's zoom to the new room's
+ * `fitZoom` rather than popping. The follow body then begins from the left/top
+ * origin, preserving the Celeste-style level-start pin.
+ *
+ * Pure: returns a fresh inactive brain. Exported so the showcase transition
+ * test can exercise the policy without constructing a DOM session.
+ */
+export function resetRoomCameraBrain(brain: Readonly<CameraBrain>): CameraBrain {
+  return createCameraBrain({ x: 0, y: 0, zoom: brain.zoom });
 }
 
 // --- level transitions --------------------------------------------------
@@ -436,7 +460,7 @@ export function createPlaySession(
   let mobs = mobActorsFor(startLdtkLevel);
 
   let state: PlatformerState = active.compiled.initialState;
-  let camera: Camera = createCamera();
+  let brain: CameraBrain;
   // Phase 8c — per-event squash & stretch FX. The TRANSIENT scale lives HERE in
   // the play-session closure (the renderer), NOT on `PlatformerState` — it is
   // pure presentation, never affects physics trajectories or replay state, and
@@ -477,11 +501,37 @@ export function createPlaySession(
   window.addEventListener('keydown', suppress);
 
   const viewport = { width: canvas.width, height: canvas.height };
-  // Zoom recomputed per-room on transition: rooms differ in size, so a fixed
-  // zoom would over/under-fill. The follow-camera sees the canvas divided by
-  // the zoom so its centering letterboxes the room inside the scaled view.
-  let zoom = fitZoom(active.levelData, viewport);
-  let worldView = { width: viewport.width / zoom, height: viewport.height / zoom };
+
+  // One cached virtual camera per room. The lens zoom is the room's fitZoom
+  // (rooms differ in size, so a fixed zoom would over/under-fill), and the
+  // follow body uses the Celeste-style deadzone band. blend: 0 — the showcase
+  // renders only the active room in room-local coordinates, so it cuts position
+  // between rooms via `resetRoomCameraBrain` rather than blending across
+  // coordinate spaces (see the transition handler below).
+  const roomVcams = new Map<string, VirtualCamera>();
+  function roomVcamFor(rt: LevelRuntime): VirtualCamera {
+    const cached = roomVcams.get(rt.ldtkLevel.iid);
+    if (cached) return cached;
+    const vcam: VirtualCamera = {
+      id: rt.ldtkLevel.iid,
+      priority: 0,
+      blend: 0,
+      body: {
+        mode: 'follow',
+        targetKey: 'player',
+        followX: { trail: 0.25, lead: 0.5 },
+        followY: { trail: 0.35, lead: 0.65 },
+        padding: 0,
+      },
+      lens: { zoom: fitZoom(rt.levelData, viewport) },
+    };
+    roomVcams.set(rt.ldtkLevel.iid, vcam);
+    return vcam;
+  }
+
+  // Initialize the brain at the starting room's fitted zoom so entering play
+  // mode does not introduce an unnecessary startup zoom.
+  brain = createCameraBrain({ zoom: fitZoom(active.levelData, viewport) });
 
   return {
     step(dt) {
@@ -552,9 +602,10 @@ export function createPlaySession(
           };
           active = target;
           mobs = mobActorsFor(active.ldtkLevel);
-          camera = createCamera();
-          zoom = fitZoom(active.levelData, viewport);
-          worldView = { width: viewport.width / zoom, height: viewport.height / zoom };
+          // Cut position into the destination-local coordinate space (the
+          // showcase renders one room at a time in room-local coords), while
+          // keeping the previous rendered zoom as the new lens solver's start.
+          brain = resetRoomCameraBrain(brain);
           options.onLevelChange?.(active.ldtkLevel.identifier);
         }
       }
@@ -566,12 +617,17 @@ export function createPlaySession(
         // Reset the render-only squash with the respawned character.
         currentSquash = IDENTITY_SCALE;
       }
-      camera = updateCamera(
-        camera,
-        state.core,
-        { width: active.levelData.width, height: active.levelData.height },
-        worldView,
-      );
+      brain = updateCameraBrain(brain, {
+        vcams: [roomVcamFor(active)],
+        targets: { player: state.core },
+        bounds: {
+          width: active.levelData.width,
+          height: active.levelData.height,
+        },
+        viewport,
+        activeId: active.ldtkLevel.iid,
+        dt,
+      });
 
       // Advance the sprite animation clocks at the shared scaled rate (the
       // frame-player works in milliseconds, but `SPRITE_ANIM_TIME_SCALE` slows
@@ -585,8 +641,12 @@ export function createPlaySession(
       context.fillStyle = '#0b0e12';
       context.fillRect(0, 0, width, height);
 
-      const offsetX = -Math.round(camera.x);
-      const offsetY = -Math.round(camera.y);
+      const zoom = brain.zoom;
+      // Derive the visible world size only for tile culling (matches the brain's
+      // internal `viewport / zoom` contract).
+      const worldView = { width: viewport.width / zoom, height: viewport.height / zoom };
+      const offsetX = -Math.round(brain.camera.x);
+      const offsetY = -Math.round(brain.camera.y);
       // One world-space transform: scale up, then apply the camera offset. The
       // camera's centering (it goes negative when the level is smaller than
       // worldView) letterboxes the level inside the canvas for free — no extra
@@ -596,7 +656,7 @@ export function createPlaySession(
       drawLdtkLevel(context, ldtkLevel, {
         tilesets,
         worldOffset: { x: offsetX, y: offsetY },
-        view: { x: camera.x, y: camera.y, width: worldView.width, height: worldView.height },
+        view: { x: brain.camera.x, y: brain.camera.y, width: worldView.width, height: worldView.height },
       });
 
       const { core } = state;

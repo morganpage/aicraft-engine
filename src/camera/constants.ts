@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { CameraConfig } from './types';
+import type { CameraConfig, DampedMotionConfig } from './types';
 
 /**
  * Default camera config:
@@ -20,3 +20,49 @@ export const DEFAULT_CAMERA: Required<CameraConfig> = {
   lerp: 0.1,
   snapThreshold: 0.5,
 };
+
+// --- Camera brain defaults ------------------------------------------------
+//
+// Motion configs are field-by-field fallbacks: each omitted/invalid field on
+// a body or lens config is replaced by the matching default below. Bodies use
+// `DEFAULT_CAMERA_MOTION` (px/s); the lens uses `DEFAULT_LENS_MOTION`
+// (zoom-units/s).
+
+/**
+ * Default analytic convergence for camera BODIES (position). `maxSpeed: 1600`
+ * px/s caps catch-up so a far jump glides rather than teleports; `halfLife:
+ * 0.12s` eases the final approach; `snapThreshold: 0.5px` terminates the
+ * asymptote on the pixel grid.
+ */
+export const DEFAULT_CAMERA_MOTION: Required<DampedMotionConfig> = {
+  halfLife: 0.12,
+  maxSpeed: 1600,
+  snapThreshold: 0.5,
+};
+
+/**
+ * Default analytic convergence for the camera LENS (zoom). Smaller `maxSpeed`
+ * (4 zoom-units/s) so a cut between zoom levels reads as a deliberate ease
+ * rather than a pop; the tiny `snapThreshold` avoids visible zoom chatter.
+ */
+export const DEFAULT_LENS_MOTION: Required<DampedMotionConfig> = {
+  halfLife: 0.12,
+  maxSpeed: 4,
+  snapThreshold: 0.001,
+};
+
+/**
+ * Default follow-body tuning. `followX: { trail: 0.25, lead: 0.5 }` keeps the
+ * player in the left half of the screen at rest — the Celeste-style "start at
+ * the left, camera only moves once the player crosses the centre" feel. The
+ * vertical band `[0.35, 0.65]` is symmetric so vertical drift is balanced.
+ */
+export const DEFAULT_FOLLOW_BODY = {
+  targetKey: 'player',
+  followX: { trail: 0.25, lead: 0.5 },
+  followY: { trail: 0.35, lead: 0.65 },
+  padding: 0,
+} as const;
+
+/** Default incoming brain-blend duration (seconds) when a vcam omits `blend`. */
+export const DEFAULT_BRAIN_BLEND_DURATION = 0.3;

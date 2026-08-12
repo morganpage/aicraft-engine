@@ -1755,3 +1755,112 @@ main {
 @media (max-width: 640px) {
   .tile-art-import-roles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---------- Camera brain ---------- */
+
+.camera-brain-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .camera-brain-section {
+    grid-template-columns: 1fr 640px;
+    padding: 32px;
+  }
+}
+
+.camera-brain-copy {
+  min-width: 0;
+}
+
+.camera-brain-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.camera-brain-blurb {
+  margin: 0 0 20px;
+  color: var(--palette-text-dim);
+  max-width: 56ch;
+}
+
+.camera-brain-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.camera-brain-focus,
+.camera-brain-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--palette-base);
+  color: #fff;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.camera-brain-focus:hover,
+.camera-brain-reset:hover {
+  background: #ff7320;
+}
+
+.camera-brain-focus:active,
+.camera-brain-reset:active {
+  transform: translateY(1px);
+}
+
+.camera-brain-focus:focus-visible,
+.camera-brain-reset:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.camera-brain-focus[aria-pressed="true"] {
+  background: var(--palette-feature);
+  color: #17171c;
+  border-color: var(--palette-feature);
+}
+
+.camera-brain-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+}
+
+.camera-brain-stage {
+  min-width: 0;
+}
+
+.camera-brain-stage canvas.camera-brain {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  aspect-ratio: 640 / 360;
+  background: #0b0d12;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  image-rendering: pixelated;
+}

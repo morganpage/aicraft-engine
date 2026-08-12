@@ -23,6 +23,31 @@
  * @module
  */
 
-export type { Camera, CameraTarget, CameraBounds, CameraConfig } from './types';
-export { DEFAULT_CAMERA } from './constants';
+export type {
+  Camera,
+  CameraTarget,
+  CameraBounds,
+  CameraConfig,
+  CameraViewport,
+  FollowBand,
+  DampedMotionConfig,
+  FollowBodyConfig,
+  FixedBodyConfig,
+  CameraBody,
+  CameraLens,
+  VirtualCamera,
+  CameraBrain,
+  CameraBrainOptions,
+} from './types';
+export {
+  DEFAULT_CAMERA,
+  DEFAULT_CAMERA_MOTION,
+  DEFAULT_LENS_MOTION,
+  DEFAULT_FOLLOW_BODY,
+  DEFAULT_BRAIN_BLEND_DURATION,
+} from './constants';
 export { createCamera, updateCamera } from './follow';
+export { converge } from './motion';
+export { createCameraBrain, updateCameraBrain } from './brain';
+// NOTE: `followPosition` (motion.ts) is an implementation helper for focused
+// unit tests and is intentionally omitted from the package barrel.

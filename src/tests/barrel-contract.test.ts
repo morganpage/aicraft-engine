@@ -104,6 +104,15 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.updateCamera).toBe('function');
   });
 
+  it('camera brain: createCameraBrain, updateCameraBrain, converge are functions; followPosition is NOT public', () => {
+    expect(typeof aicraft.createCameraBrain).toBe('function');
+    expect(typeof aicraft.updateCameraBrain).toBe('function');
+    expect(typeof aicraft.converge).toBe('function');
+    expect(typeof aicraft.DEFAULT_CAMERA_MOTION).toBe('object');
+    expect(aicraft.DEFAULT_BRAIN_BLEND_DURATION).toBe(0.3);
+    expect('followPosition' in aicraft).toBe(false);
+  });
+
   it('input: createEdgeAccumulator and orEdges are functions', () => {
     expect(typeof aicraft.createEdgeAccumulator).toBe('function');
     expect(typeof aicraft.orEdges).toBe('function');

@@ -805,7 +805,12 @@ Moving-gap platform: a traveling absence of floor. Splits a span into 0–2 `Sol
 
 ### `src/camera/`
 
-Follow-camera: pure world-space position that lerps toward a target, clamped to level bounds. The renderer reads `Camera.x/y` and rounds to integer pixels only when applying the world transform.
+Two layers, both pure and deterministic:
+
+1. **Legacy follow-camera** — a world-space position that lerps toward a target, clamped to level bounds. The renderer reads `Camera.x/y` and rounds to integer pixels only when applying the world transform.
+2. **Camera brain** — a light Cinemachine-style system: virtual cameras as plain config objects, a stateful-but-pure brain that selects and blends between them, and a Celeste-inspired deadzone follow body with analytic `dt`-based convergence. See `docs/design/camera-brain-plan.md` for the full contract.
+
+The legacy `createCamera`/`updateCamera` are unchanged; the brain is added alongside.
 
 #### `src/camera/types.ts`
 
@@ -813,14 +818,28 @@ Follow-camera: pure world-space position that lerps toward a target, clamped to 
 |---|---|---|---|
 | `Camera` | type | `{x, y}` — viewport top-left in world-space (floats between updates for smooth lerp) | `src/camera/types.ts` |
 | `CameraTarget` | type | `{x, y, width, height}` — axis-aligned rect the camera follows (typically the player) | `src/camera/types.ts` |
-| `CameraBounds` | type | `{width, height}` — level / world dimensions for clamping | `src/camera/types.ts` |
-| `CameraConfig` | type | `{lerp?, snapThreshold?}` — tuning; all fields optional, fall back to `DEFAULT_CAMERA` | `src/camera/types.ts` |
+| `CameraBounds` | type | `{width, height}` — level / world dimensions for clamping. Legacy origin `(0, 0)` | `src/camera/types.ts` |
+| `CameraConfig` | type | `{lerp?, snapThreshold?}` — legacy tuning; all fields optional, fall back to `DEFAULT_CAMERA` | `src/camera/types.ts` |
+| `CameraViewport` | type | `{width, height}` — physical screen pixels before camera zoom is applied | `src/camera/types.ts` |
+| `FollowBand` | type | `{trail, lead}` — per-axis deadzone band as fractions of the visible dimension | `src/camera/types.ts` |
+| `DampedMotionConfig` | type | `{halfLife?, maxSpeed?, snapThreshold?}` — analytic convergence tuning (px/s or zoom-units/s) | `src/camera/types.ts` |
+| `FollowBodyConfig` | type | `{targetKey?, followX?, followY?, motion?, padding?}` — deadzone follow body tuning | `src/camera/types.ts` |
+| `FixedBodyConfig` | type | `{x, y, motion?, padding?}` — fixed viewport top-left body tuning | `src/camera/types.ts` |
+| `CameraBody` | type | Discriminated union: `{mode:'follow'} & FollowBodyConfig` or `{mode:'fixed'} & FixedBodyConfig` | `src/camera/types.ts` |
+| `CameraLens` | type | `{zoom, motion?}` — strictly-positive zoom target | `src/camera/types.ts` |
+| `VirtualCamera` | type | `{id, priority?, blend?, body?, lens?}` — plain serializable vcam definition | `src/camera/types.ts` |
+| `CameraBrain` | type | Running brain state: rendered `camera`/`zoom`, `activeId`, independent live `bodyCamera`/`lensZoom`, optional `blend` | `src/camera/types.ts` |
+| `CameraBrainOptions` | type | `{vcams, targets, bounds, viewport, activeId?, dt}` — one `updateCameraBrain` step | `src/camera/types.ts` |
 
 #### `src/camera/constants.ts`
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `DEFAULT_CAMERA` | const | `{lerp: 0.1, snapThreshold: 0.5}` — smooth follow with sub-pixel convergence | `src/camera/constants.ts` |
+| `DEFAULT_CAMERA` | const | `{lerp: 0.1, snapThreshold: 0.5}` — smooth follow with sub-pixel convergence (legacy) | `src/camera/constants.ts` |
+| `DEFAULT_CAMERA_MOTION` | const | `{halfLife: 0.12, maxSpeed: 1600, snapThreshold: 0.5}` — default body (position) convergence | `src/camera/constants.ts` |
+| `DEFAULT_LENS_MOTION` | const | `{halfLife: 0.12, maxSpeed: 4, snapThreshold: 0.001}` — default lens (zoom) convergence | `src/camera/constants.ts` |
+| `DEFAULT_FOLLOW_BODY` | const | Default follow band `{followX:{trail:0.25,lead:0.5}, followY:{trail:0.35,lead:0.65}, padding:0, targetKey:'player'}` | `src/camera/constants.ts` |
+| `DEFAULT_BRAIN_BLEND_DURATION` | const | `0.3` — default incoming brain-blend duration (seconds) | `src/camera/constants.ts` |
 
 #### `src/camera/follow.ts`
 
@@ -828,6 +847,23 @@ Follow-camera: pure world-space position that lerps toward a target, clamped to 
 |---|---|---|---|
 | `createCamera()` | function | Factory: fresh camera at world origin `{x: 0, y: 0}` | `src/camera/follow.ts` |
 | `updateCamera(camera, target, bounds, viewport, config?)` | function | Pure: advance camera one frame toward target. Centres on target, clamps to bounds (centres level when smaller than viewport), lerps with snap-to-target convergence. Returns new `Camera` | `src/camera/follow.ts` |
+
+#### `src/camera/motion.ts`
+
+Analytic motion primitives. `converge` is public; `followPosition` and the clamp/band helpers are file-level (used by `brain.ts` and focused unit tests, deliberately not in the package barrel).
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `converge(current, desired, dt, config?)` | function | Pure: one analytic capped-exponential convergence step. Never overshoots, snaps exactly within `snapThreshold`, partition-invariant in exact arithmetic. Omitted/invalid config falls back to `DEFAULT_CAMERA_MOTION` | `src/camera/motion.ts` |
+
+#### `src/camera/brain.ts`
+
+The stateful-but-pure selector/blender. Pure: immutable in/new-out, no `Math.random`/`Date.now`/DOM, deterministic given fixed `dt` and inputs. Deliberately outside the replay hash — it consumes simulation state but produces presentation state only, so no `physicsVersion` bump is required.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `createCameraBrain(initial?)` | function | Factory: fresh inactive brain. Position defaults to `(0, 0)`, zoom to `1`; `bodyCamera`/`lensZoom` start equal to the rendered values | `src/camera/brain.ts` |
+| `updateCameraBrain(state, options)` | function | Pure: advance selection (override → priority → keep-current-on-ties), the live lens/body, and the rendered centre-based blend one step. Returns a fresh `CameraBrain`, never mutates input | `src/camera/brain.ts` |
 
 ### `src/input/`
 
