@@ -551,13 +551,18 @@ export function createPlatformerController(
       // -------------------------------------------------------------------
       // Phase 5 — ducking maintenance (only when NO launch fired this tick —
       // a launch already cleared `ducking` above). Latch model:
-      //   - During a dash / on a ladder → CARRY ducking (those modes own their
-      //     tick; `core.onGround` reads false throughout a dash even on a ground
-      //     slide, so the airborne rule must NOT fire here — otherwise the
-      //     hyper-slide's duck latch, set via patch, would be cleared mid-dash).
+      //   - During a dash / on a ladder / wall-grab → CARRY ducking (those modes
+      //     own their tick; `core.onGround` reads false throughout a dash even
+      //     on a ground slide, so the airborne rule must NOT fire here —
+      //     otherwise the hyper-slide's duck latch, set via patch, would be
+      //     cleared mid-dash).
       //   - airborne (normal mode) → ducking = false (cleared when genuinely
       //     airborne).
-      //   - grounded, holding down (`moveY === 1`), normal mode → ducking = true.
+      //   - grounded, holding down (`moveY === 1`), normal mode, AND
+      //     `config.groundDuckEnabled !== false` → ducking = true. This is the
+      //     INPUT-INDUCED latch only; the hyper-slide's ability-owned duck patch
+      //     (applied earlier, above) is NOT gated by this flag and an
+      //     already-active duck still carries through the fall-through below.
       //   - grounded, holding up (`moveY === -1`) → ducking = false (stand).
       //   - otherwise → carry (hyper-induced duck persists until jump/airborne;
       //     see the `ducking` field doc on `LocomotionState`).
@@ -565,7 +570,10 @@ export function createPlatformerController(
       if (!launchFired && mode === 'normal') {
         if (!core.onGround) {
           if (locomotion.ducking) locomotion = { ...locomotion, ducking: false };
-        } else if ((input.moveY ?? 0) === 1) {
+        } else if (
+          (input.moveY ?? 0) === 1 &&
+          config.groundDuckEnabled !== false
+        ) {
           if (!locomotion.ducking) locomotion = { ...locomotion, ducking: true };
         } else if ((input.moveY ?? 0) === -1) {
           if (locomotion.ducking) locomotion = { ...locomotion, ducking: false };

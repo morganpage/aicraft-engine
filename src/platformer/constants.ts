@@ -85,6 +85,7 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   //   duckSuperJumpXMult  = DuckSuperJumpXMult 1.25 (verbatim ratio)
   //   duckSuperJumpYMult  = DuckSuperJumpYMult 0.5 (verbatim ratio)
   //   duckFriction      = DuckFriction 500 / RunAccel 1000 = 0.5 × runAccel 2220 = 1110
+  //   groundDuckEnabled = true (default-on Celeste-faithful grounded-Down latch)
   //   superJumpGrace    = JumpGraceTime 0.1 (verbatim seconds)
   // (superJumpVy is NOT here — it equals `jumpLaunchVelocity(config.jump)` at
   // runtime, the same impulse as a normal jump, per Celeste `SuperJumpSpeed =
@@ -96,6 +97,10 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   duckSuperJumpXMult: 1.25,
   duckSuperJumpYMult: 0.5,
   duckFriction: 1110,
+  // Default-on: grounded Down establishes a duck (Celeste-faithful). Opt out
+  // (false) only where the same moveY channel must stay for ladders/fast-fall
+  // but a stationary crouch has no affordance — see PlatformerConfig.groundDuckEnabled.
+  groundDuckEnabled: true,
   superJumpGrace: 0.1,
   // -----------------------------------------------------------------------
   // Phase 6 — wall-grab + stamina (Celeste `Climb*`, `Player.cs:102-118`).

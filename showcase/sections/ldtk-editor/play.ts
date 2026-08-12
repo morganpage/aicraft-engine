@@ -135,6 +135,14 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
     // ability is OFF in DEFAULT_PLATFORMER_CONFIG; the showcase opts in so the
     // grab key does something in play mode.
     wallGrabEnabled: true,
+    // Down/S stays mapped to vertical intent (moveY = 1) so it can drive
+    // ladders, air fast-fall, and dash aiming — but ordinary grounded movement
+    // must NOT latch a stationary duck. The showcase has no crouch sprite or
+    // affordance, so the grounded-Down latch would just freeze the player while
+    // Down/S + a horizontal direction are held. Opting out keeps horizontal
+    // input responsive while preserving hyper-slide / duck-super-jump tech,
+    // which reaches ducking through a separate (ability-owned) path.
+    groundDuckEnabled: false,
     // Let the player walk up small steps: stair lips, minor ledges, and the
     // last few px of a ladder-top exit (the climb guard leaves the player one
     // climb step below a flush platform). Half a tile is enough to bridge those

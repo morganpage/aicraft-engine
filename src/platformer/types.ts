@@ -450,10 +450,13 @@ export interface LocomotionState {
    * Ducking state (Phase 5 — Celeste `Ducking`, `Player.cs:1711-1715` /
    * `3578-3585`). `true` while the actor is in a ducking crawl/slide. Set by
    * EITHER (a) holding down on the ground (`onGround && moveY === 1 && mode
-   * 'normal'`, kernel-detected) OR (b) a hyper slide (down-diagonal ground dash
-   * at startup→active transition, signaled by `dashAbility` via a
-   * `locomotionPatch`). Cleared by any launch (jump/super/wall/dash that leaves
-   * the ground) and when airborne. While ducking the kernel's
+   * 'normal'`, kernel-detected — gated by {@link PlatformerConfig.groundDuckEnabled},
+   * which defaults to enabled; when `false` this input-induced latch is skipped)
+   * OR (b) a hyper slide (down-diagonal ground dash at startup→active
+   * transition, signaled by `dashAbility` via a `locomotionPatch` — this source
+   * is NEVER gated, so hyper-induced ducking survives even with
+   * `groundDuckEnabled: false`). Cleared by any launch (jump/super/wall/dash
+   * that leaves the ground) and when airborne. While ducking the kernel's
    * `applyHorizontalInput` bleeds `vx` toward 0 at {@link PlatformerConfig.duckFriction}
    * (no horizontal input is honored — Celeste has no crawl-walk), and a
    * subsequent super jump becomes a DUCK super jump (fast + flat multipliers).
@@ -1012,6 +1015,22 @@ export interface PlatformerConfig {
    * giving the slide its reach).
    */
   readonly duckFriction: number;
+  /**
+   * Whether a grounded Down input (`onGround && moveY === 1 && mode 'normal'`)
+   * establishes a duck (Phase 5). Default-on: absent OR `true` preserves the
+   * Celeste-faithful stationary-crouch latch. When `false`, grounded Down alone
+   * does NOT create a new duck, so horizontal input stays responsive while Down
+   * is held on ordinary ground — useful where the same `moveY` channel must be
+   * kept for ladders / fast-fall / dash aiming but a stationary crouch has no
+   * affordance (e.g. the LDtk showcase).
+   *
+   * This gates ONLY the kernel's grounded-Down latch. It does NOT disable
+   * ability-owned ducking such as a hyper-slide `locomotionPatch`, and it does
+   * NOT disable duck friction, the duck super jump, or any other duck tech. An
+   * already-active duck (e.g. a hyper-induced one) still applies `duckFriction`
+   * and clears on jump/airborne/Up regardless of this flag.
+   */
+  readonly groundDuckEnabled?: boolean;
   /**
    * Super-jump ground-grace window in seconds (Phase 5 — Celeste `JumpGraceTime
    * 0.1`). Refreshes `locomotion.superJumpGraceTimer` while grounded after a

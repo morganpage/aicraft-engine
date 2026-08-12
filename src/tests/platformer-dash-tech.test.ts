@@ -619,3 +619,121 @@ describe('dash-tech integration (full kernel)', () => {
     expect(launchDx).toBeGreaterThan(Math.abs(launchDy) * 3); // forward-dominated
   });
 });
+
+// ===========================================================================
+// groundDuckEnabled — the optional grounded-Down duck-latch opt-out.
+//
+// Default-on preserves the Celeste-faithful stationary crouch: Down on the
+// ground latches ducking and bleeds vx at duckFriction. Opting out
+// (`groundDuckEnabled: false`) gates ONLY that input latch — horizontal input
+// stays responsive while Down is held — but a hyper slide still reaches ducking
+// through its ability-owned locomotionPatch, so hyper → duck-super-jump tech
+// survives. See docs/design/ground-duck-opt-out-plan.md.
+// ===========================================================================
+describe('groundDuckEnabled — grounded-Down latch opt-out', () => {
+  it('default-on: grounded moveY=1 + moveX=1 latches ducking and suppresses acceleration (vx stays 0)', () => {
+    const config = DEFAULT_PLATFORMER_CONFIG;
+    // Sanity: the canonical default is explicitly enabled.
+    expect(config.groundDuckEnabled).toBe(true);
+    const initial = createPlatformerState(100, 276, config);
+    const inputs = Array.from({ length: 5 }, () => makeInput({ moveX: 1, moveY: 1 }));
+    const { trace, finalState } = runTraceDetailed({
+      initial,
+      inputs,
+      solids: [FLOOR],
+      config,
+    });
+    // Down on the ground latches ducking...
+    expect(finalState.locomotion.ducking).toBe(true);
+    // ...and horizontal input is ignored, so vx never accelerates from rest.
+    for (const row of trace) expect(row.vx).toBe(0);
+    expect(finalState.core.vx).toBe(0);
+  });
+
+  it('opt-out: grounded moveY=1 no longer latches ducking; moveX=1 accelerates from rest', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, groundDuckEnabled: false };
+    const initial = createPlatformerState(100, 276, config);
+    const inputs = Array.from({ length: 5 }, () => makeInput({ moveX: 1, moveY: 1 }));
+    const { trace, finalState } = runTraceDetailed({
+      initial,
+      inputs,
+      solids: [FLOOR],
+      config,
+    });
+    // No duck latched...
+    expect(finalState.locomotion.ducking).toBe(false);
+    // ...and horizontal input is honored: the actor accelerates from rest.
+    expect(finalState.core.vx).toBeGreaterThan(0);
+    for (let t = 1; t < trace.length; t++) expect(trace[t].vx).toBeGreaterThan(0);
+
+    // Control: the same config with moveY=0 must produce identical horizontal
+    // results — proving the opt-out makes grounded moveY=1 a no-op for ground
+    // movement (it must remain free to drive ladders / fast-fall elsewhere).
+    const controlInputs = Array.from({ length: 5 }, () => makeInput({ moveX: 1, moveY: 0 }));
+    const { trace: control } = runTraceDetailed({
+      initial: createPlatformerState(100, 276, config),
+      inputs: controlInputs,
+      solids: [FLOOR],
+      config,
+    });
+    expect(control.length).toBe(trace.length);
+    for (let t = 0; t < trace.length; t++) {
+      expect(trace[t].vx).toBeCloseTo(control[t].vx, 6);
+      expect(trace[t].x).toBeCloseTo(control[t].x, 6);
+    }
+  });
+
+  it('opt-out preserves hyper-induced ducking: hyper slide still latches duck, duckFriction bleeds after Down release, duck super jump fires + clears', () => {
+    // The flag gates ONLY the kernel's grounded-Down input latch. The hyper
+    // slide's ability-owned `locomotionPatch: { ducking: true }` is applied
+    // earlier in the step and is ungated, so the full hyper → duck-super-jump
+    // pipeline must work identically with the flag off.
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, groundDuckEnabled: false };
+    const initial = createPlatformerState(100, 276, config);
+    const inputs = [
+      idleInput(), // 0 settle
+      makeInput({ moveX: 1, moveY: 1, dash: 'press' }), // 1 down-right dash → hyper
+      ...Array.from({ length: 11 }, () => makeInput({ moveX: 1, moveY: 1 })), // 2-12 slide + expiry
+      // dash expired ~tick 12; RELEASE down but keep holding right (grounded).
+      makeInput({ moveX: 1, moveY: 0 }), // 13
+      makeInput({ moveX: 1, moveY: 0 }), // 14
+      makeInput({ moveX: 1, moveY: 0 }), // 15
+      makeInput({ moveX: 1, moveY: 1, jump: 'press' }), // 16 duck super jump
+      ...Array.from({ length: 7 }, () => makeInput({ jump: 'hold' })), // 17-23 rise
+    ];
+    const { trace, events, finalState } = runTraceDetailed({
+      initial,
+      inputs,
+      solids: [FLOOR],
+      config,
+    });
+
+    // (a) The hyper transition still produces ducking despite the opt-out.
+    const slideSpeed = config.dashSpeed * config.dodgeSlideSpeedMult; // 504
+    for (const t of [4, 5, 6, 7, 8, 9, 10, 11]) {
+      expect(trace[t].vx).toBeCloseTo(slideSpeed, 5);
+      expect(trace[t].vy).toBe(0);
+    }
+
+    // (b) After dash expiry with Down RELEASED, the hyper-induced duck still
+    //     latches (carry via fall-through — the opt-out gates only the Down
+    //     latch, not the carry) and bleeds at duckFriction, not runAccel.
+    expect(trace[13].vx - trace[14].vx).toBeCloseTo(config.duckFriction * DT, 4);
+
+    // (c) The follow-up jump is a DUCK super jump — the Y multiplier only fires
+    //     because ducking was still true at launch — fast + flat, and ducking
+    //     clears on launch.
+    const launches = events.filter((e) => e.justLaunched);
+    expect(launches.length).toBe(1);
+    const launchTick = events.findIndex((e) => e.justLaunched);
+    expect(finalState.locomotion.varJumpSpeed).toBeCloseTo(
+      jumpLaunchVelocity(config.jump) * config.duckSuperJumpYMult,
+      5,
+    );
+    const launchVx =
+      config.superJumpVx * config.duckSuperJumpXMult - config.overspeedReduce * DT;
+    expect(trace[launchTick].vx).toBeCloseTo(launchVx, 4);
+    expect(trace[launchTick].vx).toBeGreaterThan(700); // distinctly FAST
+    expect(finalState.locomotion.ducking).toBe(false);
+  });
+});

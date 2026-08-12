@@ -103,6 +103,18 @@
    *     widened frame field shape is the same `moveX: number`, but the version
    *     8→9 bump folds into the replay config hash). The analog mechanics are
    *     exercised in `platformer-analog-input.test.ts`.
+   *   - `10` — Phase 10: optional `PlatformerConfig.groundDuckEnabled` switch
+   *     (default-on) that gates ONLY the kernel's grounded Down-input duck
+   *     latch; ability-owned ducking (the hyper slide's `locomotionPatch`) and
+   *     all duck tech (duckFriction, duck-super-jump / wavedash) are unaffected.
+   *     NON-PARITY configuration extension: Celeste's grounded-Down duck is
+   *     always-on, so the canonical default is preserved. Default / absent
+   *     behavior is trajectory-identical to v9, so every `traceHash` canary is
+   *     UNCHANGED; every `replayHashFor` shifts (the new `groundDuckEnabled`
+   *     field in the captured config + the version 9→10 value — both are
+   *     canonicalized replay data, so either alone moves a hash; the bump itself
+   *     keeps the replay contract explicit rather than driving the hash shift).
+   *     The opt-out mechanics are exercised in `platformer-dash-tech.test.ts`.
    *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
    *     is missing or `0` was recorded under different math; its trajectories
    *     will not reproduce, so `assertPhysicsVersion` / `playReplay` REJECT it
@@ -112,4 +124,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 9;
+export const CURRENT_PHYSICS_VERSION = 10;

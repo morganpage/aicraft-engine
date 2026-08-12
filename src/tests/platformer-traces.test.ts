@@ -291,8 +291,10 @@ describe('platformer multi-tick baseline traces', () => {
     // replay hash shifts (config gained springBounceVy/springSuperBounceVy/
     // springVarJumpTime/springAutoJumpTime + new `interactions` field in the
     // initial state + physicsVersion 7→8; Phase 9 re-shifted (8→9 version
-    // bump; moveX widened to number, digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1623444064);
+    // bump; moveX widened to number, digital trace unchanged); Phase 10
+    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
+    // trace unchanged).
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3159346981);
   });
 
   // =========================================================================
@@ -509,8 +511,10 @@ describe('platformer multi-tick baseline traces', () => {
     // wallSpeedRetaining latch + version 6→7).
     // Phase 8: trace UNCHANGED (no spring/crystal solid), replay hash shifts
     // (config spring fields + interactions field + physicsVersion 7→8; Phase
-    // 9 re-shifted via 8→9 version bump, digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3992283328);
+    // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
+    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
+    // trace unchanged).
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3975037719);
   });
 
   // =========================================================================
@@ -1056,9 +1060,11 @@ describe('platformer multi-tick baseline traces', () => {
     // wallSpeedRetaining latch + version 6→7).
     // Phase 8: traces UNCHANGED (no spring/crystal solid), replay hashes shift
     // (config spring fields + interactions field + physicsVersion 7→8; Phase
-    // 9 re-shifted via 8→9 version bump, digital trace unchanged).
-    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(352007654);
-    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(945583365);
+    // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
+    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
+    // trace unchanged).
+    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(4224587729);
+    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(4268019256);
   });
 
   // =========================================================================
@@ -1214,8 +1220,10 @@ describe('platformer multi-tick baseline traces', () => {
     // wallSpeedRetaining latch + version 6→7).
     // Phase 8: trace UNCHANGED (no spring/crystal solid), replay hash shifts
     // (config spring fields + interactions field + physicsVersion 7→8; Phase
-    // 9 re-shifted via 8→9 version bump, digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1165632570);
+    // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
+    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
+    // trace unchanged).
+    expect(replayHashFor(42, initial, inputs, config)).toBe(634871373);
   });
 
   // =========================================================================
@@ -1492,8 +1500,10 @@ describe('platformer multi-tick baseline traces', () => {
     // gained the Phase 7 fields incl. the wallSpeedRetaining latch + version 6→7).
     // Phase 8: trace UNCHANGED (no spring/crystal solid), replay hash shifts
     // (config spring fields + interactions field + physicsVersion 7→8; Phase
-    // 9 re-shifted via 8→9 version bump, digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1913119735);
+    // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
+    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
+    // trace unchanged).
+    expect(replayHashFor(42, initial, inputs, config)).toBe(473697116);
   });
 
   // =========================================================================
@@ -1552,9 +1562,11 @@ describe('platformer multi-tick baseline traces', () => {
     // Phase 7 fields incl. the wallSpeedRetaining latch + version 6→7).
     // Phase 8: trace UNCHANGED (no spring/crystal solid), replay hash shifts
     // (config spring fields + interactions field + physicsVersion 7→8; Phase
-    // 9 re-shifted via 8→9 version bump, digital trace unchanged).
+    // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
+    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
+    // trace unchanged).
     expect(traceHash(trace)).toBe(2056703830);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(839272351);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(396159590);
   });
 
   // =========================================================================
@@ -1653,6 +1665,8 @@ describe('platformer multi-tick baseline traces', () => {
     `);
     expect(traceHash(trace)).toBe(1833000202);
     // Phase 9 re-shifted via 8→9 version bump; digital trace unchanged.
-    expect(replayHashFor(42, initial, inputs, config)).toBe(4192177772);
+    // Phase 10 re-shifted (new groundDuckEnabled config field + 9→10 version;
+    // digital trace unchanged).
+    expect(replayHashFor(42, initial, inputs, config)).toBe(108258493);
   });
 });
