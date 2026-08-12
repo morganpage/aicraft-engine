@@ -1,6 +1,6 @@
 {
   "name": "aicraft-engine",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "type": "module",
   "description": "Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for indie and procedural games. Zero runtime dependencies.",
   "keywords": [
@@ -38,11 +38,16 @@
   "engines": {
     "node": ">=18"
   },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit",
     "build:dist": "tsc -p tsconfig.build.json",
     "prepack": "npm run build:dist",
+    "prepublishOnly": "npm test",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
