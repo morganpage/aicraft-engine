@@ -249,6 +249,34 @@ function holdAndClamp(
   };
 }
 
+/**
+ * Smallest uniform padding that lets the current rendered top-left survive a
+ * clamp unchanged. This is derived from the captured VIEW, not from the old
+ * vcam definition: the old vcam may have been removed from `options.vcams`,
+ * and during an interrupted blend its configured padding is not necessarily
+ * the padding represented by the current rendered composite.
+ *
+ * Letterboxed axes need no padding because {@link clampTopLeft} ignores padding
+ * there and a valid carried render is already centred on that axis.
+ */
+function requiredClampPadding(
+  camera: Readonly<Camera>,
+  viewport: Readonly<CameraViewport>,
+  zoom: number,
+  bounds: Readonly<CameraBounds>,
+): number {
+  const vw = viewport.width / zoom;
+  const vh = viewport.height / zoom;
+  let required = 0;
+  if (bounds.width > vw) {
+    required = Math.max(required, -camera.x, camera.x - (bounds.width - vw));
+  }
+  if (bounds.height > vh) {
+    required = Math.max(required, -camera.y, camera.y - (bounds.height - vh));
+  }
+  return required;
+}
+
 /** One fixed-body axis: converge toward the clamped desired top-left (non-finite desired holds). */
 function fixedAxis(
   cam: number,
@@ -356,9 +384,16 @@ export function updateCameraBrain(
   } else if (freshSeed) {
     // Switch (also an interrupted blend): start a new blend from the CURRENTLY
     // RENDERED view, re-seeding the incoming live state from it (already done
-    // above). This guarantees visual continuity mid-transition.
-    const oldVcam = normalized.find((v) => v.id === oldActiveId);
-    const fromPadding = oldVcam?.body?.padding ?? 0;
+    // above). Derive the source clamp padding from that captured view rather
+    // than looking up the old vcam: it may have been removed, and during an
+    // interrupted blend its configured padding is not the rendered composite's
+    // effective padding. This guarantees visual continuity mid-transition.
+    const fromPadding = requiredClampPadding(
+      repaired.camera,
+      viewport,
+      repaired.zoom,
+      bounds,
+    );
     blend =
       selectedVcam.blend > 0
         ? {

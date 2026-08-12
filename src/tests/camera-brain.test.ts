@@ -524,6 +524,70 @@ describe('brain — normal switch & blend', () => {
     expect(brain.camera).toEqual({ x: -100, y: 0 });
     expect(brain.zoom).toBe(1);
   });
+
+  it('preserves an overscanned source when the active vcam is removed during selection', () => {
+    // The outgoing vcam is deliberately ABSENT from the next vcam collection.
+    // Source continuity therefore cannot depend on looking up its config.
+    const tight: VirtualCamera = {
+      id: 'tight', priority: 100, blend: 1.0,
+      body: { mode: 'fixed', x: 480, y: 270, padding: 0 },
+    };
+    const before: CameraBrain = {
+      camera: { x: -100, y: 0 },
+      zoom: 1,
+      activeId: 'removed-wide',
+      bodyCamera: { x: -100, y: 0 },
+      lensZoom: 1,
+      blend: null,
+    };
+    const brain = updateCameraBrain(before, baseOptions({ vcams: [tight], dt: 0 }));
+    expect(brain.activeId).toBe('tight');
+    expect(brain.blend).not.toBeNull();
+    expect(brain.blend!.fromPadding).toBe(100);
+    expect(brain.camera).toEqual({ x: -100, y: 0 });
+  });
+
+  it('an interrupted overscan blend derives padding from the rendered composite', () => {
+    const wide: VirtualCamera = {
+      id: 'wide', priority: 3, blend: 0,
+      body: { mode: 'fixed', x: -100, y: 0, padding: 100 },
+    };
+    const tight: VirtualCamera = {
+      id: 'tight', priority: 2, blend: 1.0,
+      body: { mode: 'fixed', x: 480, y: 0, padding: 0 },
+    };
+    const third: VirtualCamera = {
+      id: 'third', priority: 1, blend: 1.0,
+      body: { mode: 'fixed', x: 800, y: 0, padding: 0 },
+    };
+    const before: CameraBrain = {
+      camera: { x: -100, y: 0 },
+      zoom: 1,
+      activeId: 'wide',
+      bodyCamera: { x: -100, y: 0 },
+      lensZoom: 1,
+      blend: null,
+    };
+
+    const midBlend = updateCameraBrain(before, baseOptions({
+      vcams: [wide, tight, third],
+      activeId: 'tight',
+      dt: 0.25,
+    }));
+    expect(midBlend.blend).not.toBeNull();
+    expect(midBlend.camera.x).toBeLessThan(0); // currently rendered with partial overscan
+
+    const restarted = updateCameraBrain(midBlend, baseOptions({
+      vcams: [wide, tight, third],
+      activeId: 'third',
+      dt: 0,
+    }));
+    expect(restarted.blend).not.toBeNull();
+    expect(restarted.blend!.fromPadding).toBeCloseTo(-midBlend.camera.x, 12);
+    expect(restarted.camera.x).toBeCloseTo(midBlend.camera.x, 12);
+    expect(restarted.camera.y).toBeCloseTo(midBlend.camera.y, 12);
+    expect(restarted.zoom).toBe(midBlend.zoom);
+  });
 });
 
 describe('brain — blend duration edges', () => {

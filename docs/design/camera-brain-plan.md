@@ -258,6 +258,8 @@ export interface CameraBrain {
     /** Frozen world-space centre of the rendered source view. */
     readonly fromCenter: Readonly<{ x: number; y: number }>;
     readonly fromZoom: number;
+    /** Minimum frozen clamp padding required to reproduce the rendered source view. */
+    readonly fromPadding: number;
   };
 }
 
@@ -348,11 +350,14 @@ Lens motion falls back field-by-field to `DEFAULT_LENS_MOTION`.
 - **Normal switch:** when a different vcam is selected, `activeId` changes
   immediately. Seed the incoming body's independent state from the currently
   rendered camera/zoom. If its normalized incoming duration is positive,
-  capture the current rendered view centre/zoom and begin a blend; otherwise
-  expose the incoming live state directly.
+  capture the current rendered view centre/zoom and the minimum clamp padding
+  required to reproduce that view, then begin a blend; otherwise expose the
+  incoming live state directly. The source padding is derived from the rendered
+  view rather than the outgoing vcam config, so removal remains continuous.
 - **Interrupted blend:** start a new blend from the currently rendered
   camera/zoom, not from the original blend's source. Reseed the new incoming
-  live state from that rendered view. This guarantees visual continuity.
+  live state from that rendered view and derive its current effective clamp
+  padding from the rendered composite. This guarantees visual continuity.
 - **Removed active vcam:** run normal selection. A replacement starts a switch;
   no replacement makes the brain inactive and holding.
 - A finite `blend <= 0` disables the brain-level blend. A non-finite blend uses
@@ -379,9 +384,12 @@ After selection/lifecycle handling:
 6. With a blend, advance `elapsed`, apply smoothstep
    `e = t*t*(3 - 2*t)`, interpolate `fromCenter` to the current live view
    centre and `fromZoom` to `lensZoom`, then derive the rendered top-left.
-7. Clamp the rendered top-left using the incoming body's padding and the
-   rendered zoom. At `t >= 1`, publish the live state exactly and clear the
-   blend so there is no last-frame rounding discontinuity.
+7. Clamp the rendered top-left using the rendered zoom and a padding interpolated
+   from the captured source view's minimum required padding to the incoming
+   body's padding. This reproduces the prior rendered view at `t = 0`, including
+   when the outgoing vcam was removed or the switch interrupts another blend.
+   At `t >= 1`, publish the live state exactly and clear the blend so there is no
+   last-frame rounding discontinuity.
 
 ### Follow body
 
