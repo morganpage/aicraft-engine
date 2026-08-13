@@ -5,10 +5,10 @@
 # would (Node ESM import, NodeNext typecheck with skipLibCheck:false, and a Vite
 # build) — it guards publish-time breakage that source-resolution checks cannot.
 #
-# Node 20 LTS: the dev toolchain pins above the >=18 runtime floor declared in
+# Node 24 LTS: the dev toolchain pins above the >=18 runtime floor declared in
 # `engines.node` (the published package is zero-dep ESM and runs on 18+, but
-# vite 8 / vitest 4 require Node >=20 to BUILD and TEST, so the CI matrix runs
-# on 20 LTS where the whole toolchain is supported).
+# vite 8 / vitest 4 require Node >=20 to BUILD and TEST). Node 24 is the current
+# LTS; Node 20 is deprecated on GitHub Actions runners, so CI pins 24.
 name: CI
 
 on:
@@ -22,16 +22,16 @@ permissions:
 
 jobs:
   test:
-    name: Test (Node 20)
+    name: Test (Node 24)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
