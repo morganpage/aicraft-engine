@@ -342,6 +342,75 @@ describe('wallGrabAbility', () => {
     expect(r.events).toEqual({});
   });
 
+  it('disabling wall-grab clears an active grab so its locomotion mode cannot stay latched', () => {
+    const core = makeCore({ facing: 1, vx: 0, vy: 0 });
+    const state = makeState({
+      grabbing: true,
+      side: 'right',
+      solidId: 'wall-r',
+      regrabTimer: 0.1,
+    });
+    const r = wallGrabAbility.advance(
+      makeCtx(core, makeInput(holdEdge()), DEFAULT_PLATFORMER_CONFIG, [WALL_RIGHT]),
+      state,
+    );
+
+    expect(r.state).toEqual({
+      ...state,
+      grabbing: false,
+      side: null,
+      solidId: null,
+      regrabTimer: 0,
+      mantle: null,
+    });
+    expect(r.core).toBe(core);
+    expect(r.events).toEqual({});
+  });
+
+  it('disabling wall-grab mid-mantle clears the assist and restores normal input that tick', () => {
+    const disabled: PlatformerConfig = { ...GRAB_CONFIG, wallGrabEnabled: false };
+    let state = createPlatformerState(0, 2, GRAB_CONFIG);
+
+    state = stepPlatformer(
+      state,
+      makeInput(pressEdge(true)),
+      [WALL_RIGHT],
+      DT,
+      GRAB_CONFIG,
+    ).state;
+    state = stepPlatformer(
+      state,
+      makeInput(holdEdge(), idleEdge(), 0, -1),
+      [WALL_RIGHT],
+      DT,
+      GRAB_CONFIG,
+    ).state;
+    const mantleX = state.core.x;
+    const mantleSlice = state.abilities['wallGrab'];
+    expect(mantleSlice?.kind).toBe('wallGrab');
+    if (mantleSlice === undefined || mantleSlice.kind !== 'wallGrab') {
+      throw new Error('wallGrab slice missing after mantle launch');
+    }
+    expect(mantleSlice.mantle).not.toBeNull();
+
+    state = stepPlatformer(
+      state,
+      makeInput(null, idleEdge(), -1),
+      [WALL_RIGHT],
+      DT,
+      disabled,
+    ).state;
+
+    const disabledSlice = state.abilities['wallGrab'];
+    expect(disabledSlice?.kind).toBe('wallGrab');
+    if (disabledSlice === undefined || disabledSlice.kind !== 'wallGrab') {
+      throw new Error('wallGrab slice missing after disable tick');
+    }
+    expect(disabledSlice.mantle).toBeNull();
+    expect(state.core.vx).toBeLessThan(0);
+    expect(state.core.x).toBeLessThan(mantleX);
+  });
+
   // -------------------------------------------------------------------------
   // Ladder priority.
   // -------------------------------------------------------------------------

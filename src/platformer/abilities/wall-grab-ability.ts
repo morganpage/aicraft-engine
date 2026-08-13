@@ -93,7 +93,9 @@
  * grab key). So the two never fight for the same wall.
  *
  * Pure: never mutates input. Never throws. When `wallGrabEnabled === false`,
- * returns the input state unchanged with no events.
+ * returns no events and clears any active grab/mantle state so disabling the
+ * ability cannot leave its exclusive locomotion mode latched. An already-idle
+ * state remains an identity no-op.
  *
  * @module
  */
@@ -171,7 +173,26 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
     const { core, input, dt, config, solids, locomotion } = ctx;
 
     if (!config.wallGrabEnabled) {
-      return { core, state, events: {} };
+      const hasActiveState =
+        state.grabbing ||
+        state.side !== null ||
+        state.solidId != null ||
+        (state.regrabTimer ?? 0) > 0 ||
+        state.mantle != null;
+      return {
+        core,
+        state: hasActiveState
+          ? {
+              ...state,
+              grabbing: false,
+              side: null,
+              solidId: null,
+              regrabTimer: 0,
+              mantle: null,
+            }
+          : state,
+        events: {},
+      };
     }
 
     const events: WritablePlatformerEvents = {
