@@ -37,7 +37,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -107,6 +107,20 @@ function writeUnder(dir, file, content) {
   return full;
 }
 
+/**
+ * Environment for nested `npm` calls with `dry-run` forced OFF.
+ *
+ * This smoke is wired into `prepublishOnly`, so on `npm publish` (and
+ * `npm publish --dry-run`) npm sets `npm_config_dry_run=true` (and other
+ * `npm_config_*` publish context) in the environment. A nested `npm pack` or
+ * `npm install` INHERITS that and becomes a no-op dry-run — `npm pack` writes
+ * no tarball, `npm install` writes no `node_modules` — which silently breaks
+ * every stage. Force it back off so the nested commands do real work.
+ */
+function npmEnvForceReal() {
+  return { ...process.env, npm_config_dry_run: 'false' };
+}
+
 // --- stage implementations -------------------------------------------------
 
 /** 1. Fresh build so the tarball reflects current source. */
@@ -120,18 +134,49 @@ function doBuild() {
   }
 }
 
-/** 2. `npm pack` into `tmp`, returning the absolute path to the `.tgz`. */
+/** 2. `npm pack` into `tmp`, returning the absolute path to the `.tgz`.
+ *
+ * `--ignore-scripts` is load-bearing: this smoke is wired into `prepublishOnly`,
+ * so on `npm publish` it runs INSIDE the publish lifecycle. A nested bare
+ * `npm pack` there re-enters the lifecycle chain (re-running `prepack`, and
+ * under a publish command npm can route the tarball away from
+ * `--pack-destination`, leaving zero tarballs in `tmp`). The dist is already
+ * built by the `build:dist` stage above, so skipping scripts here is correct
+ * and breaks the recursion. We then tolerate the tarball landing in either
+ * `--pack-destination` (preferred) or the repo root (npm's fallback), moving it
+ * into `tmp` so cleanup stays contained. */
 function doPack(tmp) {
-  const r = run('npm', ['pack', '--pack-destination', tmp]);
+  const r = run('npm', ['pack', '--ignore-scripts', '--pack-destination', tmp], {
+    env: npmEnvForceReal(),
+  });
   if (r.status !== 0) {
     throw fail(
       `npm pack exited ${r.status}`,
       `stderr:\n${r.stderr}`,
     );
   }
-  const tgz = readdirSync(tmp)
+  // Preferred: `--pack-destination` honored → the tarball is already in `tmp`.
+  let tgz = readdirSync(tmp)
     .filter((f) => /^aicraft-engine-.*\.tgz$/.test(f))
     .map((f) => join(tmp, f));
+  // Fallback: under some publish contexts `--pack-destination` is not honored
+  // and npm writes the tarball to the repo root, printing its name to stdout.
+  if (tgz.length === 0) {
+    const name = r.stdout
+      .split('\n')
+      .map((s) => s.trim())
+      .find((s) => /^aicraft-engine-.*\.tgz$/.test(s));
+    if (name) {
+      const fromRepo = join(repoRoot, name);
+      const intoTmp = join(tmp, name);
+      try {
+        renameSync(fromRepo, intoTmp);
+        tgz = [intoTmp];
+      } catch {
+        // Leave `tgz` empty; the count check below fails with a clear message.
+      }
+    }
+  }
   if (tgz.length !== 1) {
     throw fail(
       `expected exactly 1 aicraft-engine tgz, found ${tgz.length}`,
@@ -222,7 +267,7 @@ console.log('PROBE OK: player rests at y=%s (vy=%s, onGround=%s)', c.y.toFixed(3
 `,
   );
 
-  const install = run('npm', ['install', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit' });
+  const install = run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit', env: npmEnvForceReal() });
   if (install.status !== 0) {
     throw fail(`consumer npm install exited ${install.status}`, 'see output above');
   }
@@ -319,7 +364,7 @@ void state;
     ) + '\n',
   );
 
-  const install = run('npm', ['install', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit' });
+  const install = run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit', env: npmEnvForceReal() });
   if (install.status !== 0) {
     throw fail(`typecheck consumer npm install exited ${install.status}`, 'see output above');
   }
@@ -393,7 +438,7 @@ if (el) el.textContent = 'y=' + s.core.y.toFixed(1);
 `,
   );
 
-  const install = run('npm', ['install', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit' });
+  const install = run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit', env: npmEnvForceReal() });
   if (install.status !== 0) {
     throw fail(`vite consumer npm install exited ${install.status}`, 'see output above');
   }
