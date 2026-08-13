@@ -4,6 +4,9 @@ import {
   mapLdtkRoomEntry,
   transitionPlatformerToRoom,
   rebasePointBetweenLdtkRooms,
+  createRoomExitDetectorState,
+  detectLdtkRoomExit,
+  DEFAULT_EXIT_DEADBAND,
 } from '../platformer/room-transitions';
 import { createPlatformerState } from '../platformer/kernel';
 import { DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
@@ -389,5 +392,169 @@ describe('room transitions — transitionPlatformerToRoom', () => {
     // Body top at 4... ceiling bottom at 4 → flush under inverted gravity.
     expect(next.core.onGround).toBe(true);
     expect(next.core.contacts.ceilingId).toBe('dest-ceil');
+  });
+});
+
+// --- detectLdtkRoomExit — re-arm hysteresis (tick-tock prevention) ---------
+//
+// `findLdtkRoomExit` is a bare stateless crossing: after an east exit,
+// `mapLdtkRoomEntry` preserves the actor's exact world position, leaving part
+// of its AABB at a negative destination-local X — so the next call in the
+// destination detects the reverse west exit before the actor clears the seam.
+// `detectLdtkRoomExit` wraps it with an immutable re-arm state that gates the
+// reverse exit until the actor moves back inside by the deadband.
+
+describe('detectLdtkRoomExit', () => {
+  it('reproduces and prevents the east→west tick-tock at the seam', () => {
+    // L0 east edge at world x=160 (local x=160). Body at L0-local (158, 50):
+    // right edge 166 > 160 → east exit fires.
+    const project = makeProject(...PARTIAL);
+    let state = createRoomExitDetectorState();
+    const d1 = detectLdtkRoomExit(state, body(158, 50), project.levels[0], project);
+    expect(d1.exit?.dir).toBe('e');
+    expect(d1.exit?.neighbourLevelIid).toBe('L1');
+    // The next state gates the west edge in L1 (the destination entry edge).
+    expect(d1.state.blockedEntryEdge).toBe('w');
+    expect(d1.state.expectedLevelIid).toBe('L1');
+    state = d1.state;
+
+    // Actor mapped into L1: world x = 0 + 158 = 158; L1-local = 158 - 160 = -2.
+    // Right edge at -2 + 8 = 6, i.e. body sits at L1-local x=-2..6, straddling
+    // the west seam. The bare helper WOULD fire west here; the detector holds.
+    const d2 = detectLdtkRoomExit(state, body(-2, 50), project.levels[1], project);
+    expect(d2.exit).toBeUndefined();
+    expect(d2.state.blockedEntryEdge).toBe('w'); // still gated
+    state = d2.state;
+
+    // Sub-margin jitter (x = -1, still < margin) keeps the gate closed.
+    const d3 = detectLdtkRoomExit(state, body(-1, 50), project.levels[1], project);
+    expect(d3.exit).toBeUndefined();
+    expect(d3.state.blockedEntryEdge).toBe('w');
+    state = d3.state;
+
+    // Once the actor clears the west edge by the deadband (x >= margin), the
+    // detector re-arms and a fresh forward poll can fire.
+    const d4 = detectLdtkRoomExit(state, body(1, 50), project.levels[1], project);
+    expect(d4.exit).toBeUndefined(); // body inside L1, no edge crossed
+    expect(d4.state.blockedEntryEdge).toBeNull(); // re-armed
+  });
+
+  it('gates each entry-edge direction independently (exact seam → margin)', () => {
+    const project = makeProject(...PARTIAL);
+    // West entry edge: body at the seam (x=0) is blocked; at margin it clears.
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    expect(detectLdtkRoomExit(blockedW, body(0, 50), project.levels[1], project).exit).toBeUndefined();
+    expect(detectLdtkRoomExit(blockedW, body(DEFAULT_EXIT_DEADBAND, 50), project.levels[1], project).state.blockedEntryEdge).toBeNull();
+    // East entry edge: body.right ≤ pxWid − margin. L0 pxWid=160.
+    const blockedE = { blockedEntryEdge: 'e' as const, expectedLevelIid: 'L0' };
+    expect(detectLdtkRoomExit(blockedE, body(160 - 8, 50), project.levels[0], project).exit).toBeUndefined();
+    expect(detectLdtkRoomExit(blockedE, body(160 - 8 - DEFAULT_EXIT_DEADBAND, 50), project.levels[0], project).state.blockedEntryEdge).toBeNull();
+    // North entry edge: body.y ≥ margin.
+    const blockedN = { blockedEntryEdge: 'n' as const, expectedLevelIid: 'L1' };
+    expect(detectLdtkRoomExit(blockedN, body(50, 0), project.levels[1], project).exit).toBeUndefined();
+    expect(detectLdtkRoomExit(blockedN, body(50, DEFAULT_EXIT_DEADBAND), project.levels[1], project).state.blockedEntryEdge).toBeNull();
+    // South entry edge: body.bottom ≤ pxHei − margin. L0 pxHei=112.
+    const blockedS = { blockedEntryEdge: 's' as const, expectedLevelIid: 'L0' };
+    expect(detectLdtkRoomExit(blockedS, body(50, 112 - 8), project.levels[0], project).exit).toBeUndefined();
+    expect(detectLdtkRoomExit(blockedS, body(50, 112 - 8 - DEFAULT_EXIT_DEADBAND), project.levels[0], project).state.blockedEntryEdge).toBeNull();
+  });
+
+  it('does not let an unrelated flush edge block re-arm', () => {
+    // A grounded actor flush with L1's south floor (body.bottom === pxHei=128)
+    // while clearing a WEST entry seam must still re-arm: only the entry edge
+    // is gated, not every edge. (Otherwise a grounded actor could never leave.)
+    const project = makeProject(...PARTIAL);
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const grounded = body(DEFAULT_EXIT_DEADBAND, 128 - 8); // flush with floor, x past margin
+    const d = detectLdtkRoomExit(blockedW, grounded, project.levels[1], project);
+    expect(d.state.blockedEntryEdge).toBeNull(); // west cleared despite flush south
+  });
+
+  it('honors a custom deadband', () => {
+    const project = makeProject(...PARTIAL);
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    // With a 5px deadband, x=1 (which clears the default) is still blocked.
+    expect(detectLdtkRoomExit(blockedW, body(1, 50), project.levels[1], project, { deadband: 5 }).exit).toBeUndefined();
+    expect(detectLdtkRoomExit(blockedW, body(1, 50), project.levels[1], project, { deadband: 5 }).state.blockedEntryEdge).toBe('w');
+    // At x=5 the custom margin clears.
+    expect(detectLdtkRoomExit(blockedW, body(5, 50), project.levels[1], project, { deadband: 5 }).state.blockedEntryEdge).toBeNull();
+  });
+
+  it('falls back to the default deadband for NaN / Infinity / zero / negative', () => {
+    const project = makeProject(...PARTIAL);
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    for (const bad of [NaN, Infinity, -Infinity, 0, -1, -0.5]) {
+      // x=1 clears the default (1px) but not any larger margin; each bad value
+      // must behave as the default, never as a larger or zero margin.
+      const d = detectLdtkRoomExit(blockedW, body(1, 50), project.levels[1], project, { deadband: bad });
+      expect(d.state.blockedEntryEdge).toBeNull();
+    }
+  });
+
+  it('resets stale state when the expected level no longer matches (teleport)', () => {
+    // Blocked for L1, but polled in L0 — a teleport/retry/stale snapshot. The
+    // detector resets to armed and polls the supplied room in the same call.
+    const project = makeProject(...PARTIAL);
+    const stale = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    // Body inside L0 → no exit; state is armed (not still gated for L1).
+    const d = detectLdtkRoomExit(stale, body(50, 50), project.levels[0], project);
+    expect(d.exit).toBeUndefined();
+    expect(d.state.blockedEntryEdge).toBeNull();
+    expect(d.state.expectedLevelIid).toBeNull();
+  });
+
+  it('never mutates the input state; equal inputs produce equal outputs', () => {
+    const project = makeProject(...PARTIAL);
+    const state = createRoomExitDetectorState();
+    const snapshot = { ...state };
+    detectLdtkRoomExit(state, body(158, 50), project.levels[0], project);
+    expect(state).toEqual(snapshot); // input unchanged
+    // Deterministic: two calls with equal inputs return equal results.
+    const a = detectLdtkRoomExit(state, body(158, 50), project.levels[0], project);
+    const b = detectLdtkRoomExit(state, body(158, 50), project.levels[0], project);
+    expect(a).toEqual(b);
+  });
+
+  it('a JSON-cloned state behaves identically to the original', () => {
+    const project = makeProject(...PARTIAL);
+    const state = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const cloned = JSON.parse(JSON.stringify(state)) as typeof state;
+    // Same inputs → same outputs, original vs JSON clone.
+    const fromOriginal = detectLdtkRoomExit(state, body(0, 50), project.levels[1], project);
+    const fromClone = detectLdtkRoomExit(cloned, body(0, 50), project.levels[1], project);
+    expect(fromClone).toEqual(fromOriginal);
+  });
+
+  it('is transactional: discarding an exit result leaves the original armed state reusable', () => {
+    // A consumer may reject a transition (e.g. destination compile pending).
+    // It must be able to keep the ORIGINAL state and re-poll next tick.
+    const project = makeProject(...PARTIAL);
+    const armed = createRoomExitDetectorState();
+    const d = detectLdtkRoomExit(armed, body(158, 50), project.levels[0], project);
+    expect(d.exit).toBeDefined();
+    // Reject: do NOT adopt d.state. Re-polling the same armed state still fires.
+    const d2 = detectLdtkRoomExit(armed, body(158, 50), project.levels[0], project);
+    expect(d2.exit).toBeDefined();
+  });
+
+  it('independent detector states for two actors do not interfere', () => {
+    const project = makeProject(...PARTIAL);
+    const a = createRoomExitDetectorState();
+    const b = createRoomExitDetectorState();
+    const da = detectLdtkRoomExit(a, body(158, 50), project.levels[0], project);
+    // Actor A has transitioned (gated); actor B's state is still armed and can
+    // poll independently. No shared mutable closure between them.
+    expect(da.state.blockedEntryEdge).toBe('w');
+    const db = detectLdtkRoomExit(b, body(50, 50), project.levels[0], project);
+    expect(db.exit).toBeUndefined();
+    expect(db.state.blockedEntryEdge).toBeNull();
+  });
+
+  it('does not change findLdtkRoomExit (backward compatibility)', () => {
+    // The bare stateless primitive still fires on the exact crossing — the
+    // detector is purely additive and does not alter the underlying helper.
+    const project = makeProject(...PARTIAL);
+    expect(findLdtkRoomExit(body(158, 50), project.levels[0], project)?.dir).toBe('e');
+    expect(findLdtkRoomExit(body(-2, 50), project.levels[1], project)?.dir).toBe('w');
   });
 });

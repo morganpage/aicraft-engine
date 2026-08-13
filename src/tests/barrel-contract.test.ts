@@ -260,4 +260,23 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.createSpriteTintCache).toBe('function');
     expect(aicraft.DEFAULT_FRAME_DURATION_MS).toBe(100);
   });
+
+  it('room-transition hardening: re-arm detector, hard-cut seed, and safe slide constructor are public', () => {
+    // Tick-tock prevention (re-arm hysteresis over findLdtkRoomExit).
+    expect(typeof aicraft.createRoomExitDetectorState).toBe('function');
+    expect(typeof aicraft.detectLdtkRoomExit).toBe('function');
+    expect(typeof aicraft.DEFAULT_EXIT_DEADBAND).toBe('number');
+    expect(aicraft.DEFAULT_EXIT_DEADBAND).toBe(1);
+    // Dip-down prevention — hard room cut + safe slide constructor.
+    expect(typeof aicraft.seedRoomCutCamera).toBe('function');
+    expect(typeof aicraft.beginRoomSlideFromBrain).toBe('function');
+    // The bare primitives remain public (back-compat).
+    expect(typeof aicraft.findLdtkRoomExit).toBe('function');
+    expect(typeof aicraft.beginRoomSlide).toBe('function');
+    // Compile-time type uses: the new exported types must be importable.
+    const _state: aicraft.RoomExitDetectorState = aicraft.createRoomExitDetectorState();
+    const _detection: aicraft.RoomExitDetection = { state: _state };
+    const _opts: aicraft.RoomExitDetectorOptions = {};
+    void _detection; void _opts;
+  });
 });

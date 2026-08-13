@@ -185,6 +185,15 @@ function seamSpanFor(
  *
  * The body is in `level`'s local coordinates. Returns `undefined` when no seam is
  * crossed (the body is still inside `level`, or it left through a void/non-seam).
+ *
+ * Low-level stateless primitive. A per-tick game loop polling this directly
+ * inherits seam tick-tock: after an east crossing, `mapLdtkRoomEntry` preserves
+ * the actor's exact world position, which leaves part of its AABB at a negative
+ * destination-local X — so the very next `findLdtkRoomExit` call in the
+ * destination detects the reverse west exit before the actor clears the seam.
+ * Per-tick consumers should use {@link detectLdtkRoomExit} (which adds re-arm
+ * hysteresis via {@link RoomExitDetectorState}). This function remains valid for
+ * callers that manage their own hysteresis or query exits outside a tick loop.
  */
 export function findLdtkRoomExit(
   body: Rect,
@@ -403,5 +412,160 @@ export function rebasePointBetweenLdtkRooms(
   return {
     x: from.worldX + point.x - to.worldX,
     y: from.worldY + point.y - to.worldY,
+  };
+}
+
+// --- re-arm detector (tick-tock prevention) --------------------------------
+
+/**
+ * Default positive re-arm margin in room/world pixels. One pixel absorbs
+ * sub-pixel solver jitter at the seam yet stays small relative to both 8px and
+ * 16px tiles, so it never reads as input lag.
+ */
+export const DEFAULT_EXIT_DEADBAND = 1;
+
+/** Options for {@link detectLdtkRoomExit}. */
+export interface RoomExitDetectorOptions {
+  /**
+   * Re-arm margin in room/world pixels. Only finite values `> 0` are honored;
+   * `NaN`/`Infinity`/zero/negative fall back to {@link DEFAULT_EXIT_DEADBAND}
+   * (so a bad margin can never permanently block the detector or defeat the
+   * default protection).
+   */
+  readonly deadband?: number;
+}
+
+/**
+ * Immutable, serializable re-arm state for {@link detectLdtkRoomExit}.
+ *
+ * Persist one instance per traversing actor alongside game/save/replay state.
+ * The state is plain data (no closures), so a `JSON.parse(JSON.stringify(x))`
+ * clone behaves identically — deterministic across save/load and replay.
+ */
+export interface RoomExitDetectorState {
+  /**
+   * Destination edge that must be cleared before another exit can fire, or
+   * `null` when the detector is armed (no pending re-arm gate).
+   */
+  readonly blockedEntryEdge: Cardinal | null;
+  /**
+   * IID of the room in whose local coordinates `blockedEntryEdge` is
+   * meaningful, or `null` when armed. A call whose `level.iid` differs from
+   * this is treated as a teleport/retry/stale state: the detector resets to
+   * armed and polls the supplied room during the same call.
+   */
+  readonly expectedLevelIid: string | null;
+}
+
+/** The result of {@link detectLdtkRoomExit}: the next state, and any exit fired. */
+export interface RoomExitDetection {
+  readonly state: RoomExitDetectorState;
+  readonly exit?: LdtkRoomExit;
+}
+
+/** The armed state: no pending re-arm gate, exits enabled. */
+export function createRoomExitDetectorState(): RoomExitDetectorState {
+  return { blockedEntryEdge: null, expectedLevelIid: null };
+}
+
+/** Opposite cardinal: the destination entry edge for a given exit direction. */
+const OPPOSITE_CARDINAL: Record<Cardinal, Cardinal> = { n: 's', s: 'n', e: 'w', w: 'e' };
+
+/**
+ * Has the actor moved at least `margin` pixels back inside `level` off the
+ * `entryEdge` it entered through? Direction-specific: only the one entry edge
+ * is gated, so an actor legitimately flush with an unrelated edge (e.g. a
+ * grounded actor sitting on the floor) can still clear a west/east re-arm.
+ */
+function hasClearedEntryEdge(
+  body: Rect,
+  level: LdtkLevel,
+  entryEdge: Cardinal,
+  margin: number,
+): boolean {
+  switch (entryEdge) {
+    case 'w': return body.x >= margin;
+    case 'e': return body.x + body.width <= level.pxWid - margin;
+    case 'n': return body.y >= margin;
+    case 's': return body.y + body.height <= level.pxHei - margin;
+  }
+}
+
+/**
+ * Normalize a caller-supplied deadband to a finite positive value, falling back
+ * to {@link DEFAULT_EXIT_DEADBAND} for anything invalid. A bad margin must never
+ * permanently block the detector (e.g. `NaN`) or defeat the protection (zero).
+ */
+function normalizeDeadband(deadband: number | undefined): number {
+  return Number.isFinite(deadband) && (deadband as number) > 0
+    ? (deadband as number)
+    : DEFAULT_EXIT_DEADBAND;
+}
+
+/**
+ * Poll for a room exit with direction-specific re-arm hysteresis.
+ *
+ * Wraps {@link findLdtkRoomExit} with a {@link RoomExitDetectorState} that
+ * prevents the seam tick-tock oscillation the bare helper produces when a body
+ * lingers on a seam: after an exit fires, the detector returns no further exits
+ * until the actor has moved at least `deadband` pixels back inside the
+ * destination room on the entry edge it arrived through.
+ *
+ * Pure: takes the current state and returns the next state plus any exit; it
+ * never mutates the input state (adopt the returned {@link RoomExitDetection.state}
+ * transactionally — only when the transition is actually accepted). One
+ * detector state belongs to one actor; multi-actor games keep one state per
+ * actor. See {@link findLdtkRoomExit} for the coordinate convention (body is in
+ * `level`'s local coordinates).
+ */
+export function detectLdtkRoomExit(
+  state: Readonly<RoomExitDetectorState>,
+  body: Rect,
+  level: LdtkLevel,
+  project: LdtkProject,
+  options?: Readonly<RoomExitDetectorOptions>,
+): RoomExitDetection {
+  const margin = normalizeDeadband(options?.deadband);
+
+  // Resolve the effective re-arm gate for THIS room. A blocked state whose
+  // expected room differs is a teleport/retry/stale snapshot: reset to armed
+  // and continue polling in the supplied room during the same call.
+  let blockedEdge: Cardinal | null;
+  if (
+    state.blockedEntryEdge !== null &&
+    state.expectedLevelIid === level.iid
+  ) {
+    blockedEdge = state.blockedEntryEdge;
+  } else {
+    blockedEdge = null;
+  }
+
+  // While the entry edge has not cleared, hold the gate and emit no exit.
+  if (
+    blockedEdge !== null &&
+    !hasClearedEntryEdge(body, level, blockedEdge, margin)
+  ) {
+    return {
+      state: { blockedEntryEdge: blockedEdge, expectedLevelIid: level.iid },
+    };
+  }
+
+  // Armed (or just cleared): poll the bare helper.
+  const armed: RoomExitDetectorState = {
+    blockedEntryEdge: null,
+    expectedLevelIid: null,
+  };
+  const exit = findLdtkRoomExit(body, level, project);
+  if (exit === undefined) {
+    return { state: armed };
+  }
+  // An exit fired: gate reverse transitions until the actor clears the entry
+  // edge in the DESTINATION room (recorded as the opposite of the exit dir).
+  return {
+    state: {
+      blockedEntryEdge: OPPOSITE_CARDINAL[exit.dir],
+      expectedLevelIid: exit.neighbourLevelIid,
+    },
+    exit,
   };
 }

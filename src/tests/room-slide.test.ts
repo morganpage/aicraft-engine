@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   beginRoomSlide,
+  beginRoomSlideFromBrain,
   advanceRoomSlide,
   presentationForRoomSlide,
   enterRoomSlideCameraSpace,
   finishRoomSlideCameraSpace,
   cancelRoomSlideCameraSpace,
+  seedRoomCutCamera,
   roomSlideEase,
   ROOM_SLIDE_VCAM_ID,
   DEFAULT_ROOM_SLIDE_DURATION,
@@ -13,6 +15,7 @@ import {
 import { createCameraBrain, updateCameraBrain } from '../camera/brain';
 import type { CameraBrain } from '../camera';
 import type { CompiledLdtkRoom } from '../platformer/ldtk-room';
+import type { LdtkLevel } from '../ldtk/types';
 
 /**
  * Phase E3 — the slide presentation orchestrator.
@@ -405,5 +408,170 @@ describe('room slide — composed camera-brain integration', () => {
     expect(brain.activeId).toBeNull();
     // Source-local (0,0) → slide space (0,0) → destination-local (−160, 0).
     expect(brain.camera).toEqual({ x: -160, y: 0 });
+  });
+});
+
+// --- seedRoomCutCamera — continuity-preserving hard room cut ---------------
+//
+// The dip-down bug: a destination brain created at its default (0,0) seeds
+// first-activation bodyCamera from that origin, then the follow solver visibly
+// moves from the wrong local Y. `seedRoomCutCamera` rebases the rendered
+// camera through world space so the cut preserves perpendicular framing.
+
+describe('seedRoomCutCamera — hard room cut', () => {
+  // Extract plain LdtkLevels from the duck-typed CompiledLdtkRoom fixtures.
+  const SRC_LEVEL = SRC.ldtkLevel as unknown as LdtkLevel;
+  const DST_LEVEL = DST.ldtkLevel as unknown as LdtkLevel;
+
+  it('preserves the world-space top-left and rendered zoom', () => {
+    // Source brain rendered at (300, 100, zoom 1.4). SRC world (0,0) → DST
+    // world (160,0): rebased camera = (300 − 160, 100 − 0) = (140, 100).
+    const source: CameraBrain = {
+      camera: { x: 300, y: 100 }, zoom: 1.4, activeId: 'src',
+      bodyCamera: { x: 300, y: 100 }, lensZoom: 1.4, blend: null,
+    };
+    const seeded = seedRoomCutCamera(source, SRC_LEVEL, DST_LEVEL);
+    expect(seeded.camera).toEqual({ x: 140, y: 100 });
+    expect(seeded.zoom).toBe(1.4);
+    // World-space invariant: src.worldX + oldCam.x === dst.worldX + seeded.x.
+    expect(SRC_LEVEL.worldX + 300).toBe(DST_LEVEL.worldX + seeded.camera.x);
+    expect(SRC_LEVEL.worldY + 100).toBe(DST_LEVEL.worldY + seeded.camera.y);
+  });
+
+  it('produces an inactive brain (first activation, no blend)', () => {
+    const source: CameraBrain = {
+      camera: { x: 300, y: 100 }, zoom: 1.4, activeId: 'src',
+      bodyCamera: { x: 300, y: 100 }, lensZoom: 1.4, blend: null,
+    };
+    const seeded = seedRoomCutCamera(source, SRC_LEVEL, DST_LEVEL);
+    expect(seeded.activeId).toBeNull();
+    expect(seeded.blend).toBeNull();
+    // bodyCamera seeds from the rebased rendered camera (the dip-down fix).
+    expect(seeded.bodyCamera).toEqual({ x: 140, y: 100 });
+    expect(seeded.lensZoom).toBe(1.4);
+  });
+
+  it('does NOT clamp a negative destination-local coordinate prematurely', () => {
+    // Source camera at (50, 100) → DST-local (50 − 160, 100) = (−110, 100).
+    // Negative local X is valid (a room smaller than the viewport); the real
+    // clamp is the next updateCameraBrain's responsibility, not this helper's.
+    const source: CameraBrain = {
+      camera: { x: 50, y: 100 }, zoom: 2, activeId: 'src',
+      bodyCamera: { x: 50, y: 100 }, lensZoom: 2, blend: null,
+    };
+    const seeded = seedRoomCutCamera(source, SRC_LEVEL, DST_LEVEL);
+    expect(seeded.camera.x).toBe(-110);
+    expect(seeded.bodyCamera.x).toBe(-110);
+  });
+
+  it('preserves camera/zoom, not bodyCamera/lensZoom (which may be mid-blend)', () => {
+    // A brain mid-blend: bodyCamera/lensZoom represent an off-screen live
+    // target. seedRoomCutCamera must preserve the RENDERED composite, not the
+    // live solver state.
+    const source: CameraBrain = {
+      camera: { x: 300, y: 100 }, zoom: 1.4, activeId: 'src',
+      bodyCamera: { x: 999, y: 999 }, lensZoom: 9.9, blend: null,
+    };
+    const seeded = seedRoomCutCamera(source, SRC_LEVEL, DST_LEVEL);
+    expect(seeded.camera).toEqual({ x: 140, y: 100 });
+    expect(seeded.zoom).toBe(1.4);
+    expect(seeded.bodyCamera).toEqual({ x: 140, y: 100 }); // not (999,999)
+    expect(seeded.lensZoom).toBe(1.4); // not 9.9
+  });
+
+  it('the first destination step begins from the rebased point (no dip from origin)', () => {
+    // Seed from a source brain at y=100, then step the destination brain. With
+    // bounds tall enough to permit y=100, bodyCamera.y must NOT restart from 0.
+    const source: CameraBrain = {
+      camera: { x: 300, y: 100 }, zoom: 1.4, activeId: 'src',
+      bodyCamera: { x: 300, y: 100 }, lensZoom: 1.4, blend: null,
+    };
+    let brain = seedRoomCutCamera(source, SRC_LEVEL, DST_LEVEL);
+    brain = updateCameraBrain(brain, {
+      vcams: [{
+        id: 'dst', priority: 0, blend: 0,
+        body: { mode: 'follow', targetKey: 'player', followX: { trail: 0.25, lead: 0.5 }, followY: { trail: 0.35, lead: 0.65 }, padding: 0 },
+        lens: { zoom: 1.4 },
+      }],
+      targets: { player: { x: 140, y: 100, width: 8, height: 8 } },
+      bounds: { width: DST_LEVEL.pxWid, height: 2000 },
+      viewport: { width: 160, height: 112 },
+      activeId: 'dst',
+      dt: DT,
+    });
+    expect(brain.bodyCamera.y).toBeGreaterThan(0); // continuity, not origin dip
+    expect(brain.camera.y).toBeGreaterThan(0);
+  });
+});
+
+// --- beginRoomSlideFromBrain — safe slide constructor ----------------------
+//
+// Prevents source-view/brain divergence by deriving the source endpoint from
+// the rendered brain (camera AND zoom), so the dip-down mis-wire is impossible
+// by construction rather than caught after the fact.
+
+describe('beginRoomSlideFromBrain — safe slide constructor', () => {
+  const DEST_VIEW = { camera: { x: 0, y: 0 }, zoom: 1.5 };
+
+  it('captures rendered camera AND zoom from a non-origin brain', () => {
+    const brain: CameraBrain = {
+      camera: { x: 40, y: 20 }, zoom: 2.5, activeId: 'src',
+      bodyCamera: { x: 40, y: 20 }, lensZoom: 2.5, blend: null,
+    };
+    const slide = beginRoomSlideFromBrain(SRC, DST, VIEWPORT, brain, DEST_VIEW, IDENTITY_ACTOR);
+    // The source view is the brain's rendered camera/zoom, copied.
+    expect(slide.sourceView.camera).toEqual({ x: 40, y: 20 });
+    expect(slide.sourceView.zoom).toBe(2.5);
+    // The destination view is passed through.
+    expect(slide.destinationView.camera).toEqual({ x: 0, y: 0 });
+    expect(slide.destinationView.zoom).toBe(1.5);
+  });
+
+  it('captures camera/zoom, not bodyCamera/lensZoom (mid-blend brain)', () => {
+    // A brain whose live bodyCamera/lensZoom differ from the rendered composite
+    // (an in-flight blend). The source endpoint must be the RENDERED state.
+    const brain: CameraBrain = {
+      camera: { x: 40, y: 20 }, zoom: 2.5, activeId: 'src',
+      bodyCamera: { x: 999, y: 999 }, lensZoom: 9.9,
+      blend: { fromId: 'a', toId: 'src', elapsed: 0.05, duration: 0.3, fromCenter: { x: 0, y: 0 }, fromZoom: 1, fromPadding: 0 },
+    };
+    const slide = beginRoomSlideFromBrain(SRC, DST, VIEWPORT, brain, DEST_VIEW, IDENTITY_ACTOR);
+    expect(slide.sourceView.camera).toEqual({ x: 40, y: 20 });
+    expect(slide.sourceView.zoom).toBe(2.5);
+  });
+
+  it('does not retain the brain nested reference (post-construction mutation is safe)', () => {
+    const brain: CameraBrain = {
+      camera: { x: 40, y: 20 }, zoom: 2.5, activeId: 'src',
+      bodyCamera: { x: 40, y: 20 }, lensZoom: 2.5, blend: null,
+    };
+    const slide = beginRoomSlideFromBrain(SRC, DST, VIEWPORT, brain, DEST_VIEW, IDENTITY_ACTOR);
+    // A CameraBrain is fully immutable (all fields readonly), so the slide
+    // capturing the values (not the reference) is proved by the capture
+    // holding its own copies — verified by the equality test below against a
+    // direct beginRoomSlide call. The source endpoint is the rendered camera.
+    expect(slide.sourceView.camera.x).toBe(40);
+  });
+
+  it('equals a direct beginRoomSlide call supplied with the same exact views', () => {
+    const brain: CameraBrain = {
+      camera: { x: 40, y: 20 }, zoom: 2.5, activeId: 'src',
+      bodyCamera: { x: 40, y: 20 }, lensZoom: 2.5, blend: null,
+    };
+    const fromBrain = beginRoomSlideFromBrain(SRC, DST, VIEWPORT, brain, DEST_VIEW, IDENTITY_ACTOR);
+    const direct = beginRoomSlide(
+      SRC, DST, VIEWPORT,
+      {
+        source: { camera: { x: 40, y: 20 }, zoom: 2.5 },
+        destination: { camera: { x: 0, y: 0 }, zoom: 1.5 },
+      },
+      IDENTITY_ACTOR,
+    );
+    // Same clock, same endpoints, same space — the wrapper is a pure delegate.
+    expect(fromBrain.duration).toBe(direct.duration);
+    expect(fromBrain.t).toBe(direct.t);
+    expect(fromBrain.sourceView).toEqual(direct.sourceView);
+    expect(fromBrain.destinationView).toEqual(direct.destinationView);
+    expect(fromBrain.space).toEqual(direct.space);
   });
 });

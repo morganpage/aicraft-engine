@@ -136,11 +136,17 @@ export {
   mapLdtkRoomEntry,
   transitionPlatformerToRoom,
   rebasePointBetweenLdtkRooms,
+  DEFAULT_EXIT_DEADBAND,
+  createRoomExitDetectorState,
+  detectLdtkRoomExit,
   type Cardinal,
   type LdtkRoomExit,
   type LdtkRoomEntry,
   type TransitionPlatformerToRoomOptions,
   type PlatformerRoomTransition,
+  type RoomExitDetectorOptions,
+  type RoomExitDetectorState,
+  type RoomExitDetection,
 } from './room-transitions';
 
 // Phase E3 — slide presentation orchestrator. Composes the existing camera
@@ -148,11 +154,13 @@ export {
 // normalized two-room space, with explicit enter/finish/cancel rebases.
 export {
   beginRoomSlide,
+  beginRoomSlideFromBrain,
   advanceRoomSlide,
   presentationForRoomSlide,
   enterRoomSlideCameraSpace,
   finishRoomSlideCameraSpace,
   cancelRoomSlideCameraSpace,
+  seedRoomCutCamera,
   roomSlideEase,
   ROOM_SLIDE_VCAM_ID,
   DEFAULT_ROOM_SLIDE_DURATION,

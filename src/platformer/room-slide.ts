@@ -30,7 +30,10 @@ import type {
   CameraBrain,
   VirtualCamera,
 } from '../camera';
+import { createCameraBrain } from '../camera';
+import type { LdtkLevel } from '../ldtk/types';
 import type { CompiledLdtkRoom } from './ldtk-room';
+import { rebasePointBetweenLdtkRooms } from './room-transitions';
 
 /** Reserved id for the transient slide-authority vcam. */
 export const ROOM_SLIDE_VCAM_ID = '__roomSlide';
@@ -353,4 +356,94 @@ export function cancelRoomSlideCameraSpace(
   const offset =
     returnTo === 'source' ? slide.space.sourceOffset : slide.space.destinationOffset;
   return rebaseBrain(brain, { x: -offset.x, y: -offset.y }, true);
+}
+
+// --- recommended safe constructors (dip-down prevention) -------------------
+
+/**
+ * Create an inactive destination-local brain for a HARD ROOM CUT, preserving
+ * the source brain's rendered world-space top-left and rendered zoom.
+ *
+ * Use this when switching rooms WITHOUT a slide so the destination's
+ * first-activation `bodyCamera` (seeded from the carried rendered `camera`) does
+ * NOT restart from the room's `(0,0)` origin and visibly dip toward the player.
+ * The rebase preserves the exact world position; the destination's real
+ * viewport/zoom/bounds clamp (applied by the next `updateCameraBrain`) is the
+ * sole authority for bounds validity, so negative destination-local
+ * coordinates (a room smaller than the viewport) are preserved until that clamp.
+ *
+ * Preserves `camera`/`zoom` (the rendered composite), NOT `bodyCamera`/`lensZoom`
+ * — those may represent an off-screen live target during an in-flight blend.
+ * The result is intentionally inactive (clears selection/blend/live solver
+ * state) so the destination room is a first activation with no incoming blend.
+ *
+ * Do NOT use this result as a room-slide destination endpoint, and do NOT use it
+ * after a slide; `finishRoomSlideCameraSpace` already owns the post-slide
+ * handoff. Exact world-space rebasing makes the source and rebased destination
+ * top-left identical once both are expressed in slide space, producing ZERO
+ * spatial slide travel — a slide destination view must be selected
+ * independently from the destination's desired framing and lens.
+ *
+ * Pure: never reads host state or logs.
+ */
+export function seedRoomCutCamera(
+  sourceBrain: Readonly<CameraBrain>,
+  sourceLevel: LdtkLevel,
+  destinationLevel: LdtkLevel,
+): CameraBrain {
+  const camera = rebasePointBetweenLdtkRooms(
+    sourceBrain.camera,
+    sourceLevel,
+    destinationLevel,
+  );
+  return createCameraBrain({ x: camera.x, y: camera.y, zoom: sourceBrain.zoom });
+}
+
+/**
+ * Begin a room slide using the brain's CURRENTLY RENDERED camera/zoom as the
+ * source endpoint, preventing source-view/brain divergence by construction.
+ *
+ * A consumer can accidentally supply `beginRoomSlide` a source view that
+ * differs from the `CameraBrain` currently being rendered (e.g. passing a fresh
+ * `(0,0)` brain while the rendered camera is mid-room), which makes the slide
+ * interpolate from the wrong origin and visibly dip. This wrapper derives the
+ * source endpoint directly from the rendered brain, so the divergence is
+ * impossible rather than caught after the fact. It also captures rendered
+ * `zoom`, so lens continuity cannot diverge independently from position.
+ *
+ * The caller still chooses the destination view (`destinationView`) because the
+ * engine cannot infer a game's desired destination follow target, fit mode, or
+ * lens policy. Delegates to {@link beginRoomSlide} with a COPIED source point
+ * (the caller's brain nested reference is not retained), so mutating/replacing
+ * the caller's brain reference after construction cannot change the captured
+ * source endpoint.
+ *
+ * Pure: never reads environment globals or logs.
+ */
+export function beginRoomSlideFromBrain(
+  source: CompiledLdtkRoom,
+  destination: CompiledLdtkRoom,
+  viewport: Readonly<{ width: number; height: number }>,
+  sourceBrain: Readonly<CameraBrain>,
+  destinationView: Readonly<RoomSlideView>,
+  actor: Readonly<RoomSlideActorMapping>,
+  options?: Readonly<RoomSlideOptions>,
+): RoomSlideState {
+  return beginRoomSlide(
+    source,
+    destination,
+    viewport,
+    {
+      source: {
+        camera: { x: sourceBrain.camera.x, y: sourceBrain.camera.y },
+        zoom: sourceBrain.zoom,
+      },
+      destination: {
+        camera: { x: destinationView.camera.x, y: destinationView.camera.y },
+        zoom: destinationView.zoom,
+      },
+    },
+    actor,
+    options,
+  );
 }

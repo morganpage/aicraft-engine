@@ -226,6 +226,13 @@ import {
   IDLE_EDGE,
   solidIdForEntity,
   PRECISION_PLATFORMER,
+  // Room-transition hardening (0.10.0): imported explicitly so a missing /
+  // renamed export fails the packed-tarball gate loudly.
+  createRoomExitDetectorState,
+  detectLdtkRoomExit,
+  DEFAULT_EXIT_DEADBAND,
+  seedRoomCutCamera,
+  beginRoomSlideFromBrain,
 } from 'aicraft-engine';
 
 // (3) Barrel is importable and re-exports a large surface.
@@ -264,6 +271,32 @@ const resting = c.onGround === true && Math.abs(c.vy) < 1e-6;
 assert.ok(finite, \`non-finite state: \${JSON.stringify({ x: c.x, y: c.y, vx: c.vx, vy: c.vy })}\`);
 assert.ok(resting, \`player did not rest: \${JSON.stringify({ y: c.y, vy: c.vy, onGround: c.onGround })}\`);
 console.log('PROBE OK: player rests at y=%s (vy=%s, onGround=%s)', c.y.toFixed(3), c.vy, c.onGround);
+
+// Room-transition hardening exports ship and work in plain Node ESM. Each new
+// public name is exercised so a broken/missing export fails the gate loudly.
+assert.equal(DEFAULT_EXIT_DEADBAND, 1);
+const detectorState = createRoomExitDetectorState();
+assert.equal(detectorState.blockedEntryEdge, null);
+// detectLdtkRoomExit over a two-room project: body inside → no exit, armed.
+const project = {
+  levels: [
+    { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, __neighbours: [{ dir: 'e', levelIid: 'L1' }] },
+    { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128, __neighbours: [{ dir: 'w', levelIid: 'L0' }] },
+  ],
+  worlds: [],
+};
+const inside = detectLdtkRoomExit(detectorState, { x: 50, y: 50, width: 8, height: 8 }, project.levels[0], project);
+assert.equal(inside.exit, undefined);
+assert.equal(inside.state.blockedEntryEdge, null);
+// seedRoomCutCamera returns an inactive brain seeded off-origin.
+const seeded = seedRoomCutCamera(
+  { camera: { x: 300, y: 100 }, zoom: 1.4, activeId: 'src', bodyCamera: { x: 300, y: 100 }, lensZoom: 1.4, blend: null },
+  project.levels[0],
+  project.levels[1],
+);
+assert.equal(seeded.activeId, null);
+assert.equal(seeded.camera.x, 140); // 300 - 160 (worldX delta)
+console.log('TRANSITION HARDENING: exports OK');
 `,
   );
 
@@ -316,8 +349,23 @@ function doTypecheckConsumer(tmp, tgz) {
   IDLE_EDGE,
   solidIdForEntity,
   PRECISION_PLATFORMER,
+  // Room-transition hardening (0.10.0): value imports.
+  createRoomExitDetectorState,
+  detectLdtkRoomExit,
+  DEFAULT_EXIT_DEADBAND,
+  seedRoomCutCamera,
+  beginRoomSlideFromBrain,
 } from 'aicraft-engine';
-import type { GameLoop, PlatformerState, PlatformerInput, Solid } from 'aicraft-engine';
+import type {
+  GameLoop,
+  PlatformerState,
+  PlatformerInput,
+  Solid,
+  // Room-transition hardening: type imports (surfaces any .d.ts specifier bug).
+  RoomExitDetectorState,
+  RoomExitDetection,
+  RoomExitDetectorOptions,
+} from 'aicraft-engine';
 
 const loop: GameLoop = createGameLoop({
   fixedDt: 1 / 60,
@@ -339,6 +387,28 @@ const input: PlatformerInput = {
 for (let i = 0; i < 120; i++) {
   state = stepPlatformer(state, input, solids, 1 / 60, config).state;
 }
+
+// Room-transition hardening: type + value uses prove the new public API ships
+// and typechecks under NodeNext with skipLibCheck:false.
+const _detector: RoomExitDetectorState = createRoomExitDetectorState();
+const _opts: RoomExitDetectorOptions = {};
+const _detection: RoomExitDetection = detectLdtkRoomExit(
+  _detector,
+  { x: 50, y: 50, width: 8, height: 8 },
+  { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, __neighbours: [] } as never,
+  { levels: [] } as never,
+  _opts,
+);
+void DEFAULT_EXIT_DEADBAND;
+void _detection;
+const _seeded = seedRoomCutCamera(
+  { camera: { x: 0, y: 0 }, zoom: 1, activeId: null, bodyCamera: { x: 0, y: 0 }, lensZoom: 1, blend: null },
+  { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112 } as never,
+  { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 } as never,
+);
+void _seeded;
+void beginRoomSlideFromBrain;
+
 void state;
 `,
   );
@@ -426,6 +496,11 @@ function doViteConsumer(tmp, tgz) {
   IDLE_EDGE,
   solidIdForEntity,
   PRECISION_PLATFORMER,
+  // Room-transition hardening (0.10.0): browser-consumable imports prove the
+  // new functions bundle cleanly (no Node-only env dependency).
+  createRoomExitDetectorState,
+  detectLdtkRoomExit,
+  seedRoomCutCamera,
 } from 'aicraft-engine';
 
 const solids = [{ x: 0, y: 200, width: 10000, height: 100, id: solidIdForEntity(0) }];
@@ -433,6 +508,15 @@ let s = createPlatformerState(10, 10, PRECISION_PLATFORMER);
 for (let i = 0; i < 10; i++) {
   s = stepPlatformer(s, { moveX: 0, jump: IDLE_EDGE, dash: IDLE_EDGE }, solids, 1 / 60).state;
 }
+// Exercise the transition-hardening imports so tree-shaking keeps them and a
+// broken/missing export fails the Vite build gate.
+const _det = createRoomExitDetectorState();
+const _seeded = seedRoomCutCamera(
+  { camera: { x: 0, y: 0 }, zoom: 1, activeId: null, bodyCamera: { x: 0, y: 0 }, lensZoom: 1, blend: null },
+  { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112 } as never,
+  { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 } as never,
+);
+void detectLdtkRoomExit; void _det; void _seeded;
 const el = document.getElementById('app');
 if (el) el.textContent = 'y=' + s.core.y.toFixed(1);
 `,
