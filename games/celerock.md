@@ -92,6 +92,15 @@ npm install aicraft-engine@0.7.0
     createFootPlantState, advanceFootPlant,
     advanceSpringRod, createSpringRod, DEFAULT_SPRING_ROD,
 
+    // sprite pipeline (the supplied Player.png renderer — §4.4)
+    parseSpriteSheet, compileSpriteSheet,
+    deriveSpriteAnimKind,
+    createSpriteAnimState, advanceSpriteAnim, currentFrameIndex, animTotalDuration,
+    drawSprite,
+    type SpriteSheetJSON, type CompiledSpriteSheet, type CompiledAnim,
+    type SpriteAnimState, type SpriteAnimKind, type SpriteAnimInputs,
+    type DrawSpriteOptions,
+
     // particles (dash trail, landing dust, respawn flash, spring sparkle)
     spawn, advance as advanceParticles, cull,
     sampleConeVelocity, createEmitter, stepEmitters,
@@ -161,6 +170,7 @@ npm install aicraft-engine@0.7.0
 | Legs | `drawSimpleFeet`, `DEFAULT_SIMPLE_FEET` |
 | Foot-tap audio | `createFootPlantState`, `advanceFootPlant` |
 | Hair (1 damped spring strand) | `createSpringRod`, `advanceSpringRod`, `DEFAULT_SPRING_ROD` — **never** raw `advanceSpringChain` |
+| **Player sprite (supplied `Player.png`)** | `parseSpriteSheet`, `compileSpriteSheet` (`meta.grid` synthesizes the 10×8 grid of 16×16 cells), `deriveSpriteAnimKind` → `advanceSpriteAnim`/`currentFrameIndex`, `drawSprite` (stable 1:1, facing mirror, feet anchor — §4.4) |
 | Dash trail, landing dust, respawn flash | `spawn`, `advanceParticles`, `cull`, `sampleConeVelocity` |
 | Parallax background (far/mid/near) | `drawTiledParallax`, `parallaxOffset`, `PARALLAX_FAR/MID/NEAR` |
 | Vector look + glow (player, pickups, UI) | `outlineRect`, `drawGlow` |
@@ -174,7 +184,7 @@ npm install aicraft-engine@0.7.0
 
 ## 4. The Player
 
-The player is built in **two layers**: the **physics** is the Phase 0–9 kernel tuned to the Celeste kit, the **art** is the engine's procedural renderer overlaid on the LDtk tiles. (A supplied player sprite sheet is a stretch goal — §16.)
+The player is built in **two layers**: the **physics** is the Phase 0–9 kernel tuned to the Celeste kit, the **art** is the **supplied `Player.png` sprite sheet** drawn over the LDtk tiles via the engine's sprite pipeline (§4.4). The procedural renderer is a **load-failure fallback only** — if `Player.png` (or its sheet) fails to load/compile at boot, the game still runs by drawing the procedural body. The collision body stays the narrow **0.5 × 1.5 tile box** (the sprite is pure visual overhang — it is drawn 1:1 in world units, intentionally larger than the collision body; see §4.4).
 
 ### 4.1 Config — the Celeste kit
 
@@ -253,15 +263,108 @@ const gamepad  = createGamepadAdapter(STANDARD_GAMEPAD_PLATFORMER_MAP);     // W
 
 Suggested bindings (the standard map already encodes these): Arrows/WASD move, `Space` jump, `ShiftLeft`/`ShiftRight` dash, `KeyK` grab, `R` reset. (Celeste uses `C`/`Z` for grab; `KeyK` is the common non-conflicting alternative clear of the WASD cluster.)
 
-### 4.4 Body render (procedural art, independent of the level tileset)
+### 4.4 Sprite render (the supplied `Player.png` — primary renderer)
 
-The player's own sprite is the engine's vector renderer, drawn over the LDtk tiles:
+The player's own sprite is the **supplied `Player.png` sprite sheet**, drawn over the LDtk tiles through the engine's sprite pipeline. The procedural renderer is the **fallback only** (used when the sprite fails to load/compile at boot).
 
-- **⚠ Facing mirror (MANDATORY — or you get a moonwalk):** wrap the body+feet draw in `ctx.scale(facing, 1)` around the body's vertical axis. Running left must face left. Draw spring-rod hair **outside** the mirror (its physics own a screen-space direction).
-- **Hair:** `advanceSpringRod(hair, anchor.x, anchor.y, dt, { ...DEFAULT_SPRING_ROD, restDirection })` — never raw `advanceSpringChain`.
-- **Walk cycle:** `advanceLocomotionByDisplacement(loco, state.core.vx * dt * state.core.facing, DEFAULT_GAIT)`.
-- **Squash & stretch:** advance the render-only scale from the kernel's emitted events (`advanceSquash` with `DEFAULT_SQUASH_CONFIG`), held in your closure — **never** on `PlatformerState` (it is pure presentation, no `physicsVersion` impact). Pivot at the feet.
-- **Airborne tuck + foot-tap audio** as in any precision platformer.
+**The asset + frame mapping (authoritative).** `Player.png` is **160×128 px = a 10-column × 8-row grid of 16×16 frames** (row-major). Frame numbers are 1-indexed; they map to 0-indexed cells `i` with source rect `sx = (i % 10) * 16`, `sy = floor(i / 10) * 16`:
+
+| Anim | Frames (1-indexed) | Cells (0-indexed) |
+|---|---|---|
+| Walk | 1–8 | **0–7** (row 0) |
+| Jump | 61–65 | **60–64** (row 6) |
+| Idle | (use walk frame 1) | **cell 0** (standing pose) |
+
+Art faces right; left is produced by the facing mirror. Transparency is verified (empty/corner pixels are alpha 0).
+
+**Boot: load + compile (defensive — mirror the tileset loader).** Load `Player.png` with the **same defensive, error-swallowing image loader you use for tileset PNGs** (bounded decode, never crash boot). A missing/failed sprite is **NOT fatal** — set the sheet to `null` and the render path falls back to the procedural body. `parseSpriteSheet` never throws, so wrap the whole thing and degrade quietly:
+
+```ts
+// decodeImageBounded is YOUR defensive loader (the same one you pass to
+// buildLdtkTilesetBundle / loadLdtkProjectAssets). Returns CanvasImageSource | undefined.
+const spriteImage = await decodeImageBounded('./Player.png');   // undefined on failure
+
+// The sheet: a 10×8 grid → 80 frames (cells 0–79); walk 0–7, jump 60–64.
+// meta.grid makes the compiler synthesize frames row-major; meta.frameTags
+// `from`/`to` are TILE INDICES (cells) under meta.grid.
+const spriteText = JSON.stringify({
+  meta: {
+    image: 'Player.png',
+    size: { w: 160, h: 128 },
+    grid: { tileWidth: 16, tileHeight: 16, columns: 10 },
+    frameTags: [
+      { name: 'walk', from: 0, to: 7,  direction: 'forward' },   // cells 0–7, loops
+      { name: 'jump', from: 60, to: 64, direction: 'forward' },  // cells 60–64, one-shot
+    ],
+  },
+});
+const parsed = parseSpriteSheet(spriteText);          // { ok, sheet?, errors } — never throws (errors, not diagnostics)
+const compiled: CompiledSpriteSheet | null =
+  parsed.ok && parsed.sheet && spriteImage ? compileSpriteSheet(parsed.sheet).sheet : null;
+
+// Walk clip: loops naturally (compiler tags are loop:true — correct for walk).
+const walkAnim = compiled?.anims.get('walk') ?? null;
+
+// Jump clip — HAND-BUILT (see the loop:false gap below).
+const jumpAnim: CompiledAnim | null = compiled && {
+  name: 'jump',
+  frameIndices: [60, 61, 62, 63, 64],
+  durations:    [70, 70, 70, 70, 70],
+  direction: 'forward',
+  loop: false,                                        // one-shot → CLAMP on the fall frame
+};
+```
+
+> **KNOWN ENGINE GAP (one-shot anims).** The compiler hardcodes `loop = true` for every `meta.frameTags` entry (`compile.ts`), which is correct for `walk` but wrong for the jump feel. The verified feel is **"play 60→64 once, then CLAMP at the last (fall) frame until landing."** To get the clamp, hand-build the jump `CompiledAnim` with `loop: false` (above) — once the anim clock passes the clip total, `currentFrameIndex`/`currentFrameIndexAt` clamp to `n-1` (the fall frame) instead of looping. This is a one-shot-anim limitation to revisit in a future engine improvement; for now the consumer owns the `loop:false` override.
+
+**Per fixed tick: derive kind → advance clock → draw.** Drive the anim clock from the **same `dt` as the sim**, and reset the clock whenever the kind changes (so walk↔jump swaps don't carry phase). Reset to idle on respawn to avoid a one-frame flash of the clamped fall pose after a mid-air death.
+
+```ts
+// Map the kernel's physics surface onto a semantic anim kind.
+const kind: SpriteAnimKind = deriveSpriteAnimKind({
+  supported: state.core.onGround,   // grounded?
+  speedX:    state.core.vx,         // |speedX| > 12 px/s (default) ⇒ 'walk', else 'idle'
+  velocityY: state.core.vy,         // airborne: <0 'ascent', >0 'descent', ~0 'apex'
+});
+
+// Reset the clock on a kind change; reset to idle on respawn.
+if (kind !== lastKind) { walkClock = createSpriteAnimState(); jumpClock = createSpriteAnimState(); }
+lastKind = kind;
+
+let frameIndex: number;
+if (kind === 'walk') {
+  walkClock = advanceSpriteAnim(walkClock, dt * 1000);
+  frameIndex = currentFrameIndex(walkClock, walkAnim!) ?? 0;       // loops naturally
+} else if (kind === 'idle') {
+  frameIndex = 0;                                                   // hold cell 0
+} else {
+  // 'ascent' | 'apex' | 'descent' → jump clip (one-shot, clamps at cell 64)
+  jumpClock = advanceSpriteAnim(jumpClock, dt * 1000);
+  frameIndex = currentFrameIndex(jumpClock, jumpAnim!) ?? 60;
+}
+
+// Draw 1:1, bottom-centered on the FEET, facing mirror inside drawSprite.
+// destX/destY are the destination TOP-LEFT (no bottom-center anchor in the
+// engine): for a 16×16 frame on feet (feetX, feetY) → destX=feetX-8, destY=feetY-16.
+const feetX = state.core.x + state.core.width / 2;
+const feetY = state.core.y + state.core.height;       // bottom of the 0.5×1.5-tile box
+drawSprite(ctx, spriteImage!, compiled!, frameIndex, feetX - 8, feetY - 16, {
+  facing: state.core.facing,                          // 1 | -1; drawSprite mirrors about the frame's horizontal center
+});
+```
+
+**⚠ Stable 1:1 pixel-sprite policy (MANDATORY — or the art shimmers).** Applying a continuous breathe/squash scale to a 16×16 pixel sprite causes sub-pixel SHIMMER (nearest-neighbor flips edge columns each frame) — a real build reversed exactly this (BUILD_NOTES §6a). So:
+
+- **The sprite draws at a stable 1:1 scale — NO breathe, NO squash/stretch scaling on the sprite.** Pivot at the feet. The facing mirror (`drawSprite`'s internal `ctx.scale(facing, 1)`) still applies. **Do not ALSO wrap the sprite draw in your own `ctx.scale(facing, 1)` — that double-mirrors.** (Hair, if you draw it, goes OUTSIDE any mirror.)
+- **Drop event-driven landing/launch squash on the sprite** (squash distorts pixel art). Squash/stretch (`advanceSquash`) is for the **procedural fallback body only**.
+- **KEEP the dash aura glow + dash after-image trail** — they carry dash juice without distorting the sprite (they are particles/glow drawn alongside, not a scale on the sprite).
+- The sprite is drawn **1:1 in world units** (16×16 = 2 tiles tall on the 8px-tile fixture — intentionally larger than the 0.5×1.5-tile collision box; the collision body stays the narrow box). A single `PLAYER_SPRITE_SCALE` multiplier (or scaling by `tileSize / 8`) is a one-line tunable if the LDtk uses a different tile size.
+- **`image-rendering: pixelated` + `imageSmoothingEnabled = false`** for crisp nearest-neighbor (`drawSprite` forces the latter itself). **No shimmer while idle.**
+- **Contact shadow:** derive it from the **sprite bounds** (or omit it) — do NOT size it off the procedural body.
+
+**Fallback.** If `compiled` (or `spriteImage`) is `null` after boot, draw the procedural body instead: face + `advanceSpringRod` hair + `drawSimpleFeet` + the `advanceLocomotionByDisplacement` walk cycle + `advanceSquash` squash (pivot at the feet), wrapped in `ctx.scale(facing, 1)`. The procedural path is the **only** place breathe/squash scaling is applied.
+
+> **Simpler alternative (still policy-compliant).** For ONE character with TWO fixed cell ranges, a direct `ctx.drawImage(playerImage, sx, sy, 16, 16, destX, destY, 16, 16)` keyed off `kind` is an acceptable simpler alternative to the full engine pipeline — but the engine pipeline (`compileSpriteSheet` grid + `deriveSpriteAnimKind` + `drawSprite`) is **preferred** (it owns the facing mirror, the frame-player, and the grid math for you). Either way the **stable-1:1 + facing-mirror + feet-anchor + no-squash** policy above holds.
 
 ---
 
@@ -469,6 +572,7 @@ Because Celerock trusts the LDtk, the file is the design. At minimum it should p
 - **Tile / AutoLayer layers** referencing the supplied tileset for the visual.
 - **Entity layers**: at least one `Player`/`Spawn`; `Coin`/`Gem`/`Diamond` strawberries; `Spike`/`Hazard` hazards; optionally `MovingPlatform`, `Spring`, `DashRefill`, `Enemy`.
 - **`__neighbours`** links between levels you intend to flow between.
+- **Supplied `Player.png`** — the 160×128 (10×8 grid of 16×16) player sprite sheet the runtime loads at boot (§4.4). Optional in the sense that a missing/failed load degrades gracefully to the procedural body, but the canonical build supplies it.
 
 A level with no spawn cannot be entered; a level with no hazards cannot kill. Those are design choices in the LDtk, not failures of the runtime.
 
@@ -550,7 +654,7 @@ Use the shipped events (`start`, `die`, `retry`, `win`, `next`, `pause`, `resume
 
 ## 9. Game Feel Checklist (the juice — every item uses the engine)
 
-- [ ] Launch stretch + landing squash (`advanceSquash` + `volumeScale` over `breathe`).
+- [ ] Launch stretch + landing squash (`advanceSquash` + `volumeScale` over `breathe`) — **procedural-fallback body only**; the supplied `Player.png` sprite stays stable 1:1 (squash distorts pixel art — §4.4).
 - [ ] **Hit-stop on dash-into-wall** — narrow the union first (`dash?.kind === 'dash' && dash.timer > 0`).
 - [ ] Hit-stop on death.
 - [ ] Screen shake on dash-bonk and hard landings (`sineShake` + `shakeEnvelope`).
@@ -562,7 +666,8 @@ Use the shipped events (`start`, `die`, `retry`, `win`, `next`, `pause`, `resume
 - [ ] **Wall-grab feel**: latch snap, stamina drain (optionally a stamina bar UI), climb, climb-hop launch.
 - [ ] **Spring** boing + `springBounceVy`; **dash-refill** sparkle when `maxDashes` refills on a refill entity — **only when the LDtk actually provides springs / dash-refills** (check `report.capabilities.springs` / `.dashRefills` from the preflight; absent content is not a failure).
 - [ ] Coyote time + jump buffer from the shipped `jumpAbility`; do not duplicate them.
-- [ ] Spring-rod hair (`advanceSpringRod`) wags backward when moving, lifts during dash.
+- [ ] **Player sprite (supplied `Player.png`)** — stable **1:1** (no breathe/squash scaling on the sprite), facing mirror flips walk/jump with travel (no moonwalk), walk cycles cells 0–7, jump plays 60→64 then clamps on the fall frame, idle = cell 0; no shimmer while idle; dash aura glow + after-image trail are kept (they carry dash juice without distorting the sprite).
+- [ ] **Spring-rod hair (`advanceSpringRod`)** — **OPTIONAL when using the supplied sprite**: the sprite art owns the silhouette, so hair is a cosmetic extra, **never an acceptance requirement** (per G5). Only add it for the wag-when-moving / lift-during-dash flourish; draw it OUTSIDE the sprite's facing mirror.
 - [ ] Reduced-motion gate (`prefersReducedMotion`) renders room 1 and starts no loop.
 - [ ] Room title cards fade in over 0.6 s (`createTweenState` + `easeOutCubic`); transition/"Cleared" cards use `easeOutBack`.
 
@@ -598,7 +703,7 @@ src/
     state.ts           # CelerockSave (collectibles: Record<levelIid, CollectibleSave>, deaths), World/Room runtime
     step.ts            # fixed-step: input → stepPlatformer → pickups → audio → brain
     render.ts          # drawLdtkLevel (the tileset) + player art + entities + particles + UI
-    player.ts          # procedural player render: face/hair/feet + facing mirror (kernel does physics)
+    player.ts          # sprite renderer (drawSprite) primary — load+compile Player.png, deriveSpriteAnimKind per tick; procedural face/hair/feet fallback (kernel does physics)
     hazards.ts         # hazard AABB check (static + moving-platform-child) + respawn flash
     collectibles.ts    # strawberry wiring: derivePickups → collect → writeSave (keyed by level.iid)
     checkpoints.ts     # checkpoint activation + respawn logic
@@ -660,8 +765,9 @@ No `rooms/` directory, no ASCII grids, no `tile-style.ts` — the LDtk file is t
 8. Death counter increments every respawn and persists through the same save adapter.
 9. `prefersReducedMotion` renders the start room statically and never calls `loop.start()`.
 10. **Zero duplicate engine systems**: no direct animation-frame loop, no random authoritative simulation, no manual collision resolver, no manual tile-blit loop, no legacy camera.
-11. **No moonwalk.** Walking left faces left (`ctx.scale(facing, 1)` around the body draw).
+11. **No moonwalk.** Running left faces left — with the supplied sprite via `drawSprite(..., { facing })` (its internal `ctx.scale(facing,1)` mirror about the frame's horizontal center); with the procedural fallback via `ctx.scale(facing, 1)` around the body draw.
 12. **No appendage blow-out.** Hair uses `advanceSpringRod`, never raw `advanceSpringChain`.
+13. **Supplied `Player.png` sprite renders pixel-crisp** — no shimmer while idle (`imageSmoothingEnabled = false`, stable 1:1, no per-frame squash/breathe scaling on the sprite). Walk cycles cells 0–7 and flips with `facing`; jump plays cells 60→64 once then **clamps on the fall frame** until landing; idle = cell 0. If `Player.png` fails to load/compile at boot, the procedural body renders instead and the game is still playable.
 
 ### 12.8 Forbidden Patterns
 
@@ -690,6 +796,7 @@ Before the build is accepted:
 4. **Manual playthrough** across every room the LDtk contains; verify dash, wall-slide, wall-jump, and (when the LDtk provides them) springs/dash-refills/moving platforms all feel Celeste-tight.
 5. **Dash-into-wall** fires hit-stop + shake on ≥90% of attempts (it is a deterministic mechanic, not a precision one).
 6. **Fast checkpoint retry:** <2 seconds from death to controllable respawn.
+7. **Player sprite** — the supplied `Player.png` renders pixel-crisp (no edge shimmer while idle), walk flips with `facing` (no moonwalk), jump plays 60→64 once then holds the fall frame, idle = cell 0. (Or, if `Player.png` is absent, confirm the procedural fallback renders and the game is still playable.)
 
 ### Rejection Criteria
 
@@ -751,7 +858,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 5: Juice + Polish
 1. Dash-into-wall hit-stop + shake; hard-landing shake; landing dust; dash trail.
-2. Squash & stretch (`advanceSquash`); spring-rod hair; parallax background.
+2. Squash & stretch (`advanceSquash`) — **procedural-fallback body only**; the supplied `Player.png` sprite stays stable 1:1 (squash distorts pixel art — §4.4). Spring-rod hair (optional under the sprite); parallax background.
 3. Stamina bar UI; room title cards; HUD (death counter).
 4. **Gate:** the game feel matches Celeste-tight. The dash-into-wall bonk is satisfying. Grab/stamina reads clearly.
 
@@ -767,9 +874,8 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ---
 
-## 16. Stretch Goals (only after criteria 1–12)
+## 16. Stretch Goals (only after criteria 1–13)
 
-- **Supplied player sprite sheet.** Swap the procedural player art for a sprite bundle and select frames from physics via `deriveSpriteAnimKind` (drawn through `drawActor` / `drawLevelEntity`). The collision body stays the narrow `0.5 × 1.5` tile box. (Use only published APIs from the root barrel — the npm package ships `dist/` only, so no `showcase/` or `src/…` path is available to consumers.)
 - **"Focus" virtual camera.** A second vcam with higher `priority` that takes over for vistas, reveals, or boss moments (a `fixed` body or tighter follow), blended in/out via the brain's priority selection.
 - **Badeline chase ghost (visual only):** render a tinted "ghost" whose input snapshot is the player's from N frames ago — buffer the last N `PlatformerInput`s in a ring, replay them through a second kernel instance each tick. No new physics code.
 - **Cosmetic hair colour unlocks** via `generateSkinVariants` + `createMemoryIAPAdapter` from the `cosmetics` + `iap` pillars.
