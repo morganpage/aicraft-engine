@@ -17,6 +17,8 @@ import {
   transitionFor,
   entryPoint,
   resetRoomCameraBrain,
+  hasClearedEntryDeadband,
+  TRANSITION_REARM_MARGIN,
   type CardinalDir,
 } from '../sections/ldtk-editor/play';
 import {
@@ -24,6 +26,7 @@ import {
   type CameraBrain,
   type VirtualCamera,
 } from '../../src/camera';
+import { rebasePointBetweenLdtkRooms } from '../../src/platformer';
 import type { LdtkLevel, LdtkNeighbour } from '../../src/ldtk';
 
 // --- the platformer sample's world geometry --------------------------------
@@ -210,8 +213,9 @@ function roomVcam(id: string, zoom: number): VirtualCamera {
 }
 
 describe('resetRoomCameraBrain — room-local cut policy', () => {
-  it('cuts position to the origin, goes inactive, and clears any blend', () => {
-    // A brain mid-flight in room A (non-origin position, mid-blend).
+  it('defaults to the origin, goes inactive, and clears any blend', () => {
+    // A brain mid-flight in room A (non-origin position, mid-blend). With no
+    // seed argument the cut still lands on the origin — the level-start path.
     const before: CameraBrain = {
       camera: { x: 432.5, y: 120 },
       zoom: 1.4,
@@ -225,6 +229,27 @@ describe('resetRoomCameraBrain — room-local cut policy', () => {
     expect(reset.activeId).toBeNull();
     expect(reset.blend).toBeNull();
     expect(reset.bodyCamera).toEqual({ x: 0, y: 0 });
+  });
+
+  it('seeds position from the rebased camera top-left (continuity through the cut)', () => {
+    // An east/west-style transition: the rendered camera sits at (300, 100) in
+    // the source room. Seeding from that point keeps world-Y framing through
+    // the cut instead of dipping back to the destination's top-left origin.
+    const before: CameraBrain = {
+      camera: { x: 300, y: 100 },
+      zoom: 1.4,
+      activeId: 'room-a',
+      bodyCamera: { x: 300, y: 100 },
+      lensZoom: 1.4,
+      blend: null,
+    };
+    const reset = resetRoomCameraBrain(before, { x: 300, y: 100 });
+    expect(reset.camera).toEqual({ x: 300, y: 100 });
+    expect(reset.bodyCamera).toEqual({ x: 300, y: 100 });
+    // The cut policy invariants still hold: inactive, no blend, zoom preserved.
+    expect(reset.activeId).toBeNull();
+    expect(reset.blend).toBeNull();
+    expect(reset.zoom).toBe(1.4);
   });
 
   it('preserves the previous rendered zoom as the new lens solver starting value', () => {
@@ -268,5 +293,125 @@ describe('resetRoomCameraBrain — room-local cut policy', () => {
     // The follow body begins from the origin (level-start pin).
     expect(brain.bodyCamera.x).toBeGreaterThanOrEqual(0);
     expect(brain.bodyCamera.y).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// --- camera seed world-space invariant -------------------------------------
+//
+// The session derives the destination-local camera seed from the source room's
+// rendered camera via `rebasePointBetweenLdtkRooms` (preserving the world-space
+// top-left across the seam). These pin that invariant against the sample's
+// geometry and prove the first destination step does not restart the
+// perpendicular axis from zero.
+
+describe('camera seed — world-space continuity across the seam', () => {
+  // Full LdtkLevel builds of the sample's neighbour rooms (rebase reads only
+  // worldX/worldY; the other fields are filled from MAIN so the helper's
+  // `LdtkLevel` param typechecks without a bespoke partial fixture).
+  const EAST_LEVEL: LdtkLevel = {
+    ...MAIN, iid: 'east', identifier: EAST.identifier,
+    worldX: EAST.worldX, worldY: EAST.worldY, pxWid: EAST.pxWid, pxHei: EAST.pxHei,
+    __neighbours: [],
+  };
+  const TOP_LEVEL: LdtkLevel = {
+    ...MAIN, iid: 'top', identifier: TOP.identifier,
+    worldX: TOP.worldX, worldY: TOP.worldY, pxWid: TOP.pxWid, pxHei: TOP.pxHei,
+    __neighbours: [],
+  };
+
+  it('preserves world X/Y through rebasePointBetweenLdtkRooms (east transition)', () => {
+    // MAIN (world 0,0) → EAST (world 848,0). A rendered camera at local
+    // (300, 100) in MAIN is world (300, 100); in EAST-local that is
+    // (300 − 848, 100 − 0) = (−548, 100). Y is unchanged → no dip on an
+    // east/west transition. (Negative local X is valid here: EAST is smaller
+    // than the viewport, so the brain clamps/letterboxes it on the next step.)
+    const sourceCam = { x: 300, y: 100 };
+    const seed = rebasePointBetweenLdtkRooms(sourceCam, MAIN, EAST_LEVEL);
+    expect(seed).toEqual({ x: -548, y: 100 });
+    // World-space invariant: from.worldX + oldCam.x === to.worldX + seed.x.
+    expect(MAIN.worldX + sourceCam.x).toBe(EAST_LEVEL.worldX + seed.x);
+    expect(MAIN.worldY + sourceCam.y).toBe(EAST_LEVEL.worldY + seed.y);
+  });
+
+  it('preserves world X/Y through rebase (north transition)', () => {
+    // MAIN (world 0,0) → TOP (world 352,−352). Camera at local (200, 150) in
+    // MAIN → world (200, 150) → TOP-local (200 − 352, 150 − (−352)) = (−152, 502).
+    const sourceCam = { x: 200, y: 150 };
+    const seed = rebasePointBetweenLdtkRooms(sourceCam, MAIN, TOP_LEVEL);
+    expect(seed).toEqual({ x: -152, y: 502 });
+    expect(MAIN.worldX + sourceCam.x).toBe(TOP_LEVEL.worldX + seed.x);
+    expect(MAIN.worldY + sourceCam.y).toBe(TOP_LEVEL.worldY + seed.y);
+  });
+
+  it('does not restart the perpendicular axis from zero on the first destination step', () => {
+    // East transition: seed the destination-local camera with world-Y = 100
+    // (rebased from a source camera at y=100). After one brain step into the
+    // destination room, bodyCamera.y must still reflect that continuity — it
+    // must NOT have snapped back to the room's top-left origin (the old dip).
+    const before: CameraBrain = {
+      camera: { x: 300, y: 100 },
+      zoom: 1.4,
+      activeId: 'room-a',
+      bodyCamera: { x: 300, y: 100 },
+      lensZoom: 1.4,
+      blend: null,
+    };
+    // Rebased seed for MAIN → EAST, same as the east-transition invariant above.
+    const seed = rebasePointBetweenLdtkRooms({ x: 300, y: 100 }, MAIN, EAST_LEVEL);
+    let brain = resetRoomCameraBrain(before, seed);
+    // Step into the destination with bounds that PERMIT the seeded Y (a tall
+    // room) so the brain's viewport-aware clamp does not force it back to 0.
+    brain = updateCameraBrain(brain, {
+      vcams: [roomVcam('east', 1.4)],
+      targets: { player: { x: -548, y: 100, width: 8, height: 24 } },
+      bounds: { width: EAST_LEVEL.pxWid, height: 2000 },
+      viewport: CAM_VIEWPORT,
+      activeId: 'east',
+      dt: 1 / 60,
+    });
+    // bodyCamera.y is seeded from the rebased camera (100), not restarted from 0.
+    expect(brain.bodyCamera.y).toBeGreaterThan(0);
+    expect(brain.camera.y).toBeGreaterThan(0);
+  });
+});
+
+// --- direction-specific re-arm deadband ------------------------------------
+//
+// After a transition, `entryPoint` lands the player exactly on the seam. The
+// session blocks reverse transitions until the player clears the entry edge by
+// TRANSITION_REARM_MARGIN. These pin the pure helper that gates re-arming.
+
+describe('hasClearedEntryDeadband — direction-specific re-arm gate', () => {
+  it('blocks while the player sits exactly on the entry seam (sub-pixel jitter absorbed)', () => {
+    // East entry → entryEdge 'w'. `entryPoint` clamps to x = 0; one sub-pixel
+    // of jitter still leaves x < margin → still blocked (no tick-tock).
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: 0, y: 100 }, MAIN, 'w')).toBe(false);
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: 0.4, y: 100 }, MAIN, 'w')).toBe(false);
+  });
+
+  it('re-arms once the player reaches the margin', () => {
+    // Moving 1px inside (the default margin) clears the deadband.
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: TRANSITION_REARM_MARGIN, y: 100 }, MAIN, 'w')).toBe(true);
+  });
+
+  it('respects each entry edge direction independently', () => {
+    // 'e' (entered from the east, moving westward): clearance measured from the
+    // right edge: body.right ≤ pxWid − margin.
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: MAIN.pxWid - PLAYER.width, y: 100 }, MAIN, 'e')).toBe(false);
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: MAIN.pxWid - PLAYER.width - TRANSITION_REARM_MARGIN, y: 100 }, MAIN, 'e')).toBe(true);
+    // 'n' (entered from the north, moving down): body.y ≥ margin.
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: 100, y: 0 }, MAIN, 'n')).toBe(false);
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: 100, y: TRANSITION_REARM_MARGIN }, MAIN, 'n')).toBe(true);
+    // 's' (entered from the south, moving up): body.bottom ≤ pxHei − margin.
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: 100, y: MAIN.pxHei - PLAYER.height }, MAIN, 's')).toBe(false);
+    expect(hasClearedEntryDeadband({ ...PLAYER, x: 100, y: MAIN.pxHei - PLAYER.height - TRANSITION_REARM_MARGIN }, MAIN, 's')).toBe(true);
+  });
+
+  it('does not let an unrelated flush edge block re-arm', () => {
+    // A player grounded flush against the floor (body.bottom === pxHei) while
+    // clearing a WEST entry seam must still re-arm: only the entry edge is
+    // gated, not every edge. (Otherwise a grounded player could never leave.)
+    const grounded = { ...PLAYER, x: TRANSITION_REARM_MARGIN, y: MAIN.pxHei - PLAYER.height };
+    expect(hasClearedEntryDeadband(grounded, MAIN, 'w')).toBe(true);
   });
 });

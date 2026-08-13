@@ -28,6 +28,7 @@ import {
   advanceSquash,
   DEFAULT_SQUASH_CONFIG,
   IDENTITY_SCALE,
+  rebasePointBetweenLdtkRooms,
   type CompiledLevel,
   type PlatformerConfig,
   type PlatformerInput,
@@ -203,18 +204,30 @@ function fitZoom(
  *
  * The showcase renders only the active room in room-local coordinates, so on a
  * room transition it must NOT blend a position captured in one room directly
- * into another room's local space. Cutting position to the destination-local
- * origin (0, 0) makes the new room a first activation (no brain blend), while
- * retaining the previous rendered zoom as the new lens solver's starting value
- * — so the lens eases smoothly from the old room's zoom to the new room's
- * `fitZoom` rather than popping. The follow body then begins from the left/top
- * origin, preserving the Celeste-style level-start pin.
+ * into another room's local space. This is a **continuity-preserving room cut**,
+ * not a two-room visual slide: position is seeded into the destination-local
+ * space (see `seed` below), the selection/blend is cleared so the new room is a
+ * first activation (no brain blend), and the previous rendered zoom is retained
+ * as the new lens solver's starting value — so the lens eases smoothly from the
+ * old room's zoom to the new room's `fitZoom` rather than popping.
+ *
+ * `seed` is the rendered camera top-left expressed in destination-local coords.
+ * The caller normally derives it with `rebasePointBetweenLdtkRooms(brain.camera,
+ * sourceLevel, destLevel)`, which preserves the camera's world-space position
+ * across the seam. This keeps the perpendicular framing through the cut (an
+ * east/west switch holds world-Y instead of dipping from the room's top-left),
+ * while `updateCameraBrain` remains the sole authority for the viewport/zoom-
+ * aware clamp on the first destination step. Defaults to the origin so a plain
+ * level-start cut (no source view to preserve) still works.
  *
  * Pure: returns a fresh inactive brain. Exported so the showcase transition
  * test can exercise the policy without constructing a DOM session.
  */
-export function resetRoomCameraBrain(brain: Readonly<CameraBrain>): CameraBrain {
-  return createCameraBrain({ x: 0, y: 0, zoom: brain.zoom });
+export function resetRoomCameraBrain(
+  brain: Readonly<CameraBrain>,
+  seed: Readonly<{ x: number; y: number }> = { x: 0, y: 0 },
+): CameraBrain {
+  return createCameraBrain({ x: seed.x, y: seed.y, zoom: brain.zoom });
 }
 
 // --- level transitions --------------------------------------------------
@@ -298,6 +311,50 @@ export function entryPoint(
     x: Math.max(0, Math.min(localX, to.pxWid - body.width)),
     y: Math.max(0, Math.min(localY, to.pxHei - body.height)),
   };
+}
+
+/**
+ * Default re-arm margin for {@link hasClearedEntryDeadband}. One world pixel is
+ * large enough to absorb sub-pixel solver jitter at the seam yet small relative
+ * to both 8px and 16px tiles, so it never reads as input lag.
+ */
+export const TRANSITION_REARM_MARGIN = 1;
+
+/**
+ * The opposite edge of a transition's exit — i.e. the edge the player entered
+ * the destination through. Used to key {@link hasClearedEntryDeadband}.
+ */
+const OPPOSITE_EDGE: Readonly<Record<CardinalDir, CardinalDir>> = {
+  n: 's', s: 'n', e: 'w', w: 'e',
+};
+
+/**
+ * Has the player moved far enough off its entry seam to re-arm transitions?
+ *
+ * After a transition, `entryPoint()` lands the player exactly on the
+ * destination's seam (e.g. east entry clamps to `x = 0`). A plain
+ * "fully contained" re-arm would trip immediately on that exact boundary, and
+ * requiring clearance on every edge is wrong because a grounded player may sit
+ * flush with the floor forever. Instead this checks only the one edge the
+ * player entered through, requiring at least `margin` world pixels of clearance
+ * back inside the room before another exit can fire — direction-specific
+ * hysteresis that absorbs sub-pixel jitter at the seam.
+ *
+ * Pure over its inputs; unit-tested without a DOM session. `entryEdge` is the
+ * direction the player is moving AWAY from (the opposite of the exit dir).
+ */
+export function hasClearedEntryDeadband(
+  body: Readonly<{ x: number; y: number; width: number; height: number }>,
+  level: Readonly<{ pxWid: number; pxHei: number }>,
+  entryEdge: CardinalDir,
+  margin = TRANSITION_REARM_MARGIN,
+): boolean {
+  switch (entryEdge) {
+    case 'w': return body.x >= margin;
+    case 'e': return body.x + body.width <= level.pxWid - margin;
+    case 'n': return body.y >= margin;
+    case 's': return body.y + body.height <= level.pxHei - margin;
+  }
 }
 
 /** A running play session. */
@@ -461,6 +518,14 @@ export function createPlaySession(
 
   let state: PlatformerState = active.compiled.initialState;
   let brain: CameraBrain;
+  // Direction-specific re-arm gate for room transitions. `null` = transitions
+  // enabled; after a transition fires this becomes the edge the player entered
+  // the destination through, and exits stay suppressed until the player clears
+  // that entry seam by {@link TRANSITION_REARM_MARGIN} (see
+  // {@link hasClearedEntryDeadband}). Prevents the tick-tock oscillation that
+  // would otherwise flip rooms every sub-pixel when the player lingers on the
+  // seam — `entryPoint` lands them exactly on the boundary.
+  let blockedEntryEdge: CardinalDir | null = null;
   // Phase 8c — per-event squash & stretch FX. The TRANSIENT scale lives HERE in
   // the play-session closure (the renderer), NOT on `PlatformerState` — it is
   // pure presentation, never affects physics trajectories or replay state, and
@@ -544,6 +609,8 @@ export function createPlaySession(
         state = active.compiled.initialState;
         // Reset the render-only squash with the respawned character.
         currentSquash = IDENTITY_SCALE;
+        // Manual respawn re-arms transitions (player is back to a safe spot).
+        blockedEntryEdge = null;
       }
 
       const moveX = left.held === right.held ? 0 : left.held ? -1 : 1;
@@ -584,11 +651,31 @@ export function createPlaySession(
       // edge? Resolve the neighbour, compile it (cached), and reposition the
       // player at the matching seam — preserving momentum so the world feels
       // continuous rather than teleporting between rooms.
-      const exit = transitionFor(state.core, active.ldtkLevel);
+      //
+      // Direction-specific hysteresis: after a transition, exits stay blocked
+      // until the player clears the entry seam by TRANSITION_REARM_MARGIN (see
+      // {@link hasClearedEntryDeadband}). Without this, `entryPoint` landing the
+      // player exactly on the seam plus one sub-pixel of solver jitter would
+      // flip rooms every frame (tick-tock) while the player lingers there.
+      if (blockedEntryEdge !== null) {
+        if (hasClearedEntryDeadband(state.core, active.ldtkLevel, blockedEntryEdge)) {
+          blockedEntryEdge = null;
+        }
+      }
+      const exit = blockedEntryEdge === null ? transitionFor(state.core, active.ldtkLevel) : undefined;
       if (exit !== undefined) {
         const target = getLevel(exit.neighbour.levelIid);
         if (target !== undefined) {
           const entry = entryPoint(state.core, active.ldtkLevel, target.ldtkLevel);
+          // Preserve the rendered camera's world-space top-left across the seam
+          // so the perpendicular framing holds through the room cut (an east/
+          // west switch keeps world-Y instead of dipping from the room origin).
+          // Computed BEFORE `active` is reassigned, from the source room's view.
+          const cameraSeed = rebasePointBetweenLdtkRooms(
+            brain.camera,
+            active.ldtkLevel,
+            target.ldtkLevel,
+          );
           // Keep vx/vy/facing (momentum), reset contacts (new geometry).
           state = {
             ...createPlatformerState(entry.x, entry.y, config, playerWidth, playerHeight),
@@ -603,9 +690,14 @@ export function createPlaySession(
           active = target;
           mobs = mobActorsFor(active.ldtkLevel);
           // Cut position into the destination-local coordinate space (the
-          // showcase renders one room at a time in room-local coords), while
+          // showcase renders one room at a time in room-local coords), seeding
+          // from the rebased camera so the cut is continuity-preserving, while
           // keeping the previous rendered zoom as the new lens solver's start.
-          brain = resetRoomCameraBrain(brain);
+          // TODO: integrate src/platformer/room-slide.ts for a true two-room
+          // visual slide rather than this single-room continuity-preserving cut.
+          brain = resetRoomCameraBrain(brain, cameraSeed);
+          // Suppress reverse transitions until the player clears the entry seam.
+          blockedEntryEdge = OPPOSITE_EDGE[exit.dir];
           options.onLevelChange?.(active.ldtkLevel.identifier);
         }
       }
@@ -616,6 +708,9 @@ export function createPlaySession(
         state = active.compiled.initialState;
         // Reset the render-only squash with the respawned character.
         currentSquash = IDENTITY_SCALE;
+        // Respawn re-arms transitions unconditionally (the player is back to a
+        // safe, fully-contained position).
+        blockedEntryEdge = null;
       }
       brain = updateCameraBrain(brain, {
         vcams: [roomVcamFor(active)],
