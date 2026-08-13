@@ -1,4 +1,4 @@
-# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.8.0`
+# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.9.0`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief. **Presume the user supplies an LDtk project file (`.ldtk`) and the tileset PNG(s) it references.** The agent produces a single runnable Vite + TypeScript browser game that loads those assets and plays them like *Celeste* — importing everything movement, camera, level, and presentation-related from `aicraft-engine` (the npm package) and writing **no** re-implementations of what the engine already provides. The agent does **not** author level geometry: rooms, tiles, hazards, and collectibles all come from the supplied LDtk file.
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo and NOT a hand-authored level set.** The previous version of this brief failed because it (a) hand-wrote six ASCII room grids and a bespoke "connected-terrain" renderer instead of using a real tileset, (b) drove the view through the legacy single follow-camera instead of the camera brain, (c) enabled a `doubleJump` which is not a Celeste mechanic, and (d) gated progression behind a per-room "win → Cleared card → next" loop instead of Celeste-style seamless room transitions. This brief fixes every one of those: **geometry and tile art come from the supplied LDtk + tileset**, the **camera brain** with per-room virtual cameras owns the view, the **Phase 0–9 movement kernel** owns the authentic Celeste kit, and **LDtk `__neighbours`** own room flow.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.8.0`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.9.0`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
 
 ---
 
@@ -19,10 +19,10 @@
 ```bash
 npm create vite@latest celerock -- --template vanilla-ts
 cd celerock
-npm install aicraft-engine@0.8.0
+npm install aicraft-engine@0.9.0
 ```
 
-> This brief targets the published `0.8.0` API exactly. `0.8.0` adds the **feel + traversal layer** on top of the `0.7.0` golden path: the structured feel channel (`state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments), the pure room-transition helpers (`findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`), the slide orchestrator (`beginRoomSlide` + the camera-space rebases), and the explicit camera fit (`fitCameraZoom`). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. Note the **`0.8.0` compatibility breaks**: the replay physics version is 11 (v10 replays rejected) and a manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.8.0`.
+> This brief targets the published `0.9.0` API exactly. `0.9.0` ships the **feel + traversal layer** (the structured feel channel `state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments; the pure room-transition helpers `findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`; the slide orchestrator `beginRoomSlide` + the camera-space rebases; the explicit camera fit `fitCameraZoom`) **and the mantle wave** (direction-aware grab+jump + ledge mantle). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. Note the **`0.9.0` compatibility breaks**: the replay physics version is 12 (v11 replays rejected) and a manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.9.0`.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -890,7 +890,7 @@ Before the build is accepted:
 Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: LDtk Load + Preflight + Tileset + Camera Brain Graybox
-1. Vite + TypeScript + `aicraft-engine@0.8.0`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
+1. Vite + TypeScript + `aicraft-engine@0.9.0`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
 2. `loadLdtkProjectAssets({ projectUrl })` the supplied `.ldtk` + PNG(s) in one call.
 3. **Asset preflight (G3):** `inspectLdtkPlatformerProject(project)` — log level/spawn/capability counts. Missing springs/dash-refills/etc. are informational; a total lack of spawns is the only hard block.
 4. `createLdtkRoomCache(project, {...}).getStartRoom()` the start room; `drawLdtkLevel` it.
@@ -963,12 +963,10 @@ Build in this order. Each stage must pass its gate before the next begins.
 ## 18. Install & Version
 
 ```bash
-npm install aicraft-engine@0.8.0
+npm install aicraft-engine@0.9.0
 ```
 
-> **Mantle/climb-jump need a newer pin.** The direction-aware grab+jump + ledge mantle documented in §4.1/Stage 2 ship as **physics v12** (the unreleased next minor after `0.8.1`). Once that release lands, pin to it (`aicraft-engine@<v12-release>`) to get those features; on `0.8.0` the wall-grab still works but neutral/toward grab+jumps do the legacy up-and-away hop and there is no mantle. Everything else in this brief (sprite pipeline, Celeste bindings, room transitions, camera brain) is already on `0.8.0`.
-
-`0.8.0` is the pin for this brief — the feel + traversal release. It builds on the `0.7.0` golden path and three earlier system drops:
+`0.9.0` is the pin for this brief — the feel + traversal + mantle release. It builds on the `0.7.0` golden path and three earlier system drops:
 
 - **Camera brain** (`0.6.0`) — `createCameraBrain`, `updateCameraBrain`, `VirtualCamera`, deadzone follow, blends, bounds + letterbox. The blend fixes (continuity when a vcam source is removed, `dt=0` no-op, blend-clamp crossfade) are directly relevant to the §5.5 room-transition slide.
 - **LDtk loader** (`0.5.0` parser/translator/renderer, hardened through `0.6.0`) — `parseLdtkProject`, `ldtkLevelToLevelData`, `drawLdtkLevel`, `buildLdtkTilesetBundle`, `LDTK_DEFAULT_ENTITY_MAP`.
@@ -985,22 +983,22 @@ The **`0.7.0` golden-path additions** (still the load-path backbone of this brie
 - **Spawn fix** — `'rest-on-surface'` resolution (no floor embed, no hand-rolled settle) + `settlePlatformerState` recovery.
 - **Game loop** — `onError` / `errorPolicy` so a consumer throw can't silently freeze the loop on its last frame.
 
-The **`0.8.0` feel + traversal additions** this brief now prefers — these are the reason for the pin:
+The **`0.9.0` feel + traversal + mantle additions** this brief now prefers — these are the reason for the pin:
 
 - **`state.moments`** — the structured feel channel (single-tick, presentation-only): `landing { impactSpeed, normalizedImpact, hard, solidId }` (the hard test is a RATIO, identical at 8/16/32 px), one-shot `dashBonk { normalX, normalY, solidId }` per blocked axis per dash (horizontal AND vertical), observation-only `dashEnded { reason, terminalContact }`, `grabLatch`/`staminaExhausted` pulses, `springLaunch { super, solidId }`/`dashRefill`. Replaces reverse-engineering feel from boolean pulses + velocity peeks (the unscaled `prevVy > 520` failure).
 - **`findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`** — the pure room-transition helpers over LDtk `__neighbours` (seam-span gated, momentum-preserving, `'seam-entry'` provenance, never settles).
 - **`beginRoomSlide` / `advanceRoomSlide` / `presentationForRoomSlide` + `enterRoomSlideCameraSpace` / `finishRoomSlideCameraSpace` / `cancelRoomSlideCameraSpace`** — the engine-owned slide orchestrator composing the camera brain (§5.5).
 - **`fitCameraZoom`** — the explicit cover/contain/native fit policy (§5.4).
-- **Compatibility note:** `0.8.0` bumps the replay physics version to 11 (the `moments` state field is replay data) — v10 replays are rejected. A consumer that manually constructs a complete `PlatformerState` must now pass `moments: []`.
-- **Compatibility note (mantle wave, physics v12):** the direction-aware grab+jump + ledge mantle change wall-grab trajectories ON PURPOSE (neutral/toward grab+jumps now rise straight up; grab+Up near a clear lip mantles). `PlatformerEvents` gained `climbJumpLaunched` + `mantled`, and `wallJumpLaunched` was DELIBERATELY WIDENED to also fire for away climb-hops — consumers reading that pulse will start seeing climb-hops. v11 replays are rejected under v12.
+- **Mantle wave (direction-aware grab+jump + ledge mantle)** — the §4.1/Stage 2 mechanics: neutral/toward grab+jumps launch straight up (`climbJump`), away keeps the climb-hop, and grab+Up near a clear lip mantles. New launch sources `'climbJump'`/`'mantle'`; new event pulses `climbJumpLaunched`/`mantled`; `wallJumpLaunched` deliberately widened to also fire for away climb-hops.
+- **Compatibility note (physics v11 → v12):** the feel channel + mantle change wall-grab trajectories ON PURPOSE (neutral/toward grab+jumps now rise straight up; grab+Up near a clear lip mantles), and the `moments` state field is replay data. `PlatformerEvents` gained `climbJumpLaunched` + `mantled`, and `wallJumpLaunched` was DELIBERATELY WIDENED to also fire for away climb-hops — consumers reading that pulse will start seeing climb-hops. v11 replays are rejected under v12. A consumer that manually constructs a complete `PlatformerState` must pass `moments: []`.
 
-The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix + loop `onError` need `0.7.0`; **the feel moments + transition/slide/fit helpers need `0.8.0`**. Do not pin below `0.8.0`.
+The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix + loop `onError` need `0.7.0`; **the feel moments + transition/slide/fit helpers + the mantle wave need `0.9.0`**. Do not pin below `0.9.0`.
 
 ---
 
 ## 19. Summary of Key Changes from the Previous Brief
 
-| Aspect | Previous (0.4.0) | This brief (0.8.0) |
+| Aspect | Previous (0.4.0) | This brief (0.9.0) |
 |---|---|---|
 | Level geometry | 6 hand-authored ASCII room grids | **Supplied LDtk file** (`loadLdtkProjectAssets` → `parseLdtkProject` + `ldtkLevelToLevelData`) |
 | Asset preflight | (none) | **`inspectLdtkPlatformerProject`** — capability-aware (G3/G4); missing springs/dash-refills are informational |
@@ -1014,7 +1012,7 @@ The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix +
 | Collectible scoping | `collectibles['room-N']` by hand index | `collectibles[level.iid]` keyed by LDtk level id |
 | Tests | Unique `fnv1a` room hashes, ASCII dimension checks, 6-room content-counts, 6 E2E scripts | LDtk load smoke, dash-into-wall timing, **room-transition smoke**, persistence, determinism |
 | Forbidden patterns | `stepPlatformer`, manual gravity, ASCII shared template, full-tile outlines | + **legacy camera**, **`doubleJump*`**, **hand-built `LevelData`**, **tile-art recoloring** |
-| Version | `aicraft-engine@0.4.0` | `aicraft-engine@0.8.0` (feel + traversal release) |
+| Version | `aicraft-engine@0.4.0` | `aicraft-engine@0.9.0` (feel + traversal + mantle release) |
 
 ---
 
