@@ -22,7 +22,7 @@
 
 import type { LevelData } from '../level/types';
 import type { CompiledLevel } from '../platformer/level-runtime';
-import { compileLevel } from '../platformer/level-runtime';
+import { compileLevel, entityIdFromSolidId } from '../platformer/level-runtime';
 import { DEFAULT_PLATFORMER_CONFIG, DEFAULT_PLAYER_WIDTH, DEFAULT_PLAYER_HEIGHT } from '../platformer/constants';
 import { computeJumpArc } from './trajectory';
 import type { JumpArcConfig } from './trajectory';
@@ -52,16 +52,6 @@ const DEFAULT_JUMP_ARC_CONFIG: JumpArcConfig = {
 // ---------------------------------------------------------------------------
 
 /**
- * Extract the entity id number from a solid id string.
- * Returns `undefined` if the id doesn't match the `entity-<id>` pattern.
- */
-function parseEntityId(solidId: string): number | undefined {
-  if (!solidId.startsWith('entity-')) return undefined;
-  const num = Number(solidId.slice(7));
-  return Number.isFinite(num) ? num : undefined;
-}
-
-/**
  * Extract standing surfaces from a `CompiledLevel`.
  *
  * Each solid in `staticSolids` contributes one surface. The surface is the
@@ -74,7 +64,9 @@ function extractSurfaces(compiled: CompiledLevel): Surface[] {
 
   for (const solid of compiled.staticSolids) {
     const id = solid.id ?? '';
-    const entityId = parseEntityId(id);
+    // Deduped onto the public `entityIdFromSolidId` (returns `undefined` for
+    // tile-derived `tile-…` ids, which are not reversible to an entity).
+    const entityId = entityIdFromSolidId(id);
     surfaces.push({
       id,
       x: solid.x,

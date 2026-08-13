@@ -25,8 +25,10 @@ import type { LevelData } from '../level/types';
 import type { GeneratedTileSemantics } from '../level/tile-semantics';
 import { createTileTypeMap } from '../level/tile-semantics';
 import type { Solid, TileSolidityQuery, TileType } from '../collision/types';
-import type { PlatformerState, PlatformerConfig } from './types';
-import { createPlatformerState } from './kernel';
+import { aabbOverlap } from '../collision/aabb';
+import type { PlatformerState, PlatformerConfig, PlatformerInput } from './types';
+import { createPlatformerState, stepPlatformer } from './kernel';
+import { IDLE_EDGE } from './input-edges';
 import {
   DEFAULT_PLATFORMER_CONFIG,
   DEFAULT_PLAYER_WIDTH,
@@ -71,16 +73,111 @@ export interface CompiledLevel {
   readonly initialState: PlatformerState;
   /** Captured tile classification used to generate tile collision geometry. */
   readonly tileQuery: TileSolidityQuery;
+  /**
+   * Provenance of the resolved spawn point (Celerock hardening, Workstream C2).
+   * Present when the compiler resolved a spawn; absent on the degraded
+   * empty-state fallback path. `source` distinguishes an authored spawn
+   * (`'authored'`) from a recoverable default (`'fallback'`, when `level.spawn`
+   * was the origin `(0, 0)`); `'seam-entry'` is reserved for future
+   * room-transition spawn resolution and is not populated yet.
+   */
+  readonly spawn?: ResolvedPlatformerSpawn;
+  /**
+   * Compile-time diagnostics (Celerock hardening, Workstream C3). Currently
+   * only spawn/embedding warnings are produced. Absent (rather than empty) on
+   * the degraded fallback path; check `?? []` to iterate defensively.
+   */
+  readonly diagnostics?: readonly CompileDiagnostic[];
 }
 
-/** Prefix used to namespace level-entity ids when lifting them into `Solid.id`. */
+/**
+ * Provenance of the spawn point a {@link CompiledLevel} was initialized at
+ * (Celerock hardening, Workstream C2).
+ *
+ * The `x`/`y` are the resolved AABB TOP-LEFT the kernel's initial state was
+ * constructed with (after applying {@link CompileLevelOptions.spawnResolution}).
+ * `source` records where the spawn came from so consumers / editors can tell an
+ * authored spawn apart from a recoverable default. `entityId`, when present, is
+ * the id of the `spawn` entity the point derived from (parsed back via
+ * {@link entityIdFromSolidId} when applicable).
+ */
+export interface ResolvedPlatformerSpawn {
+  /** Resolved world X of the initial AABB top-left. */
+  readonly x: number;
+  /** Resolved world Y of the initial AABB top-left. */
+  readonly y: number;
+  /** Where the spawn came from. */
+  readonly source: 'authored' | 'seam-entry' | 'fallback';
+  /** The level entity id the spawn derived from, when identifiable. */
+  readonly entityId?: number;
+}
+
+/** Severity of a single {@link CompileDiagnostic}. */
+export type CompileDiagnosticSeverity = 'warning' | 'error';
+
+/**
+ * A single diagnostic produced during level compilation (Celerock hardening,
+ * Workstream C3). Diagnostics are advisory — they never prevent a level from
+ * compiling; the consumer / editor decides what to surface.
+ */
+export interface CompileDiagnostic {
+  /** Diagnostic severity. `'error'` is reserved for future hard failures. */
+  readonly severity: CompileDiagnosticSeverity;
+  /** Human-readable description of the finding. */
+  readonly message: string;
+  /** Related level entity id, when the diagnostic ties to one. */
+  readonly entityId?: number;
+  /** Related `Solid.id`, when the diagnostic ties to a compiled solid. */
+  readonly solidId?: string;
+}
+
+/**
+ * Prefix used to namespace level-entity ids when lifting them into `Solid.id`.
+ * Entity-derived solids use `entity-<id>`; TILE-derived solids use a separate
+ * `tile-<x>-<y>-<w>-<h>` namespace which is NOT reversible to an entity (so
+ * {@link entityIdFromSolidId} returns `undefined` for `tile-…` ids).
+ */
 const ENTITY_ID_PREFIX = 'entity-';
 
 /**
- * Build the stable `Solid.id` for a level entity. Namespaced and debuggable.
+ * Build the stable `Solid.id` for a level entity (`entity-<id>`). Namespaced,
+ * debuggable, and reversible via {@link entityIdFromSolidId}.
+ *
+ * Pure: returns a fresh string; never throws.
+ */
+export function solidIdForEntity(entityId: number): string {
+  return `${ENTITY_ID_PREFIX}${entityId}`;
+}
+
+/**
+ * Parse an entity id back out of a `Solid.id` produced by
+ * {@link solidIdForEntity}. Returns `undefined` for any id that is not an
+ * entity-derived solid — including the TILE-derived `tile-<x>-<y>-<w>-<h>`
+ * namespace, malformed `entity-` ids (non-numeric suffix), and non-string ids.
+ *
+ * Pure: never throws.
+ */
+export function entityIdFromSolidId(solidId: string): number | undefined {
+  if (typeof solidId !== 'string' || !solidId.startsWith(ENTITY_ID_PREFIX)) {
+    return undefined;
+  }
+  const tail = solidId.slice(ENTITY_ID_PREFIX.length);
+  // Reject an empty suffix (`'entity-'` — `Number('') === 0` would otherwise
+  // collide with the legitimate `'entity-0'`) and negative ids (`'entity--1'`).
+  // Entity-derived solid ids are non-negative integers; anything else is not a
+  // reversible entity id.
+  if (tail.length === 0) return undefined;
+  const num = Number(tail);
+  return Number.isInteger(num) && num >= 0 ? num : undefined;
+}
+
+/**
+ * Build the stable `Solid.id` for a level entity. Thin wrapper over
+ * {@link solidIdForEntity} retained as a private alias so the compile loop
+ * reads at the call site.
  */
 function makeSolidId(entityId: number): string {
-  return `${ENTITY_ID_PREFIX}${entityId}`;
+  return solidIdForEntity(entityId);
 }
 
 /**
@@ -113,6 +210,21 @@ export interface CompileLevelOptions {
   readonly config?: Readonly<PlatformerConfig>;
   /** Classify serialized numeric tile values for platformer collision. */
   readonly tileTypeMap?: (tileValue: number) => TileType;
+  /**
+   * How `level.spawn` is interpreted when constructing the initial state
+   * (Celerock hardening, Workstream C1).
+   *
+   * - `'actor-top-left'` (default): `level.spawn` is the AABB TOP-LEFT, used
+   *   verbatim. Preserves the existing hand-authored `compileLevel` behavior
+   *   (non-breaking).
+   * - `'rest-on-surface'`: `level.spawn` is a FEET-CENTER anchor (the entity's
+   *   bottom-center, as emitted by `ldtkLevelToLevelData`). The compile step
+   *   resolves it to the AABB top-left so the player rests on the surface:
+   *   `topLeftX = spawn.x − playerWidth/2`,
+   *   `topLeftY = spawn.y − playerHeight`. {@link compileGeneratedLevel} (the
+   *   LDtk path) defaults to this.
+   */
+  readonly spawnResolution?: 'actor-top-left' | 'rest-on-surface';
 }
 
 /**
@@ -330,17 +442,100 @@ function compileLevelUnsafe(
     // Preserve successfully compiled entities/tiles when spawn is hostile.
   }
 
+  // Celerock hardening (Workstream C1) — spawn resolution. `level.spawn` from
+  // hand-authored levels is the AABB top-left (`'actor-top-left'`, the default,
+  // preserves the existing behavior); `ldtkLevelToLevelData` emits a FEET-CENTER
+  // anchor, so the LDtk path (`compileGeneratedLevel`) passes
+  // `'rest-on-surface'` and we resolve it to the AABB top-left so the player
+  // rests on the surface (feet end up exactly at `spawn.y`).
+  let spawnResolution: CompileLevelOptions['spawnResolution'] = 'actor-top-left';
+  try {
+    const value = options?.spawnResolution;
+    if (value === 'actor-top-left' || value === 'rest-on-surface') spawnResolution = value;
+  } catch {
+    spawnResolution = 'actor-top-left';
+  }
+  let resolvedX = spawnX;
+  let resolvedY = spawnY;
+  if (spawnResolution === 'rest-on-surface') {
+    resolvedX = spawnX - playerWidth / 2;
+    resolvedY = spawnY - playerHeight;
+  }
+
   let initialState: PlatformerState;
   try {
-    initialState = createPlatformerState(spawnX, spawnY, config, playerWidth, playerHeight);
+    initialState = createPlatformerState(resolvedX, resolvedY, config, playerWidth, playerHeight);
   } catch {
     initialState = createPlatformerState(
-      spawnX,
-      spawnY,
+      resolvedX,
+      resolvedY,
       DEFAULT_PLATFORMER_CONFIG,
       playerWidth,
       playerHeight,
     );
+  }
+
+  // Celerock hardening (Workstream C2) — spawn provenance. The compile step
+  // only sees `level.spawn`, so the source is a heuristic: a spawn at the
+  // origin `(0, 0)` is treated as the recoverable fallback (the empty-state
+  // catch paths use `(0, 0)`); anything else is treated as authored. When a
+  // `spawn` entity is present, record its id.
+  const isFallback = spawnX === 0 && spawnY === 0;
+  let spawnEntityId: number | undefined;
+  try {
+    const spawnEntity = (entities as readonly { readonly kind?: unknown; readonly id?: unknown }[])
+      .find((e) => e && e.kind === 'spawn' && typeof e.id === 'number');
+    if (spawnEntity !== undefined) spawnEntityId = spawnEntity.id as number;
+  } catch {
+    spawnEntityId = undefined;
+  }
+  const resolvedSpawn: ResolvedPlatformerSpawn = {
+    x: resolvedX,
+    y: resolvedY,
+    source: isFallback ? 'fallback' : 'authored',
+    ...(spawnEntityId !== undefined ? { entityId: spawnEntityId } : {}),
+  };
+
+  // Celerock hardening (Workstream C3) — spawn-embedding overlap check. If the
+  // resolved player AABB overlaps any fully-BLOCKING solid (not passthrough /
+  // spring / dashRefill / ladder — the non-blocking trigger volumes), emit a
+  // warning diagnostic. With the new `'rest-on-surface'` resolution a correctly
+  // authored feet-center anchor rests exactly on the surface and produces NO
+  // overlap; the warning catches genuinely embedded spawns. Reported, not
+  // auto-settled (see {@link settlePlatformerState} for an opt-in settle).
+  const diagnostics: CompileDiagnostic[] = [];
+  try {
+    const body = {
+      x: initialState.core.x,
+      y: initialState.core.y,
+      width: initialState.core.width,
+      height: initialState.core.height,
+    };
+    for (const solid of staticSolids) {
+      if (
+        solid.passthrough === true ||
+        solid.ladder === true ||
+        solid.spring !== undefined ||
+        solid.dashRefill === true
+      ) {
+        continue;
+      }
+      if (aabbOverlap(body, solid)) {
+        const solidId = typeof solid.id === 'string' ? solid.id : undefined;
+        const entityId =
+          typeof solid.id === 'string' ? entityIdFromSolidId(solid.id) : undefined;
+        diagnostics.push({
+          severity: 'warning',
+          message:
+            'Player spawn AABB overlaps a solid — the player may be embedded in geometry at start.',
+          ...(solidId !== undefined ? { solidId } : {}),
+          ...(entityId !== undefined ? { entityId } : {}),
+        });
+        break;
+      }
+    }
+  } catch {
+    // Diagnostics are advisory; never let the check fail compilation.
   }
 
   return {
@@ -348,6 +543,8 @@ function compileLevelUnsafe(
     movingPlatforms,
     initialState,
     tileQuery: captured.query,
+    spawn: resolvedSpawn,
+    diagnostics,
   };
 }
 
@@ -500,6 +697,9 @@ export interface GeneratedLevelInput {
  * @param options   - Optional overrides passed through to `compileLevel`
  *                    (player dimensions, config). `tileTypeMap` is
  *                    derived from `tileSemantics` and cannot be overridden.
+ *                    `spawnResolution` defaults to `'rest-on-surface'` (the
+ *                    LDtk path emits feet-center anchors); pass
+ *                    `'actor-top-left'` to override.
  * @returns A {@link CompiledLevel} with tile solids from the semantics.
  */
 export function compileGeneratedLevel(
@@ -508,7 +708,14 @@ export function compileGeneratedLevel(
 ): CompiledLevel {
   try {
     const tileTypeMap = createTileTypeMap(generated.tileSemantics);
-    return compileLevel(generated.level, { ...options, tileTypeMap });
+    // Celerock hardening (Workstream C1) — LDtk levels derive `level.spawn` as
+    // a FEET-CENTER anchor, so resolve it to the AABB top-left. A caller may
+    // still override (`'actor-top-left'`); absent that, default to rest-on-surface.
+    return compileLevel(generated.level, {
+      ...options,
+      tileTypeMap,
+      spawnResolution: options?.spawnResolution ?? 'rest-on-surface',
+    });
   } catch {
     return {
       staticSolids: [],
@@ -654,4 +861,91 @@ export function createMovingPlatformDisplacementProvider(
     if (dx === 0 && dy === 0) return null;
     return { dx, dy };
   };
+}
+
+/**
+ * Outcome of {@link settlePlatformerState}.
+ */
+export interface SettlePlatformerStateResult {
+  /** The state after running up to `maxSteps` neutral ticks. */
+  readonly state: PlatformerState;
+  /** `true` iff the state reached `core.onGround === true` within `maxSteps`. */
+  readonly settled: boolean;
+  /** Number of neutral ticks actually run (0 when the input was already grounded). */
+  readonly steps: number;
+}
+
+/** Default upper bound on neutral ticks run by {@link settlePlatformerState}. */
+const DEFAULT_SETTLE_MAX_STEPS = 64;
+
+/** Fixed timestep used by {@link settlePlatformerState} (60 Hz). */
+const SETTLE_DT = 1 / 60;
+
+/**
+ * Settle a platformer state onto the ground by running neutral-input ticks.
+ *
+ * For each tick the input is fully idle (`moveX = 0`, `moveY = 0`, jump/dash/
+ * grab all {@link IDLE_EDGE} — no jump, no dash, no grab), so the actor simply
+ * falls under gravity until it lands. The loop stops as soon as
+ * `state.core.onGround === true` or `maxSteps` (default 64) is exhausted.
+ *
+ * This mirrors the `settleState` helper the Celerock builds hand-rolled. It is
+ * a RECOVERY tool for consumers with approximate spawn markers (or legacy
+ * levels whose spawn is slightly embedded): the spawn-resolution +
+ * overlap-diagnostic paths in {@link compileLevel} are the preferred fix, but
+ * this helper remains for legacy use and for consumers that cannot recompile.
+ *
+ * Pure: returns a brand-new state; the input is never mutated. Never throws —
+ * a throwing step leaves the last good state in the result.
+ *
+ * @param state - the platformer state to settle (e.g. `compiled.initialState`)
+ * @param solids - the collision surfaces to resolve against each tick
+ * @param config - platformer tuning config (default `DEFAULT_PLATFORMER_CONFIG`)
+ * @param maxSteps - upper bound on ticks to run (default 64)
+ * @returns `{ state, settled, steps }`
+ *
+ * @example
+ * ```ts
+ * const compiled = compileGeneratedLevel({ level, tileSemantics });
+ * const { state, settled } = settlePlatformerState(
+ *   compiled.initialState,
+ *   compiled.staticSolids,
+ * );
+ * ```
+ */
+export function settlePlatformerState(
+  state: PlatformerState,
+  solids: readonly Solid[],
+  config: Readonly<PlatformerConfig> = DEFAULT_PLATFORMER_CONFIG,
+  maxSteps: number = DEFAULT_SETTLE_MAX_STEPS,
+): SettlePlatformerStateResult {
+  const limit = Number.isFinite(maxSteps) && maxSteps > 0
+    ? Math.floor(maxSteps)
+    : DEFAULT_SETTLE_MAX_STEPS;
+  const idleInput: PlatformerInput = {
+    moveX: 0,
+    moveY: 0,
+    jump: IDLE_EDGE,
+    dash: IDLE_EDGE,
+    grab: IDLE_EDGE,
+  };
+  let current = state;
+  if (current?.core?.onGround === true) {
+    return { state: current, settled: true, steps: 0 };
+  }
+  let steps = 0;
+  for (; steps < limit; steps += 1) {
+    try {
+      current = stepPlatformer(current, idleInput, solids, SETTLE_DT, config).state;
+    } catch {
+      return { state: current, settled: Boolean(current?.core?.onGround), steps };
+    }
+    if (current.core.onGround) {
+      return { state: current, settled: true, steps: steps + 1 };
+    }
+  }
+  // Loop exhausted without grounding (current.core.onGround is necessarily
+  // false here — we return on the first grounded tick). `Boolean()` keeps the
+  // read defensive without tripping control-flow narrowing.
+  return { state: current, settled: Boolean(current?.core?.onGround), steps };
 }

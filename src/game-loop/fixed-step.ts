@@ -141,12 +141,22 @@ export function createGameLoop(config: GameLoopConfig): GameLoop {
   const maxFrameDelta = config.maxFrameDelta ?? DEFAULT_MAX_FRAME_DELTA;
   const step = config.step;
   const render = config.render;
+  const onError = config.onError;
+  // Default policy is 'stop': a thrown callback halts the loop so the host can
+  // detect the failure, rather than freezing silently with the last frame on
+  // screen (the origin bug).
+  const errorPolicy = config.errorPolicy ?? 'stop';
 
   let running = false;
   let disposed = false;
   let rafId = 0;
   let lastFrameTime = 0;
   let accumulator = 0;
+  // Failure state surfaced on the loop handle. lastError is null until a
+  // callback throws; stoppedDueToError latches true once the loop permanently
+  // halts itself under the 'stop' policy.
+  let lastError: unknown = null;
+  let stoppedDueToError = false;
 
   // --- Lazily-resolved host accessors (resolved at factory-call time, NOT at
   //     module load). Each is guarded + try/caught; a missing or broken host
@@ -200,16 +210,11 @@ export function createGameLoop(config: GameLoopConfig): GameLoop {
     }
   };
 
-  /** Per-frame callback scheduled by RAF. The RAF timestamp argument is not
-   *  used — `readNow()` is the single timing source so units stay consistent
-   *  (seconds) across `performance.now()` and the `Date.now()` fallback. */
-  const frame = (): void => {
-    const now = readNow();
-    const frameDelta = now - lastFrameTime;
-    lastFrameTime = now;
-    const result = advanceAccumulator(accumulator, frameDelta, fixedDt, maxFrameDelta, step);
-    accumulator = result.accumulator;
-    render(result.alpha);
+  /** Reschedule the next animation frame. Guards the host RAF call so a
+   *  scheduling failure can never throw out of `frame()`. Preserves the
+   *  original reschedule contract: only schedules while running and not
+   *  disposed. */
+  const scheduleNextFrame = (): void => {
     if (running && !disposed) {
       try {
         if (raf) rafId = raf(frame);
@@ -218,6 +223,89 @@ export function createGameLoop(config: GameLoopConfig): GameLoop {
         rafId = 0;
       }
     }
+  };
+
+  /** Permanently stop the loop because a consumer callback threw under the
+   *  `'stop'` policy. Latches the failure flag (so `frame()` short-circuits any
+   *  future stray invocation), clears running intent (so `isRunning()` reflects
+   *  the halt and the visibility-resume path won't restart it), and schedules
+   *  no further frames. The currently-firing RAF handle has already fired, so
+   *  there is no pending frame to cancel. */
+  const stopDueToError = (): void => {
+    stoppedDueToError = true;
+    running = false;
+    rafId = 0;
+  };
+
+  /** Per-frame callback scheduled by RAF. The RAF timestamp argument is not
+   *  used — `readNow()` is the single timing source so units stay consistent
+   *  (seconds) across `performance.now()` and the `Date.now()` fallback.
+   *
+   *  Both the consumer `step` (driven via `advanceAccumulator`) and `render`
+   *  calls are wrapped in try/catch so a throwing callback can NEVER break the
+   *  rAF chain or crash the host. On a throw, `onError` is notified and the
+   *  loop either halts (`'stop'`, default) or reschedules (`'continue'`). */
+  const frame = (): void => {
+    // Latched failure guard: once stopped due to error, never call step/render
+    // again — prevents an infinite re-throw loop if a host re-fires a frame.
+    if (stoppedDueToError) return;
+
+    const now = readNow();
+    const frameDelta = now - lastFrameTime;
+    lastFrameTime = now;
+
+    let alpha = 0;
+    try {
+      // advanceAccumulator invokes step(fixedDt) once per whole fixed step; a
+      // throw inside step propagates out of advanceAccumulator and is caught
+      // here. The accumulator update is abandoned on throw (acceptable: the
+      // sim is already in an error state this frame).
+      const result = advanceAccumulator(
+        accumulator,
+        frameDelta,
+        fixedDt,
+        maxFrameDelta,
+        step,
+      );
+      accumulator = result.accumulator;
+      alpha = result.alpha;
+    } catch (error) {
+      lastError = error;
+      if (onError) {
+        try {
+          onError(error, { phase: 'step' });
+        } catch {
+          // A broken error handler must not crash the loop.
+        }
+      }
+      if (errorPolicy === 'continue') {
+        scheduleNextFrame();
+      } else {
+        stopDueToError();
+      }
+      return;
+    }
+
+    try {
+      render(alpha);
+    } catch (error) {
+      lastError = error;
+      if (onError) {
+        try {
+          onError(error, { phase: 'render' });
+        } catch {
+          // A broken error handler must not crash the loop.
+        }
+      }
+      if (errorPolicy === 'continue') {
+        scheduleNextFrame();
+      } else {
+        stopDueToError();
+      }
+      return;
+    }
+
+    scheduleNextFrame();
   };
 
   /** visibilitychange handler: pause on hidden, resume on visible. */
@@ -309,6 +397,12 @@ export function createGameLoop(config: GameLoopConfig): GameLoop {
       } catch {
         // Swallow — idempotent teardown must not throw.
       }
+    },
+    get lastError(): unknown {
+      return lastError;
+    },
+    get stoppedDueToError(): boolean {
+      return stoppedDueToError;
     },
   };
 }

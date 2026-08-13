@@ -112,3 +112,22 @@ export {
   drawLdtkLevel,
   buildLdtkTilesetBundle,
 } from './render';
+
+export type {
+  LdtkAssetDiagnosticSeverity,
+  LdtkAssetDiagnostic,
+  LoadLdtkProjectAssetsOptions,
+  LoadLdtkProjectAssetsOk,
+  LoadLdtkProjectAssetsErr,
+  LoadLdtkProjectAssetsResult,
+} from './load';
+
+export { loadLdtkProjectAssets, DEFAULT_IMAGE_TIMEOUT_MS } from './load';
+
+export type {
+  LdtkPlatformerCapabilities,
+  LdtkPlatformerLevelReport,
+  LdtkPlatformerProjectReport,
+} from './preflight';
+
+export { inspectLdtkPlatformerProject } from './preflight';

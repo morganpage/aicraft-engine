@@ -44,6 +44,39 @@ export interface GameLoopConfig {
    * smooth sub-step interpolation on high-refresh (120/144 Hz) displays.
    */
   render: (alpha: number) => void;
+  /**
+   * Optional error handler invoked when the `step` or `render` callback throws.
+   * Receives the thrown value and a `phase` indicating which callback failed
+   * (`'step'` for the fixed-step simulation callback, `'render'` for the
+   * per-frame render callback). The handler is invoked from within the loop's
+   * internal try/catch, so a throw inside `onError` itself is swallowed — it
+   * can never crash the loop or break the rAF chain. If omitted, errors are
+   * still contained per `errorPolicy`, but the host receives no notification.
+   */
+  readonly onError?: (
+    error: unknown,
+    context: { readonly phase: 'step' | 'render' },
+  ) => void;
+  /**
+   * Policy applied when `step` or `render` throws.
+   *
+   * - `'stop'` (default): the loop permanently stops itself — it schedules no
+   *   further animation frames and never calls `step`/`render` again. The
+   *   thrown value is stored on {@link GameLoop.lastError} and
+   *   {@link GameLoop.stoppedDueToError} flips to `true`. Use this when a
+   *   callback error likely leaves the simulation in an unrecoverable state.
+   *   (Origin bug: an uncaught `step` throw froze the game permanently with the
+   *   last frame stuck on screen and no way for the host to detect it; this
+   *   policy makes the failure observable.)
+   * - `'continue'`: the error is swallowed after `onError` is called and the
+   *   loop schedules the next frame as usual. Use this for non-fatal callback
+   *   failures (e.g. a particle-spawn RNG hiccup) where the sim should keep
+   *   running.
+   *
+   * In both cases the throw never escapes `frame()` — the rAF chain is never
+   * broken by a consumer callback error.
+   */
+  readonly errorPolicy?: 'stop' | 'continue';
 }
 
 /** A running fixed-step game loop. Returned by {@link createGameLoop}. */
@@ -71,4 +104,20 @@ export interface GameLoop {
    * Never throws.
    */
   dispose(): void;
+  /**
+   * The most recent error thrown by a `step` or `render` callback and caught
+   * by the loop's internal error handling, or `null` if neither callback has
+   * thrown since the loop was created. Updated each time a callback throws,
+   * regardless of `errorPolicy`. Read-only live snapshot.
+   */
+  readonly lastError: unknown;
+  /**
+   * `true` once the loop has permanently stopped itself because a `step` or
+   * `render` callback threw under the `'stop'` policy (the default). Once
+   * `true`, the loop schedules no further animation frames and never invokes
+   * `step`/`render` again (guards against an infinite re-throw loop if a host
+   * re-fires a stray frame). A manual `stop()` or `dispose()` does NOT set
+   * this — it is only ever set by an unhandled callback error.
+   */
+  readonly stoppedDueToError: boolean;
 }

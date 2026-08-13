@@ -7,11 +7,14 @@
  * regression budget for the whole package.
  *
  * Re-baseline policy: the baseline is re-pegged at each minor release boundary
- * so the gate guards against UNEXPECTED growth (0.5.x patch lines and into
- * 0.6.0) rather than against the legitimate module additions that shipped with
- * the minor (e.g. `sprites/`, `ldtk/`, `terrain-art/`, `character/humanoid/`
- * in 0.5.0). The current baseline is pegged to 0.5.0; the re-baseline
- * rationale is recorded in `docs/design/0.5.0-scope-decision.md`. The Phase 0
+ * so the gate guards against UNEXPECTED growth (e.g. 0.6.x patch lines) rather
+ * than against the legitimate module additions that shipped with the minor.
+ * The 0.6.0 minor shipped the camera brain, the LDtk loader, and the Phase 0–9
+ * movement overhaul; the Celerock integration-hardening series then added the
+ * tile-unit config scaler, shared input edges/mappings, and game-loop error
+ * handling. The baseline is pegged to the post-hardening 0.6.0 distribution so
+ * the gate catches growth beyond that legitimate set. The 0.5.0 baseline
+ * rationale is recorded in `docs/design/0.5.0-scope-decision.md`; the Phase 0
  * numbers in `docs/design/level-visual-rendering-phase0-record.md` §2.1 are the
  * original historical baseline and are no longer the live gate.
  *
@@ -26,9 +29,9 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dist = join(root, 'dist');
 const baseline = Object.freeze({
-  total: 2_319_394,
-  js: 1_423_685,
-  declarations: 895_709,
+  total: 2_656_539,
+  js: 1_636_112,
+  declarations: 1_020_427,
 });
 const ceiling = Object.freeze({
   total: Math.floor(baseline.total * 1.10),
@@ -58,7 +61,7 @@ for (const key of ['total', 'js', 'declarations']) {
   const ok = sizes[key] <= ceiling[key];
   console.log(
     `${ok ? 'ok  ' : 'FAIL'} ${key.padEnd(12)} ${String(sizes[key]).padStart(9)} bytes ` +
-    `(${delta >= 0 ? '+' : ''}${percent}% vs 0.5.0 baseline; ceiling ${ceiling[key]})`,
+    `(${delta >= 0 ? '+' : ''}${percent}% vs 0.6.0 baseline; ceiling ${ceiling[key]})`,
   );
   if (!ok) failed = true;
 }

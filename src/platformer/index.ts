@@ -88,6 +88,9 @@ export { wallGrabAbility } from './abilities/wall-grab-ability';
 export {
   compileLevel,
   compileGeneratedLevel,
+  settlePlatformerState,
+  solidIdForEntity,
+  entityIdFromSolidId,
   advanceMovingPlatform,
   movingPlatformToSolid,
   createMovingPlatformDisplacementProvider,
@@ -95,7 +98,24 @@ export {
   type CompiledMovingPlatform,
   type CompileLevelOptions,
   type GeneratedLevelInput,
+  type ResolvedPlatformerSpawn,
+  type CompileDiagnostic,
+  type CompileDiagnosticSeverity,
+  type SettlePlatformerStateResult,
 } from './level-runtime';
+
+// Per-room LDtk glue — Celerock hardening Workstreams C4 / C5. Translates +
+// compiles a single LDtk level into a bucketed CompiledLdtkRoom, and wraps a
+// whole project in a lazy identity-stable cache.
+export {
+  compileLdtkRoom,
+  createLdtkRoomCache,
+  type CompileLdtkRoomOptions,
+  type CompiledLdtkRoom,
+  type LdtkRoomCache,
+  type LdtkRoomCacheOptions,
+  type GetLdtkStartRoomResult,
+} from './ldtk-room';
 
 export {
   drawLevelEntity,
@@ -150,6 +170,31 @@ export {
   EXPLORATION_PLATFORMER,
   PUZZLE_PLATFORMER,
 } from './presets';
+
+// Tile-unit-aware config scaling — scale a 16px-reference config to any tile
+// size while preserving feel (distances/velocities/accelerations scale; times,
+// ratios, counts, and booleans do not). The exhaustive `keyof PlatformerConfig`
+// classification is a compile-time gate so new fields cannot ship unclassified.
+export {
+  scalePlatformerConfig,
+  scaleJumpConfig,
+  createPrecisionPlatformerConfig,
+  PLATFORMER_CONFIG_FIELD_UNITS,
+  JUMP_CONFIG_FIELD_UNITS,
+  PRECISION_REFERENCE_TILE_SIZE,
+  type ConfigFieldUnit,
+  type CreatePrecisionPlatformerConfigOptions,
+} from './config-scale';
+
+// Shared input constants. `IDLE_EDGE` is the canonical "mapped but not pressed"
+// edge (prefer it over `null`, which disables an ability). The standard maps
+// fit `createKeyboardAdapter` / `createGamepadAdapter` verbatim; the gamepad
+// map uses W3C Standard button INDEX strings ('0', '12', …), not 'b0'/'dpleft'.
+export {
+  IDLE_EDGE,
+  STANDARD_KEYBOARD_PLATFORMER_MAP,
+  STANDARD_GAMEPAD_PLATFORMER_MAP,
+} from './input-edges';
 
 export {
   createEnemyBehaviorRegistry,

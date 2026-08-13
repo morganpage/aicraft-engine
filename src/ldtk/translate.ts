@@ -19,6 +19,7 @@ import type {
   LevelData,
   LevelEntity,
   LevelRect,
+  SpringProps,
 } from '../level/types';
 import { LEVEL_VERSION } from '../level/constants';
 import type { GeneratedTileSemantics } from '../level/tile-semantics';
@@ -113,6 +114,12 @@ export const LDTK_DEFAULT_ENTITY_MAP: LdtkEntityMap = {
     if (id === 'movingplatform' || id === 'moving_platform' || id === 'movingplatforms') return 'movingPlatform';
     if (id === 'platform') return 'platform';
     if (id === 'passthrough' || id === 'oneway' || id === 'one_way_platform') return 'passthrough';
+    // Phase 8 trigger volumes. `spring`/`superspring` → spring (power inferred
+    // from the identifier in buildEntityProps); `dashrefill`/`dashcrystal`/
+    // `refill` → dashRefill. Without these entries the runtime never sees the
+    // dedicated kinds (it already handles them — they just never arrived).
+    if (id === 'spring' || id === 'superspring') return 'spring';
+    if (id === 'dashrefill' || id === 'dashcrystal' || id === 'refill') return 'dashRefill';
     if (id === 'decoration' || id === 'deco' || id === 'prop') return 'decoration';
     if (id === 'trap') return 'trap';
     return null;
@@ -184,6 +191,20 @@ function buildEntityProps(
     case 'passthrough':
       return {};
     case 'hazard':
+      return {};
+    case 'spring': {
+      // Power: prefer an explicit `power` field (an LDtk enum/string
+      // `'super'`/`'normal'`); otherwise infer from the original identifier —
+      // `SuperSpring` → `'super'`, plain `Spring` → `'normal'`. The compile
+      // path reads `props.power` to pick `springBounceVy` vs
+      // `springSuperBounceVy`.
+      const powerField = strField(fields, 'power', '').toLowerCase();
+      const power: SpringProps['power'] =
+        powerField === 'super' || idLower === 'superspring' ? 'super' : 'normal';
+      return { power };
+    }
+    case 'dashRefill':
+      // The runtime only keys off `entity.kind === 'dashRefill'`; no props.
       return {};
     case 'collectible': {
       const kindMap: Record<string, CollectibleProps['kind']> = {
