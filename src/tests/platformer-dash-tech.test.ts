@@ -338,6 +338,60 @@ describe('dash-tech integration (full kernel)', () => {
     expect(events.filter((e) => e.justLaunched).length).toBe(1);
   });
 
+  // =========================================================================
+  // REGRESSION: "dash then land, stand still, then jump → you go flying."
+  //
+  // The super-jump grace window must SEED once (when a horizontal dash ends or
+  // on landing after one) and then DECAY — it must NOT stay topped up while
+  // grounded. If it never decays (the bug: it was refreshed every grounded tick
+  // because lastDashDirX/Y persist after a horizontal dash), then a plain
+  // grounded jump fired long after the dash lands still triggers a Super Jump
+  // (vx ≈ superJumpVx 578) instead of a normal jump (vx ≤ moveSpeed 200).
+  //
+  // Timeline: dash press tick 1 → dash runs ticks 2-12, expires & re-grounds at
+  // tick 12 → grace seeded. Then STAND STILL for 30 ticks (0.5 s — well past the
+  // 0.1 s grace window) so the timer must have decayed to 0. Then jump: it must
+  // be a NORMAL jump, not a Super Jump. (The launch lands a few ticks after the
+  // press due to the jump buffer; we find it dynamically rather than pegging a
+  // tick, and assert grace was already 0 at the press tick.)
+  // =========================================================================
+  it('NO super jump after standing still: dash → land → stand 0.5s → jump is a NORMAL jump (grace decayed)', () => {
+    const config = DEFAULT_PLATFORMER_CONFIG;
+    const initial = createPlatformerState(100, 276, config);
+    const jumpPressTick = 1 + 11 + 30; // 42: settle(0) + dash(1) + 11 run + 30 still
+    const inputs = [
+      idleInput(), // 0 settle (land)
+      makeInput({ moveX: 1, dash: 'press' }), // 1 horizontal dash right
+      ...Array.from({ length: 11 }, () => makeInput({ moveX: 1 })), // 2-12 dash runs + expires + re-grounds
+      ...Array.from({ length: 30 }, () => makeInput({})), // 13-42 STAND STILL 0.5s (grace must decay)
+      makeInput({ moveX: 1, jump: 'press' }), // 43 plain jump (must NOT be a super jump)
+      ...Array.from({ length: 8 }, () => makeInput({ jump: 'hold' })), // 44-51 hold (room for buffer)
+    ];
+    const { trace, events, finalState } = runTraceDetailed({
+      initial,
+      inputs,
+      solids: [FLOOR],
+      config,
+    });
+
+    // Grace must have fully decayed by the jump-press tick (0.5 s ≫ 0.1 s
+    // window). If the bug were present, grace would still be config.superJumpGrace.
+    expect(trace[jumpPressTick - 1].onGround).toBe(true); // sanity: was standing
+    expect(finalState.locomotion.superJumpGraceTimer).toBe(0); // long since decayed
+
+    // Exactly one launch (the plain jump), firing AFTER the stand-still.
+    const launches = events.map((e, i) => ({ i, launched: e.justLaunched })).filter((x) => x.launched);
+    expect(launches.length).toBe(1);
+    const launchTick = launches[0].i;
+    expect(launchTick).toBeGreaterThan(jumpPressTick); // buffered, not same tick
+
+    // A NORMAL jump's horizontal speed is bounded by moveSpeed (200). A Super
+    // Jump would carry superJumpVx (~578). This is the crux of the bug: if the
+    // grace timer never decayed while grounded, this jump fires as a Super Jump.
+    expect(trace[launchTick].vx).toBeLessThanOrEqual(config.moveSpeed);
+    expect(trace[launchTick].vx).toBeLessThan(config.superJumpVx);
+  });
+
   it('super wall jump: straight-up dash against a wall → jump launches away at superWallJumpVx/Vy', () => {
     const config = DEFAULT_PLATFORMER_CONFIG;
     // Start flush against the right wall, on the floor.

@@ -1095,7 +1095,8 @@ export function createPlatformerController(
 
       // Step 7 — Update contacts & events.
       const nowOnGround = invertedGravity ? hitCeiling : landed;
-      if (nowOnGround && !wasOnGround) {
+      const landedThisTick = nowOnGround && !wasOnGround;
+      if (landedThisTick) {
         events.justLanded = true;
         // Phase D2 — structured landing feel moment on the unsupported→supported
         // transition. The support id is gravity-facing (ceiling under inverted
@@ -1123,6 +1124,14 @@ export function createPlatformerController(
       // kernel already resolved this tick.
       // -----------------------------------------------------------------
       const dashSliceNow = abilities['dash'] as DashAbilityState | undefined;
+      // Active→idle this tick = the dash timed out (the only end path in this
+      // release). Computed once here so the `dashEnded` moment and the
+      // super-jump grace seed (finalizeLocomotion) share one definition.
+      const dashEndedThisTick =
+        prevDashActive &&
+        dashSliceNow !== undefined &&
+        dashSliceNow.kind === 'dash' &&
+        dashSliceNow.phase === 'idle';
       if (
         dashSliceNow !== undefined &&
         dashSliceNow.kind === 'dash'
@@ -1164,13 +1173,10 @@ export function createPlatformerController(
           if (dashUpdated !== dashSliceNow) {
             abilities = { ...abilities, dash: dashUpdated };
           }
-        } else if (
-          prevDashActive &&
-          dashSliceNow.phase === 'idle'
-        ) {
-          // Active→idle this tick = dash timed out (the only end path in this
-          // release). Report the ending-tick resolved contact context WITHOUT
-          // claiming it caused the end. Precedence: wall > ceiling > floor.
+        } else if (dashEndedThisTick) {
+          // The dash timed out this tick. Report the ending-tick resolved contact
+          // context WITHOUT claiming it caused the end. Precedence: wall > ceiling
+          // > floor.
           let terminal: 'none' | 'wall' | 'ceiling' | 'floor' = 'none';
           if (leftWallId !== null || rightWallId !== null) terminal = 'wall';
           else if (ceilingId !== null) terminal = 'ceiling';
@@ -1211,14 +1217,16 @@ export function createPlatformerController(
           // Phase 5 — end-of-tick locomotion finalizer. Syncs the coyote/buffer
           // mirrors from the jump slice (existing), the last-dash-direction +
           // dashing flag from the dash slice, and maintains the super-jump
-          // ground-grace timer (refreshed while grounded after a horizontal
-          // dash, decaying otherwise). These mirrors expose the current windows
-          // to cross-ability consumers (dashTech) without them reaching into
-          // another ability's slice.
+          // ground-grace timer (seeded once when a horizontal dash ENDS or when
+          // the actor LANDS after one, then decaying). These mirrors expose the
+          // current windows to cross-ability consumers (dashTech) without them
+          // reaching into another ability's slice.
           locomotion: finalizeLocomotion(
             locomotionFinal,
             abilities,
             nowOnGround,
+            landedThisTick,
+            dashEndedThisTick,
             config,
             dt,
           ),
@@ -1664,11 +1672,18 @@ function syncLocomotionFromJump(
  *      startup→active transition, so this records the POST-conversion dir.
  *   3. Sync `dashing` from the dash phase (`true` while `phase !== 'idle'`) —
  *      read by `dashTechAbility` next tick to refuse a super jump mid-dash.
- *   4. Maintain `superJumpGraceTimer`: REFRESH to `config.superJumpGrace` while
- *      the actor is grounded, NOT dashing, and the last dash was horizontal
- *      (`lastDashDirY === 0 && lastDashDirX !== 0`) — mirroring Celeste's
- *      "jumpGraceTimer refreshed while on ground" scoped to the dash-tech
- *      context. Otherwise decay by `dt` (floored at 0).
+ *   4. Maintain `superJumpGraceTimer`: SEED to `config.superJumpGrace` when a
+ *      horizontal dash ENDS (`dashEndedThisTick`) OR when the actor LANDS after
+ *      one (`landedThisTick`), provided the last dash was horizontal
+ *      (`lastDashDirY === 0 && lastDashDirX !== 0`). Otherwise decay by `dt`
+ *      (floored at 0). Both seeds are needed: a ground dash / hyper slide never
+ *      produces a landing event (the actor stays physically supported while the
+ *      collision resolver is bypassed, so `landedThisTick` is false at dash
+ *      end), so the dash-end transition seeds it for those cases; the landing
+ *      seed covers an air dash that touches down later. Seeding once instead of
+ *      refreshing every grounded tick is essential — because `lastDashDirX/Y`
+ *      persist after a horizontal dash, a per-tick refresh would hold the window
+ *      open forever and turn every later plain grounded jump into a Super Jump.
  *   5. Phase 6 — REFILL `stamina` to `config.wallGrabMaxStamina` while the
  *      actor is supported (`onGround`). This is the SINGLE refill site (the
  *      wall-grab ability only DEPLETES via `locomotionPatch`); keeping refill
@@ -1682,6 +1697,8 @@ function finalizeLocomotion(
   locomotion: LocomotionState,
   abilities: Readonly<Record<string, AnyAbilityState>>,
   onGround: boolean,
+  landedThisTick: boolean,
+  dashEndedThisTick: boolean,
   config: PlatformerConfig,
   dt: number,
 ): LocomotionState {
@@ -1704,10 +1721,19 @@ function finalizeLocomotion(
   }
   next = { ...next, lastDashDirX: dirX, lastDashDirY: dirY, dashing };
 
-  // Maintain the super-jump ground-grace timer.
+  // Maintain the super-jump ground-grace timer. SEED it once when a horizontal
+  // dash ENDS or when the actor LANDS after one, then let it only decay. We
+  // must NOT refresh it every grounded tick: because lastDashDirX/Y persist
+  // after a horizontal dash, a per-tick refresh would hold the window open
+  // forever and turn every later plain grounded jump into a Super Jump
+  // ("dash → land → stand still → jump → you go flying"). The `!dashing` guard
+  // on the landing seed avoids re-seeding on the same tick a dash is starting.
   const horizontalLastDash = dirY === 0 && dirX !== 0;
-  const refreshGrace = onGround && !dashing && horizontalLastDash;
-  const superJumpGraceTimer = refreshGrace
+  const seedGrace =
+    horizontalLastDash &&
+    !dashing &&
+    (dashEndedThisTick || landedThisTick);
+  const superJumpGraceTimer = seedGrace
     ? config.superJumpGrace
     : Math.max(0, next.superJumpGraceTimer - dt);
   next = { ...next, superJumpGraceTimer };
