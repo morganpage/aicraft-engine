@@ -72,6 +72,8 @@ export const doubleJumpAbility: AbilityProcessor<DoubleJumpAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     // Emit a launch (kernel applies it) instead of writing core.vy. Same

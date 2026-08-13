@@ -109,6 +109,18 @@ import {
  * UNCHANGED (the latch is not part of a trace row). The fix itself is
  * exercised by the "sustained brush does NOT re-stash after the 0.06s window
  * expires" test in `platformer-corner-correction.test.ts`.
+ *
+ * Mantle wave (ledge mantle + direction-aware climb-jump; physicsVersion
+ * 11→12): `LaunchSource` gained `'climbJump'` + `'mantle'`, `PlatformerEvents`
+ * gained `climbJumpLaunched` + `mantled` (and `wallJumpLaunched` was
+ * deliberately widened to include the away climb-hop), `WallGrabAbilityState`
+ * gained `regrabTimer` + the `mantle` assist record, `LocomotionMode` gained
+ * `'mantle'`, and `PlatformerConfig` gained the 7 mantle/climb-jump fields.
+ * NONE of scenarios 1–7 grab+jump (scenario 6 only clings), so every
+ * `traceHash` is UNCHANGED; every `replayHashFor` shifted (widened
+ * config/events/state + version). The four new golden scenarios 8–11 pin the
+ * mantle-era trajectories: neutral climb-jump + re-grab, away climb-hop, a
+ * clear mantle + landing, and a blocked mantle under an overhang.
  */
 
 // ---------------------------------------------------------------------------
@@ -118,6 +130,11 @@ import {
 
 /** A simple 400-wide floor at y=300 (top surface). */
 const FLOOR_300: Solid = { id: 'floor', x: 0, y: 300, width: 400, height: 16 };
+
+/** Final world X of a trace (its last row). */
+function finalX(trace: readonly { x: number }[]): number {
+  return trace[trace.length - 1].x;
+}
 
 describe('platformer multi-tick baseline traces', () => {
   // =========================================================================
@@ -294,7 +311,7 @@ describe('platformer multi-tick baseline traces', () => {
     // bump; moveX widened to number, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3382512157);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(1157456551);
   });
 
   // =========================================================================
@@ -514,7 +531,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(961052143);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(345736703);
   });
 
   // =========================================================================
@@ -1063,8 +1080,8 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(861776381);
-    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(1276761548);
+    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(4250948109);
+    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(4022049556);
   });
 
   // =========================================================================
@@ -1223,7 +1240,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1508020505);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(379803257);
   });
 
   // =========================================================================
@@ -1503,7 +1520,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3128805650);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3157544254);
   });
 
   // =========================================================================
@@ -1566,7 +1583,7 @@ describe('platformer multi-tick baseline traces', () => {
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
     expect(traceHash(trace)).toBe(2056703830);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1524795758);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(992240508);
   });
 
   // =========================================================================
@@ -1667,6 +1684,181 @@ describe('platformer multi-tick baseline traces', () => {
     // Phase 9 re-shifted via 8→9 version bump; digital trace unchanged.
     // Phase 10 re-shifted (new groundDuckEnabled config field + 9→10 version;
     // digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(95787435);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(1538112287);
   });
 });
+
+  // =========================================================================
+  // 8. Neutral climb-jump + re-grab (mantle wave — direction-aware grab+jump).
+  //
+  // Grab a mid-wall wall, press jump with NO directional input: the actor
+  // launches STRAIGHT UP (`source: 'climbJump'`, vx=0, facing the wall) with
+  // the seconds-based re-grab lock armed. It rises beside the wall, cannot
+  // re-cling while the lock counts down, then chains a fresh grab once it
+  // expires — all with x never moving (the straight-up proof).
+  // =========================================================================
+  it('neutral climb-jump rises straight up then re-grabs after the lock', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallGrabEnabled: true };
+    const solids: Solid[] = [{ id: 'wall-r', x: 200, y: 0, width: 16, height: 300 }];
+    const initial = createPlatformerState(184, 100, config); // facing=1 (right)
+
+    const inputs = [
+      makeInput({ grab: 'press' }), // t0: engage
+      makeInput({ grab: 'hold', jump: 'press' }), // t1: NEUTRAL grab+jump
+      ...Array.from({ length: 23 }, () => makeInput({ grab: 'hold' })),
+    ];
+
+    const { trace, events, finalState } = runTraceDetailed({ initial, inputs, solids, config });
+
+    // Straight-up climb-jump pulse; the widened wall-jump pulse does NOT fire.
+    expect(events[1].climbJumpLaunched).toBe(true);
+    expect(events[1].wallJumpLaunched).toBe(false);
+    // Perfectly vertical: x never moves for the whole trace.
+    expect(trace.every((r) => r.x === 184)).toBe(true);
+    // The launch rises (vy negative after the launch tick), then re-clings.
+    expect(trace[1].vy).toBeLessThan(0);
+    const wg = finalState.abilities['wallGrab'];
+    expect(wg !== undefined && wg.kind === 'wallGrab' && wg.grabbing).toBe(true);
+    // Re-grab chained ABOVE the start (rose during the lock window).
+    expect(finalState.core.y).toBeLessThan(100);
+    // The climb-jump pulse lasts exactly one tick.
+    expect(events.filter((e) => e.climbJumpLaunched).length).toBe(1);
+
+    expect(traceHash(trace)).toBe(2990474143);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(1984271317);
+  });
+
+  // =========================================================================
+  // 9. Away climb-hop (mantle wave — the unchanged branch, widened pulse).
+  //
+  // Same wall, jump pressed with AWAY input: the pre-mantle up-and-away
+  // climb-hop trajectory is preserved (`climbHop` + climbHopForceTime
+  // forced-move), and — the deliberate widening — it now reports through
+  // `wallJumpLaunched`.
+  // =========================================================================
+  it('away climb-hop keeps the up-and-away trajectory and reports as a wall jump', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallGrabEnabled: true };
+    const solids: Solid[] = [{ id: 'wall-r', x: 200, y: 0, width: 16, height: 300 }];
+    const initial = createPlatformerState(184, 100, config);
+
+    const inputs = [
+      makeInput({ grab: 'press' }),
+      makeInput({ grab: 'hold', jump: 'press', moveX: -1 }), // AWAY
+      ...Array.from({ length: 23 }, () => makeInput({ moveX: -1 })),
+    ];
+
+    const { trace, events } = runTraceDetailed({ initial, inputs, solids, config });
+
+    // The widened pulse fires for the away hop (and ONLY it).
+    expect(events[1].wallJumpLaunched).toBe(true);
+    expect(events[1].climbJumpLaunched).toBe(false);
+    expect(events.filter((e) => e.wallJumpLaunched).length).toBe(1);
+    // Up-and-away: pushed left off the wall, rising at the launch tick.
+    expect(trace[1].vx).toBeLessThan(0);
+    expect(trace[1].vy).toBeLessThan(0);
+    expect(finalX(trace)).toBeLessThan(184);
+
+    expect(traceHash(trace)).toBe(2422085024);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(1991849031);
+  });
+
+  // =========================================================================
+  // 10. Clear mantle + landing (mantle wave — the continuous assisted hop).
+  //
+  // Grab near the lip, hold Up: the mantle launches a multi-tick assisted
+  // ballistic hop. The actor rises BESIDE the wall (x pinned by the ordinary
+  // X resolver while the body overlaps the wall's Y band), crosses the lip
+  // only once its feet clear the wall top, and lands on top through the
+  // normal Y resolver. No tick ever writes a position — every per-tick move
+  // is integrated velocity + resolver contact correction.
+  // =========================================================================
+  it('clear mantle rises, crosses after the feet clear, and lands on the ledge', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallGrabEnabled: true };
+    // The wall's TOP edge (y=0) is the ledge being mantled onto.
+    const solids: Solid[] = [{ id: 'ledge', x: 200, y: 0, width: 16, height: 300 }];
+    // Head 2 px below the lip — inside the pre-emptive climb-up reach.
+    const initial = createPlatformerState(184, 2, config);
+
+    const inputs = [
+      makeInput({ grab: 'press' }), // t0: engage (cling at y=2)
+      makeInput({ grab: 'hold', moveY: -1 }), // t1: grab + Up → mantle launch
+      makeInput({ grab: 'hold', moveY: -1 }), // t2: assist rising
+      ...Array.from({ length: 47 }, () => makeInput({})), // fly + land + stand
+    ];
+
+    const { trace, events, finalState } = runTraceDetailed({ initial, inputs, solids, config });
+
+    // The mantle pulse fired exactly once, on the launch tick.
+    expect(events[1].mantled).toBe(true);
+    expect(events.filter((e) => e.mantled).length).toBe(1);
+    // Launch tick: x pinned beside the wall (no destination snap).
+    expect(trace[1].x).toBe(184);
+    // Rising phase: multiple ticks pinned at the wall X while y strictly falls.
+    const pinnedRiseTicks = trace.filter((r) => r.x === 184 && r.vy < 0).length;
+    expect(pinnedRiseTicks).toBeGreaterThanOrEqual(5);
+    // The first moving tick crossed ONLY after the feet cleared the wall top.
+    const firstMove = trace.findIndex((r) => r.x > 184);
+    expect(firstMove).toBeGreaterThan(3);
+    expect(trace[firstMove].y + 24).toBeLessThanOrEqual(0);
+    // Landed on TOP of the ledge with the correct ground contact.
+    expect(finalState.core.onGround).toBe(true);
+    expect(finalState.core.contacts.groundId).toBe('ledge');
+    expect(finalState.core.y).toBeCloseTo(-24, 5);
+    // Edge-anchored finish marker ≈ 192 (200 - 16 + 8): the assist stopped
+    // there; bounded drift carries the actor a couple more px. Never a snap,
+    // never width-proportional.
+    expect(Math.abs(finalX(trace) - 192)).toBeLessThanOrEqual(5);
+    // Per-tick displacement bounded by integrated velocity (+resolver slack):
+    // the no-discontinuity guarantee across the whole hop.
+    for (let i = 1; i < trace.length; i++) {
+      expect(Math.abs(trace[i].x - trace[i - 1].x)).toBeLessThanOrEqual(
+        config.mantleHopVx * (1 / 60) + 0.5,
+      );
+      expect(Math.abs(trace[i].y - trace[i - 1].y)).toBeLessThanOrEqual(
+        config.maxFallSpeed * (1 / 60) + 0.5,
+      );
+    }
+
+    expect(traceHash(trace)).toBe(4269679983);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(1315369201);
+  });
+
+  // =========================================================================
+  // 11. Blocked mantle under an overhang (mantle wave — conservative decline).
+  //
+  // Same lip, but a solid overhang sits above the ledge crossing corridor.
+  // The preflight route check declines the mantle (no launch, no teleport);
+  // the actor keeps climbing and is stopped by the overhang through the
+  // ordinary Y resolver — it never embeds in or tunnels through it.
+  // =========================================================================
+  it('blocked mantle under an overhang declines safely and never tunnels', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallGrabEnabled: true };
+    const solids: Solid[] = [
+      { id: 'ledge', x: 200, y: 0, width: 16, height: 300 },
+      // Overhang floating above the lip, inside the rise column + landing
+      // AABB (blocks the preflight) AND low enough that the blocked climb's
+      // feet stay below the wall top (the grab legitimately persists).
+      { id: 'overhang', x: 186, y: -20, width: 16, height: 4 },
+    ];
+    const initial = createPlatformerState(184, 2, config);
+
+    const inputs = [
+      makeInput({ grab: 'press' }),
+      ...Array.from({ length: 24 }, () => makeInput({ grab: 'hold', moveY: -1 })),
+    ];
+
+    const { trace, events, finalState } = runTraceDetailed({ initial, inputs, solids, config });
+
+    // No mantle ever fired — the conservative decline.
+    expect(events.every((e) => !e.mantled)).toBe(true);
+    const wg = finalState.abilities['wallGrab'];
+    expect(wg !== undefined && wg.kind === 'wallGrab' && wg.grabbing).toBe(true);
+    // The climb continued up the wall but was stopped by the overhang (the
+    // body top cannot pass its underside at y=-16 ⇒ body y clamps at -16).
+    expect(Math.min(...trace.map((r) => r.y))).toBeGreaterThanOrEqual(-16);
+    // X never moved off the wall (no horizontal launch, no snap).
+    expect(trace.every((r) => r.x === 184)).toBe(true);
+
+    expect(traceHash(trace)).toBe(1369465528);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(4064649648);
+  });

@@ -475,6 +475,13 @@ export function createPlatformerController(
         // actor away from the wall) but opens its OWN lockout duration
         // (`climbHopForceTime`), distinct from a wall-jump's `wallJumpLockTime`.
         const isClimbHop = launch.source === 'climbHop';
+        // Mantle wave — the straight-up climb-jump and the mantle open NO
+        // horizontal force window: `needsForceMove` stays false for both, so
+        // `forceMoveXTimer`/`forceMoveX` resolve to 0 (the climb-jump rises
+        // vertically beside the wall; the mantle's toward-ledge push is owned
+        // by the wall-grab ability's short assist, not the forced-move
+        // subsystem). Toward-input therefore cannot create sideways velocity
+        // through the forced-move subsystem.
         const needsForceMove = isWallFamily || isClimbHop;
         locomotion = {
           ...locomotion,
@@ -484,7 +491,9 @@ export function createPlatformerController(
           // lockout so the push is not immediately cancelled by opposing
           // horizontal input or by an immediate re-grab (Celeste-style
           // `forceMoveX`). Direction follows the launch's vx sign; duration is
-          // the configured lock time for the source family.
+          // the configured lock time for the source family. The climb-jump and
+          // mantle sources fall through to 0/0 — their separation is the
+          // ability-owned re-grab lock + mantle assist instead.
           forceMoveXTimer: isClimbHop
             ? config.climbHopForceTime
             : isWallFamily
@@ -506,6 +515,8 @@ export function createPlatformerController(
         events.justLaunched = false;
         events.wallJumpLaunched = false;
         events.doubleJumped = false;
+        events.climbJumpLaunched = false;
+        events.mantled = false;
         if (
           launch.source === 'jump' ||
           launch.source === 'superJump' ||
@@ -513,10 +524,24 @@ export function createPlatformerController(
         ) {
           events.justLaunched = true;
         }
-        if (launch.source === 'wallJump' || launch.source === 'superWallJump') {
+        // Mantle wave — DELIBERATE WIDENING of `wallJumpLaunched` (canonical
+        // plan §3.3): the away climb-hop now reports as a wall jump alongside
+        // `wallJump`/`superWallJump`. Consumers already reading this pulse
+        // will start seeing climb-hops; that is the documented contract change
+        // ("away grab+jump reports as a wall jump"), not an accidental leak.
+        if (
+          launch.source === 'wallJump' ||
+          launch.source === 'superWallJump' ||
+          launch.source === 'climbHop'
+        ) {
           events.wallJumpLaunched = true;
         }
         if (launch.source === 'doubleJump') events.doubleJumped = true;
+        // Mantle wave — the two new wall-grab launch pulses. Both last exactly
+        // one tick (reset above each launch tick and recomputed from the
+        // winning source only).
+        if (launch.source === 'climbJump') events.climbJumpLaunched = true;
+        if (launch.source === 'mantle') events.mantled = true;
 
         // -----------------------------------------------------------------
         // Phase 5 — super-source launch: RESET the jump slice to `'rising'`
@@ -538,12 +563,19 @@ export function createPlatformerController(
         // (`climbHop` does NOT emit `justLaunched` above — it is a wall-hop, not
         // a jump-ability launch — but the slice reset still applies for pose +
         // anti-relaunch.)
+        //
+        // Mantle wave — `'climbJump'` and `'mantle'` join the reset family for
+        // the same anti-relaunch + pose reason (both fire on the PRESS/eligible
+        // tick and must cancel the plain jump's anticipation without reporting
+        // a normal jump).
         // -----------------------------------------------------------------
         const jumpSlice0 = abilities['jump'] as JumpAbilityState | undefined;
         if (
           (launch.source === 'superJump' ||
             launch.source === 'superWallJump' ||
-            launch.source === 'climbHop') &&
+            launch.source === 'climbHop' ||
+            launch.source === 'climbJump' ||
+            launch.source === 'mantle') &&
           jumpSlice0 !== undefined &&
           jumpSlice0.kind === 'jump'
         ) {
@@ -629,8 +661,14 @@ export function createPlatformerController(
       // (just opened by the launch) correctly drives the hop's away-push.
       // During a wall-jump / climb-hop lockout the kernel FORCES vx toward the
       // launch direction (ignoring input) so the push persists. Otherwise normal.
+      //
+      // Mantle wave — `'mantle'` mode ALSO skips ordinary horizontal input:
+      // the wall-grab ability's assist owns the toward-ledge vx for the hop's
+      // short lifetime (a forced-move window is deliberately NOT opened for
+      // the `'mantle'` source). Gravity and X/Y collision still apply in this
+      // mode — only horizontal INPUT is skipped.
       // -------------------------------------------------------------------
-      if (mode !== 'dash' && mode !== 'wallGrab') {
+      if (mode !== 'dash' && mode !== 'wallGrab' && mode !== 'mantle') {
         if (locomotion.forceMoveXTimer > 0) {
           core = applyForcedHorizontal(core, locomotion.forceMoveX, config, dt);
         } else {
@@ -1315,10 +1353,18 @@ function makeInitialDashTechState(): DashTechAbilityState {
 
 /**
  * Build the initial `WallGrabAbilityState` (Phase 6). A fresh actor is not
- * grabbing; the ability engages on the first tick the conditions hold.
+ * grabbing; the ability engages on the first tick the conditions hold. The
+ * mantle wave inits the re-grab lock to 0 (unlocked) and the mantle assist to
+ * `null` (none in flight).
  */
 function makeInitialWallGrabState(): WallGrabAbilityState {
-  return { kind: 'wallGrab', grabbing: false, side: null };
+  return {
+    kind: 'wallGrab',
+    grabbing: false,
+    side: null,
+    regrabTimer: 0,
+    mantle: null,
+  };
 }
 
 /**
@@ -1407,6 +1453,13 @@ function resolveLocomotionMode(
   if (climb !== undefined && climb.climbing) return 'ladder';
   const wallGrab = abilities['wallGrab'] as WallGrabAbilityState | undefined;
   if (wallGrab !== undefined && wallGrab.grabbing) return 'wallGrab';
+  // Mantle wave — the wall-grab ability's assisted ledge hop. While the assist
+  // record is active the ability owns ONLY the toward-ledge `vx`; the kernel
+  // skips ordinary horizontal input in this mode but NOT gravity, and the
+  // normal X/Y collision resolvers stay authoritative (the actor rises beside
+  // the wall, crosses the lip once its feet clear, and lands through the
+  // resolver — mantle code never assigns position).
+  if (wallGrab !== undefined && wallGrab.mantle != null) return 'mantle';
   return 'normal';
 }
 

@@ -47,6 +47,8 @@ function buildInitialState(tick = 0): PlatformerState {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     }),
     // Phase 8 — no surface interactions on the test initial state.
     interactions: Object.freeze([]),
@@ -429,14 +431,15 @@ describe('physicsVersion mismatch', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Phase D2 — the explicit 10→11 boundary. v11 added the `moments` field to
-  // the captured initial state (and the version value itself), so a v10 replay
-  // no longer reproduces under v11 and must be rejected; a v11 replay must
-  // play back deterministically with the feel-moment channel intact.
+  // Mantle wave — the explicit 11→12 boundary. v12 changed wall-grab
+  // trajectories on purpose (direction-aware climb-jump + ledge mantle,
+  // widened events/config/state), so a v11 replay no longer reproduces under
+  // v12 and must be rejected; a v12 replay must play back deterministically
+  // with the feel-moment channel intact.
   // -----------------------------------------------------------------------
-  it('a v10 replay (the immediately-previous physics version) is rejected under v11', () => {
-    expect(CURRENT_PHYSICS_VERSION).toBe(11);
-    const replay = buildReplayWithVersion(10);
+  it('a v11 replay (the immediately-previous physics version) is rejected under v12', () => {
+    expect(CURRENT_PHYSICS_VERSION).toBe(12);
+    const replay = buildReplayWithVersion(11);
     let caught: PhysicsVersionMismatchError | null = null;
     try {
       assertPhysicsVersion(replay);
@@ -444,14 +447,14 @@ describe('physicsVersion mismatch', () => {
       caught = e as PhysicsVersionMismatchError;
     }
     expect(caught).not.toBeNull();
-    expect(caught?.expected).toBe(11);
-    expect(caught?.actual).toBe(10);
+    expect(caught?.expected).toBe(12);
+    expect(caught?.actual).toBe(11);
     expect(() => playReplay(replay, (s) => s, 1 / 60)).toThrow(
       PhysicsVersionMismatchError,
     );
   });
 
-  it('a v11 replay plays back deterministically with the moments channel intact', () => {
+  it('a v12 replay plays back deterministically with the moments channel intact', () => {
     const initial = buildInitialState(0);
     const solids = [
       { x: -100, y: 100, width: 400, height: 16, id: 'floor' },

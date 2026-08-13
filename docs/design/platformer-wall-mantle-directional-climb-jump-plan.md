@@ -1,8 +1,8 @@
 # Platformer Wall Mantle and Direction-Aware Climb-Jump Plan
 
-**Status:** Proposed  
+**Status:** Implemented (physics version 12 — see `src/platformer/mantle.ts`, `src/platformer/abilities/wall-grab-ability.ts`, and the mantle/climb-jump tests in `src/tests/platformer-wall-grab.test.ts` + `src/tests/platformer-traces.test.ts` scenarios 8–11). The `wallJumpLaunched` widening (§3.3/§5 review finding 1) was accepted and documented. The optional `climbJumpLaunched`/`mantled` feel-moment twins were NOT added — the boolean pulses are sufficient (§4.3's decision point, resolved as "booleans only").  
 **Scope:** Add ledge mantling and direction-aware grab+jump behavior to the reusable `src/platformer/` engine  
-**Baseline:** Current working tree, including the in-progress `PlatformerState.moments` work  
+**Baseline:** `aicraft-engine@0.8.1`, including the shipped `PlatformerState.moments` channel<br>
 **Primary implementation seam:** `src/platformer/abilities/wall-grab-ability.ts`  
 **Consumer target:** Celerock and any other `stepPlatformer` caller with `wallGrabEnabled: true`
 
@@ -13,6 +13,8 @@ The requested behaviors belong in the engine, but the supplied proposal places t
 The engine should instead extend its existing `wallGrabAbility` state machine:
 
 - Holding grab + Up near the top of a clear wall performs a mantle.
+- The mantle is a continuous, multi-tick assisted hop: the engine never assigns
+  a ledge destination directly to `core.x` or `core.y`.
 - Pressing jump while grabbing and holding Away keeps the existing up-and-away climb-hop behavior and reports it as a wall jump.
 - Pressing jump while neutral or holding Toward launches straight up, keeps the actor facing the wall, and temporarily prevents re-grabbing.
 - Dash retains priority over both behaviors, and jump retains priority over mantle.
@@ -28,9 +30,10 @@ This is a trajectory-changing engine update. It requires config scaling, seriali
 | Store lockouts on a consumer `World` | Duplicates engine state and weakens replay guarantees | Store one private `regrabTimer` on `WallGrabAbilityState` |
 | Suppress `grab.held` in a copied input | Alters input semantics outside the owning ability | Keep the original input unchanged; gate only wall-grab re-engagement while `regrabTimer > 0` |
 | Use a 12-tick mantle lockout | Ties behavior to 60 Hz | Use config durations in seconds and decay by `dt` |
-| Shift by `max(actorWidth / 2, wallWidth / 2)` | Unsafe for wide merged tile solids; can teleport deep across a platform | Anchor the destination to the grabbed wall edge and clamp a configured inset to actor/wall width |
-| Check only the destination AABB | Can cross a ceiling or overhang during the teleport | Validate a vertical lift followed by a horizontal sweep in bounded increments |
-| Add `MANTLE_HOP_VY` as a local constant | Conflicts with engine tuning/scaling conventions | Add a scale-aware `PlatformerConfig.mantleHopVy` field |
+| Shift by `max(actorWidth / 2, wallWidth / 2)` | Unsafe for wide merged tile solids and visibly teleports the actor | Use an edge-anchored landing point only as a route/finish marker; reach it through velocity and collision resolution |
+| Relocate directly to a validated target | Still a teleport even if a 1 px sweep proves the route is clear | Start a ballistic hop and apply a short horizontal assist over subsequent ticks; never write mantle positions directly |
+| Check only the destination AABB | Can miss a ceiling or overhang along the intended route | Preflight a conservative clearance corridor, then keep normal collision resolution authoritative on every live tick |
+| Add `MANTLE_HOP_VY` as a local constant | Conflicts with engine tuning/scaling conventions and is too weak to lift a full actor body without a position snap | Add scale-aware horizontal/minimum-vertical hop tuning and derive the geometry-safe vertical impulse |
 | Call game audio and particle functions from the mechanic | Couples deterministic physics to presentation | Emit engine events; map them to audio/particles in Celerock |
 | Use `grab.side` | The side is not on the input edge | Read `WallGrabAbilityState.side` |
 | Read/write a consumer stamina field | The engine already owns stamina | Continue using `LocomotionState.stamina` and `locomotionPatch` |
@@ -98,7 +101,7 @@ A mantle is eligible only when all of the following are true on an already-grabb
 - `regrabTimer <= 0`
 - a blocking wall remains on the latched side within `wallProbeDistance`
 - the actor's head is at the wall top threshold
-- the lift and destination path are clear
+- the conservative hop corridor and landing foothold are clear
 
 Use the existing pre-emptive threshold:
 
@@ -109,51 +112,107 @@ const atTop = core.y <= wall.y + reach;
 
 The wall query already excludes passthroughs, ladders, springs, and dash-refill trigger volumes. Preserve those exclusions in all mantle clearance queries.
 
-### 3.5 Mantle destination and clearance
+### 3.5 Mantle route and the no-teleport invariant
 
-Add a pure internal helper in `src/platformer/mantle.ts`, for example `findMantleTarget(...)`, and call it from `wallGrabAbility`. It should not mutate the core, state, input, or solids.
+Add a pure internal helper in `src/platformer/mantle.ts`, for example
+`findMantleRoute(...)`, and call it from `wallGrabAbility`. The helper computes
+feasibility and launch metadata only. It must never return a replacement core or
+apply a position.
 
-For a positive configured inset:
+The load-bearing invariant is:
+
+> Mantle code never writes `core.x` or `core.y`. Only the kernel's ordinary
+> velocity integration and `resolveAxisX`/`resolveAxisY` collision pass may
+> change actor position.
+
+Use an edge-anchored landing point as a finish marker, not a teleport target:
 
 ```ts
 const inset = Math.min(
-  Math.max(0, config.mantleHorizontalInset),
+  Math.max(0, config.mantleLandingInset),
   core.width,
   wall.width,
 );
 
-const targetY = wall.y - core.height;
-const targetX = side === 'right'
+const landingY = wall.y - core.height;
+const landingX = side === 'right'
   ? wall.x - core.width + inset
   : wall.x + wall.width - inset;
 ```
 
-This moves only far enough onto the top surface to establish a stable overlap. It does not scale the translation with the full width of a merged room/floor rectangle.
+This marker asks for only a stable foothold. It never scales movement with the
+full width of a merged room/floor solid.
 
-Validate the route in two phases:
+The hop must raise the actor's whole body past the wall top before horizontal
+motion can cross the wall. A `mantleHopVy` of `120` only works after a position
+snap; at the default jump gravity its continuous apex is roughly 6 px, far less
+than the default 24 px body height. Derive a geometry-safe launch magnitude:
 
-1. Sweep vertically from `(core.x, core.y)` to `(core.x, targetY)`.
-2. From the lifted position, sweep horizontally to `(targetX, targetY)`.
+```ts
+const gravity = (2 * config.jump.apexHeight) /
+  (config.jump.timeToApex * config.jump.timeToApex);
+const requiredRise = Math.max(0, core.y + core.height - wall.y) +
+  config.mantleApexClearance;
+const clearanceVy = Math.sqrt(2 * gravity * requiredRise) + gravity * dt;
+const launchVy = -Math.max(config.mantleHopVy, clearanceVy);
+```
 
-Use deterministic increments no larger than 1 world pixel, testing each AABB against every blocking solid. Edges that merely touch remain clear, consistent with `aabbOverlap`. Ignore passthrough, ladder, spring, and dash-refill solids. Return `null` if either route is blocked or the inset/dimensions are invalid.
+The `gravity * dt` term is a fixed-step integration guard: semi-implicit Euler
+applies gravity before position, so the continuous closed-form minimum alone can
+fall short by a frame. Invalid/non-finite geometry returns `null` instead of
+launching.
 
-The two-phase route models lifting beside the wall before moving onto its top. A direct diagonal sweep would incorrectly collide with the supporting wall itself.
+Before starting, conservatively validate:
 
-### 3.6 Mantle transition
+1. The vertical body sweep beside the wall from the current Y to the predicted
+   apex.
+2. The above-ledge transition corridor between the apex and `landingY`, from
+   the current X to `landingX`.
+3. The landing AABB at the finish marker.
 
-On a valid mantle:
+Sample at deterministic increments no larger than 1 world pixel against every
+blocking solid. Edges that merely touch remain clear, consistent with
+`aabbOverlap`. Ignore passthrough, ladder, spring, and dash-refill solids. A
+conservative false negative is acceptable; tunnelling or a position snap is
+not. Normal live collision resolution remains authoritative after launch, so
+changed/moving geometry still blocks the actor naturally.
 
-- Relocate the core to the helper's `{ x, y }` target.
-- Clear `onGround` and contacts, and set `vx = 0`.
-- End the grab and clear its side/solid id.
+Return metadata such as `{ side, wallTopY, landingX, launchVy, solidId }`. No
+returned coordinate is ever copied into actor position.
+
+### 3.6 Continuous assisted-hop transition
+
+On a valid mantle start:
+
+- Leave `core.x` and `core.y` unchanged.
+- End the grab and clear its grab side/solid id.
 - Deduct `staminaClimbJumpCost`, floored at zero.
-- Arm `regrabTimer = config.mantleLockTime`.
-- Emit a new `LaunchIntent` source, `'mantle'`, with `vx: 0`, `vy: -config.mantleHopVy`, and `varJumpTime: 0`.
-- Give `'mantle'` the same arbitration priority as the wall-jump/climb-jump family.
-- Reset the jump slice to rising when the mantle launch wins, but do not report it as a normal jump.
+- Store an active mantle-assist state with the side, wall top, `landingX`, wall
+  id, and `assistTimer = config.mantleAssistTime`.
+- Arm `regrabTimer` for at least the assist interval.
+- Emit a new `LaunchIntent` source, `'mantle'`, with
+  `vx = wallDirection * config.mantleHopVx`, the derived negative `launchVy`,
+  and `varJumpTime: 0`.
+- Give `'mantle'` the same arbitration priority as the
+  wall-jump/climb-jump family.
+- Reset the jump slice to rising when the mantle launch wins, but do not report
+  it as a normal jump.
 - Emit `events.mantled = true` only when the mantle launch wins.
 
-The normal kernel gravity/collision path then advances the hop and lands the actor on the top surface. Do not set `onGround: true` at the relocation point—the actor has just received an upward launch.
+While the assist is active, `wallGrabAbility` re-applies the configured
+horizontal velocity toward the ledge on each tick but preserves `vy`. Add a
+`'mantle'` locomotion mode that skips ordinary horizontal input while allowing
+normal gravity. The normal X resolver initially blocks the toward-wall velocity,
+so X remains unchanged while the actor rises beside the wall. Once the actor's
+feet clear the wall top, that same collision-resolved velocity carries the actor
+smoothly over the edge. Gravity produces the visible arc and the normal Y
+resolver lands the actor on top.
+
+End the assist when the actor reaches `landingX`, lands, the timer expires, or a
+cancel/failure condition occurs. Dash cancels the assist and keeps dash priority;
+a ceiling collision or changed geometry ends the assist and leaves the actor on
+the physically resolved trajectory. Reaching the marker ends only the assist—it
+does not snap the actor to it.
 
 ## 4. Public and serialized API changes
 
@@ -163,9 +222,11 @@ Add flat config fields consistent with the existing module:
 
 ```ts
 readonly mantleEnabled: boolean;
+readonly mantleHopVx: number;
 readonly mantleHopVy: number;
-readonly mantleHorizontalInset: number;
-readonly mantleLockTime: number;
+readonly mantleApexClearance: number;
+readonly mantleLandingInset: number;
+readonly mantleAssistTime: number;
 readonly climbJumpRegrabLockTime: number;
 ```
 
@@ -174,34 +235,53 @@ Proposed 16 px reference defaults:
 | Field | Default | Unit/scaling | Rationale |
 |---|---:|---|---|
 | `mantleEnabled` | `true` | boolean, copied | Effective only when `wallGrabEnabled` is also true; consumers can opt out |
-| `mantleHopVy` | `120` | velocity, scaled and jump-repegged | Small visible pop (~0.45 of the default climb-hop impulse) |
-| `mantleHorizontalInset` | `8` | distance, scaled | Half of the default 16 px body width; clamped for narrower bodies/walls |
-| `mantleLockTime` | `0.2` | seconds, copied | Equivalent to the requested 12 ticks at 60 Hz without fixing the engine to 60 Hz |
+| `mantleHopVx` | `100` | velocity, scaled and jump-repegged | Assisted forward speed; collision pins it harmlessly until the actor clears the wall top |
+| `mantleHopVy` | `267` | velocity, scaled and jump-repegged | Minimum upward impulse; the route helper raises it when actor geometry requires more clearance |
+| `mantleApexClearance` | `6` | distance, scaled | Extra space above the wall top for visible hang time and enough time to move onto the ledge |
+| `mantleLandingInset` | `8` | distance, scaled | Half of the reference body width; defines the assist finish marker, never a position assignment |
+| `mantleAssistTime` | `0.35` | seconds, copied | Bounds the toward-ledge assist so it cannot own horizontal velocity indefinitely |
 | `climbJumpRegrabLockTime` | `0.12` | seconds, copied | Allows a short ballistic rise before re-cling |
 
 Validate the feel values in deterministic trajectories before freezing them. If tuning changes them, update the table and the default derivation together; do not introduce consumer-only overrides as the canonical behavior.
 
 Update `PLATFORMER_CONFIG_FIELD_UNITS` exhaustively:
 
+- `mantleHopVx`: `velocity`
 - `mantleHopVy`: `velocity`
-- `mantleHorizontalInset`: `distance`
-- `mantleLockTime`: `time`
+- `mantleApexClearance`: `distance`
+- `mantleLandingInset`: `distance`
+- `mantleAssistTime`: `time`
 - `climbJumpRegrabLockTime`: `time`
 - `mantleEnabled`: `boolean`
 
-Add `mantleHopVy` to `createPrecisionPlatformerConfig`'s jump-relative re-peg set so custom jump apex/time settings preserve the mantle pop hierarchy.
+Add `mantleHopVx` and `mantleHopVy` to
+`createPrecisionPlatformerConfig`'s jump-relative re-peg set so custom jump
+apex/time settings preserve the mantle arc.
 
 ### 4.2 `WallGrabAbilityState`
 
-Add one ability-private timer:
+Add one ability-private timer and one optional active-assist record:
 
 ```ts
 readonly regrabTimer?: number;
+readonly mantle?: {
+  readonly side: 'left' | 'right';
+  readonly wallTopY: number;
+  readonly landingX: number;
+  readonly solidId: string | null;
+  readonly assistTimer: number;
+} | null;
 ```
 
-Initialize it to `0` in `makeInitialWallGrabState`. Treat an absent field as `0` defensively when advancing manually constructed states. Decay it with `Math.max(0, timer - dt)` and preserve it through every early return, including ladder and disabled/release branches.
+Initialize these to `0` and `null` in `makeInitialWallGrabState`. Treat absent
+fields as inactive defensively when advancing manually constructed states.
+Decay timers with `Math.max(0, timer - dt)` and preserve them deliberately
+through every early return.
 
-A single timer is sufficient: straight climb-jump and mantle both need to block only wall-grab re-engagement, never global input or wall-slide behavior. Store it on the owning ability rather than `LocomotionState` or a consumer world.
+The re-grab timer blocks only wall-grab re-engagement, never global input or
+wall-slide behavior. The mantle record owns only the short horizontal assist;
+gravity and position stay kernel-owned. Store both on the owning ability rather
+than `LocomotionState` or a consumer world.
 
 ### 4.3 Launch sources and events
 
@@ -230,7 +310,13 @@ readonly mantled: boolean;
 
 Update all full event literals in built-in abilities, fallbacks, fixtures, and tests. The current worktree also changes `types.ts`, `constants.ts`, `kernel.ts`, and `wall-grab-ability.ts` for feel moments; preserve and integrate with those edits rather than replacing them.
 
-**Feel-moment parity (D2, shipped in `0.8.0`):** the booleans stay the canonical "did this happen" pulses, but the established pattern is that every trajectory-significant launch ALSO emits a matching single-tick feel moment on `state.moments` (the additive presentation channel consumers now wire SFX/shake from — `springLaunch`/`grabLatch`/`dashBonk` precede this). Add `{ kind: 'climbJumpLaunched' }` and `{ kind: 'mantled' }` moments (carrying the grabbed `solidId` where available) alongside the booleans, so a consumer needs only the moments channel for cues. If boolean-only is chosen instead, state that decision and its rationale explicitly here.
+**Feel-moment cue data (D2, shipped in `0.8.0`):** the booleans stay the
+canonical "did this happen" pulses. Existing launches do not universally have a
+matching moment, so do not describe this as a parity rule. Add
+`{ kind: 'climbJumpLaunched' }` and `{ kind: 'mantled' }` moments only if the
+consumer needs the grabbed `solidId` on the presentation channel; otherwise the
+new booleans are sufficient. Make that public-surface decision before
+implementation and keep the walkthrough/event mapping consistent with it.
 
 Do not add engine audio or particle functions. Celerock can map:
 
@@ -247,7 +333,9 @@ Particle placement remains consumer-owned and must use its seeded RNG.
 ### New file
 
 - `src/platformer/mantle.ts`
-  - Add the pure target/clearance helper.
+  - Add the pure route/launch helper.
+  - Return feasibility, finish-marker, and derived launch metadata only; never a
+    replacement actor position.
   - Keep blocking-solid filtering consistent with collision resolvers.
   - Prefer a module-private helper surface unless a concrete second consumer needs raw mantle geometry. Test the behavior through the public ability/kernel API.
 
@@ -255,13 +343,17 @@ Particle placement remains consumer-owned and must use its seeded RNG.
 
 - `src/platformer/abilities/wall-grab-ability.ts`
   - Probe using the latched `state.side` while grabbing.
-  - Decay/preserve `regrabTimer`.
+  - Decay/preserve `regrabTimer` and the active mantle-assist timer.
   - Add jump-direction branching and mantle transition in the precedence order above.
+  - During mantle assist, own only the toward-ledge `vx`; preserve `vy` and
+    never write `x`/`y`.
   - Continue to own stamina depletion and patches.
   - Never mutate `PlatformerInput`.
 
 - `src/platformer/kernel.ts`
   - Initialize the new state field.
+  - Add `'mantle'` locomotion mode: skip ordinary horizontal input but continue
+    gravity and normal X/Y collision resolution.
   - Arbitrate the new launch sources.
   - Open horizontal force only for the away path.
   - Emit the new semantic event pulses from the winning launch.
@@ -277,7 +369,7 @@ Particle placement remains consumer-owned and must use its seeded RNG.
 
 - `src/platformer/config-scale.ts`
   - Classify all fields.
-  - Re-peg `mantleHopVy` with the jump family.
+  - Re-peg `mantleHopVx`/`mantleHopVy` with the jump family.
 
 - `src/platformer/index.ts` and `src/index.ts`
   - Ensure widened public types/events flow through the existing barrels.
@@ -286,9 +378,10 @@ Particle placement remains consumer-owned and must use its seeded RNG.
 ### Replay and compatibility
 
 - `src/replay/constants.ts`
-  - Bump `CURRENT_PHYSICS_VERSION` from the current `10` to `11` and document mantle/directional-climb-jump trajectory changes.
-  - If another trajectory-changing change lands first, use the next monotonic version instead of forcing `11`.
-  - UPDATE (post-D2): version `11` shipped with the feel-moments channel (`0.8.0`), so this work bumps `11 → 12`.
+  - Bump `CURRENT_PHYSICS_VERSION` from the current `11` to `12` and document
+    mantle/directional-climb-jump trajectory changes.
+  - If another trajectory-changing change lands first, use the next monotonic
+    version instead of forcing `12`.
 
 - `src/replay/player.ts`
   - Update any manually constructed fallback events/ability slices.
@@ -332,15 +425,17 @@ Exercise the public wall-grab ability or `stepPlatformer` with synthetic solids:
 - Tall wall mid-climb does not mantle.
 - Near the top, clear right and left walls mantle symmetrically.
 - A thin/one-tile wall can mantle immediately when the head threshold is already met.
-- A very wide merged solid moves by the clamped inset, not half the solid width.
-- A ceiling above the starting side blocks the vertical lift.
-- An overhang above the ledge blocks the horizontal sweep.
-- An occupied target blocks the mantle.
+- A very wide merged solid uses an edge-relative finish marker and never causes
+  a position jump proportional to its width.
+- A ceiling above the starting side blocks the route before launch.
+- An overhang above the ledge blocks the conservative transition corridor.
+- An occupied landing foothold blocks the mantle.
 - Passthroughs, ladders, springs, and dash refills do not count as walls or blocking clearance.
 - Zero stamina and `mantleEnabled: false` suppress the transition.
 - Jump pressed on the mantle-eligible tick produces the jump path, not a mantle.
 - Dash pressed on the mantle-eligible tick produces neither wall-grab launch.
 - Inputs, core, state, and solids remain unmutated.
+- `findMantleRoute` never returns or applies a replacement core position.
 
 ### Phase C — kernel integration trajectories
 
@@ -349,8 +444,17 @@ Add full-step assertions:
 - Straight climb-jump rises for the configured lock duration before it may re-grab; no 4 px re-cling jitter.
 - Toward input does not create sideways velocity through the forced-move subsystem.
 - Away input keeps velocity away and emits `wallJumpLaunched`, not `climbJumpLaunched`.
-- Mantle emits `mantled`, begins above the wall without overlap, rises, then lands on the wall top.
-- Mantle clears contacts on launch and later acquires the correct ground contact id on landing.
+- Mantle emits `mantled` without changing position on the launch tick beyond
+  `velocity * dt`, rises beside the wall over multiple frames, crosses the edge,
+  then lands on top.
+- X stays pinned by the ordinary resolver while the actor overlaps the wall's Y
+  band, then advances smoothly once the feet clear the top.
+- No mantle tick changes `x` or `y` by more than its integrated velocity plus
+  the resolver's normal contact correction; assert the complete per-tick trace
+  has no discontinuity.
+- A blocked/cancelled assist falls or bonks from its physically resolved
+  position; it never jumps to the finish marker.
+- Mantle later acquires the correct ground contact id on landing.
 - The two event pulses last exactly one tick.
 - 30, 60, and 120 Hz fixed-step runs use duration-based locks and reach the same qualitative outcome.
 - A recorded input stream replays to the same final state/hash under the new physics version.
@@ -365,9 +469,10 @@ Use `src/tests/platformer-trace-harness.ts` for at least these new golden scenar
 ### Phase D — config and public-surface tests
 
 - `platformer-config-scale.test.ts`: verify distance/velocity/time/boolean behavior at 0.5x and 2x.
-- `createPrecisionPlatformerConfig`: verify custom apex/time re-pegs `mantleHopVy`.
+- `createPrecisionPlatformerConfig`: verify custom apex/time re-pegs
+  `mantleHopVx` and `mantleHopVy`.
 - `barrel-contract.test.ts`: ensure the widened public types/config compile through root exports.
-- Replay tests: reject physics version 10 after the bump and accept the new current version.
+- Replay tests: reject physics version 11 after the bump and accept the new current version.
 
 ## 7. Verification commands
 
@@ -386,7 +491,8 @@ Then inspect the packed declarations or tarball to confirm the config/state/even
 
 Consumer visual verification is a follow-up in Celerock:
 
-- grab + Up to a clear wall top ends standing on the ledge after the pop;
+- grab + Up visibly rises beside the wall, arcs across the lip, and lands—there
+  is no single-frame snap to the ledge;
 - neutral/Toward grab+jump rises vertically and can chain after the lock;
 - Away grab+jump visibly separates from the wall;
 - overhangs fail safely without embedding;
@@ -396,6 +502,10 @@ Consumer visual verification is a follow-up in Celerock:
 
 - Both mechanics work through an unpatched `stepPlatformer` call.
 - No consumer-owned physics/state/input rewrite is required.
+- Mantle never assigns an actor position directly: all movement is produced by
+  velocity integration plus normal collision resolution.
+- The actor occupies the intermediate rise/crossing positions over multiple
+  ticks; a clear mantle has no discontinuity in its trajectory trace.
 - Mantle never embeds the actor in a blocking solid or moves proportionally to a wide merged solid's width.
 - Neutral/Toward and Away grab+jumps have distinct, deterministic trajectories and correct facing.
 - Straight climb-jump cannot re-grab until its seconds-based lock expires.
@@ -409,8 +519,10 @@ Consumer visual verification is a follow-up in Celerock:
 
 | Risk | Mitigation |
 |---|---|
-| Mantle teleports through an overhang | Two-phase 1 px clearance sweep, not target-only overlap |
-| Wide compiled rectangle causes a large horizontal teleport | Edge-anchored, clamped inset formula |
+| Mantle looks like a teleport despite a clear route | Never assign `core.x`/`core.y`; use a multi-tick ballistic launch plus bounded horizontal assist |
+| Mantle tunnels through an overhang | Conservative preflight corridor plus authoritative live X/Y collision every tick |
+| Wide compiled rectangle causes a large horizontal move | Edge-anchored finish marker affects assist duration only; it is never copied into actor position |
+| Hop cannot raise the full actor above the lip | Derive a geometry-safe minimum `launchVy` from body height, wall top, gravity, clearance, and `dt` |
 | Straight jump is pushed sideways by old lockout logic | Distinct `'climbJump'` source; kernel clears force direction/timer |
 | Immediate re-cling cancels vertical rise | Ability-owned `regrabTimer` gated only on engagement |
 | Jump and mantle both fire | Explicit branch precedence inside one ability |

@@ -157,6 +157,8 @@ describe('advanceSquash — multi-event precedence (deterministic)', () => {
       dashStarting: true,
       dashStarted: true,
       doubleJumped: true,
+      climbJumpLaunched: true,
+      mantled: true,
     };
     const a = advanceSquash(IDENTITY_SCALE, input({ events: allEvents }), DEFAULT_SQUASH_CONFIG);
     const b = advanceSquash(IDENTITY_SCALE, input({ events: { ...allEvents } }), DEFAULT_SQUASH_CONFIG);

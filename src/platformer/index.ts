@@ -36,6 +36,7 @@ export type {
   DoubleJumpAbilityState,
   ClimbAbilityState,
   WallGrabAbilityState,
+  MantleAssistState,
   AnyAbilityState,
   PlatformerState,
   PlatformerConfig,

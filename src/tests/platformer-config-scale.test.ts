@@ -69,6 +69,9 @@ describe('config-scale: scalePlatformerConfig field units', () => {
     expect(s.dashSpeed).toBeCloseTo(base.dashSpeed * 0.5, EPS);
     expect(s.wallJumpVx).toBeCloseTo(base.wallJumpVx * 0.5, EPS);
     expect(s.climbSpeed).toBeCloseTo(base.climbSpeed * 0.5, EPS);
+    // mantle wave — hop velocities scale with the tile size
+    expect(s.mantleHopVx).toBeCloseTo(base.mantleHopVx * 0.5, EPS);
+    expect(s.mantleHopVy).toBeCloseTo(base.mantleHopVy * 0.5, EPS);
     // acceleration
     expect(s.gravity).toBeCloseTo(base.gravity * 0.5, EPS);
     expect(s.runAccel).toBeCloseTo(base.runAccel * 0.5, EPS);
@@ -78,6 +81,9 @@ describe('config-scale: scalePlatformerConfig field units', () => {
     expect(s.stepHeight).toBeCloseTo((base.stepHeight as number) * 0.5, EPS);
     expect(s.wallProbeDistance).toBeCloseTo((base.wallProbeDistance as number) * 0.5, EPS);
     expect(s.upwardCornerCorrection).toBeCloseTo(base.upwardCornerCorrection * 0.5, EPS);
+    // mantle wave — clearances/inset are pixel distances
+    expect(s.mantleApexClearance).toBeCloseTo(base.mantleApexClearance * 0.5, EPS);
+    expect(s.mantleLandingInset).toBeCloseTo(base.mantleLandingInset * 0.5, EPS);
   });
 
   it('copies ratios, times, counts, and booleans unchanged at scale 0.5', () => {
@@ -93,6 +99,9 @@ describe('config-scale: scalePlatformerConfig field units', () => {
     expect(s.wallJumpLockTime).toBe(base.wallJumpLockTime);
     expect(s.superJumpGrace).toBe(base.superJumpGrace);
     expect(s.springVarJumpTime).toBe(base.springVarJumpTime);
+    // mantle wave — durations are seconds (copied verbatim)
+    expect(s.mantleAssistTime).toBe(base.mantleAssistTime);
+    expect(s.climbJumpRegrabLockTime).toBe(base.climbJumpRegrabLockTime);
     // count
     expect(s.maxDashes).toBe(base.maxDashes);
     expect(s.maxDoubleJumps).toBe(base.maxDoubleJumps);
@@ -103,6 +112,7 @@ describe('config-scale: scalePlatformerConfig field units', () => {
     expect(s.dashEnabled).toBe(base.dashEnabled);
     expect(s.wallSlideEnabled).toBe(base.wallSlideEnabled);
     expect(s.wallGrabEnabled).toBe(base.wallGrabEnabled);
+    expect(s.mantleEnabled).toBe(base.mantleEnabled);
   });
 
   it('scales jump.apexHeight but copies jump.timeToApex and pose fields', () => {
@@ -218,6 +228,9 @@ describe('config-scale: createPrecisionPlatformerConfig', () => {
     expect(c.springBounceVy).toBeCloseTo(ref.springBounceVy * 2, 5);
     expect(c.springSuperBounceVy).toBeCloseTo(ref.springSuperBounceVy * 2, 5);
     expect(c.climbHopVy).toBeCloseTo(ref.climbHopVy * 2, 5);
+    // mantle wave — the mantle hop velocities are jump-repegged with the family
+    expect(c.mantleHopVx).toBeCloseTo(ref.mantleHopVx * 2, 5);
+    expect(c.mantleHopVy).toBeCloseTo(ref.mantleHopVy * 2, 5);
     // Non-jump-relative magnitudes track moveSpeed (scale only) — unchanged at
     // tileSize 16 with no moveSpeed override.
     expect(c.moveSpeed).toBe(ref.moveSpeed);

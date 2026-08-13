@@ -87,6 +87,8 @@ export const jumpAbility: AbilityProcessor<JumpAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     // On the launch tick, emit a LaunchIntent instead of writing core.vy. The

@@ -105,6 +105,8 @@ export const dashTechAbility: AbilityProcessor<DashTechAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     // Edge-triggered: only on a jump press. Locomotion may be absent for callers

@@ -139,6 +139,8 @@ export const dashAbility: AbilityProcessor<DashAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     // Cooldown always counts down, regardless of phase.

@@ -1,6 +1,7 @@
 /**
- * Wall-grab + climb + climb-hop ability processor (Phase 6 — Celeste `Climb*`,
- * `Player.cs:102-118` / `:1711`).
+ * Wall-grab + climb + grab-jump + ledge-mantle ability processor (Phase 6 —
+ * Celeste `Climb*`, `Player.cs:102-118` / `:1711`; mantle wave — see
+ * `docs/design/platformer-wall-mantle-directional-climb-jump-plan.md`).
  *
  * Claims the exclusive `'wallGrab'` locomotion mode while grabbing. In that
  * mode the ability is the SOLE owner of the actor's velocity: it sets `vy`
@@ -15,9 +16,12 @@
  *
  *   - **Engage** (idle → grabbing): `wallGrabEnabled` AND `input.grab.held`
  *      AND `probeWall(facing)` finds a wall AND `stamina > 0` AND not on a
- *      ladder AND not (prev-tick) dashing AND no dash pressed this tick. On
- *      engage, `vy`/`vx` are set from the climb intent and stamina begins
- *      draining. Celeste engages on `Grab.Check` + `ClimbCheck(Facing)`.
+ *      ladder AND not (prev-tick) dashing AND no dash pressed this tick AND
+ *      the re-grab lock has expired (`regrabTimer <= 0` — armed by a
+ *      climb-jump/mantle so the actor is allowed to rise off the wall before
+ *      re-clinging). On engage, `vy`/`vx` are set from the climb intent and
+ *      stamina begins draining. Celeste engages on `Grab.Check` +
+ *      `ClimbCheck(Facing)`.
  *
  *   - **Climb** (grabbing → grabbing): `vy` follows `input.moveY`:
  *      `moveY === -1` → `vy = -wallClimbUpSpeed` (drains `staminaUpCostPerSec`);
@@ -34,21 +38,53 @@
  *      release the actor falls normally; wall-slide may engage next tick if the
  *      player holds into the wall without grab.
  *
- *   - **Climb-hop** (grabbing + `jump.pressed` → idle + launch): emits a
- *      `LaunchIntent` with `source: 'climbHop'`, `vy = -climbHopVy` (up) and
- *      `vx = ±climbHopVx` away from the wall, `varJumpTime: 0` (a FIXED impulse
- *      — Celeste's climb-jump is not variable-height). The kernel applies it,
- *      opens the `forceMoveX` lockout for `climbHopForceTime` (pushing the
- *      actor away so it cannot immediately re-grab), and deducts
- *      `staminaClimbJumpCost` (flat) from the pool (done here via
- *      `locomotionPatch`). Celeste `Player.cs:1711` `ClimbJump*`.
+ *   - **Direction-aware grab+jump** (grabbing + `jump.pressed` → idle +
+ *     launch): branches on the LATCHED wall side (`WallGrabAbilityState.side`
+ *     — never velocity, never the input edge):
+ *      - **Away** (sign of `moveX` points off the wall) → the pre-mantle
+ *        climb-hop unchanged: `source: 'climbHop'`, `vy = -climbHopVy`,
+ *        `vx = ±climbHopVx` away, faces away, kernel opens the
+ *        `climbHopForceTime` forced-horizontal lockout. No re-grab timer —
+ *        the forced interval supplies the separation.
+ *      - **Neutral or Toward** → a straight-up climb-jump:
+ *        `source: 'climbJump'`, `vx = 0`, `vy = -climbHopVy`, faces the wall,
+ *        NO forced-horizontal window (the kernel resolves `forceMoveX = 0` /
+ *        `forceMoveXTimer = 0`), and `regrabTimer = climbJumpRegrabLockTime`
+ *        so the actor actually rises instead of instantly re-clinging.
+ *      Direction tests are sign-based (`moveX < 0` / `> 0`), matching the
+ *      kernel's analog contract; magnitude is ignored. Both branches keep the
+ *      fixed-height impulse (`varJumpTime: 0`), jump-slice reset, and flat
+ *      `staminaClimbJumpCost` deduction.
+ *
+ *   - **Mantle** (grabbing + Up near a clear wall top → idle + assisted hop):
+ *     when grab is held, `moveY === -1`, jump is NOT pressed, stamina > 0, the
+ *     re-grab lock is expired, and `findMantleRoute` validates a clear route,
+ *     the ability ends the grab, deducts `staminaClimbJumpCost`, arms the
+ *     mantle-assist record + re-grab lock, and emits a `'mantle'` launch
+ *     (`vx = wallDirection · mantleHopVx`, the geometry-derived negative
+ *     `launchVy`, `varJumpTime: 0`). Position is NEVER written — the start
+ *     tick leaves `x`/`y` exactly as they are.
+ *
+ *   - **Mantle assist** (idle, assist record active): the ability re-applies
+ *     ONLY the toward-ledge `vx` each tick and preserves `vy` (kernel gravity
+ *     owns it; the `'mantle'` locomotion mode skips ordinary horizontal input
+ *     but NOT gravity). The normal X resolver pins the actor beside the wall
+ *     until its feet clear `wallTopY`; then the same velocity carries it over
+ *     the lip and the normal Y resolver lands it. The assist ends on reaching
+ *     the edge-anchored `landingX` MARKER (never a snap), landing, timeout, a
+ *     dash, or a ceiling bonk — every exit preserves the physically resolved
+ *     position.
+ *
+ * Precedence inside one already-grabbing tick (fixed): release conditions →
+ * jump pressed (direction-aware) → mantle conditions → cling/climb + stamina
+ * drain. So dash beats both jump and mantle, and jump beats mantle.
  *
  * Stamina lives on the shared `LocomotionState.stamina` — it is refilled to
  * `wallGrabMaxStamina` by the KERNEL whenever the actor is supported
  * (`onGround`), not by this ability. The ability only DEPLETES it (via a
- * `locomotionPatch`): up-climb / cling / hop costs flow through here; refill
- * stays in the kernel so there is exactly one owner for each direction. When
- * stamina reaches 0 the grab releases.
+ * `locomotionPatch`): up-climb / cling / jump / mantle costs flow through
+ * here; refill stays in the kernel so there is exactly one owner for each
+ * direction. When stamina reaches 0 the grab releases.
  *
  * Pipeline-order note: runs AFTER `wallSlideAbility` (and after jump/dashTech).
  * Wall-grab and wall-slide are mutually exclusive by input — wall-grab requires
@@ -63,6 +99,7 @@
  */
 
 import { probeWall, overlapsLadder } from '../../collision/aabb';
+import { findMantleRoute } from '../mantle';
 import type {
   AbilityContext,
   AbilityProcessor,
@@ -147,6 +184,8 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     // ----- Read the world: wall presence (probeWall, NOT contacts — §0e),
@@ -163,16 +202,26 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
     const dashPressed = input.dash !== null && input.dash.pressed;
     const moveY = (input.moveY ?? 0) as -1 | 0 | 1;
 
-    // Wall on the facing side (Celeste `ClimbCheck((int)Facing)`). `probeWall`
-    // is a pure geometry query independent of velocity — this is what lets the
-    // grab survive a pinned `vx = 0` (contacts would clear). Phase D2 keeps the
-    // resolved `Solid` (instead of `!== null`-reducing it) so the `grabLatch`
-    // feel moment can carry the surface id.
+    // While grabbing, probe the LATCHED side (state.side — the wall the actor
+    // actually clings to), not the current facing. Celeste
+    // `ClimbCheck((int)Facing)` at engage; the latched side thereafter.
+    const grabbing0 = state.grabbing;
+    const latchedSide: 'left' | 'right' =
+      grabbing0 && state.side !== null
+        ? state.side
+        : core.facing === 1
+          ? 'right'
+          : 'left';
+    const probeDir: -1 | 1 = latchedSide === 'right' ? 1 : -1;
+
+    // Phase D2 keeps the resolved `Solid` (instead of `!== null`-reducing it)
+    // so the `grabLatch` feel moment can carry the surface id — and so the
+    // mantle can read the wall's `x`/`y`/`width` geometry.
     const wallSolid =
       solids !== undefined
         ? probeWall(
             { x: core.x, y: core.y, width: core.width, height: core.height },
-            core.facing,
+            probeDir,
             probeDist,
             solids,
           )
@@ -180,13 +229,19 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
     const wallPresent = wallSolid !== null;
     const wallSolidId =
       wallSolid !== null && typeof wallSolid.id === 'string' ? wallSolid.id : null;
-    const side: 'left' | 'right' = core.facing === 1 ? 'right' : 'left';
 
     // Stamina is the shared pool on `locomotion`. Fall back to max if absent
     // (defensive — `createPlatformerState` always inits it).
     const staminaCur = locomotion?.stamina ?? config.wallGrabMaxStamina;
 
-    let grabbing = state.grabbing;
+    // ----- Ability-private timers. The re-grab lock decays every tick and is
+    // preserved through every early return (a lost timer would let the actor
+    // re-cling mid-rise). The mantle assist record is carried locally and
+    // written back at the end. -----
+    let regrabTimer = Math.max(0, (state.regrabTimer ?? 0) - dt);
+    let mantleAssist = state.mantle ?? null;
+
+    let grabbing = grabbing0;
     let nextCore = core;
     let launch: LaunchIntent | undefined;
     let staminaPatch: number | undefined;
@@ -195,20 +250,28 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
     const moments: FeelMoment[] = [];
 
     // ----- Ladder takes priority: if the body overlaps a ladder cell, the
-    // climb (ladder) ability owns vertical motion. Release any active grab and
-    // do not engage. This prevents the two vertical authorities from fighting
-    // when a ladder shaft sits flush against a wall. -----
+    // climb (ladder) ability owns vertical motion. Release any active grab,
+    // end any in-flight mantle assist (the ladder owns vy for the tick), and
+    // decay the re-grab lock — every field survives the early return. -----
     if (onLadder) {
       if (grabbing) grabbing = false;
+      mantleAssist = null;
       return {
         core: nextCore,
-        state: { kind: 'wallGrab', grabbing, side: null },
+        state: {
+          kind: 'wallGrab',
+          grabbing,
+          side: null,
+          solidId: null,
+          regrabTimer,
+          mantle: null,
+        },
         events,
       };
     }
 
     if (grabbing) {
-      // ----- Already grabbing: continue, hop, or release. -----
+      // ----- Already grabbing: release, jump, mantle, or continue. -----
       const releaseForGrab = !grabHeld;
       const releaseForWall = !wallPresent;
       const releaseForDash = dashPressed;
@@ -220,27 +283,119 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
         // wall without grab.
         grabbing = false;
       } else if (jumpPressed) {
-        // ----- Climb-hop (Celeste `ClimbJump*`, `Player.cs:1711`). Emit a
-        // FIXED launch up-and-away from the wall. The kernel applies it,
-        // opens the `forceMoveX` lockout (`climbHopForceTime`) so the actor is
-        // pushed away and cannot immediately re-grab, and resets the jump
-        // slice so the plain jump's anticipation does not re-fire. The flat
-        // `staminaClimbJumpCost` is deducted here via the stamina patch. -----
+        // ----- Direction-aware grab+jump. Branch on the LATCHED side, not
+        // velocity and not the input edge: `away` is the sign of `moveX`
+        // pointing OFF the wall (sign-based, matching the kernel's analog
+        // contract — magnitude is ignored). -----
         grabbing = false;
-        const away: -1 | 1 = side === 'right' ? -1 : 1;
-        launch = {
-          vy: -config.climbHopVy,
-          vx: away * config.climbHopVx,
-          // varJumpTime: 0 — climb-hop is a FIXED impulse (no variable height);
-          // Celeste's climb-jump does not open the variable-jump window.
-          varJumpTime: 0,
-          source: 'climbHop',
-        };
-        // Face away from the wall (the hop direction). Facing is not a velocity
-        // so it is still written here directly; the kernel's forced-horizontal
-        // step will reaffirm it.
-        nextCore = { ...nextCore, facing: away };
+        const wallDirection: 1 | -1 = latchedSide === 'right' ? 1 : -1;
+        const away =
+          latchedSide === 'right' ? input.moveX < 0 : input.moveX > 0;
         staminaPatch = Math.max(0, staminaCur - config.staminaClimbJumpCost);
+        if (away) {
+          // ----- Climb-hop (Celeste `ClimbJump*`, `Player.cs:1711`). Emit a
+          // FIXED launch up-and-away from the wall. The kernel applies it,
+          // opens the `forceMoveX` lockout (`climbHopForceTime`) so the actor
+          // is pushed away and cannot immediately re-grab, and resets the jump
+          // slice so the plain jump's anticipation does not re-fire. The flat
+          // `staminaClimbJumpCost` is deducted here via the stamina patch. -----
+          const awayDir: -1 | 1 = wallDirection === 1 ? -1 : 1;
+          launch = {
+            vy: -config.climbHopVy,
+            vx: awayDir * config.climbHopVx,
+            // varJumpTime: 0 — climb-hop is a FIXED impulse (no variable
+            // height); Celeste's climb-jump does not open the variable-jump
+            // window.
+            varJumpTime: 0,
+            source: 'climbHop',
+          };
+          // Face away from the wall (the hop direction). Facing is not a
+          // velocity so it is still written here directly; the kernel's
+          // forced-horizontal step will reaffirm it.
+          nextCore = { ...nextCore, facing: awayDir };
+          // No re-grab timer here — the forced-horizontal interval supplies
+          // the separation (the re-grab lock exists for the straight-up
+          // climb-jump's rise, not the away hop).
+        } else {
+          // ----- Straight-up climb-jump (Neutral or Toward). `vx = 0`, faces
+          // the grabbed wall, NO forced-horizontal window (the kernel
+          // explicitly resolves `forceMoveX = 0` / `forceMoveXTimer = 0` for
+          // the `'climbJump'` source), and the ability-private re-grab lock
+          // armed so the actor actually rises beside the wall instead of
+          // instantly re-clinging (the 4 px re-cling jitter). -----
+          launch = {
+            vy: -config.climbHopVy,
+            vx: 0,
+            varJumpTime: 0,
+            source: 'climbJump',
+          };
+          nextCore = { ...nextCore, facing: wallDirection };
+          regrabTimer = config.climbJumpRegrabLockTime;
+        }
+      } else if (
+        // ----- Mantle eligibility (evaluated only on a grabbing tick that
+        // survived release + jump: grab held, no jump press, no dash press).
+        // All gates per the canonical plan §3.4. -----
+        config.mantleEnabled &&
+        moveY === -1 &&
+        !dashing &&
+        staminaCur > 0 &&
+        regrabTimer <= 0 &&
+        wallSolid !== null &&
+        solids !== undefined
+      ) {
+        const route = findMantleRoute({
+          core,
+          wall: wallSolid,
+          side: latchedSide,
+          config,
+          dt,
+          solids,
+        });
+        if (route !== null) {
+          // ----- Mantle start. Position and contacts stay EXACTLY as they
+          // are at ability evaluation — the start tick performs no movement.
+          // End the grab, charge stamina, arm the assist + re-grab lock, and
+          // emit the `'mantle'` launch; from here gravity, integration, and
+          // collision produce all motion. -----
+          grabbing = false;
+          const wallDirection: 1 | -1 = latchedSide === 'right' ? 1 : -1;
+          launch = {
+            vy: route.launchVy,
+            vx: wallDirection * config.mantleHopVx,
+            varJumpTime: 0,
+            source: 'mantle',
+          };
+          // Face the ledge (the direction of travel).
+          nextCore = { ...nextCore, facing: wallDirection };
+          staminaPatch = Math.max(0, staminaCur - config.staminaClimbJumpCost);
+          mantleAssist = {
+            side: route.side,
+            wallTopY: route.wallTopY,
+            landingX: route.landingX,
+            solidId: route.solidId,
+            assistTimer: config.mantleAssistTime,
+          };
+          // The re-grab lock covers at least the whole assist interval so the
+          // hop cannot re-cling before it finishes.
+          regrabTimer = Math.max(
+            config.climbJumpRegrabLockTime,
+            config.mantleAssistTime,
+          );
+        } else {
+          // No safe route (mid-climb, ceiling, overhang, occupied foothold):
+          // continue cling/climb this tick — a conservative decline, never a
+          // blocked launch.
+          nextCore = applyClimbVelocity(core, moveY, config);
+          const depleted = depleteStamina(staminaCur, moveY, config, dt);
+          if (depleted <= 0) {
+            grabbing = false;
+            if (staminaCur > 0) {
+              moments.push({ kind: 'staminaExhausted' });
+            }
+          }
+          if (depleted !== staminaCur) staminaPatch = Math.max(0, depleted);
+        }
       } else {
         // ----- Continue grabbing: apply climb velocity + deplete stamina. -----
         nextCore = applyClimbVelocity(core, moveY, config);
@@ -262,14 +417,50 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
         // ability's concurrent patch).
         if (depleted !== staminaCur) staminaPatch = Math.max(0, depleted);
       }
+    } else if (mantleAssist !== null) {
+      // ----- Mantle assist in flight: own ONLY the toward-ledge `vx`. `vy`
+      // is preserved (kernel gravity owns it) and position is NEVER written —
+      // the kernel's integration + `resolveAxisX`/`resolveAxisY` produce all
+      // motion this tick (the no-teleport invariant). -----
+      const assist = mantleAssist;
+      const wallDirection: 1 | -1 = assist.side === 'right' ? 1 : -1;
+      // Reaching the finish MARKER ends the assist — it never snaps the actor
+      // to it. Direction-aware comparison (right wall ⇒ marker is rightward).
+      const reachedMarker =
+        assist.side === 'right'
+          ? core.x >= assist.landingX
+          : core.x <= assist.landingX;
+      // Cancel/failure exits: dash takes over, a ceiling bonk (prev-tick
+      // contact) means the rise was blocked, and landing ends the hop. Every
+      // exit preserves the physically resolved position.
+      const cancelled =
+        dashPressed || dashing || core.onGround || core.contacts.ceilingId !== null;
+      const expired = assist.assistTimer - dt <= 0;
+      if (reachedMarker || cancelled || expired) {
+        mantleAssist = null;
+        // No velocity write on the ending tick — the kernel's ordinary
+        // horizontal handling resumes next tick (mode returns to 'normal').
+      } else {
+        // Re-apply ONLY the toward-ledge horizontal velocity. While the body
+        // still overlaps the wall's Y band, the kernel's X resolver blocks
+        // this velocity, so the actor visibly rises beside the wall; once the
+        // feet clear `wallTopY`, the same velocity carries the actor over the
+        // lip. `vy` is untouched.
+        nextCore = { ...nextCore, vx: wallDirection * config.mantleHopVx };
+        mantleAssist = { ...assist, assistTimer: assist.assistTimer - dt };
+      }
+      // Note: no grab engage attempt while an assist is in flight — the
+      // re-grab lock (armed for ≥ the assist interval) blocks it anyway.
     } else {
-      // ----- Not grabbing: try to engage. -----
+      // ----- Not grabbing, no assist: try to engage. The re-grab lock gates
+      // ONLY engagement — never global input, never wall-slide. -----
       const canEngage =
         grabHeld &&
         wallPresent &&
         staminaCur > 0 &&
         !dashing &&
-        !dashPressed;
+        !dashPressed &&
+        regrabTimer <= 0;
       if (canEngage) {
         grabbing = true;
         // Phase D2 — one-tick `grabLatch` pulse on the `false → true` engage
@@ -285,11 +476,16 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
     const nextState: WallGrabAbilityState = {
       kind: 'wallGrab',
       grabbing,
-      side: grabbing ? side : null,
+      side: grabbing ? latchedSide : null,
       // Phase D2 — capture the grabbed wall's surface id while grabbing
       // (observation-only), so the `grabLatch` moment and any downstream
       // rendering share the provenance. `null` while not grabbing.
       solidId: grabbing ? wallSolidId : null,
+      // Mantle wave — the re-grab lock (blocks only re-engagement) and the
+      // active mantle-assist record (owns only the toward-ledge vx). Both are
+      // preserved through every path above.
+      regrabTimer,
+      mantle: mantleAssist,
     };
 
     return {
@@ -297,10 +493,10 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
       state: nextState,
       events,
       ...(launch !== undefined ? { launch } : {}),
-      // Only patch stamina when this ability actually changed it (a grabbing or
-      // hop tick). On idle / failed-engage ticks the kernel's end-of-tick
-      // ground-refill handles stamina; we must not emit an empty patch that
-      // would clobber a concurrent ability's patch.
+      // Only patch stamina when this ability actually changed it (a grabbing,
+      // jump, or mantle tick). On idle / failed-engage ticks the kernel's
+      // end-of-tick ground-refill handles stamina; we must not emit an empty
+      // patch that would clobber a concurrent ability's patch.
       ...(staminaPatch !== undefined
         ? { locomotionPatch: { stamina: staminaPatch } satisfies Partial<LocomotionState> }
         : {}),

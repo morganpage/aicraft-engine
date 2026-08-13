@@ -117,15 +117,15 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   //   wallClimbDownSpeed    = ClimbDownSpeed 80 / MaxRun 90 × 200 ≈ 178
   //   climbHopVy            = ClimbHopY 120 / MaxRun 90 × 200 ≈ 267
   //   climbHopVx            = ClimbHopX 100 / MaxRun 90 × 200 ≈ 222
-  //   climbHopForceTime     = ClimbHopForceTime .2 (verbatim seconds)
-  //   climbJumpBoostTime    = ClimbJumpBoostTime .2 (verbatim; reserved — leniency deferred)
-  //   climbUpCheckDist      = ClimbUpCheckDist 2 (verbatim px; reserved — leniency deferred)
-  // NOTE on climb-speed pegging: the roadmap loosely says "pegged to climbSpeed
-  // 120" — we deliberately use the MaxRun→moveSpeed rule (appendix) for
-  // consistency with every other transferred speed. `climbSpeed` (120) is the
-  // LADDER speed, a separate concern (ladder shafts); pegging wall-climb to it
-  // would conflate two unrelated channels. MaxRun→moveSpeed is the canonical
-  // locomotion-speed reference and is what every Phase 3-5 speed uses.
+//   climbHopForceTime     = ClimbHopForceTime .2 (verbatim seconds)
+//   climbJumpBoostTime    = ClimbJumpBoostTime .2 (verbatim; reserved — leniency deferred)
+//   climbUpCheckDist      = ClimbUpCheckDist 2 (verbatim px; reserved — leniency deferred)
+// NOTE on climb-speed pegging: the roadmap loosely says "pegged to climbSpeed
+// 120" — we deliberately use the MaxRun→moveSpeed rule (appendix) for
+// consistency with every other transferred speed. `climbSpeed` (120) is the
+// LADDER speed, a separate concern (ladder shafts); pegging wall-climb to it
+// would conflate two unrelated channels. MaxRun→moveSpeed is the canonical
+// locomotion-speed reference and is what every Phase 3-5 speed uses.
   wallGrabEnabled: false,
   wallGrabMaxStamina: 110,
   staminaUpCostPerSec: 45.45,
@@ -138,6 +138,27 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   climbHopForceTime: 0.2,
   climbJumpBoostTime: 0.2,
   climbUpCheckDist: 2,
+  // -----------------------------------------------------------------------
+  // Mantle wave — ledge mantle + direction-aware grab+jump. Effective only
+  // while `wallGrabEnabled` is also true. Derivations (pegging rule:
+  // [A] = celeste/celesteRef × aicraftRef, reference = MaxRun→moveSpeed):
+  //   mantleEnabled          = true (opt-out switch; inert while wallGrab is off)
+  //   mantleHopVx            = 45 / MaxRun 90 × moveSpeed 200 = 100
+  //   mantleHopVy            = 120 / MaxRun 90 × moveSpeed 200 ≈ 267 (MINIMUM —
+  //                            the route helper raises it from actor geometry)
+  //   mantleApexClearance    = 6 px (sub-half-tile hang-time clearance)
+  //   mantleLandingInset     = 8 px (half the 16px reference body width)
+  //   mantleAssistTime       = 0.35 s (bounds the toward-ledge assist)
+  //   climbJumpRegrabLockTime= 0.12 s (short ballistic rise before re-cling)
+  // The two hop speeds are re-pegged with the jump family by
+  // `createPrecisionPlatformerConfig`; the two durations transfer verbatim.
+  mantleEnabled: true,
+  mantleHopVx: 100,
+  mantleHopVy: 267,
+  mantleApexClearance: 6,
+  mantleLandingInset: 8,
+  mantleAssistTime: 0.35,
+  climbJumpRegrabLockTime: 0.12,
   // -----------------------------------------------------------------------
   // Phase 7 — upward CC + dash CC + wall-speed retention (Celeste
   // `UpwardCornerCorrection` / `DashCornerCorrection` / `WallSpeedRetentionTime`).
@@ -214,6 +235,8 @@ export const EMPTY_EVENTS: Readonly<PlatformerEvents> = {
   dashStarting: false,
   dashStarted: false,
   doubleJumped: false,
+  climbJumpLaunched: false,
+  mantled: false,
 };
 
 /**

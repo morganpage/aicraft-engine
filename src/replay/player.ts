@@ -249,6 +249,8 @@ const FALLBACK_EMPTY_STATE: PlatformerState = Object.freeze({
     dashStarting: false,
     dashStarted: false,
     doubleJumped: false,
+    climbJumpLaunched: false,
+    mantled: false,
   }),
   // Phase 8 — no surface interactions on the fallback state.
   interactions: Object.freeze([]),

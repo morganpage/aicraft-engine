@@ -91,6 +91,8 @@ export const climbAbility: AbilityProcessor<ClimbAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     // Jump wins: if the player jumps this tick, abandon the ladder and let

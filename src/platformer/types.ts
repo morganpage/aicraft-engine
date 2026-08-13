@@ -186,6 +186,22 @@ export interface PlatformerEvents {
   readonly dashStarted: boolean;
   /** `true` on the tick the double-jump ability fired a second jump in air. */
   readonly doubleJumped: boolean;
+  /**
+   * `true` on the tick a direction-aware straight-up climb-jump won launch
+   * arbitration — a grab+jump with NEUTRAL or TOWARD horizontal input
+   * (`LaunchSource: 'climbJump'`). The actor rises vertically beside the wall,
+   * facing it; a short ability-owned re-grab lock
+   * (`climbJumpRegrabLockTime`) prevents an immediate re-cling.
+   */
+  readonly climbJumpLaunched: boolean;
+  /**
+   * `true` on the tick a ledge mantle launch won arbitration
+   * (`LaunchSource: 'mantle'`) — grab held + Up near the top of a clear wall.
+   * The mantle is a continuous multi-tick assisted hop; this pulse marks only
+   * its launch tick (the rise/crossing/landing produce no further pulses —
+   * `justLanded` fires normally on landing).
+   */
+  readonly mantled: boolean;
 }
 
 /**
@@ -367,6 +383,14 @@ export interface AbilityResult<TState extends AbilityState> {
  * committed wall move that must beat a plain `jump` / `doubleJump` emitted the
  * same tick) and is the only launch source that opens a `forceMoveX` lockout
  * with `climbHopForceTime` rather than `wallJumpLockTime`.
+ *
+ * The mantle wave adds `'climbJump'` (a straight-up grab+jump — neutral or
+ * Toward input while grabbing) and `'mantle'` (the assisted ledge hop). Both
+ * rank with the wall-jump family (priority 3) but open NO horizontal force
+ * window: the kernel explicitly resolves `forceMoveX = 0` /
+ * `forceMoveXTimer = 0` for them (the climb-jump rises vertically beside the
+ * wall; the mantle's toward-ledge push is owned by the wall-grab ability's
+ * short mantle assist, not by the forced-move subsystem).
  */
 export type LaunchSource =
   | 'jump'
@@ -375,6 +399,8 @@ export type LaunchSource =
   | 'superJump'
   | 'superWallJump'
   | 'climbHop'
+  | 'climbJump'
+  | 'mantle'
   | 'spring';
 
 /**
@@ -439,6 +465,8 @@ export const LAUNCH_PRIORITY: Readonly<Record<LaunchSource, number>> = {
   superJump: 4,
   wallJump: 3,
   climbHop: 3,
+  climbJump: 3,
+  mantle: 3,
   doubleJump: 2,
   jump: 1,
 };
@@ -463,8 +491,15 @@ export const LAUNCH_PRIORITY: Readonly<Record<LaunchSource, number>> = {
  *                   kernel SKIPS gravity and horizontal input. Engaged by
  *                   `wallGrabAbility` while `input.grab.held` and a wall is
  *                   present on the facing side (Phase 6).
+ *   - `'mantle'`  — the wall-grab ability's mantle assist is in flight (an
+ *                   active `WallGrabAbilityState.mantle` record): the ability
+ *                   re-applies the toward-ledge `vx` each tick, the kernel
+ *                   SKIPS ordinary horizontal input but NOT gravity, and the
+ *                   normal X/Y collision resolvers stay authoritative (the
+ *                   actor rises beside the wall, crosses the lip once its
+ *                   feet clear, and lands through the normal resolver).
  */
-export type LocomotionMode = 'normal' | 'dash' | 'wallGrab' | 'ladder';
+export type LocomotionMode = 'normal' | 'dash' | 'wallGrab' | 'ladder' | 'mantle';
 
 /**
  * Shared, non-ability locomotion state (Phase 0c). A TOP-LEVEL field on
@@ -814,6 +849,26 @@ export interface ClimbAbilityState extends AbilityState {
 }
 
 /**
+ * The active mantle assist record carried on {@link WallGrabAbilityState.mantle}.
+ * Owns ONLY the short toward-ledge horizontal re-application while the assisted
+ * hop is in flight; gravity, integration, and collision stay kernel-owned.
+ * Mantle code never assigns `core.x`/`core.y` — `landingX` is the assist's
+ * finish MARKER, never a position assignment.
+ */
+export interface MantleAssistState {
+  /** The wall side the mantle started from (`'left'`/`'right'`). */
+  readonly side: 'left' | 'right';
+  /** The wall's top edge Y (the lip the actor's whole body must clear). */
+  readonly wallTopY: number;
+  /** Edge-anchored assist finish marker (NEVER a position assignment). */
+  readonly landingX: number;
+  /** The mantled wall's `Solid.id`, or `null` (provenance only). */
+  readonly solidId: string | null;
+  /** Remaining assist time in seconds (≥ 0). */
+  readonly assistTimer: number;
+}
+
+/**
  * Wall-grab ability state (Phase 6 — Celeste wall-climb / `Climb*`). The
  * ability claims the exclusive `'wallGrab'` locomotion mode while grabbing, so
  * it owns `core.vy` (cling/climb) and pins `core.vx` to 0 for the grab's
@@ -827,9 +882,24 @@ export interface ClimbAbilityState extends AbilityState {
  *
  * Stamina lives on the shared {@link LocomotionState.stamina} (it is
  * read/refilled outside this ability); this slice holds only the grab's own
- * phase + side. The climb-jump leniency window (Celeste `ClimbJumpBoostTime`,
- * `ClimbUpCheckDist`) is a deferred nuance — a focused, correct core grab+hop
- * is the priority; the window is documented in the roadmap and not yet wired.
+ * phase + side.
+ *
+ * The mantle wave adds two ability-private fields:
+ *  - `regrabTimer` — a seconds-based lock that blocks ONLY wall-grab
+ *    re-engagement (never global input, never wall-slide). Armed by a
+ *    straight-up climb-jump (`climbJumpRegrabLockTime`) and by a mantle launch
+ *    (at least the assist interval) so the actor actually rises instead of
+    * instantly re-clinging to the wall it just left.
+ *  - `mantle` — the active mantle-assist record while the assisted hop is in
+ *    flight. It owns ONLY the short toward-ledge `vx` re-application;
+ *    gravity, integration, and collision stay kernel-owned (the `'mantle'`
+ *    locomotion mode skips horizontal input but NOT gravity). Mantle code
+ *    never assigns `core.x` or `core.y` — the landing marker is a finish
+ *    marker for the assist, never a position assignment.
+ *
+ * The Celeste climb-jump leniency window (`climbJumpBoostTime`,
+ * `ClimbUpCheckDist`) remains a separate reserved parity nuance; it is NOT the
+ * same mechanism as `regrabTimer` (which is a hard lock, not a grace window).
  */
 export interface WallGrabAbilityState extends AbilityState {
   /** Literal: `'wallGrab'`. */
@@ -845,6 +915,29 @@ export interface WallGrabAbilityState extends AbilityState {
    * event record. Stale while not grabbing; re-captured on each engage.
    */
   readonly solidId?: string | null;
+  /**
+   * Remaining wall-grab re-engagement lock in seconds (≥ 0), or `0`/absent
+   * when inactive. While > 0 the wall-grab ability REFUSES to engage a new
+   * grab (the actor just climb-jumped or mantled off the wall and must be
+   * allowed to rise). Blocks ONLY grab engagement — never the release
+   * conditions, never wall-slide, never any other ability. Decayed by `dt`
+   * each tick and deliberately preserved through every early return.
+   */
+  readonly regrabTimer?: number;
+  /**
+   * The active mantle assist ({@link MantleAssistState}), or `null`/absent
+   * when none is in flight. While active the ability re-applies only the
+   * toward-ledge horizontal velocity each tick (`vx = wallDirection ·
+   * mantleHopVx`); `vy` is left alone (kernel gravity owns it) and position
+   * is NEVER written — the kernel's ordinary integration plus
+   * `resolveAxisX`/`resolveAxisY` produce all motion. The X resolver pins the
+   * actor beside the wall until its feet clear `wallTopY`, then the same
+   * velocity carries it over the lip. `landingX` is the edge-anchored finish
+   * MARKER: reaching it ends the assist, it never snaps the actor there.
+   * `assistTimer` bounds the assist so it cannot own horizontal velocity
+   * indefinitely.
+   */
+  readonly mantle?: MantleAssistState | null;
 }
 
 /**
@@ -1222,18 +1315,81 @@ export interface PlatformerConfig {
   readonly climbHopForceTime: number;
   /**
    * Climb-jump leniency window in seconds (Celeste `ClimbJumpBoostTime .2`,
-   * `Player.cs:118`). Reserved: the post-hop re-engage grace is a deferred
-   * nuance (documented in the roadmap); the value is pegged here for parity but
-   * not yet wired into the ability.
+   * `Player.cs:118`). Reserved: the post-hop re-engage GRACE is a deferred
+   * parity nuance. Distinct from the shipped `climbJumpRegrabLockTime` —
+   * that is a hard engagement lock the mantle wave adds, while this remains
+   * the future Celeste-faithful leniency window; the two must stay separate.
    */
   readonly climbJumpBoostTime: number;
   /**
    * Climb-jump upward probe distance in px (Celeste `ClimbUpCheckDist 2`,
-   * `Player.cs:107`). Reserved: used by the deferred leniency check. A pixel
-   * tolerance; Celeste copies `2` verbatim and so do we (it is sub-tile, below
-   * the pegging rule's threshold of concern).
+   * `Player.cs:107`). Used by the mantle's pre-emptive head-at-top threshold
+   * (`core.y <= wall.y + wallClimbUpSpeed·dt + climbUpCheckDist + 0.5`) and
+   * reserved for the deferred leniency check. A pixel tolerance; Celeste
+   * copies `2` verbatim and so do we (it is sub-tile, below the pegging
+   * rule's threshold of concern).
    */
   readonly climbUpCheckDist: number;
+  // -----------------------------------------------------------------------
+  // Mantle wave — ledge mantle + direction-aware grab+jump. Effective only
+  // when `wallGrabEnabled` is also true. The hop SPEEDS are magnitudes pegged
+  // via MaxRun→moveSpeed (and re-pegged with the jump family by
+  // `createPrecisionPlatformerConfig`); the clearances are pixel distances;
+  // the two durations are verbatim seconds. See `constants.ts` for derivations.
+  // -----------------------------------------------------------------------
+  /**
+   * Master switch for the ledge mantle (grab + Up near the top of a clear
+   * wall). Default ON — the mantle only ever fires while `wallGrabEnabled`
+   * is also true, so consumers that never enable wall-grab are unaffected;
+   * consumers that want grab+climb WITHOUT mantling can opt out here.
+   */
+  readonly mantleEnabled: boolean;
+  /**
+   * Mantle assisted forward speed in px/s — the toward-ledge horizontal
+   * velocity applied on the launch tick and re-applied by the short mantle
+   * assist. Pegged via MaxRun→moveSpeed: `ClimbHopX-like 45 / MaxRun 90 ×
+   * moveSpeed 200 = 100`. Collision pins this harmlessly against the wall
+   * until the actor's feet clear the wall top, then it carries the actor
+   * over the lip. Magnitude; derived.
+   */
+  readonly mantleHopVx: number;
+  /**
+   * MINIMUM mantle upward impulse in px/s. Pegged like `climbHopVy`
+   * (`120 / MaxRun 90 × moveSpeed 200 ≈ 267`). This is a tuning FLOOR only —
+   * the mantle route helper derives the geometry-safe launch magnitude from
+   * the actor height, wall top, gravity, and clearance, and raises it when
+   * the body needs more lift to clear naturally. Magnitude; derived.
+   */
+  readonly mantleHopVy: number;
+  /**
+   * Extra clearance above the wall top in px that the mantle hop must reach —
+   * visible hang time and room to move onto the ledge before the arc falls.
+   * Scaled with tile size. Default `6`.
+   */
+  readonly mantleApexClearance: number;
+  /**
+   * Landing inset in px — how far past the wall's lip the assist's finish
+   * marker sits (`wall.x ± (core.width - inset)` from the actor's perspective).
+   * Defines ONLY when the horizontal assist may stop; it is never a position
+   * assignment, and it never scales with a merged solid's total width. Half
+   * the reference body width. Default `8`.
+   */
+  readonly mantleLandingInset: number;
+  /**
+   * Maximum duration of the toward-ledge mantle assist in seconds. Bounds the
+   * assist so it cannot own horizontal velocity indefinitely; reaching the
+   * finish marker, landing, a dash, or a collision failure ends it sooner.
+   * Default `0.35`.
+   */
+  readonly mantleAssistTime: number;
+  /**
+   * Re-grab lock after a straight-up climb-jump, in seconds. While the timer
+   * counts down the wall-grab ability refuses to RE-ENGAGE (release
+   * conditions, wall-slide, and all other abilities are unaffected) so the
+   * actor actually rises beside the wall instead of instantly re-clinging
+   * (the 4 px re-cling jitter). Default `0.12`.
+   */
+  readonly climbJumpRegrabLockTime: number;
   // -----------------------------------------------------------------------
   // Phase 7 — upward corner correction + dash corner correction + wall-speed
   // retention (Celeste `UpwardCornerCorrection`/`DashCornerCorrection`/

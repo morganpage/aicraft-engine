@@ -121,6 +121,8 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   wallClimbDownSpeed: 'velocity',
   climbHopVy: 'velocity',
   climbHopVx: 'velocity',
+  mantleHopVx: 'velocity',
+  mantleHopVy: 'velocity',
   springBounceVy: 'velocity',
   springSuperBounceVy: 'velocity',
 
@@ -130,6 +132,8 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   climbUpCheckDist: 'distance',
   upwardCornerCorrection: 'distance',
   dashCornerCorrection: 'distance',
+  mantleApexClearance: 'distance',
+  mantleLandingInset: 'distance',
 
   // Times (seconds) — COPIED.
   wallSlideTime: 'time',
@@ -140,6 +144,8 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   superJumpGrace: 'time',
   climbHopForceTime: 'time',
   climbJumpBoostTime: 'time',
+  mantleAssistTime: 'time',
+  climbJumpRegrabLockTime: 'time',
   wallSpeedRetentionTime: 'time',
   springVarJumpTime: 'time',
   springAutoJumpTime: 'time',
@@ -173,6 +179,7 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   climbEnabled: 'boolean',
   groundDuckEnabled: 'boolean',
   wallGrabEnabled: 'boolean',
+  mantleEnabled: 'boolean',
 
   // Nested sub-records — handled specially (not linearly scaled here).
   // `jump` is scaled via `JUMP_CONFIG_FIELD_UNITS`; `squash` is copied as-is.
@@ -332,16 +339,17 @@ export interface CreatePrecisionPlatformerConfigOptions {
  * from `jumpLaunchVelocity(config.jump)` and so tracks the jump automatically.
  *
  * The set: `wallJumpVx`, `wallJumpVy`, `superJumpVx`, `superWallJumpVx`,
- * `superWallJumpVy`, `climbHopVx`, `climbHopVy`, `springBounceVy`,
- * `springSuperBounceVy`.
+ * `superWallJumpVy`, `climbHopVx`, `climbHopVy`, `mantleHopVx`, `mantleHopVy`,
+ * `springBounceVy`, `springSuperBounceVy`.
  *
- * Note: the four horizontal impulses (`wallJumpVx`, `superJumpVx`,
- * `superWallJumpVx`, `climbHopVx`) were originally pegged to `moveSpeed` in
+ * Note: the five horizontal impulses (`wallJumpVx`, `superJumpVx`,
+ * `superWallJumpVx`, `climbHopVx`, `mantleHopVx`) were originally pegged to
+ * `moveSpeed` in
  * `constants.ts`. We re-peg them to the jump launch alongside the vertical
  * impulses so the WHOLE jump-family scales coherently when a designer asks for
  * a taller/floatier jump — a wall/super/climb jump keeps its arc shape relative
  * to the new jump rather than going flat. A maintainer who prefers to keep the
- * horizontal impulses locked to `moveSpeed` can drop those four; the vertical
+ * horizontal impulses locked to `moveSpeed` can drop those five; the vertical
  * re-peg is the load-bearing part for the height hierarchy.
  */
 
@@ -408,6 +416,8 @@ export function createPrecisionPlatformerConfig(
       superWallJumpVy: config.superWallJumpVy * ratio,
       climbHopVx: config.climbHopVx * ratio,
       climbHopVy: config.climbHopVy * ratio,
+      mantleHopVx: config.mantleHopVx * ratio,
+      mantleHopVy: config.mantleHopVy * ratio,
       springBounceVy: config.springBounceVy * ratio,
       springSuperBounceVy: config.springSuperBounceVy * ratio,
     };

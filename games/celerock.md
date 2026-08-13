@@ -155,7 +155,7 @@ npm install aicraft-engine@0.8.0
 | **Tile-unit config scaling** | **PREFERRED** `scalePlatformerConfig(config, scale)` / `createPrecisionPlatformerConfig({ tileSize, referenceTileSize?, jumpApexTiles?, timeToApex?, coyoteTime?, wallGrabEnabled?, climbEnabled? })` — unit-aware (distances/velocities/accelerations scale; times/ratios/counts/booleans don't) and re-pegs jump-relative impulses. `PlatformerConfig` is FLAT (`dashEnabled`/`dashSpeed`/`wallSlideEnabled`/`wallJumpVx`/… top-level; only `jump:` and optional `squash:` are nested). |
 | **Solid-id helpers** | `solidIdForEntity(id)` / `entityIdFromSolidId(solidId)` — entity solids are `entity-<id>` (NOT `solid-`); tile-derived solids are a separate `tile-…` namespace (not reversible). |
 | **Spawn resolution** | `compileGeneratedLevel`/`compileLdtkRoom` resolve the LDtk FEET-CENTER spawn to the AABB top-left via `spawnResolution:'rest-on-surface'` (the LDtk default) — the player rests on the surface, **no floor embed, no hand-rolled settle**. `settlePlatformerState(state, solids, config?, maxSteps?)` is a recovery tool for legacy/embedded spawns only. |
-| **Player controller (jump + wall-slide + wall-jump + dash + wall-grab/stamina + dash-tech)** | `PRECISION_PLATFORMER` + `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` → `{ state }` — boolean event pulses (`justLanded`/`justLaunched`/`hitCeiling`/`hitWall`/`startedWallSlide`/`wallJumpLaunched`/`dashStarting`/`dashStarted`/`doubleJumped`) are on **`state.events`**; spring/dashRefill `interactions` (each carrying an `entityId` solid id) are on **`state.interactions`**; structured FEEL moments (landing impact ratio/hard flag, dash bonks with normal + surface id, dashEnded context, grabLatch/staminaExhausted, springLaunch/dashRefill) are on **`state.moments`**. **Do NOT hand-roll velocity, stamina, collision, or feel thresholds.** |
+| **Player controller (jump + wall-slide + wall-jump + dash + wall-grab/stamina/climb-jump/mantle + dash-tech)** | `PRECISION_PLATFORMER` + `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` → `{ state }` — boolean event pulses (`justLanded`/`justLaunched`/`hitCeiling`/`hitWall`/`startedWallSlide`/`wallJumpLaunched`/`dashStarting`/`dashStarted`/`doubleJumped`/`climbJumpLaunched`/`mantled`) are on **`state.events`**; spring/dashRefill `interactions` (each carrying an `entityId` solid id) are on **`state.interactions`**; structured FEEL moments (landing impact ratio/hard flag, dash bonks with normal + surface id, dashEnded context, grabLatch/staminaExhausted, springLaunch/dashRefill) are on **`state.moments`**. **Do NOT hand-roll velocity, stamina, collision, or feel thresholds.** |
 | Moving-platform rooms | `advanceMovingPlatform`, `movingPlatformToSolid`, `createMovingPlatformDisplacementProvider(current, previous)` — pass the provider as the **6th positional arg** to `stepPlatformer` so platforms carry the player. |
 | **Camera brain (per-room vcams, deadzone follow, blends)** | `createCameraBrain`, `updateCameraBrain`, `VirtualCamera` — **do NOT use the legacy `createCamera`/`updateCamera`** |
 | **Room-to-room transitions** | LDtk `__neighbours` — engine-owned `findLdtkRoomExit` → `mapLdtkRoomEntry` → `transitionPlatformerToRoom` + the `beginRoomSlide` slide orchestrator (see §5.5); momentum preserved, `'seam-entry'` provenance |
@@ -207,7 +207,7 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
     referenceTileSize: 16,        // PRECISION_PLATFORMER is a 16px config
     jumpApexTiles: 81 / 16,       // ~5-tile jump apex (mirrors the engine's LDtk play mode)
     timeToApex: 0.3,
-    wallGrabEnabled: true,        // grab key (K) clings to walls, drains stamina, climb-hops off
+    wallGrabEnabled: true,        // grab key (Z) clings to walls, drains stamina, climb-jumps/mantles off
     climbEnabled: true,           // ladder IntGrid cells named 'ladder' drive vertical climb
   });
 }
@@ -224,6 +224,11 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
 
 `PRECISION_PLATFORMER` already carries the full kit with tuned defaults: decaying wall-slide (`wallSlideStartMax` easing up to `maxFallSpeed`), wall-jump launch (`wallJumpVx/Vy` + `wallJumpLockTime`), 8-directional dash (`dashSpeed`/`dashDuration`/`dashStartupTime`/`maxDashes`/`endDashSpeedFactor`), dash-tech (`superJumpVx`, `dodgeSlideSpeedMult`, `duckSuperJump*`), springs (`springBounceVy`/`springSuperBounceVy`), corner correction, fast-fall, and wall-speed retention. **Do not duplicate any of these by hand.**
 
+**Wall-grab extras (engine-owned, physics v12):** with `wallGrabEnabled: true` you also get, for free —
+
+- **Direction-aware grab+jump.** Jump while grabbing branches on the latched wall side and the SIGN of `moveX` (magnitude ignored, so analog sticks work): holding **Away** keeps the classic up-and-away climb-hop (`climbHopForceTime` push, reported through the `wallJumpLaunched` pulse — this pulse now ALSO fires for away climb-hops, a deliberate widening); **Neutral or Toward** launches a straight-up **climb-jump** (`vx = 0`, faces the wall, `climbJumpRegrabLockTime` re-grab lock so the actor actually rises — no 4 px re-cling jitter) reported through `climbJumpLaunched`. Dash beats the jump; the jump beats the mantle.
+- **Ledge mantle.** Hold grab + **Up** near the top of a clear wall and the actor performs a continuous assisted hop onto the ledge — it rises beside the wall over several ticks, crosses the lip once its feet clear, and lands through the normal collision resolver (there is NEVER a position snap; tuning lives in `mantleEnabled`/`mantleHopVx`/`mantleHopVy`/`mantleApexClearance`/`mantleLandingInset`/`mantleAssistTime`). Set `mantleEnabled: false` to opt out. A conservative preflight declines the mantle under ceilings/overhangs or onto occupied footholds; passthrough/ladder/spring/dash-refill volumes never block it.
+
 ### 4.2 Step loop
 
 ```ts
@@ -232,7 +237,7 @@ let state = compiled.initialState;        // rest-on-surface spawn from the LDtk
 // each fixed tick:
 const stepped = stepPlatformer(state, input, solids, dt, config, displacement /* §5.3, or omit */);
 state = stepped.state;
-// read pulses: state.events.justLanded / .dashStarted / .hitWall / …
+// read pulses: state.events.justLanded / .dashStarted / .hitWall / .climbJumpLaunched / .mantled / …
 // read surface interactions: state.interactions → [{ kind: 'spring'|'dashRefill', entityId }]
 // read FEEL moments: state.moments → [{ kind: 'landing', impactSpeed, normalizedImpact, hard, solidId },
 //                                     { kind: 'dashBonk', normalX, normalY, solidId },
@@ -255,24 +260,44 @@ Build `PlatformerInput` from polled edges. `IDLE_EDGE` is now an **exported** fr
 const input: PlatformerInput = {
   moveX,
   moveY,
-  jump: edges['jump'] ?? IDLE_EDGE,
-  dash:  edges['dash']  ?? IDLE_EDGE,   // ShiftLeft
-  grab:  edges['grab']  ?? IDLE_EDGE,   // KeyK
+  jump: edges['jump'] ?? IDLE_EDGE,   // C
+  dash:  edges['dash']  ?? IDLE_EDGE, // X
+  grab:  edges['grab']  ?? IDLE_EDGE, // Z
 };
 ```
 
-The engine also ships the standard device maps — pass them straight to the adapters instead of hand-writing a key/button table:
+The engine ships a standard device map, but its standard KEYBOARD map uses `Space`/`Shift`/`KeyK` (a non-conflicting layout chosen clear of the WASD cluster) — **not** Celeste's defaults. This brief uses **Celeste's actual PC defaults**, so do NOT pass `STANDARD_KEYBOARD_PLATFORMER_MAP` to the keyboard adapter; author a Celeste-faithful map instead (the gamepad standard map is fine as-is — buttons, not keys):
 
 ```ts
-const keyboard = createKeyboardAdapter(STANDARD_KEYBOARD_PLATFORMER_MAP);   // Arrows/WASD, Space=jump, Shift=dash, KeyK=grab, KeyR=reset
+// Celeste's actual PC keyboard defaults (NOT the engine's standard map).
+// Build this standalone — do NOT spread STANDARD_KEYBOARD_PLATFORMER_MAP,
+// or Space/Shift/KeyK stay mapped and conflict with C/X/Z.
+const CELESTE_KEYBOARD_MAP: Readonly<KeyboardConfig> = {
+  codeToAction: {
+    // Movement on the arrow cluster (Celeste ships arrows, not WASD).
+    ArrowLeft: 'left',  ArrowRight: 'right',  ArrowUp: 'up',  ArrowDown: 'down',
+    // Celeste's three action keys.
+    KeyC: 'jump',   // confirm / jump
+    KeyX: 'dash',   // dash
+    KeyZ: 'grab',   // grab / clamber
+    // Engine convenience (NOT a Celeste default — Celeste restarts via the
+    // pause menu): instant respawn-to-spawn for speedrun/QoL. Drop it if you
+    // want pause-menu-only restart.
+    KeyR: 'reset',
+    // OPTIONAL: add WASD aliases for players who expect them. Celeste does
+    // NOT ship these by default, so they are commented out to stay faithful.
+    // KeyW: 'up', KeyA: 'left', KeyS: 'down', KeyD: 'right',
+  },
+};
+const keyboard = createKeyboardAdapter(CELESTE_KEYBOARD_MAP);
 const gamepad  = createGamepadAdapter(STANDARD_GAMEPAD_PLATFORMER_MAP);     // W3C button INDEX strings '0'/'1'/'2'/'12'… (NOT 'b0'/'dpleft')
 ```
 
-Suggested bindings (the standard map already encodes these): Arrows/WASD move, `Space` jump, `ShiftLeft`/`ShiftRight` dash, `KeyK` grab, `R` reset. (Celeste uses `C`/`Z` for grab; `KeyK` is the common non-conflicting alternative clear of the WASD cluster.)
+**Bindings (authoritative for this brief):** Arrow keys move (←→ horizontal, ↑↓ for ladder climb / fast-fall / dash-aim), `C` jump, `X` dash, `Z` grab/clamber, `R` instant respawn (engine convenience). This matches Celeste's PC defaults verbatim; the engine's `STANDARD_KEYBOARD_PLATFORMER_MAP` (`Space`/`Shift`/`KeyK`) is deliberately **not** used so players get the real Celeste layout.
 
-### 4.4 Sprite render (the supplied `Player.png` — primary renderer)
+### 4.4 Sprite render (the supplied `Player.png` — primary renderer, from the FIRST play tick)
 
-The player's own sprite is the **supplied `Player.png` sprite sheet**, drawn over the LDtk tiles through the engine's sprite pipeline. The procedural renderer is the **fallback only** (used when the sprite fails to load/compile at boot).
+The player is rendered with the **supplied `Player.png` sprite sheet from the very first playable tick** — there is NO "procedural player first, swap the sprite in later" phase. Load + compile the sheet at boot (Stage 2, alongside the movement config) and draw the sprite every tick the player is on screen. The procedural renderer is the **boot-time load-failure fallback ONLY** — used in the single case where `Player.png` fails to decode/compile, so a missing asset never blocks play. Do not build the procedural body as the primary and migrate later; that migration is a known source of shimmer/anchor/pivot regressions, and it is avoided entirely by rendering the sprite from the start.
 
 **The asset + frame mapping (authoritative).** `Player.png` is **160×128 px = a 10-column × 8-row grid of 16×16 frames** (row-major). Frame numbers are 1-indexed; they map to 0-indexed cells `i` with source rect `sx = (i % 10) * 16`, `sy = floor(i / 10) * 16`:
 
@@ -693,7 +718,7 @@ Use the shipped events (`start`, `die`, `retry`, `win`, `next`, `pause`, `resume
 - [ ] Air control during jump (the kernel's `airAccelMultiplier`).
 - [ ] Dash trail particles (`spawn` 4 small white particles on each dash tick, culled by `cull`). (Seeded `mulberry32` rng — no `Math.random`.)
 - [ ] Landing dust (`spawn` upward cone on landing); respawn flash.
-- [ ] **Wall-grab feel**: latch snap, stamina drain (optionally a stamina bar UI), climb, climb-hop launch.
+- [ ] **Wall-grab feel**: latch snap, stamina drain (optionally a stamina bar UI), climb, away climb-hop launch (one `wallJumpLaunched` cue covers wall-jumps AND away climb-hops), straight-up climb-jump (`climbJumpLaunched`) + mantle scramble (`mantled`): grab + Up visibly rises beside the wall, arcs across the lip, and lands — there is NO single-frame snap to the ledge; overhangs fail safely without embedding.
 - [ ] **Spring** boing + `springBounceVy`; **dash-refill** sparkle when `maxDashes` refills on a refill entity — **only when the LDtk actually provides springs / dash-refills** (check `report.capabilities.springs` / `.dashRefills` from the preflight; absent content is not a failure).
 - [ ] Coyote time + jump buffer from the shipped `jumpAbility`; do not duplicate them.
 - [ ] **Player sprite (supplied `Player.png`)** — stable **1:1** (no breathe/squash scaling on the sprite), facing mirror flips walk/jump with travel (no moonwalk), walk cycles cells 0–7, jump plays 60→64 then clamps on the fall frame, idle = cell 0; no shimmer while idle; dash aura glow + after-image trail are kept (they carry dash juice without distorting the sprite).
@@ -709,7 +734,9 @@ Unlock on first user gesture (one-shot `keydown`/`pointerdown` calling `audio.un
 
 - **Walk tap:** `playNoise(40, 'lowpass', 200, 0.12)` per `advanceFootPlant` event.
 - **Jump:** `playTone('sine', 200, 400, 80, 0.2)`.
-- **Wall-jump:** `playTone('triangle', 300, 500, 60, 0.18)`.
+- **Wall-jump:** `playTone('triangle', 300, 500, 60, 0.18)`. **Away grab+jump** (climb-hop) reports through the SAME `wallJumpLaunched` pulse (deliberate widening in physics v12) — one mapping covers both.
+- **Straight-up climb-jump** (on `state.events.climbJumpLaunched`): `playTone('sine', 260, 520, 70, 0.16)` — a lighter, upward version of the wall-jump.
+- **Mantle** (on `state.events.mantled`): a soft two-part "scramble up" — `playNoise(60, 'lowpass', 350, 0.2)` then `playTone('triangle', 220, 300, 50, 0.1)`; the landing afterwards fires the normal `landing` moment cues.
 - **Wall-grab latch** (on the `grabLatch` moment): `playTone('triangle', 180, 160, 40, 0.12)`; **stamina-out gasp** (on the `staminaExhausted` moment): `playNoise(80, 'lowpass', 300, 0.25)`.
 - **Wall-slide:** while `wall?.kind === 'wallSlide' && wall.sliding`, gate `playNoise(20, 'highpass', 800, 0.05)`.
 - **Dash:** `playNoise(60, 'bandpass', 1500, 0.18)`; **dash-into-wall thump** (on the `dashBonk` moment): `playTone('square', 120, 90, 70, 0.25)`.
@@ -787,7 +814,7 @@ No `rooms/` directory, no ASCII grids, no `tile-style.ts` — the LDtk file is t
 
 ### 12.7 Acceptance Criteria
 
-1. Playable in the browser via `npm run dev` with keyboard (`←→`/`A D`, `Space` jump, `Shift`/`ShiftLeft` dash, `K` grab) **and** on-screen touch buttons on coarse-pointer devices (via `createTouchButtonSet`).
+1. Playable in the browser via `npm run dev` with **Celeste's PC-default keyboard bindings** (`←→↑↓` move, `C` jump, `X` dash, `Z` grab, `R` respawn — see §4.3; NOT the engine's Space/Shift/KeyK standard map) **and** on-screen touch buttons on coarse-pointer devices (via `createTouchButtonSet`).
 2. **Loads the supplied LDtk + tileset** and renders the tileset through `drawLdtkLevel` (pixel-crisp, untinted).
 3. The Celeste kit is present and works on the supplied geometry: **dash (8-dir, startup freeze, refills on land) + wall-grab/stamina + wall-slide + wall-jump + dash-tech.** **No `doubleJump`.** Springs, dash-refills, moving platforms, and ladders are **capability-aware** — exercise each one the preflight reports present (`report.capabilities.springs` / `.dashRefills` / `.movingPlatforms` / `.ladders`); absent ones are not a failure (G4).
 4. The **camera brain** drives the view (deadzone follow + per-room vcam + **cover-fit** `fitCameraZoom` + slide on transition). No legacy `createCamera`/`updateCamera`.
@@ -868,13 +895,14 @@ Build in this order. Each stage must pass its gate before the next begins.
 3. **Asset preflight (G3):** `inspectLdtkPlatformerProject(project)` — log level/spawn/capability counts. Missing springs/dash-refills/etc. are informational; a total lack of spawns is the only hard block.
 4. `createLdtkRoomCache(project, {...}).getStartRoom()` the start room; `drawLdtkLevel` it.
 5. Wire `createCameraBrain` + a per-room follow `VirtualCamera` (deadzone bands, **cover-fit** `fitCameraZoom`).
-6. Drive the kernel with `PRECISION_PLATFORMER` (no Celeste opt-ins yet) so a box walks and jumps across the tileset.
+6. Drive the kernel with `PRECISION_PLATFORMER` (no Celeste opt-ins yet) so a box walks and jumps across the tileset. **This box is a temporary graybox only** — it is replaced by the `Player.png` sprite at the very start of Stage 2 (there is intentionally no "procedural player then swap to sprite" phase).
 7. **Gate:** the supplied tileset renders pixel-crisp and untinted; the camera brain deadzone-follows with no side gaps; the player does not moonwalk.
 
-### Stage 2: Celeste Movement Feel
-1. Apply the full `playConfigFor` kit: `wallGrabEnabled`, `climbEnabled` (if ladders), `groundDuckEnabled: false`, `stepHeight`, dash/grab key bindings.
-2. Verify dash (startup freeze, 8-dir, refill on land), wall-slide (decaying), wall-jump, wall-grab (stamina, climb, climb-hop), springs, dash-tech.
-3. **Gate:** all five core abilities demonstrably work in the supplied rooms. Stamina drains and refills. Dash refills on land.
+### Stage 2: Celeste Movement Feel + Sprite Player
+1. Apply the full `playConfigFor` kit: `wallGrabEnabled`, `climbEnabled` (if ladders), `groundDuckEnabled: false`, `stepHeight`, and the Celeste-default key bindings (§4.3: Arrows + `C` jump / `X` dash / `Z` grab / `R` respawn — do NOT use the engine's `STANDARD_KEYBOARD_PLATFORMER_MAP`).
+2. **Render the sprite player from the first play tick.** Load + compile `Player.png` at boot and draw it via the §4.4 sprite pipeline (stable 1:1, feet-anchored, facing mirror inside `drawSprite`, NO squash on the sprite). The graybox box from Stage 1 is removed here. The procedural body is wired ONLY as the boot-time load-failure fallback (`compiled === null`).
+3. Verify dash (startup freeze, 8-dir, refill on land), wall-slide (decaying), wall-jump, wall-grab (stamina, climb, direction-aware climb-jump, ledge mantle), springs, dash-tech.
+4. **Gate:** all five core abilities demonstrably work in the supplied rooms AND the player renders as the `Player.png` sprite (not a box, not the procedural body). Stamina drains and refills. Dash refills on land.
 
 ### Stage 3: Seamless Room Transitions
 1. Wire the engine transition path: `findLdtkRoomExit(state.core, level, project)` → `mapLdtkRoomEntry` → `transitionPlatformerToRoom` (pass `destinationSolids` from the cached `CompiledLdtkRoom`); pull neighbour rooms from `createLdtkRoomCache` (lazy compile + cache by `iid`).
@@ -938,6 +966,8 @@ Build in this order. Each stage must pass its gate before the next begins.
 npm install aicraft-engine@0.8.0
 ```
 
+> **Mantle/climb-jump need a newer pin.** The direction-aware grab+jump + ledge mantle documented in §4.1/Stage 2 ship as **physics v12** (the unreleased next minor after `0.8.1`). Once that release lands, pin to it (`aicraft-engine@<v12-release>`) to get those features; on `0.8.0` the wall-grab still works but neutral/toward grab+jumps do the legacy up-and-away hop and there is no mantle. Everything else in this brief (sprite pipeline, Celeste bindings, room transitions, camera brain) is already on `0.8.0`.
+
 `0.8.0` is the pin for this brief — the feel + traversal release. It builds on the `0.7.0` golden path and three earlier system drops:
 
 - **Camera brain** (`0.6.0`) — `createCameraBrain`, `updateCameraBrain`, `VirtualCamera`, deadzone follow, blends, bounds + letterbox. The blend fixes (continuity when a vcam source is removed, `dt=0` no-op, blend-clamp crossfade) are directly relevant to the §5.5 room-transition slide.
@@ -962,6 +992,7 @@ The **`0.8.0` feel + traversal additions** this brief now prefers — these are 
 - **`beginRoomSlide` / `advanceRoomSlide` / `presentationForRoomSlide` + `enterRoomSlideCameraSpace` / `finishRoomSlideCameraSpace` / `cancelRoomSlideCameraSpace`** — the engine-owned slide orchestrator composing the camera brain (§5.5).
 - **`fitCameraZoom`** — the explicit cover/contain/native fit policy (§5.4).
 - **Compatibility note:** `0.8.0` bumps the replay physics version to 11 (the `moments` state field is replay data) — v10 replays are rejected. A consumer that manually constructs a complete `PlatformerState` must now pass `moments: []`.
+- **Compatibility note (mantle wave, physics v12):** the direction-aware grab+jump + ledge mantle change wall-grab trajectories ON PURPOSE (neutral/toward grab+jumps now rise straight up; grab+Up near a clear lip mantles). `PlatformerEvents` gained `climbJumpLaunched` + `mantled`, and `wallJumpLaunched` was DELIBERATELY WIDENED to also fire for away climb-hops — consumers reading that pulse will start seeing climb-hops. v11 replays are rejected under v12.
 
 The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix + loop `onError` need `0.7.0`; **the feel moments + transition/slide/fit helpers need `0.8.0`**. Do not pin below `0.8.0`.
 

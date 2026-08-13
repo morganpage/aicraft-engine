@@ -134,8 +134,25 @@
    *     `replayHashFor` shifts (new `moments` field in the captured initial
    *     state + the version 10→11 value — canonicalize hashes both). The feel
    *     moments are exercised in `platformer-feel-moments.test.ts` (the
-   *     feel-invariance headline: `normalizedImpact` identical at 8/16/32 px).
-   *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
+ *     feel-invariance headline: `normalizedImpact` identical at 8/16/32 px).
+ *   - `12` — mantle wave (ledge mantle + direction-aware climb-jump): a
+ *     TRAJECTORY-CHANGING update to the wall-grab family. `LaunchSource`
+ *     gained `'climbJump'` + `'mantle'` (both priority 3, no forced-horizontal
+ *     window); `PlatformerEvents` gained `climbJumpLaunched` + `mantled`
+ *     boolean pulses AND `wallJumpLaunched` was deliberately WIDENED to
+ *     include the away climb-hop; `WallGrabAbilityState` gained `regrabTimer`
+ *     + the `mantle` assist record; `LocomotionMode` gained `'mantle'`
+ *     (ability-owned toward-ledge vx, normal gravity + collision);
+ *     `PlatformerConfig` gained `mantleEnabled`, `mantleHopVx`, `mantleHopVy`,
+ *     `mantleApexClearance`, `mantleLandingInset`, `mantleAssistTime`,
+ *     `climbJumpRegrabLockTime`. Neutral/Toward grab+jumps intentionally
+ *     change from the old up-and-away climb-hop to a straight-up climb-jump
+ *     (with a re-grab lock), and grab+Up near a clear wall top now mantles —
+ *     scenarios that never hold grab are trace-unchanged but every
+ *     `replayHashFor` shifts (widened config/events/state + version 11→12).
+ *     The mechanics are exercised in `platformer-wall-grab.test.ts` +
+ *     `platformer-traces.test.ts`.
+ *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
    *     is missing or `0` was recorded under different math; its trajectories
    *     will not reproduce, so `assertPhysicsVersion` / `playReplay` REJECT it
    *     with a `PhysicsVersionMismatchError`.
@@ -144,4 +161,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 11;
+export const CURRENT_PHYSICS_VERSION = 12;

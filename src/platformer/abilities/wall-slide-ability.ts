@@ -79,6 +79,8 @@ export const wallSlideAbility: AbilityProcessor<WallSlideAbilityState> = {
       dashStarting: false,
       dashStarted: false,
       doubleJumped: false,
+      climbJumpLaunched: false,
+      mantled: false,
     };
 
     let sliding = false;
