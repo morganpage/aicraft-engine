@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-13
+
+### Fixed
+- **Docs:** corrected `README.md` — the package works in **plain Node ESM with no bundler** (the `build:dist` step rewrites the dist's extensionless specifiers to `.js`, verified by `release:smoke`'s Node-ESM gate). The prior "Bundler required" note was stale.
+- **Dependencies:** `npm audit fix` resolved two high-severity **development-only** transitive advisories (`nanoid` ≤3.3.17, `postcss` ≤8.5.22, both via Vite). Lockfile-only — `package.json` devDependency ranges unchanged, so no runtime/tarball impact.
+- **Changelog:** backfilled the missing `[0.7.0]`/`[0.8.0]`/`[0.8.1]`/`[0.9.0]` comparison links and repointed `[Unreleased]` at `v0.9.1...HEAD`; resynced the stale `package-lock.json` top-level version.
+
 ## [0.9.0] - 2026-08-13
 
 ### Added
@@ -70,7 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/morganpage/aicraft-engine/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/morganpage/aicraft-engine/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/morganpage/aicraft-engine/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/morganpage/aicraft-engine/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/morganpage/aicraft-engine/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/morganpage/aicraft-engine/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/morganpage/aicraft-engine/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/morganpage/aicraft-engine/releases/tag/v0.5.0

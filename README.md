@@ -93,7 +93,7 @@ import { outlineRect, mulberry32, spawn } from 'aicraft-engine';
 
 `sideEffects: false` is set, so bundlers tree-shake aggressively. Only `dist/` + `README.md` + `package.json` ship — `src/`, `tests/`, `showcase/`, `docs/`, and `benchmarks/` are excluded. The tarball carries no runtime dependencies.
 
-> **Bundler required.** The emitted ESM uses extensionless internal imports (`moduleResolution: "bundler"`). It resolves cleanly through Vite/esbuild/webpack but not through plain Node ESM without a bundler — appropriate for a Canvas2D game library whose consumers all bundle.
+> **Works in plain Node ESM — no bundler required.** The `build:dist` step runs `scripts/fix-esm-specifiers.mjs`, which rewrites the dist's internal extensionless imports to explicit `.js` specifiers, so the package imports directly from plain Node (`node --input-type=module`) as well as through Vite/esbuild/webpack. This is verified every publish by `release:smoke`'s Node-ESM + NodeNext-typecheck + Vite consumer gates against the packed tarball.
 
 ---
 
