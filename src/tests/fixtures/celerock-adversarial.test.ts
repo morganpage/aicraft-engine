@@ -317,10 +317,14 @@ describe('celerock-adversarial.ldtk — room transitions + fit + slide (E2/E3/E4
       { source: { camera: { x: 0, y: 0 }, zoom: 1 }, destination: { camera: { x: 0, y: 0 }, zoom: 1 } },
       actor,
     );
-    // Union of [0,160]×[0,112] and [160,304]×[0,128] at min (0,0).
+    // Endpoint-inclusive slide space (0.11.0): the union spans both rooms AND
+    // both endpoint view rectangles. The rooms are [0,160]×[0,112] and
+    // [160,304]×[0,128]; each endpoint view is 160×112 at its room's origin
+    // (zoom 1), so the dest view extends to world-x 320 (160 + 160), beyond the
+    // dest room's right edge of 304. Max right = 320 → bounds.width = 320.
     expect(slide.space.sourceOffset).toEqual({ x: 0, y: 0 });
     expect(slide.space.destinationOffset).toEqual({ x: 160, y: 0 });
-    expect(slide.space.bounds).toEqual({ width: 304, height: 128 });
+    expect(slide.space.bounds).toEqual({ width: 320, height: 128 });
     expect(slide.particleRebaseDelta).toEqual({ x: -160, y: 0 });
     // The world-identity actor mapping produces zero render correction.
     expect(slide.initialPlayerOffset).toEqual({ x: 0, y: 0 });

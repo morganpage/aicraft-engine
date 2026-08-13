@@ -161,6 +161,7 @@ export {
   finishRoomSlideCameraSpace,
   cancelRoomSlideCameraSpace,
   seedRoomCutCamera,
+  roomEntrySlideView,
   roomSlideEase,
   ROOM_SLIDE_VCAM_ID,
   DEFAULT_ROOM_SLIDE_DURATION,
@@ -170,6 +171,7 @@ export {
   type RoomSlideSpace,
   type RoomSlideState,
   type RoomSlidePresentation,
+  type RoomEntrySlideViewOptions,
 } from './room-slide';
 
 export {

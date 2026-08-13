@@ -70,7 +70,7 @@ export interface CameraConfig {
 // and per-step update order, and `docs/design/camera-brain-plan.md` for the
 // full contract.
 
-/** Screen-space viewport dimensions before camera zoom is applied. */
+/** Physical screen-space dimensions before camera zoom is applied. */
 export interface CameraViewport {
   readonly width: number;
   readonly height: number;

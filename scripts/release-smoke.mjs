@@ -233,6 +233,8 @@ import {
   DEFAULT_EXIT_DEADBAND,
   seedRoomCutCamera,
   beginRoomSlideFromBrain,
+  // 0.11.0: follow-compatible destination framing.
+  roomEntrySlideView,
 } from 'aicraft-engine';
 
 // (3) Barrel is importable and re-exports a large surface.
@@ -296,6 +298,15 @@ const seeded = seedRoomCutCamera(
 );
 assert.equal(seeded.activeId, null);
 assert.equal(seeded.camera.x, 140); // 300 - 160 (worldX delta)
+// roomEntrySlideView (0.11.0): follow-compatible destination framing.
+const destView = roomEntrySlideView(
+  { ldtkLevel: { worldX: 0, worldY: 0, pxWid: 320, pxHei: 184 } },
+  { x: 316, y: 90, width: 4, height: 8 },
+  { width: 2560, height: 1440 },
+  8,
+);
+assert.ok(Number.isFinite(destView.camera.y), 'destView.camera.y finite');
+assert.equal(destView.zoom, 8);
 console.log('TRANSITION HARDENING: exports OK');
 `,
   );
@@ -355,6 +366,8 @@ function doTypecheckConsumer(tmp, tgz) {
   DEFAULT_EXIT_DEADBAND,
   seedRoomCutCamera,
   beginRoomSlideFromBrain,
+  // 0.11.0: follow-compatible destination framing.
+  roomEntrySlideView,
 } from 'aicraft-engine';
 import type {
   GameLoop,
@@ -365,6 +378,8 @@ import type {
   RoomExitDetectorState,
   RoomExitDetection,
   RoomExitDetectorOptions,
+  // 0.11.0: destination framing options.
+  RoomEntrySlideViewOptions,
 } from 'aicraft-engine';
 
 const loop: GameLoop = createGameLoop({
@@ -408,6 +423,14 @@ const _seeded = seedRoomCutCamera(
 );
 void _seeded;
 void beginRoomSlideFromBrain;
+const _destView = roomEntrySlideView(
+  { ldtkLevel: { worldX: 0, worldY: 0, pxWid: 320, pxHei: 184 } } as never,
+  { x: 316, y: 90, width: 4, height: 8 },
+  { width: 2560, height: 1440 },
+  8,
+  {} as RoomEntrySlideViewOptions,
+);
+void _destView;
 
 void state;
 `,
@@ -501,6 +524,8 @@ function doViteConsumer(tmp, tgz) {
   createRoomExitDetectorState,
   detectLdtkRoomExit,
   seedRoomCutCamera,
+  // 0.11.0: follow-compatible destination framing.
+  roomEntrySlideView,
 } from 'aicraft-engine';
 
 const solids = [{ x: 0, y: 200, width: 10000, height: 100, id: solidIdForEntity(0) }];
@@ -517,6 +542,13 @@ const _seeded = seedRoomCutCamera(
   { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 } as never,
 );
 void detectLdtkRoomExit; void _det; void _seeded;
+const _destView2 = roomEntrySlideView(
+  { ldtkLevel: { worldX: 0, worldY: 0, pxWid: 320, pxHei: 184 } } as never,
+  { x: 316, y: 90, width: 4, height: 8 },
+  { width: 2560, height: 1440 },
+  8,
+);
+void _destView2;
 const el = document.getElementById('app');
 if (el) el.textContent = 'y=' + s.core.y.toFixed(1);
 `,

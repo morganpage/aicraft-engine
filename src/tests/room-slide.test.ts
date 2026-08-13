@@ -8,6 +8,7 @@ import {
   finishRoomSlideCameraSpace,
   cancelRoomSlideCameraSpace,
   seedRoomCutCamera,
+  roomEntrySlideView,
   roomSlideEase,
   ROOM_SLIDE_VCAM_ID,
   DEFAULT_ROOM_SLIDE_DURATION,
@@ -16,6 +17,8 @@ import { createCameraBrain, updateCameraBrain } from '../camera/brain';
 import type { CameraBrain } from '../camera';
 import type { CompiledLdtkRoom } from '../platformer/ldtk-room';
 import type { LdtkLevel } from '../ldtk/types';
+import { followPosition } from '../camera/motion';
+import type { CameraTarget } from '../camera';
 
 /**
  * Phase E3 — the slide presentation orchestrator.
@@ -573,5 +576,172 @@ describe('beginRoomSlideFromBrain — safe slide constructor', () => {
     expect(fromBrain.sourceView).toEqual(direct.sourceView);
     expect(fromBrain.destinationView).toEqual(direct.destinationView);
     expect(fromBrain.space).toEqual(direct.space);
+  });
+});
+
+// --- roomEntrySlideView — follow-compatible destination framing ------------
+//
+// Computes the destination RoomSlideView (room-local room-px) as an equilibrium
+// of the destination follow body, so the slide ends where the post-slide follow
+// vcam begins (no dip, no pop). The brain works in room-px (it divides the
+// physical viewport by zoom internally); this helper does the same.
+
+describe('roomEntrySlideView — destination framing', () => {
+  // Celerock-shaped geometry: room 320×184, viewport 2560×1440, zoom 8 →
+  // visible room-px 320×180 (a 4px Y-overflow band).
+  const R = room({ iid: 'r', worldX: 0, worldY: 0, pxWid: 320, pxHei: 184 });
+  const VP = { width: 2560, height: 1440 };
+  const ZOOM = 8;
+
+  it('returns room-px, not physical-px', () => {
+    // Entry at mid-height (y≈90): visible H=180, anchor 0.5 → desired Y =
+    // (90 + 4) - 0.5*180 = 4. Clamp to [0, 184-180=4] → 4 (not 0, not -628).
+    const view = roomEntrySlideView(R, { x: 316, y: 90, width: 4, height: 8 }, VP, ZOOM);
+    expect(view.zoom).toBe(8);
+    expect(view.camera.y).toBe(4); // room-px, clamped to the bottom of the band
+    expect(Number.isFinite(view.camera.x)).toBe(true);
+    expect(Number.isFinite(view.camera.y)).toBe(true);
+  });
+
+  it('centers the fitted axis (room === visible)', () => {
+    // X: room width 320 === visible width 320 → letterbox center = (320-320)/2 = 0.
+    const view = roomEntrySlideView(R, { x: 100, y: 90, width: 4, height: 8 }, VP, ZOOM);
+    expect(view.camera.x).toBe(0);
+  });
+
+  it('clamps the overflow axis to the follow body bounds', () => {
+    // Y overflow band is [0,4]. An entry near the top (y=2) clamps to 0; near
+    // the bottom (y=180) clamps to 4.
+    const top = roomEntrySlideView(R, { x: 100, y: 2, width: 4, height: 8 }, VP, ZOOM);
+    expect(top.camera.y).toBe(0);
+    const bottom = roomEntrySlideView(R, { x: 100, y: 180, width: 4, height: 8 }, VP, ZOOM);
+    expect(bottom.camera.y).toBe(4);
+  });
+
+  it('letterbox-centers when the room is smaller than the visible area', () => {
+    // A room smaller than the viewport on an axis: clampTopLeft returns the
+    // negative letterbox center (bound - visible) / 2.
+    const small = room({ iid: 'small', worldX: 0, worldY: 0, pxWid: 100, pxHei: 100 });
+    // zoom 1, viewport 200×200 → visible 200×200 > room 100×100 → center = -50.
+    const view = roomEntrySlideView(small, { x: 40, y: 40, width: 8, height: 8 }, { width: 200, height: 200 }, 1);
+    expect(view.camera.x).toBe(-50);
+    expect(view.camera.y).toBe(-50);
+  });
+
+  it('uses the nearest band edge when a custom deadzone excludes the center', () => {
+    // A band [0.8, 0.9] excludes 0.5; the anchor falls back to 0.8 (nearest edge
+    // below 0.5 is trail=0.8? no — 0.5 < trail, so anchor = trail = 0.8).
+    // desired Y = targetCenter - 0.8 * visibleH; verify it differs from the
+    // centered (0.5) result.
+    const centered = roomEntrySlideView(R, { x: 100, y: 90, width: 4, height: 8 }, VP, ZOOM);
+    const custom = roomEntrySlideView(R, { x: 100, y: 90, width: 4, height: 8 }, VP, ZOOM, { followY: { trail: 0.8, lead: 0.9 } });
+    // Different anchor → different desired → but both clamp into [0,4]. With the
+    // 4px band the clamp dominates, so verify via a room with more overflow.
+    const bigY = room({ iid: 'big', worldX: 0, worldY: 0, pxWid: 320, pxHei: 400 });
+    const c2 = roomEntrySlideView(bigY, { x: 100, y: 200, width: 4, height: 8 }, VP, ZOOM);
+    const t2 = roomEntrySlideView(bigY, { x: 100, y: 200, width: 4, height: 8 }, VP, ZOOM, { followY: { trail: 0.8, lead: 0.9 } });
+    expect(c2.camera.y).not.toBe(t2.camera.y); // band edge moved the equilibrium
+    void centered; void custom;
+  });
+
+  it('is a follow equilibrium: the first followPosition step does not move the camera', () => {
+    // Seed followPosition at the computed view with the same target/zoom/bands/
+    // padding; a positive-dt step returns the identical camera (deadzone hold).
+    const target: CameraTarget = { x: 316, y: 90, width: 4, height: 8 };
+    const view = roomEntrySlideView(R, target, VP, ZOOM);
+    const bands = { followX: { trail: 0.25, lead: 0.5 }, followY: { trail: 0.35, lead: 0.65 }, padding: 0 };
+    const next = followPosition(view.camera, target, { width: R.ldtkLevel.pxWid, height: R.ldtkLevel.pxHei }, VP, ZOOM, DT, bands);
+    expect(next.x).toBeCloseTo(view.camera.x, 6);
+    expect(next.y).toBeCloseTo(view.camera.y, 6);
+  });
+
+  it('repairs bad numeric inputs (NaN/Infinity/zero/negative zoom → fallback 1)', () => {
+    const view = roomEntrySlideView(R, { x: 100, y: 90, width: 4, height: 8 }, VP, NaN);
+    expect(view.zoom).toBe(1); // fallback
+    expect(Number.isFinite(view.camera.x)).toBe(true);
+    expect(Number.isFinite(view.camera.y)).toBe(true);
+    // A non-finite target coordinate cannot leak NaN/Infinity.
+    const bad = roomEntrySlideView(R, { x: NaN, y: Infinity, width: 0, height: -4 }, VP, ZOOM);
+    expect(Number.isFinite(bad.camera.x)).toBe(true);
+    expect(Number.isFinite(bad.camera.y)).toBe(true);
+    expect(bad.zoom).toBe(ZOOM); // valid zoom preserved exactly
+  });
+
+  it('produces a RoomSlideView directly usable as a slide destination endpoint', () => {
+    // Type + behavior: the result is accepted by beginRoomSlide as destination.
+    const dest = roomEntrySlideView(DST, { x: 140, y: 100, width: 8, height: 8 }, VIEWPORT, 2);
+    const slide = beginRoomSlide(SRC, DST, VIEWPORT, { source: VIEWS.source, destination: dest }, IDENTITY_ACTOR);
+    expect(slide.destinationView.camera).toEqual(dest.camera);
+    expect(slide.destinationView.zoom).toBe(dest.zoom);
+  });
+});
+
+// --- endpoint-inclusive slide space (four-rectangle union) -----------------
+//
+// Change 2: the slide union now includes both endpoint view rectangles, not
+// just the two rooms, so a legitimate negative letterbox camera (room smaller
+// than the viewport) is representable in slide space and not clamped to the
+// room origin by the fixed vcam before handoff.
+
+describe('beginRoomSlide — endpoint-inclusive slide space', () => {
+  it('represents a negative letterbox destination endpoint without clamping it to the room origin', () => {
+    // A small destination room (100×100) with a 200×200 viewport at zoom 1: the
+    // destination camera is letterboxed to (-50, -50). The four-rectangle union
+    // must include this negative endpoint view so the fixed vcam can publish it.
+    const src = room({ iid: 'src', worldX: 0, worldY: 0, pxWid: 200, pxHei: 200 });
+    const dst = room({ iid: 'dst', worldX: 200, worldY: 0, pxWid: 100, pxHei: 100 });
+    const vp = { width: 200, height: 200 };
+    const destView = { camera: { x: -50, y: -50 }, zoom: 1 };
+    const slide = beginRoomSlide(
+      src, dst, vp,
+      { source: { camera: { x: 0, y: 0 }, zoom: 1 }, destination: destView },
+      { sourceLocal: { x: 10, y: 10 }, destinationLocal: { x: 10, y: 10 } },
+    );
+    // The destination offset in slide space (room world origin minus min).
+    // destView.camera.x = -50, so destCamWx = 200 + (-50) = 150; src at 0 →
+    // min X = min(0, 200, 0, 150) = 0. destinationOffset.x = 200 - 0 = 200.
+    expect(slide.space.destinationOffset.x).toBe(200);
+    // The bounds extend to cover the dest endpoint view (right = 150 + 200 = 350).
+    expect(slide.space.bounds.width).toBeGreaterThanOrEqual(350);
+    // Sample just before t=1 (vcam is null once the slide is done). The slide's
+    // transient vcam is a fixed body publishing the interpolated camera in slide
+    // space; subtracting the destination offset recovers the destination-local
+    // camera, which must be the negative letterbox (-50), not clamped to the
+    // room origin.
+    const nearEnd = presentationForRoomSlide({ ...slide, t: 0.9999, active: true });
+    expect(nearEnd.vcam).not.toBeNull();
+    // The slide's transient vcam is always a fixed body; narrow for TS.
+    const vcam = nearEnd.vcam!;
+    expect(vcam.body).toBeDefined();
+    expect(vcam.body!.mode).toBe('fixed');
+    // The slide vcam is always a fixed body; read its interpolated camera x.
+    // (mode asserted above at runtime; the union narrowing is verbose, so cast.)
+    const publishedX = (vcam.body as { x: number }).x - slide.space.destinationOffset.x;
+    expect(publishedX).toBeCloseTo(-50, 1); // the negative letterbox survived
+  });
+
+  it('retains room-only offsets/bounds when endpoints sit at the room origin (no overscan)', () => {
+    // The existing-fixture geometry: both endpoints {0,0} at zoom 1, so the
+    // endpoint view rectangles start at the room origins and may extend the
+    // union on the right/bottom but do NOT shift the left/top min.
+    const slide = beginRoomSlide(SRC, DST, VIEWPORT, VIEWS, IDENTITY_ACTOR);
+    // sourceOffset is still the room offset (source room at world 0,0 is the min
+    // when no endpoint peeks further left/up).
+    expect(slide.space.sourceOffset).toEqual({ x: 0, y: 0 });
+    expect(slide.space.destinationOffset).toEqual({ x: 160, y: 0 });
+  });
+
+  it('both endpoint view rectangles lie inside the expanded bounds', () => {
+    const src = room({ iid: 'src', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112 });
+    const dst = room({ iid: 'dst', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 });
+    const slide = beginRoomSlide(
+      src, dst, { width: 160, height: 112 },
+      { source: { camera: { x: 0, y: 0 }, zoom: 1 }, destination: { camera: { x: 0, y: 0 }, zoom: 1 } },
+      { sourceLocal: { x: 10, y: 10 }, destinationLocal: { x: 10, y: 10 } },
+    );
+    // Source endpoint view (world 0,0 size 160×112) and dest endpoint view
+    // (world 160,0 size 160×112 → right 320) both fit in [0, bounds.width].
+    expect(slide.space.bounds.width).toBeGreaterThanOrEqual(320);
+    expect(slide.space.bounds.height).toBeGreaterThanOrEqual(128);
   });
 });

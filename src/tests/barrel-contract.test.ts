@@ -270,6 +270,8 @@ describe('root barrel re-exports every module', () => {
     // Dip-down prevention — hard room cut + safe slide constructor.
     expect(typeof aicraft.seedRoomCutCamera).toBe('function');
     expect(typeof aicraft.beginRoomSlideFromBrain).toBe('function');
+    // Follow-compatible destination framing (0.11.0).
+    expect(typeof aicraft.roomEntrySlideView).toBe('function');
     // The bare primitives remain public (back-compat).
     expect(typeof aicraft.findLdtkRoomExit).toBe('function');
     expect(typeof aicraft.beginRoomSlide).toBe('function');
@@ -277,6 +279,8 @@ describe('root barrel re-exports every module', () => {
     const _state: aicraft.RoomExitDetectorState = aicraft.createRoomExitDetectorState();
     const _detection: aicraft.RoomExitDetection = { state: _state };
     const _opts: aicraft.RoomExitDetectorOptions = {};
+  const _slideOpts: aicraft.RoomEntrySlideViewOptions = {};
+  void _slideOpts;
     void _detection; void _opts;
   });
 });

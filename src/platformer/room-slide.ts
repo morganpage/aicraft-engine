@@ -28,9 +28,16 @@ import type {
   Camera,
   CameraBounds,
   CameraBrain,
+  CameraTarget,
+  CameraViewport,
+  FollowBand,
   VirtualCamera,
 } from '../camera';
-import { createCameraBrain } from '../camera';
+import {
+  createCameraBrain,
+  DEFAULT_FOLLOW_BODY,
+} from '../camera';
+import { resolveBand, clampTopLeft } from '../camera/motion';
 import type { LdtkLevel } from '../ldtk/types';
 import type { CompiledLdtkRoom } from './ldtk-room';
 import { rebasePointBetweenLdtkRooms } from './room-transitions';
@@ -54,8 +61,16 @@ export function roomSlideEase(t: number): number {
 
 /** A captured camera endpoint (top-left in that room's LOCAL coords + zoom). */
 export interface RoomSlideView {
-  /** Camera top-left in that room's local coordinates. */
+  /**
+   * Camera top-left in that room's LOCAL coordinates, in ROOM-PIXELS (the same
+   * unit as `level.pxWid`/`pxHei`, NOT physical/screen px). The camera brain
+   * accepts a physical viewport and divides it by zoom internally; the slide
+   * endpoints must be in room-px to match. Use {@link roomEntrySlideView} to
+   * compute a follow-compatible destination endpoint — do not pass a physical-px
+   * camera here.
+   */
   readonly camera: Readonly<Camera>;
+  /** Strictly-positive camera magnification. */
   readonly zoom: number;
 }
 
@@ -160,14 +175,38 @@ export function beginRoomSlide(
 
   const s = worldRectOf(source);
   const d = worldRectOf(dest);
-  const minX = Math.min(s.x, d.x);
-  const minY = Math.min(s.y, d.y);
+
+  // Endpoint view rectangles in authored WORLD coordinates: the rendered camera
+  // top-left (room-local) + the room's world origin, sized by the visible world
+  // at that endpoint's zoom. Including these in the slide union lets a legitimate
+  // negative letterbox camera (a room smaller than the viewport) be represented
+  // in slide space — otherwise the fixed vcam's zero-padding clamp would pin it
+  // back to the room origin before handoff. Positive-finite fallbacks are used
+  // ONLY for constructing these presentation-space rectangles; the caller's
+  // endpoint objects stored in RoomSlideState are not mutated.
+  const sZoom = finitePositive(views.source.zoom) ? views.source.zoom : 1;
+  const dZoom = finitePositive(views.destination.zoom) ? views.destination.zoom : 1;
+  const vpW = finitePositive(viewport.width) ? viewport.width : 1;
+  const vpH = finitePositive(viewport.height) ? viewport.height : 1;
+  const sViewW = vpW / sZoom;
+  const sViewH = vpH / sZoom;
+  const dViewW = vpW / dZoom;
+  const dViewH = vpH / dZoom;
+  const sCamWx = s.x + views.source.camera.x;
+  const sCamWy = s.y + views.source.camera.y;
+  const dCamWx = d.x + views.destination.camera.x;
+  const dCamWy = d.y + views.destination.camera.y;
+
+  // The union of all four rectangles, normalized by its min X/Y so every offset
+  // is ≥ 0 (the brain's zero-origin clamp stays valid). Room offsets gain a
+  // positive letterbox margin when an endpoint view peeks beyond the rooms.
+  const minX = Math.min(s.x, d.x, sCamWx, dCamWx);
+  const minY = Math.min(s.y, d.y, sCamWy, dCamWy);
   const sourceOffset = { x: s.x - minX, y: s.y - minY };
   const destinationOffset = { x: d.x - minX, y: d.y - minY };
-  // Union bounds in the shifted space — always non-negative width/height.
   const bounds: CameraBounds = {
-    width: Math.max(s.right, d.right) - minX,
-    height: Math.max(s.bottom, d.bottom) - minY,
+    width: Math.max(s.right, d.right, sCamWx + sViewW, dCamWx + dViewW) - minX,
+    height: Math.max(s.bottom, d.bottom, sCamWy + sViewH, dCamWy + dViewH) - minY,
   };
   const space: RoomSlideSpace = { bounds, sourceOffset, destinationOffset };
 
@@ -446,4 +485,111 @@ export function beginRoomSlideFromBrain(
     actor,
     options,
   );
+}
+
+// --- roomEntrySlideView — follow-compatible destination framing ------------
+
+/**
+ * Options for {@link roomEntrySlideView}. Pass the same follow bands and padding
+ * used by the destination follow vcam so the computed view is an equilibrium of
+ * that body (its first follow step does not move the camera).
+ */
+export interface RoomEntrySlideViewOptions {
+  /** Match the destination follow vcam. Defaults to {@link DEFAULT_FOLLOW_BODY}.followX. */
+  readonly followX?: Readonly<FollowBand>;
+  /** Match the destination follow vcam. Defaults to {@link DEFAULT_FOLLOW_BODY}.followY. */
+  readonly followY?: Readonly<FollowBand>;
+  /** Match the destination follow vcam. Defaults to `0`. */
+  readonly padding?: number;
+}
+
+/** Finite and strictly positive (defensive numeric fallback for viewport/zoom). */
+function finitePositive(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0;
+}
+
+/** Finite and non-negative (defensive numeric fallback for room bounds/padding). */
+function finiteNonNegative(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+}
+
+/** Finite (defensive numeric fallback for target coordinates). */
+function finiteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
+/**
+ * The deadzone anchor for an equilibrium: the screen fraction at which the
+ * camera holds the target. Any anchor in `[trail, lead]` is a deadzone hold; we
+ * pick `0.5` (centered framing) when it lies in the band, otherwise the nearest
+ * valid band edge — so default bands center the target while a custom band that
+ * excludes the center still yields a stable equilibrium.
+ */
+function deadzoneAnchor(band: Readonly<FollowBand>): number {
+  if (0.5 >= band.trail && 0.5 <= band.lead) return 0.5;
+  return 0.5 < band.trail ? band.trail : band.lead;
+}
+
+/**
+ * Compute a follow-compatible destination view for a room slide.
+ *
+ * `viewport` is in PHYSICAL screen pixels. The returned `camera` top-left is in
+ * destination-local ROOM-PIXELS — the coordinate space {@link RoomSlideView}.camera
+ * requires (same unit as `level.pxWid`/`pxHei`, not physical/screen px). The brain
+ * and the slide endpoints work in room-px; this helper divides the physical
+ * viewport by `zoom` internally so the math runs in that space.
+ *
+ * The result is AN equilibrium of the destination follow body for the supplied
+ * deadzone bands and padding: if a destination brain is seeded at this view with
+ * the same target, zoom, bands, and padding, its first follow step does not move
+ * the camera (the target sits in the deadzone hold range). It is deliberately
+ * not described as the unique position an arbitrary already-running deadzone
+ * solver would reach — deadzones have a range of valid hold positions.
+ *
+ * Pass the same `followX`/`followY`/`padding` as the destination follow vcam so
+ * the post-slide handoff continues from the same equilibrium (no correction pop).
+ *
+ * Pure: never reads host state.
+ */
+export function roomEntrySlideView(
+  room: CompiledLdtkRoom,
+  entryTarget: Readonly<CameraTarget>,
+  viewport: Readonly<CameraViewport>,
+  zoom: number,
+  options?: Readonly<RoomEntrySlideViewOptions>,
+): RoomSlideView {
+  const lvl = room.ldtkLevel;
+  // Defensive numeric resolution (mirrors the camera brain's policy).
+  const z = finitePositive(zoom) ? zoom : 1;
+  const vw = finitePositive(viewport.width) ? viewport.width : 1;
+  const vh = finitePositive(viewport.height) ? viewport.height : 1;
+  const bw = finiteNonNegative(lvl.pxWid) ? lvl.pxWid : 0;
+  const bh = finiteNonNegative(lvl.pxHei) ? lvl.pxHei : 0;
+  const padding = finiteNonNegative(options?.padding) ? (options?.padding as number) : 0;
+  const tx = finiteNumber(entryTarget.x) ? entryTarget.x : 0;
+  const ty = finiteNumber(entryTarget.y) ? entryTarget.y : 0;
+  const tw = finitePositive(entryTarget.width) ? entryTarget.width : 0;
+  const th = finitePositive(entryTarget.height) ? entryTarget.height : 0;
+
+  // Visible room-px (the brain divides the physical viewport by zoom internally).
+  const visibleW = vw / z;
+  const visibleH = vh / z;
+
+  const bandX = resolveBand(options?.followX, DEFAULT_FOLLOW_BODY.followX);
+  const bandY = resolveBand(options?.followY, DEFAULT_FOLLOW_BODY.followY);
+  const anchorX = deadzoneAnchor(bandX);
+  const anchorY = deadzoneAnchor(bandY);
+
+  // Desired top-left: center the target at the deadzone anchor, in room-px.
+  const targetCenterX = tx + tw / 2;
+  const targetCenterY = ty + th / 2;
+  const desiredX = targetCenterX - anchorX * visibleW;
+  const desiredY = targetCenterY - anchorY * visibleH;
+
+  // Reuse the follow body's clamp: letterbox-center when room ≤ visible, else
+  // padded clamp to [−padding, bound − visible + padding].
+  const cameraX = clampTopLeft(desiredX, bw, visibleW, padding);
+  const cameraY = clampTopLeft(desiredY, bh, visibleH, padding);
+
+  return { camera: { x: cameraX, y: cameraY }, zoom: z };
 }

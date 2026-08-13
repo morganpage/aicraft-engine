@@ -39,10 +39,14 @@ export function createCamera(): Camera {
  * @param camera   - Current camera position (never mutated).
  * @param target   - What the camera follows (typically the player's box).
  * @param bounds   - Level / world dimensions used for clamping.
- * @param viewport - Visible area dimensions (e.g. 960×540 design resolution).
+ * @param viewport - Visible dimensions in the SAME world-space units as
+ *                   `target` and `bounds`. This legacy solver has NO zoom input
+ *                   (unlike {@link updateCameraBrain}); callers using a zoomed
+ *                   renderer must pass `physicalViewport / zoom` themselves.
  * @param config   - Tuning (`lerp`, `snapThreshold`); defaults to
  *                   {@link DEFAULT_CAMERA} when omitted or partially omitted.
- * @returns A new {@link Camera} one lerp step closer to the target.
+ * @returns A new {@link Camera} one lerp step closer to the target, in the
+ *          same coordinate space as `target` and `bounds`.
  *
  * @example
  * ```ts
