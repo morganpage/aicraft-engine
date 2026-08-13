@@ -1,0 +1,50 @@
+# Continuous integration for aicraft-engine.
+#
+# Each quality gate is its own step so failures point at the exact command that
+# broke. `release:smoke` exercises the PACKED tarball the way a real consumer
+# would (Node ESM import, NodeNext typecheck with skipLibCheck:false, and a Vite
+# build) — it guards publish-time breakage that source-resolution checks cannot.
+#
+# Node 20 LTS: the dev toolchain pins above the >=18 runtime floor declared in
+# `engines.node` (the published package is zero-dep ESM and runs on 18+, but
+# vite 8 / vitest 4 require Node >=20 to BUILD and TEST, so the CI matrix runs
+# on 20 LTS where the whole toolchain is supported).
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test (vitest)
+        run: npm test
+
+      - name: Build dist
+        run: npm run build:dist
+
+      - name: Release smoke (packed artifact)
+        run: npm run release:smoke
+
+      - name: Dist size gate
+        run: npm run check:level-visual-size
