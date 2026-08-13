@@ -161,6 +161,40 @@ function getGlobalFetch(): typeof globalThis.fetch | undefined {
   }
 }
 
+/**
+ * Lazily and defensively read the host document's base URI for resolving a
+ * RELATIVE project URL (`./levels/level.ldtk` — the documented golden-path
+ * call). Prefers `document.baseURI` (honours `<base href>`), then
+ * `location.href`. Returns `null` in Node/SSR or a hardened host (no document,
+ * no location, or property access throws). Never touched at module import
+ * time, and never touched at all when the caller's URL is already absolute.
+ */
+function getHostBaseUri(): string | null {
+  try {
+    const doc = (globalThis as { document?: { baseURI?: unknown } }).document;
+    if (
+      doc !== undefined &&
+      doc !== null &&
+      typeof doc.baseURI === 'string' &&
+      doc.baseURI.length > 0
+    ) {
+      return doc.baseURI;
+    }
+    const loc = (globalThis as { location?: { href?: unknown } }).location;
+    if (
+      loc !== undefined &&
+      loc !== null &&
+      typeof loc.href === 'string' &&
+      loc.href.length > 0
+    ) {
+      return loc.href;
+    }
+  } catch {
+    // A hardened host may throw on property access — treat as "no base".
+  }
+  return null;
+}
+
 /** Message extracted from an unknown rejection reason. */
 function errMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -394,11 +428,32 @@ export async function loadLdtkProjectAssets(
   try {
     projectUrl = new URL(options.projectUrl);
   } catch {
-    diagnostics.push({
-      severity: 'error',
-      message: `invalid projectUrl: ${String(options.projectUrl)}`,
-    });
-    return { ok: false, diagnostics };
+    // E1 (celerock-0.7.0-upgrade-plan): a RELATIVE project URL is the
+    // DOCUMENTED golden-path call (`./levels/level.ldtk`,
+    // games/celerock.md §5.1), but the one-arg URL constructor rejects
+    // anything non-absolute. Retry against the host's base URI, read lazily
+    // and defensively. Node/SSR (no host base) keeps the clear diagnostic.
+    const hostBase = getHostBaseUri();
+    let resolved: URL | undefined;
+    if (hostBase !== null) {
+      try {
+        resolved = new URL(options.projectUrl, hostBase);
+      } catch {
+        resolved = undefined;
+      }
+    }
+    if (resolved === undefined) {
+      diagnostics.push({
+        severity: 'error',
+        message:
+          `invalid projectUrl: ${String(options.projectUrl)}` +
+          (hostBase === null
+            ? ' (relative URLs need a host base — pass an absolute URL/URL object, or run in a host with document.baseURI or location.href)'
+            : ''),
+      });
+      return { ok: false, diagnostics };
+    }
+    projectUrl = resolved;
   }
   let base: URL = projectUrl;
   if (options.assetBaseUrl !== undefined) {

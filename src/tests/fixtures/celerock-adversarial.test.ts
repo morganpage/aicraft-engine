@@ -36,6 +36,7 @@ import { findLdtkRoomExit, mapLdtkRoomEntry } from '../../platformer/room-transi
 import { beginRoomSlide } from '../../platformer/room-slide';
 import { compileLdtkRoom } from '../../platformer/ldtk-room';
 import { fitCameraZoom } from '../../camera/fit';
+import { derivePickups } from '../../collectibles';
 
 const FIXTURE_URL = new URL('./celerock-adversarial.ldtk', import.meta.url);
 
@@ -266,6 +267,37 @@ describe('celerock-adversarial.ldtk — room transitions + fit + slide (E2/E3/E4
       const zc = fitCameraZoom(room, viewport, { mode: 'contain' });
       expect(zc).toBeLessThan(z);
     }
+  });
+
+  it('the collectibles bucket feeds derivePickups directly (E2 narrowed typing)', () => {
+    const { text } = loadFixture();
+    const { project } = parseLdtkProject(text);
+    const level0 = project!.levels.find((l) => l.identifier === 'Level_0')!;
+    const room0 = compileLdtkRoom(level0, project!);
+
+    // E2 — the golden path compiles with NO consumer type predicate or cast:
+    // `room.collectibles` is `readonly CollectibleEntity[]`.
+    const save = { collected: [] };
+    const derivation = derivePickups(
+      { x: -1000, y: -1000, width: 8, height: 8 }, // far away — nothing collected
+      room0.collectibles,
+      save,
+    );
+    // The fixture's Gems survive into the narrowed bucket.
+    expect(room0.collectibles.length).toBeGreaterThan(0);
+    expect(room0.collectibles.every((e) => e.kind === 'collectible')).toBe(true);
+    expect(derivation.collected).toHaveLength(0);
+    expect(derivation.remaining.length).toBe(room0.collectibles.length);
+
+    // And a rect over the first gem collects exactly it.
+    const gem = room0.collectibles[0];
+    const over = derivePickups(
+      { x: gem.rect.x - 2, y: gem.rect.y - 2, width: gem.rect.width + 4, height: gem.rect.height + 4 },
+      room0.collectibles,
+      save,
+    );
+    expect(over.collected.length).toBe(1);
+    expect(over.remaining.length).toBe(room0.collectibles.length - 1);
   });
 
   it('the two compiled rooms produce a normalized slide space for the seam', () => {

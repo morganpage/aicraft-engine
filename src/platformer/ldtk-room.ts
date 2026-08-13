@@ -27,6 +27,7 @@
  */
 
 import type { LevelData, LevelEntity } from '../level/types';
+import type { CollectibleEntity } from '../collectibles/types';
 import { LEVEL_VERSION } from '../level/constants';
 import type { GeneratedTileSemantics } from '../level/tile-semantics';
 import { ldtkLevelToLevelData } from '../ldtk/translate';
@@ -90,8 +91,14 @@ export interface CompiledLdtkRoom {
   readonly solids: readonly Solid[];
   /** `hazard` entities (spikes, lava, saws, …). */
   readonly hazards: readonly LevelEntity[];
-  /** `collectible` entities (coins, gems, keys). */
-  readonly collectibles: readonly LevelEntity[];
+  /**
+   * `collectible` entities (coins, gems, keys). Narrowed to
+   * {@link CollectibleEntity} (E2, celerock-0.7.0-upgrade-plan): the bucket is
+   * kind-filtered at compile time, and `derivePickups` requires this type — so
+   * the golden path `derivePickups(rect, room.collectibles, save)` compiles
+   * without a consumer-side type predicate or cast.
+   */
+  readonly collectibles: readonly CollectibleEntity[];
   /** `spring` entities (normal + super). */
   readonly springs: readonly LevelEntity[];
   /** `dashRefill` entities (dash crystals). */
@@ -239,6 +246,11 @@ export function compileLdtkRoom(
     const entities = levelData.entities;
     const filterKind = (kind: LevelEntity['kind']): readonly LevelEntity[] =>
       entities.filter((e) => e.kind === kind);
+    // E2 — the collectibles bucket carries its narrowed type via a type
+    // predicate (the runtime filter is identical to `filterKind`).
+    const collectibles = entities.filter(
+      (e): e is CollectibleEntity => e.kind === 'collectible',
+    );
 
     // Spawn: refine `source` for the LDtk path. The compile heuristic flags
     // only the `(0, 0)` origin as `'fallback'`, but the translator always
@@ -272,7 +284,7 @@ export function compileLdtkRoom(
       tileSemantics,
       solids: compiled.staticSolids,
       hazards: filterKind('hazard'),
-      collectibles: filterKind('collectible'),
+      collectibles,
       springs: filterKind('spring'),
       dashRefills: filterKind('dashRefill'),
       exits: filterKind('exit'),

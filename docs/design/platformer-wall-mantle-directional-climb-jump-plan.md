@@ -71,7 +71,7 @@ When `jump.pressed` while actively grabbing:
   - Keep the existing `climbHopVy`, `climbHopVx`, and `climbHopForceTime` trajectory.
   - Face away from the wall.
   - Emit a `LaunchIntent` with the existing `source: 'climbHop'`.
-  - The kernel treats this winning source as wall-jump-family and emits `events.wallJumpLaunched = true`.
+  - `wallJumpLaunched` today fires ONLY for `wallJump`/`superWallJump` (kernel launch handling clears it and sets it for those two sources alone; `climbHop` emits no pulse). To deliver "reports it as a wall jump" (§1), this change must EXPLICITLY add `climbHop` to that condition — a deliberate widening of an existing event's meaning that consumers already reading `wallJumpLaunched` will observe. If that is unacceptable, document Away as pulse-less instead; do not assume the kernel already emits it.
   - Do not arm the new re-grab timer; the existing forced horizontal interval supplies separation.
 
 - **Neutral or Toward**
@@ -230,6 +230,8 @@ readonly mantled: boolean;
 
 Update all full event literals in built-in abilities, fallbacks, fixtures, and tests. The current worktree also changes `types.ts`, `constants.ts`, `kernel.ts`, and `wall-grab-ability.ts` for feel moments; preserve and integrate with those edits rather than replacing them.
 
+**Feel-moment parity (D2, shipped in `0.8.0`):** the booleans stay the canonical "did this happen" pulses, but the established pattern is that every trajectory-significant launch ALSO emits a matching single-tick feel moment on `state.moments` (the additive presentation channel consumers now wire SFX/shake from — `springLaunch`/`grabLatch`/`dashBonk` precede this). Add `{ kind: 'climbJumpLaunched' }` and `{ kind: 'mantled' }` moments (carrying the grabbed `solidId` where available) alongside the booleans, so a consumer needs only the moments channel for cues. If boolean-only is chosen instead, state that decision and its rationale explicitly here.
+
 Do not add engine audio or particle functions. Celerock can map:
 
 ```ts
@@ -286,6 +288,7 @@ Particle placement remains consumer-owned and must use its seeded RNG.
 - `src/replay/constants.ts`
   - Bump `CURRENT_PHYSICS_VERSION` from the current `10` to `11` and document mantle/directional-climb-jump trajectory changes.
   - If another trajectory-changing change lands first, use the next monotonic version instead of forcing `11`.
+  - UPDATE (post-D2): version `11` shipped with the feel-moments channel (`0.8.0`), so this work bumps `11 → 12`.
 
 - `src/replay/player.ts`
   - Update any manually constructed fallback events/ability slices.

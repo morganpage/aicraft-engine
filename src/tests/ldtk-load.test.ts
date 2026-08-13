@@ -359,3 +359,140 @@ describe('loadLdtkProjectAssets', () => {
     expect(result.tilesets.size).toBe(0);
   });
 });
+
+describe('loadLdtkProjectAssets — E1 relative project URLs', () => {
+  /**
+   * Install/restore simulated host globals (the loader reads
+   * `document.baseURI` / `location.href` lazily and defensively). Passing
+   * `undefined` for a field removes it (the Node default); the restore puts
+   * back exactly what was there.
+   */
+  function installHost(host: { document?: unknown; location?: unknown }): () => void {
+    const g = globalThis as Record<string, unknown>;
+    const hadDoc = 'document' in g;
+    const hadLoc = 'location' in g;
+    const oldDoc = g.document;
+    const oldLoc = g.location;
+    if (host.document === undefined) delete g.document;
+    else g.document = host.document;
+    if (host.location === undefined) delete g.location;
+    else g.location = host.location;
+    return () => {
+      if (hadDoc) g.document = oldDoc;
+      else delete g.document;
+      if (hadLoc) g.location = oldLoc;
+      else delete g.location;
+    };
+  }
+
+  /** fetch stub serving the adversarial fixture project + its tileset. */
+  function fixtureFetch(log: string[]): LoadLdtkProjectAssetsOptions['fetch'] {
+    return (input) => {
+      const urlStr = input instanceof URL ? input.href : String(input);
+      log.push(urlStr);
+      if (urlStr.endsWith('proj.ldtk') || urlStr.endsWith('game.ldtk') || urlStr.endsWith('level.ldtk')) {
+        return Promise.resolve(fakeResponse({ text: FIXTURE_TEXT }));
+      }
+      if (urlStr.includes('tranquil')) {
+        return Promise.resolve(fakeResponse({ bytes: new Uint8Array([1, 2, 3, 4]) }));
+      }
+      return Promise.resolve(fakeResponse({ text: 'not found', status: 404 }));
+    };
+  }
+
+  it('resolves a relative projectUrl against document.baseURI (simulated browser)', async () => {
+    const restore = installHost({ document: { baseURI: 'https://cdn.example/app/levels/' } });
+    const fetched: string[] = [];
+    try {
+      const result = await loadLdtkProjectAssets({
+        projectUrl: './proj.ldtk',
+        fetch: fixtureFetch(fetched),
+        decodeImage: () => Promise.resolve(FAKE_IMAGE),
+        imageTimeoutMs: 1000,
+      });
+      expect(result.ok).toBe(true);
+      // The documented golden-path relative call resolves to the base URI.
+      expect(fetched[0]).toBe('https://cdn.example/app/levels/proj.ldtk');
+      // Tileset relPaths still encode spaces/brackets against the resolved base.
+      const tilesetUrl = fetched.find((u) => u.includes('tranquil'));
+      expect(tilesetUrl).toContain('%5Bv1%5D%20tranquil');
+      expect(tilesetUrl).not.toContain('[v1]');
+    } finally {
+      restore();
+    }
+  });
+
+  it('resolves `..` segments and falls back to location.href without a document', async () => {
+    const restore = installHost({ location: { href: 'https://fallback.test/game/src/index.html' } });
+    const fetched: string[] = [];
+    try {
+      const result = await loadLdtkProjectAssets({
+        projectUrl: '../levels/proj.ldtk',
+        fetch: fixtureFetch(fetched),
+        decodeImage: () => Promise.resolve(FAKE_IMAGE),
+      });
+      expect(result.ok).toBe(true);
+      expect(fetched[0]).toBe('https://fallback.test/game/levels/proj.ldtk');
+    } finally {
+      restore();
+    }
+  });
+
+  it('fails diagnostically (ok:false) in Node/SSR with no host base', async () => {
+    const restore = installHost({});
+    try {
+      const result = await loadLdtkProjectAssets({
+        projectUrl: './levels/level.ldtk',
+        fetch: fixtureFetch([]),
+        decodeImage: () => Promise.resolve(FAKE_IMAGE),
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      const msg = result.diagnostics.map((d) => d.message).join(' | ');
+      expect(msg).toContain('invalid projectUrl: ./levels/level.ldtk');
+      expect(msg).toContain('host base');
+    } finally {
+      restore();
+    }
+  });
+
+  it('absolute URLs win over any host base (never rebased)', async () => {
+    const restore = installHost({ document: { baseURI: 'https://evil.example/' } });
+    const fetched: string[] = [];
+    try {
+      const result = await loadLdtkProjectAssets({
+        projectUrl: 'https://example.test/levels/proj.ldtk',
+        fetch: fixtureFetch(fetched),
+        decodeImage: () => Promise.resolve(FAKE_IMAGE),
+      });
+      expect(result.ok).toBe(true);
+      expect(fetched[0]).toBe('https://example.test/levels/proj.ldtk');
+      expect(fetched[0]).not.toContain('evil.example');
+    } finally {
+      restore();
+    }
+  });
+
+  it('accepts a URL object and an absolute file: URL with injected fetch', async () => {
+    const restore = installHost({});
+    const fetched: string[] = [];
+    try {
+      const byObject = await loadLdtkProjectAssets({
+        projectUrl: new URL('https://example.test/levels/proj.ldtk'),
+        fetch: fixtureFetch(fetched),
+        decodeImage: () => Promise.resolve(FAKE_IMAGE),
+      });
+      expect(byObject.ok).toBe(true);
+
+      const byFile = await loadLdtkProjectAssets({
+        projectUrl: new URL('file:///levels/proj.ldtk'),
+        fetch: fixtureFetch(fetched),
+        decodeImage: () => Promise.resolve(FAKE_IMAGE),
+      });
+      expect(byFile.ok).toBe(true);
+      expect(fetched).toContain('file:///levels/proj.ldtk');
+    } finally {
+      restore();
+    }
+  });
+});

@@ -1,6 +1,6 @@
 # Celerock 0.7.0 Upgrade Plan
 
-**Status:** Proposed  
+**Status:** Partially shipped — engine workstreams E1 + E2 landed in `0.8.1` (the release train had moved past 0.7.x, so the proposed "0.7.1" became 0.8.1); E3 (packed-artifact Celerock contract fixture) and the Celerock consumer migration remain open  
 **Scope:** Upgrade the Celerock tutorial at `/Users/morganpage/Documents/VSCODE/OPENCODE/TUTORIALS/celerock-2` from `aicraft-engine@0.6.0` plus a consumer shim to the supported 0.7.x golden path  
 **Engine baseline:** `aicraft-engine@0.7.0` is published and tagged `latest`  
 **Primary evidence:**
