@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-14
+
+### Added
+- **Room transitions (destination framing):** `roomEntrySlideView` — computes a follow-compatible destination `RoomSlideView` for a room slide, so the slide ends exactly where the post-slide follow vcam begins (no dip toward the room corner, no post-slide correction pop). The result is an equilibrium of the destination follow body for the supplied deadzone bands and padding (its first follow step does not move the camera). Takes the PHYSICAL viewport and returns a room-local room-px camera (the brain divides the viewport by zoom internally). Replaces the common hand-rolled `{ x: 0, y: 0 }` hardcoded destination endpoint that produced a visible dip on any overflow axis. New `RoomEntrySlideViewOptions` type for matching the destination follow vcam's bands/padding.
+
+### Fixed
+- **Room slide:** endpoint-inclusive slide space. `beginRoomSlide` now builds its normalized two-room union from FOUR rectangles (both rooms + both endpoint view rectangles) using the previously-discarded `viewport` argument, so a legitimate negative letterbox camera (a room smaller than the viewport) is representable in slide space rather than clamped back to the room origin by the fixed vcam before handoff. Backward-compatible: existing fixtures with endpoints at room origins retain their offsets/bounds.
+
+### Changed
+- **Docs:** the coordinate-space contracts are now explicit on the types. `RoomSlideView.camera` documents that it is room-local ROOM-PIXELS (not physical/screen px) and points to `roomEntrySlideView`. `CameraViewport` documents that it is physical screen-space. The legacy `updateCamera`'s `viewport` parameter documents that it expects the SAME world units as `target`/`bounds` and has NO zoom input (unlike `updateCameraBrain`, which takes a physical viewport and divides by zoom internally) — the exact distinction that previously required reverse-engineering the brain's internals.
+- **Celerock brief:** `games/celerock.md` now points at the supported transition helpers by name (`detectLdtkRoomExit`, `beginRoomSlideFromBrain`, `roomEntrySlideView`) and the §5.5 example uses them instead of bare `findLdtkRoomExit` + a hardcoded `{ x: 0, y: 0 }` destination. Version pins bumped to `0.11.0`.
+
 ## [0.10.0] - 2026-08-14
 
 ### Added
@@ -94,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/morganpage/aicraft-engine/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/morganpage/aicraft-engine/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/moranpage/aicraft-engine/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/morganpage/aicraft-engine/compare/v0.9.0...v0.9.1
