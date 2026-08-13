@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-14
+
+### Added
+- **Room transitions (tick-tock prevention):** `createRoomExitDetectorState` + `detectLdtkRoomExit` — an immutable, serializable re-arm wrapper over the bare `findLdtkRoomExit`. After an exit fires, the detector gates the reverse exit until the actor clears the entry seam by a deadband (default 1 world pixel via `DEFAULT_EXIT_DEADBAND`), so a body lingering on a seam no longer oscillates between rooms every tick. Direction-specific (an actor flush with an unrelated edge — e.g. a grounded actor on the floor — can still clear a west/east gate). Handles teleport/stale-state via an `expectedLevelIid` mismatch reset. Transactional: the consumer adopts the returned state only if it accepts the transition, so a rejected transition leaves the original armed state reusable. One state per actor; a JSON-cloned state behaves identically (deterministic across save/load and replay).
+- **Room transitions (dip-down prevention, hard cut):** `seedRoomCutCamera` — a single-call continuity-preserving camera-brain seed for room switches WITHOUT a slide. Rebases the rendered camera through world space so the destination's first-activation `bodyCamera` does not restart from the room's `(0,0)` origin and visibly dip. Preserves the rendered `camera`/`zoom` (not `bodyCamera`/`lensZoom`, which may represent an off-screen live target during a blend); leaves the real viewport/zoom clamp to the next `updateCameraBrain`. Documented as a hard-cut helper only — explicitly NOT a room-slide endpoint.
+- **Room transitions (dip-down prevention, slide):** `beginRoomSlideFromBrain` — a safe `beginRoomSlide` constructor that derives the source endpoint directly from the rendered brain (camera AND zoom, copied not retained), making source-view/brain divergence impossible by construction rather than caught after the fact. The caller still chooses the destination view.
+
+### Notes
+- The low-level primitives `findLdtkRoomExit`, `mapLdtkRoomEntry`, and `beginRoomSlide` are unchanged and remain public for callers that manage their own hysteresis or supply explicit endpoints. The new APIs are purely additive.
+- `findLdtkRoomExit`'s JSDoc now identifies it as a low-level stateless primitive and points per-tick consumers at `detectLdtkRoomExit`.
+- `release:smoke` now explicitly imports and exercises every new public name across all three generated consumers (Node ESM / NodeNext `skipLibCheck:false` / Vite), so a missing or renamed export fails the publish gate loudly.
+
+## [0.9.2] - 2026-08-13
+
+### Fixed
+- **Platformer:** super-jump grace (`superJumpGraceTimer`) now seeds once and only decays. Previously the timer was refreshed to `config.superJumpGrace` (0.1s) on every tick the actor stayed grounded after a horizontal dash; because `lastDashDirX/Y` persist, the timer never decayed while standing — so every subsequent grounded jump fired a Super Jump no matter how long the player waited ("dash, land, stand still, then jump → you go flying"). The window now seeds on the tick a horizontal dash ends (active→idle, covering ground dashes and hyper slides that never produce a landing event) and on the tick the actor lands after an air dash; after seeding it only decays, so standing >0.1s clears the window and a plain grounded jump is a plain jump again. The intended wavedash tech (dash → land/end → jump within grace) is preserved. Adds a full-kernel regression test.
+
 ## [0.9.1] - 2026-08-13
 
 ### Fixed
@@ -77,7 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/morganpage/aicraft-engine/compare/v0.9.2...v0.10.0
+[0.9.2]: https://github.com/moranpage/aicraft-engine/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/morganpage/aicraft-engine/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/morganpage/aicraft-engine/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/morganpage/aicraft-engine/compare/v0.8.0...v0.8.1
