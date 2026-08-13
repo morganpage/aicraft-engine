@@ -389,7 +389,10 @@ function compileLevelUnsafe(
           y: ry,
           width: rw,
           height: rh,
-          spring: { launch },
+          // Phase D2 — preserve the compiled spring semantic so the
+          // `springLaunch` feel moment can report provenance without
+          // reverse-inferring `super` from a velocity equality.
+          spring: { launch, super: power === 'super' },
         });
       } else if (entity.kind === 'dashRefill') {
         // Phase 8 — dash crystal trigger volume. NON-BLOCKING; the kernel

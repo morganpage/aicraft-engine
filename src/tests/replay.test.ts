@@ -50,6 +50,8 @@ function buildInitialState(tick = 0): PlatformerState {
     }),
     // Phase 8 — no surface interactions on the test initial state.
     interactions: Object.freeze([]),
+    // Phase D2 — no feel moments on the test initial state.
+    moments: Object.freeze([]),
     tick,
   }) as PlatformerState;
 }
@@ -424,5 +426,75 @@ describe('physicsVersion mismatch', () => {
       PhysicsVersionMismatchError,
     );
     expect(stepCalls).toBe(0);
+  });
+
+  // -----------------------------------------------------------------------
+  // Phase D2 — the explicit 10→11 boundary. v11 added the `moments` field to
+  // the captured initial state (and the version value itself), so a v10 replay
+  // no longer reproduces under v11 and must be rejected; a v11 replay must
+  // play back deterministically with the feel-moment channel intact.
+  // -----------------------------------------------------------------------
+  it('a v10 replay (the immediately-previous physics version) is rejected under v11', () => {
+    expect(CURRENT_PHYSICS_VERSION).toBe(11);
+    const replay = buildReplayWithVersion(10);
+    let caught: PhysicsVersionMismatchError | null = null;
+    try {
+      assertPhysicsVersion(replay);
+    } catch (e) {
+      caught = e as PhysicsVersionMismatchError;
+    }
+    expect(caught).not.toBeNull();
+    expect(caught?.expected).toBe(11);
+    expect(caught?.actual).toBe(10);
+    expect(() => playReplay(replay, (s) => s, 1 / 60)).toThrow(
+      PhysicsVersionMismatchError,
+    );
+  });
+
+  it('a v11 replay plays back deterministically with the moments channel intact', () => {
+    const initial = buildInitialState(0);
+    const solids = [
+      { x: -100, y: 100, width: 400, height: 16, id: 'floor' },
+    ] as unknown as Parameters<typeof stepPlatformer>[2];
+    // Fall onto the floor so a `landing` moment is captured during playback.
+    const falling: PlatformerState = {
+      ...initial,
+      core: { ...initial.core, y: 20, vy: 300 },
+    };
+    const recorder = createReplayRecorder(7, falling);
+    for (let i = 0; i < 12; i++) recorder.record(frame(0));
+    const replay = recorder.finish({
+      tickRate: 60,
+      physicsVersion: CURRENT_PHYSICS_VERSION,
+    } as ReplayConfig);
+
+    const runReplay = () => {
+      const moments: unknown[] = [];
+      const final = playReplay(
+        replay,
+        (s, f, dt) => {
+          const next = stepPlatformer(s, f, solids, dt).state;
+          moments.push(next.moments);
+          return next;
+        },
+        1 / 60,
+      );
+      return { final, moments };
+    };
+    const a = runReplay();
+    const b = runReplay();
+    // Deterministic: byte-identical re-sim including the moments channel.
+    expect(JSON.stringify(a.final)).toBe(JSON.stringify(b.final));
+    expect(JSON.stringify(a.moments)).toBe(JSON.stringify(b.moments));
+    // The feel-moment channel is live on replayed states (a landing fired
+    // mid-playback; `moments` is single-tick, so collect across ticks).
+    const allMoments = a.moments.flat();
+    expect(allMoments.length).toBeGreaterThan(0);
+    const landing = allMoments.find(
+      (m) => (m as { kind: string }).kind === 'landing',
+    ) as { kind: 'landing'; impactSpeed: number; solidId: string | null };
+    expect(landing).toBeDefined();
+    expect(landing.impactSpeed).toBeGreaterThan(0);
+    expect(landing.solidId).toBe('floor');
   });
 });

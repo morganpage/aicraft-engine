@@ -15,7 +15,7 @@ import type { BotPolicy, BotContext } from '../leveltest/policies';
 import type { PlatformerState } from '../platformer/types';
 import type { LevelEntity } from '../level/types';
 import type { Solid } from '../collision/types';
-import { EMPTY_CONTACTS, EMPTY_EVENTS, EMPTY_INTERACTIONS, DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
+import { EMPTY_CONTACTS, EMPTY_EVENTS, EMPTY_INTERACTIONS, EMPTY_MOMENTS, DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,6 +44,7 @@ function makeState(x: number, y: number, onGround: boolean = true): PlatformerSt
     locomotion: EMPTY_LOCOMOTION,
     events: EMPTY_EVENTS,
     interactions: EMPTY_INTERACTIONS,
+    moments: EMPTY_MOMENTS,
     tick: 0,
   };
 }

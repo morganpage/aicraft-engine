@@ -252,5 +252,7 @@ const FALLBACK_EMPTY_STATE: PlatformerState = Object.freeze({
   }),
   // Phase 8 — no surface interactions on the fallback state.
   interactions: Object.freeze([]),
+  // Phase D2 — no feel moments on the fallback state.
+  moments: Object.freeze([]),
   tick: 0,
 });

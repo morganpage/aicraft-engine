@@ -115,6 +115,26 @@
    *     canonicalized replay data, so either alone moves a hash; the bump itself
    *     keeps the replay contract explicit rather than driving the hash shift).
    *     The opt-out mechanics are exercised in `platformer-dash-tech.test.ts`.
+   *   - `11` — Phase D2 (feel-moments channel): `PlatformerState` gained a
+   *     top-level `moments: readonly FeelMoment[]` field (single-tick structured
+   *     feel moments — landing impact speed/normalizedImpact/hard/support id,
+   *     per-dash dashBonk with outward normal + solid id, observation-only
+   *     dashEnded { reason: 'timeout', terminalContact }, grabLatch,
+   *     staminaExhausted, springLaunch (with the compiled `super` flag), and
+   *     dashRefill — reset to `[]` each tick, same lifecycle as
+   *     `events`/`interactions`). `AbilityResult` gained optional `moments`
+   *     (pipeline-order ability-authored moments); `DashAbilityState` gained
+   *     observation-only `bonkedX`/`bonkedY` per-dash latches;
+   *     `WallGrabAbilityState` gained observation-only `solidId`;
+   *     `PlatformerConfig` gained optional `hardLandingThreshold` (ratio 0..1,
+   *     presentation-only, omitted from the default config object like
+   *     `squash`); `Solid.spring` gained the optional `super` provenance flag.
+   *     Presentation-only by construction: nothing in the channel feeds
+   *     velocity or position, so every `traceHash` canary is UNCHANGED; every
+   *     `replayHashFor` shifts (new `moments` field in the captured initial
+   *     state + the version 10→11 value — canonicalize hashes both). The feel
+   *     moments are exercised in `platformer-feel-moments.test.ts` (the
+   *     feel-invariance headline: `normalizedImpact` identical at 8/16/32 px).
    *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
    *     is missing or `0` was recorded under different math; its trajectories
    *     will not reproduce, so `assertPhysicsVersion` / `playReplay` REJECT it
@@ -124,4 +144,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 10;
+export const CURRENT_PHYSICS_VERSION = 11;

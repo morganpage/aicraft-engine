@@ -32,6 +32,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseLdtkProject, ldtkLevelToLevelData } from '../../ldtk';
 import type { LdtkLevel } from '../../ldtk';
+import { findLdtkRoomExit, mapLdtkRoomEntry } from '../../platformer/room-transitions';
+import { beginRoomSlide } from '../../platformer/room-slide';
+import { compileLdtkRoom } from '../../platformer/ldtk-room';
+import { fitCameraZoom } from '../../camera/fit';
 
 const FIXTURE_URL = new URL('./celerock-adversarial.ldtk', import.meta.url);
 
@@ -203,5 +207,90 @@ describe('celerock-adversarial.ldtk — translate (ldtkLevelToLevelData)', () =>
     // default spawn so downstream code never sees an undefined position.
     expect(diagnostics.some((d) => /no spawn entity/.test(d.message))).toBe(true);
     expect(level!.spawn.x).toBe(8); // tileSize default
+  });
+});
+
+describe('celerock-adversarial.ldtk — room transitions + fit + slide (E2/E3/E4)', () => {
+  // The fixture's two cardinally-linked rooms: Level_0 spans world
+  // x[0,160]×y[0,112]; Level_1 spans x[160,304]×y[0,128]. The shared vertical
+  // seam is x=160 with the PARTIAL y-span [0,112] (unequal heights).
+  it('a crossing inside the shared seam span transitions; outside it is void', () => {
+    const { text } = loadFixture();
+    const { project } = parseLdtkProject(text);
+    const level0 = project!.levels.find((l) => l.identifier === 'Level_0')!;
+
+    // Body crossing the east edge at y=50 — inside the shared span.
+    const exit = findLdtkRoomExit({ x: 156, y: 50, width: 8, height: 8 }, level0, project!);
+    expect(exit).toBeDefined();
+    expect(exit!.dir).toBe('e');
+    expect(exit!.neighbourLevelIid).toBe(
+      project!.levels.find((l) => l.identifier === 'Level_1')!.iid,
+    );
+    expect(exit!.seamMin).toBe(0);
+    expect(exit!.seamMax).toBe(112);
+
+    // Body crossing the east edge below y=112 — Level_1 extends lower, but the
+    // SEAM does not: outside the shared span this is void, not a transition.
+    expect(
+      findLdtkRoomExit({ x: 156, y: 116, width: 8, height: 8 }, level0, project!),
+    ).toBeUndefined();
+  });
+
+  it('mapLdtkRoomEntry preserves the world position across the fixture seam', () => {
+    const { text } = loadFixture();
+    const { project } = parseLdtkProject(text);
+    const level0 = project!.levels.find((l) => l.identifier === 'Level_0')!;
+    const level1 = project!.levels.find((l) => l.identifier === 'Level_1')!;
+    const bodyRect = { x: 156, y: 50, width: 8, height: 8 };
+    const exit = findLdtkRoomExit(bodyRect, level0, project!)!;
+    const entry = mapLdtkRoomEntry(bodyRect, level0, level1, exit);
+    expect(level1.worldX + entry.x).toBe(level0.worldX + bodyRect.x);
+    expect(level1.worldY + entry.y).toBe(level0.worldY + bodyRect.y);
+  });
+
+  it('the compact rooms produce no side gaps under the cover fit policy', () => {
+    const { text } = loadFixture();
+    const { project } = parseLdtkProject(text);
+    const level0 = project!.levels.find((l) => l.identifier === 'Level_0')!;
+    const level1 = project!.levels.find((l) => l.identifier === 'Level_1')!;
+    const room0 = compileLdtkRoom(level0, project!);
+    const room1 = compileLdtkRoom(level1, project!);
+
+    const viewport = { width: 80, height: 72 };
+    for (const room of [room0, room1]) {
+      const z = fitCameraZoom(room, viewport); // default 'cover'
+      // COVER fills BOTH axes — the level owns the screen with no letterbox.
+      expect(z * room.levelData.width).toBeGreaterThanOrEqual(viewport.width);
+      expect(z * room.levelData.height).toBeGreaterThanOrEqual(viewport.height);
+      // The contain fit genuinely letterboxes here (the BUILD_NOTES §8 gap).
+      const zc = fitCameraZoom(room, viewport, { mode: 'contain' });
+      expect(zc).toBeLessThan(z);
+    }
+  });
+
+  it('the two compiled rooms produce a normalized slide space for the seam', () => {
+    const { text } = loadFixture();
+    const { project } = parseLdtkProject(text);
+    const level0 = project!.levels.find((l) => l.identifier === 'Level_0')!;
+    const level1 = project!.levels.find((l) => l.identifier === 'Level_1')!;
+    const room0 = compileLdtkRoom(level0, project!);
+    const room1 = compileLdtkRoom(level1, project!);
+
+    const viewport = { width: 160, height: 112 };
+    const actor = { sourceLocal: { x: 156, y: 50 }, destinationLocal: { x: -4, y: 50 } };
+    const slide = beginRoomSlide(
+      room0,
+      room1,
+      viewport,
+      { source: { camera: { x: 0, y: 0 }, zoom: 1 }, destination: { camera: { x: 0, y: 0 }, zoom: 1 } },
+      actor,
+    );
+    // Union of [0,160]×[0,112] and [160,304]×[0,128] at min (0,0).
+    expect(slide.space.sourceOffset).toEqual({ x: 0, y: 0 });
+    expect(slide.space.destinationOffset).toEqual({ x: 160, y: 0 });
+    expect(slide.space.bounds).toEqual({ width: 304, height: 128 });
+    expect(slide.particleRebaseDelta).toEqual({ x: -160, y: 0 });
+    // The world-identity actor mapping produces zero render correction.
+    expect(slide.initialPlayerOffset).toEqual({ x: 0, y: 0 });
   });
 });

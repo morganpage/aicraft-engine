@@ -79,6 +79,78 @@ export interface InteractionEvent {
 }
 
 /**
+ * Phase D2 — a single-tick FEEL moment surfaced on
+ * {@link PlatformerState.moments}.
+ *
+ * The structured feel channel parallels the boolean {@link PlatformerEvents}
+ * and the spring/dashRefill {@link InteractionEvent} stream. Where the booleans
+ * say *that* something happened, a moment says *with what intensity* and *on
+ * which surface* — data the kernel already computes internally but, before D2,
+ * discarded (the load-bearing reason `squash.ts` ships a fixed landing pair:
+ * Celeste keys landing squash off a 1D spring tied to impact velocity, which the
+ * kernel never exposed). Every kind is presentation-only: nothing here feeds
+ * velocity or position, so emitting moments cannot perturb the simulation
+ * (mirrors the camera brain's presentation-only contract). The channel is
+ * single-tick and replay-deterministic — same inputs ⇒ same moments.
+ *
+ * Kinds:
+ *  - `landing`        — unsupported→supported transition. `impactSpeed` is the
+ *    absolute pre-zero px/s `vy`; `normalizedImpact` is
+ *    `clamp(impactSpeed / max(|maxFallSpeed|, ε), 0, 1)` so the hard-landing
+ *    test is scale-invariant (the fix for the unscaled `prevVy > 520` magic
+ *    number that never fired at 8 px). `hard = normalizedImpact ≥
+ *    hardLandingThresholdFor(config)`; `solidId` is the gravity-facing support
+ *    id (ground under positive gravity, ceiling under negative).
+ *  - `dashBonk`       — a blocked-axis bonk during an active dash, emitted once
+ *    per blocked axis per dash. `normalX`/`normalY` is the conventional
+ *    outward surface normal (a wall on the actor's right gives `normalX = -1`;
+ *    a ceiling gives `normalY = +1`). `solidId` is the resolved contact. A
+ *    pinned dash does NOT retrigger: per-dash X/Y latches reset on each new dash.
+ *  - `dashEnded`      — observation-only end of a dash. The dash still ends on
+ *    timeout in this release, so `reason` is honestly `'timeout'`;
+ *    `terminalContact` records the wall/ceiling/floor context on the ending
+ *    tick WITHOUT claiming it caused the end. (Ending a dash early on contact
+ *    is a behaviour-changing follow-up that may widen `reason` later.)
+ *  - `grabLatch`      — `WallGrabAbilityState.grabbing: false → true`.
+ *  - `staminaExhausted` — the `stamina > 0 → ≤ 0` crossing while grabbing.
+ *  - `springLaunch`/`dashRefill` — supersede (and initially parallel) the
+ *    `interactions` array, adding the `super` flag for super-springs and a
+ *    uniform `solidId`.
+ */
+export type FeelMoment =
+  | {
+      readonly kind: 'landing';
+      /** Absolute pre-zero landing px/s speed (`abs(core.vy)` before the Y resolver zeroes it). */
+      readonly impactSpeed: number;
+      /** `clamp(impactSpeed / max(|maxFallSpeed|, ε), 0, 1)` — scale-invariant under tile size AND gravity sign. */
+      readonly normalizedImpact: number;
+      /** `normalizedImpact ≥ hardLandingThresholdFor(config)`. */
+      readonly hard: boolean;
+      /** Gravity-facing support id (`groundId` / `ceilingId`), or `null` if none resolved. */
+      readonly solidId: string | null;
+    }
+  | {
+      readonly kind: 'dashBonk';
+      /** Conventional outward surface normal X (`-1`/`0`/`+1`). A right wall gives `-1`. */
+      readonly normalX: -1 | 0 | 1;
+      /** Conventional outward surface normal Y (`-1`/`0`/`+1`). A ceiling gives `+1`. */
+      readonly normalY: -1 | 0 | 1;
+      /** Resolved contact solid id, or `null`. */
+      readonly solidId: string | null;
+    }
+  | {
+      readonly kind: 'dashEnded';
+      /** Honestly `'timeout'` in this release (the dash ends on timeout). */
+      readonly reason: 'timeout';
+      /** Wall/ceiling/floor context on the ending tick, or `'none'`. Observation-only. */
+      readonly terminalContact: 'none' | 'wall' | 'ceiling' | 'floor';
+    }
+  | { readonly kind: 'grabLatch'; readonly solidId: string | null }
+  | { readonly kind: 'staminaExhausted' }
+  | { readonly kind: 'springLaunch'; readonly solidId: string | null; readonly super: boolean }
+  | { readonly kind: 'dashRefill'; readonly solidId: string | null };
+
+/**
  * Per-tick events emitted by the kernel. All fields are `boolean` — `true`
  * only on the single tick the event fires, `false` otherwise. The consumer
  * reads these from the returned state and they reset on the next tick.
@@ -270,6 +342,15 @@ export interface AbilityResult<TState extends AbilityState> {
    * Fields an ability omits are left untouched.
    */
   readonly locomotionPatch?: Partial<LocomotionState>;
+  /**
+   * Phase D2 — optional feel moments this ability emits this tick (e.g.
+   * `wallGrabAbility` latches a `grabLatch`/`staminaExhausted`). The kernel
+   * appends these in pipeline order BEFORE adding its own collision/environment
+   * moments (`landing`/`dashBonk`/`dashEnded`/`springLaunch`/`dashRefill`).
+   * Presentation-only — they never feed velocity or position. Omitted means no
+   * ability-authored moments this tick.
+   */
+  readonly moments?: readonly FeelMoment[];
 }
 
 /**
@@ -691,6 +772,21 @@ export interface DashAbilityState extends AbilityState {
    * matching Celeste). After the dash ends this is stale but unused.
    */
   readonly hyperSlide: boolean;
+  /**
+   * Phase D2 — per-dash X-axis bonk latch (observation-only). Absent/`false`
+   * means no X bonk has fired for the current dash. The kernel sets this to
+   * `true` after collision resolution when an active dash is pinned against a
+   * wall on its horizontal axis; the `dashBonk` moment fires on the `false →
+   * true` transition so a pinned dash emits hit-stop exactly once. Reset to
+   * `false` on each new dash. Does not affect velocity/trajectory.
+   */
+  readonly bonkedX?: boolean;
+  /**
+   * Phase D2 — per-dash Y-axis bonk latch (observation-only). Same contract as
+   * {@link bonkedX} but for the vertical axis (ceiling/floor), covering the
+   * upward-dash-into-ceiling case. Reset to `false` on each new dash.
+   */
+  readonly bonkedY?: boolean;
 }
 
 /**
@@ -742,6 +838,13 @@ export interface WallGrabAbilityState extends AbilityState {
   readonly grabbing: boolean;
   /** Which wall is being grabbed (`'left'`/`'right'`), or `null` when not grabbing. */
   readonly side: 'left' | 'right' | null;
+  /**
+   * Phase D2 — the `Solid.id` of the grabbed wall on the tick grab engaged
+   * (observation-only), or `null`. Captured from the `probeWall` result so the
+   * `grabLatch` moment carries the surface id without overloading the boolean
+   * event record. Stale while not grabbing; re-captured on each engage.
+   */
+  readonly solidId?: string | null;
 }
 
 /**
@@ -799,6 +902,16 @@ export interface PlatformerState {
    * when no trigger volume was touched this tick.
    */
   readonly interactions: readonly InteractionEvent[];
+  /**
+   * Phase D2 — single-tick feel moments (landing/dash-bonk/dash-ended/grab/
+   * stamina/spring/refill). Reset to `[]` each tick (same lifecycle as
+   * {@link events}). Presentation-only — they never feed velocity or position,
+   * so emitting them cannot perturb the simulation. Additive over the boolean
+   * {@link events} + {@link interactions}; existing readers keep their code.
+   * A consumer that manually constructs a complete {@link PlatformerState} must
+   * pass `moments: []` (engine factories always populate it).
+   */
+  readonly moments: readonly FeelMoment[];
   /** Monotonic integer tick counter — strictly increases by 1 each step. */
   readonly tick: number;
 }
@@ -1203,6 +1316,23 @@ export interface PlatformerConfig {
    * off a spring is wired.
    */
   readonly springAutoJumpTime: number;
+  // -----------------------------------------------------------------------
+  // Phase D2 — FEEL threshold (PRESENTATION-ONLY). This knob is read ONLY to
+  // compute the `hard` flag on the `landing` feel moment; it never affects a
+  // trajectory. Like `squash` below, it is omitted from the default config so
+  // the serialized config (and thus `replayHashFor`) is unaffected by a
+  // presentation default — consumers opt in by spreading an override. The
+  // kernel applies `hardLandingThresholdFor(config)` (default `0.72`).
+  // -----------------------------------------------------------------------
+  /**
+   * Phase D2 — ratio in `[0, 1]` at which a landing counts as "hard" (drives
+   * the {@link FeelMoment} `landing.hard` flag). Compared against
+   * `normalizedImpact` (= `impactSpeed / max(|maxFallSpeed|, ε)`), so the same
+   * threshold fires identically at 8/16/32 px tiles — the fix for the unscaled
+   * `prevVy > 520` magic number. Optional; defaults to `0.72` via
+   * `hardLandingThresholdFor`.
+   */
+  readonly hardLandingThreshold?: number;
   // -----------------------------------------------------------------------
   // Phase 8c — per-event squash & stretch FX (RENDER-ONLY). This is purely a
   // presentation layer: it does NOT alter physics trajectories, does NOT live

@@ -1,4 +1,4 @@
-# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.7.0`
+# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.8.0`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief. **Presume the user supplies an LDtk project file (`.ldtk`) and the tileset PNG(s) it references.** The agent produces a single runnable Vite + TypeScript browser game that loads those assets and plays them like *Celeste* — importing everything movement, camera, level, and presentation-related from `aicraft-engine` (the npm package) and writing **no** re-implementations of what the engine already provides. The agent does **not** author level geometry: rooms, tiles, hazards, and collectibles all come from the supplied LDtk file.
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo and NOT a hand-authored level set.** The previous version of this brief failed because it (a) hand-wrote six ASCII room grids and a bespoke "connected-terrain" renderer instead of using a real tileset, (b) drove the view through the legacy single follow-camera instead of the camera brain, (c) enabled a `doubleJump` which is not a Celeste mechanic, and (d) gated progression behind a per-room "win → Cleared card → next" loop instead of Celeste-style seamless room transitions. This brief fixes every one of those: **geometry and tile art come from the supplied LDtk + tileset**, the **camera brain** with per-room virtual cameras owns the view, the **Phase 0–9 movement kernel** owns the authentic Celeste kit, and **LDtk `__neighbours`** own room flow.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.7.0`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, or audio — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, a camera lerp, a tile-blit loop, or `Math.random()` in the simulation, STOP and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.8.0`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
 
 ---
 
@@ -19,10 +19,10 @@
 ```bash
 npm create vite@latest celerock -- --template vanilla-ts
 cd celerock
-npm install aicraft-engine@0.7.0
+npm install aicraft-engine@0.8.0
 ```
 
-> This brief targets the published `0.7.0` API exactly. `0.7.0` is the **first release with the supported golden path**: the high-level LDtk loader (`loadLdtkProjectAssets`), the asset preflight (`inspectLdtkPlatformerProject`), the per-room compiler + cache (`compileLdtkRoom` / `createLdtkRoomCache`), the unit-aware config scaler (`scalePlatformerConfig` / `createPrecisionPlatformerConfig`), the exported `IDLE_EDGE` + standard input maps, the solid-id helpers (`solidIdForEntity` / `entityIdFromSolidId`), the LDtk spawn fix (`'rest-on-surface'` resolution + `settlePlatformerState` recovery), and the game-loop `onError`/`errorPolicy` hooks all land here. The camera brain, the LDtk parser/translator/renderer, and the Phase 0–9 Celeste movement kit shipped earlier (LDtk in `0.5.0`; camera brain + Celeste physics + `groundDuckEnabled` in `0.6.0`) — so the camera/LDtk/movement floor is `0.6.0`, but **the golden-path helpers + spawn fix need `0.7.0`**. Do not pin below `0.7.0`.
+> This brief targets the published `0.8.0` API exactly. `0.8.0` adds the **feel + traversal layer** on top of the `0.7.0` golden path: the structured feel channel (`state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments), the pure room-transition helpers (`findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`), the slide orchestrator (`beginRoomSlide` + the camera-space rebases), and the explicit camera fit (`fitCameraZoom`). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. Note the **`0.8.0` compatibility breaks**: the replay physics version is 11 (v10 replays rejected) and a manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.8.0`.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -155,15 +155,15 @@ npm install aicraft-engine@0.7.0
 | **Tile-unit config scaling** | **PREFERRED** `scalePlatformerConfig(config, scale)` / `createPrecisionPlatformerConfig({ tileSize, referenceTileSize?, jumpApexTiles?, timeToApex?, coyoteTime?, wallGrabEnabled?, climbEnabled? })` — unit-aware (distances/velocities/accelerations scale; times/ratios/counts/booleans don't) and re-pegs jump-relative impulses. `PlatformerConfig` is FLAT (`dashEnabled`/`dashSpeed`/`wallSlideEnabled`/`wallJumpVx`/… top-level; only `jump:` and optional `squash:` are nested). |
 | **Solid-id helpers** | `solidIdForEntity(id)` / `entityIdFromSolidId(solidId)` — entity solids are `entity-<id>` (NOT `solid-`); tile-derived solids are a separate `tile-…` namespace (not reversible). |
 | **Spawn resolution** | `compileGeneratedLevel`/`compileLdtkRoom` resolve the LDtk FEET-CENTER spawn to the AABB top-left via `spawnResolution:'rest-on-surface'` (the LDtk default) — the player rests on the surface, **no floor embed, no hand-rolled settle**. `settlePlatformerState(state, solids, config?, maxSteps?)` is a recovery tool for legacy/embedded spawns only. |
-| **Player controller (jump + wall-slide + wall-jump + dash + wall-grab/stamina + dash-tech)** | `PRECISION_PLATFORMER` + `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` → `{ state }` — boolean event pulses (`justLanded`/`justLaunched`/`hitCeiling`/`hitWall`/`startedWallSlide`/`wallJumpLaunched`/`dashStarting`/`dashStarted`/`doubleJumped`) are on **`state.events`**; spring/dashRefill `interactions` (each carrying an `entityId` solid id) are on **`state.interactions`**. **Do NOT hand-roll velocity, stamina, or collision.** |
+| **Player controller (jump + wall-slide + wall-jump + dash + wall-grab/stamina + dash-tech)** | `PRECISION_PLATFORMER` + `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` → `{ state }` — boolean event pulses (`justLanded`/`justLaunched`/`hitCeiling`/`hitWall`/`startedWallSlide`/`wallJumpLaunched`/`dashStarting`/`dashStarted`/`doubleJumped`) are on **`state.events`**; spring/dashRefill `interactions` (each carrying an `entityId` solid id) are on **`state.interactions`**; structured FEEL moments (landing impact ratio/hard flag, dash bonks with normal + surface id, dashEnded context, grabLatch/staminaExhausted, springLaunch/dashRefill) are on **`state.moments`**. **Do NOT hand-roll velocity, stamina, collision, or feel thresholds.** |
 | Moving-platform rooms | `advanceMovingPlatform`, `movingPlatformToSolid`, `createMovingPlatformDisplacementProvider(current, previous)` — pass the provider as the **6th positional arg** to `stepPlatformer` so platforms carry the player. |
 | **Camera brain (per-room vcams, deadzone follow, blends)** | `createCameraBrain`, `updateCameraBrain`, `VirtualCamera` — **do NOT use the legacy `createCamera`/`updateCamera`** |
-| **Room-to-room transitions** | LDtk `__neighbours` — pure `transitionFor` / `entryPoint` helpers (see §5.5); momentum preserved |
+| **Room-to-room transitions** | LDtk `__neighbours` — engine-owned `findLdtkRoomExit` → `mapLdtkRoomEntry` → `transitionPlatformerToRoom` + the `beginRoomSlide` slide orchestrator (see §5.5); momentum preserved, `'seam-entry'` provenance |
 | Hazard AABB (spikes) | `aabbOverlap` against the player's rect (read from the kernel state) |
 | Strawberry collection | `derivePickups`, `collect`, `hasCollected` |
 | Persistent strawberries + death counter | `save` storage (`createLocalStorageSaveStorage`, `loadSave`, `writeSave`) |
 | Hit-stop on dash-into-wall + death | `createHitStop`, `triggerHitStop`, `stepHitStop`, `isHitStopActive` |
-| Screen shake on hard landings / dash-bonk | `sineShake`, `shakeEnvelope` |
+| Screen shake on hard landings / dash-bonk | trigger off `state.moments` (`landing.hard`, `dashBonk`) → `sineShake`, `shakeEnvelope` |
 | Squash/stretch + breathing | `volumeScale`, `breathe`, `DEFAULT_BREATH`, `advanceSquash`, `DEFAULT_SQUASH_CONFIG` |
 | Walk cycle (anti-foot-slide on ground) | `advanceLocomotionByDisplacement`, `evaluateLocomotion`, `DEFAULT_GAIT` |
 | Landing / airborne tuck | `blendAirborneTuck`, `DEFAULT_TUCK` |
@@ -234,7 +234,14 @@ const stepped = stepPlatformer(state, input, solids, dt, config, displacement /*
 state = stepped.state;
 // read pulses: state.events.justLanded / .dashStarted / .hitWall / …
 // read surface interactions: state.interactions → [{ kind: 'spring'|'dashRefill', entityId }]
+// read FEEL moments: state.moments → [{ kind: 'landing', impactSpeed, normalizedImpact, hard, solidId },
+//                                     { kind: 'dashBonk', normalX, normalY, solidId },
+//                                     { kind: 'dashEnded', reason, terminalContact },
+//                                     { kind: 'grabLatch' | 'staminaExhausted', … },
+//                                     { kind: 'springLaunch', super, solidId } | { kind: 'dashRefill', solidId }]
 ```
+
+**Feel cues come from `state.moments`** (single-tick, presentation-only): a hard landing is `landing.hard` — the RATIO test (`normalizedImpact ≥ 0.72` of max fall speed), identical at every tile size; do **not** write an unscaled `prevVy > 520` px/s threshold (a real build's threshold that never fired at 8 px tiles). A dash-into-wall (horizontal OR upward-into-ceiling) is one `dashBonk` moment with the conventional outward normal + the surface id; the gasp/latch SFX are `staminaExhausted`/`grabLatch`. The boolean `state.events` pulses remain the canonical "did this happen" channel.
 
 The LDtk spawn is a FEET-CENTER anchor; `compileGeneratedLevel`/`compileLdtkRoom` already resolve it to the AABB top-left via `spawnResolution:'rest-on-surface'` (the LDtk default), so the player rests on the surface — **no floor embed, no hand-rolled `settleState`**. (`settlePlatformerState(state, solids, config?, maxSteps?)` exists only as a recovery tool for legacy/embedded spawns; you should not need it for LDtk levels.) `stepPlatformer` returns `{ state }` — events and interactions live ON that `state` (not as a sibling key).
 
@@ -477,7 +484,7 @@ state = stepPlatformer(state, input, solids, dt, config, displacement).state;   
 Set the canvas once (`image-rendering: pixelated`, DPR-aware backing store). Each frame, the **camera brain** owns the view: one follow `VirtualCamera` per room, Celeste-style deadzone bands, fitted zoom. Render the tileset through `drawLdtkLevel` with `imageSmoothingEnabled = false`:
 
 ```ts
-// One cached vcam per room (rooms differ in size → fitZoom differs).
+// One cached vcam per room (rooms differ in size → fitCameraZoom differs).
 const vcam: VirtualCamera = {
   id: room.ldtkLevel.iid,
   priority: 0,
@@ -488,11 +495,11 @@ const vcam: VirtualCamera = {
     followY: { trail: 0.35, lead: 0.65 },
     padding: 0,
   },
-  lens: { zoom: fitZoom(room.levelData, viewport) },
+  lens: { zoom: fitCameraZoom(room, viewport) },          // ENGINE cover-fit (accepts the CompiledLdtkRoom directly)
 };
 
 // Boot once at the start room's fitted zoom:
-let brain = createCameraBrain({ zoom: fitZoom(active.levelData, viewport) });
+let brain = createCameraBrain({ zoom: fitCameraZoom(active, viewport) });
 
 // Each tick:
 brain = updateCameraBrain(brain, {
@@ -518,50 +525,73 @@ drawLdtkLevel(ctx, active.ldtkLevel, {
 ctx.restore();
 ```
 
-`fitZoom(level, viewport)` is a **consumer-authored** helper (the camera module exports no fit function) — author it with a **`cover` fit, NOT `contain`**. For compact Celeste-like rooms a `contain` fit (`Math.min(canvas.w / level.w, canvas.h / level.h)`) leaves empty side/bottom gaps; a `cover` fit (`Math.max(...)`) fills the viewport on BOTH axes so the level owns the screen, with the deadzone follow scrolling the overflow axis. A prior build fixed exactly this gap with a one-line `Math.min → Math.max` flip — state the policy up front so the next build gets it right the first time. Keep `imageSmoothingEnabled = false` and nudge the result down a hair (e.g. `* 0.98`) so a room that *just* fits does not round-overflow its border by a pixel.
+`fitCameraZoom(level, viewport, options?)` is the **engine-owned** fit helper (a `{ width, height }` or a `CompiledLdtkRoom` + a viewport → zoom). Its policy is explicit and tested: **`mode: 'cover'` (the default)** fills the viewport on BOTH axes so the level owns the screen, with the deadzone follow scrolling the overflow axis — no empty side/bottom gaps on compact rooms. `mode: 'contain'` (`Math.min`) letterboxes; `mode: 'native'` is `1`. Optional `integerScale: true` quantises best-effort (up for cover, down min 1 for contain, sub-unit stays fractional), and `minZoom`/`maxZoom` clamp last. For compact Celeste-like rooms a `contain` fit (`Math.min(...)`) leaves exactly the side/bottom gap a prior build fixed with a one-line `Math.min → Math.max` flip — that policy is now engine-owned, so do **not** hand-roll a `fitZoom`: call `fitCameraZoom(room, viewport)` and keep `imageSmoothingEnabled = false`. (Nudge the result down a hair — `* 0.98` — only if a room that *just* fits round-overflows its border by a pixel.)
 
 ```ts
-function fitZoom(level: { width: number; height: number }, vp: { width: number; height: number }): number {
-  if (level.width > vp.width || level.height > vp.height) return 1; // larger than viewport → 1× + deadzone scroll
-  return Math.max(vp.width / level.width, vp.height / level.height) * 0.98; // COVER (no side gaps)
-}
+const zoom = fitCameraZoom(room, viewport);                          // cover (default) — no side gaps
+const zoom = fitCameraZoom(room, viewport, { mode: 'contain' });     // letterbox (NOT the Celerock policy)
+const zoom = fitCameraZoom(room, viewport, { integerScale: true });  // best-effort crisp-pixel quantise
 ```
 
 ### 5.5 Room transitions — seamless, momentum-preserving
 
-Celerock renders one room at a time in **room-local coordinates**, so a room change must NOT blend a position captured in one room's local space into another's. The canonical pattern (pure, unit-testable without a canvas):
+Celerock renders one room at a time in **room-local coordinates**, so a room change must NOT blend a position captured in one room's local space into another's. The engine owns the whole path now — the simulation transition (pure helpers) and the presentation transition (the slide orchestrator). **Do not hand-roll `transitionFor`/`entryPoint` or a slide:**
 
 ```ts
-/** Which linked edge (if any) the player left the room through. */
-function transitionFor(body: Rect, level: LdtkLevel): LevelTransition | undefined;
+/** Which linked shared seam (if any) the body's AABB crossed out of `level` (cardinal `__neighbours` only,
+ *  gated by the shared world-space seam span — a crossing outside it is void, not a transition). */
+findLdtkRoomExit(body: Rect, level: LdtkLevel, project: LdtkProject): LdtkRoomExit | undefined;
 
-/** Where the player enters the target room, in the target's local space. */
-function entryPoint(body: Rect, from: LdtkLevel, to: LdtkLevel): { x: number; y: number };
+/** Where the actor enters the destination room, in destination-local coords (momentum-preserving, un-clamped). */
+mapLdtkRoomEntry(body: Rect, from: LdtkLevel, to: LdtkLevel, exit: LdtkRoomExit): LdtkRoomEntry;
+
+/** Post-transition state + `spawn.source === 'seam-entry'` provenance. Preserves vx/vy/facing + ability/
+ *  locomotion slices, clears events/interactions/moments, and revalidates support when you pass
+ *  `destinationSolids` (never settles — settling would destroy mid-air momentum). */
+transitionPlatformerToRoom(state, entry, { destinationSolids?, config? }): { state, spawn };
+
+/** Rebase a source-local point into destination-local (particles/dust continuity). */
+rebasePointBetweenLdtkRooms(point, from: LdtkLevel, to: LdtkLevel): { x, y };
 ```
 
-**Presentation policy (G5 — the default is a SLIDE, not a hard cut).** A room change plays a short slide (~0.25–0.35 s, a named easing such as `easeInOut(easeOutCubic)`) during which **BOTH rooms render** and the player's SCREEN position is continuous at the seam (the destination room is drawn offset by the slide vector so the player does not teleport on screen). Momentum (`vx`/`vy`/`facing`) is preserved across the seam, and particles rebase into the destination-local space so dash trails don't snap. **Reduced-motion** (`prefersReducedMotion()`) uses an immediate seam-aligned cut instead of the slide. (The full engine-owned slide helpers are a later phase; for now the brief STATES this policy so every build implements the slide consistently rather than reverting to the old hard-cut. The hard `resetRoomCameraBrain` cut below is the reduced-motion fallback, not the default.)
+**Presentation (G5 — the default is a SLIDE, not a hard cut): `beginRoomSlide` / `advanceRoomSlide` / `presentationForRoomSlide` + the camera-space rebases.** The orchestrator composes the existing camera brain (no new solver): it drives a transient high-priority `fixed` vcam in a normalized two-room space with `blend: 0` and exact-snap body/lens, so the named exported curve (`roomSlideEase`, ~0.30 s) is the SOLE path authority — no stacked brain blend or damping. **BOTH rooms render** during the slide (draw each with `worldOffset: presentation.sourceOffset` / `destinationOffset`); the player's SCREEN position is continuous at the seam (`presentation.playerOffset` eases the render correction to zero); particles rebase ONCE at slide start (`slide.particleRebaseDelta`); input/sim continue unless `freezeSimulation`. **Reduced-motion** is explicit — pass `reducedMotion: prefersReducedMotion()`; `true` yields `active: false, t: 1` and you run the enter + finish camera-space rebases in the SAME presentation frame for an immediate seam-aligned cut. Handoff is explicit, not auto-blended: `enterRoomSlideCameraSpace` (once, at slide start) rebases the brain into slide space and clears selection/blend; `finishRoomSlideCameraSpace` (once, at slide end) rebases into destination-local — the next destination vcam activation is a first activation seeded from the exact final rendered view. Death/retry/teleport mid-slide: `cancelRoomSlideCameraSpace(slide, brain, returnTo)` rebases to the room the simulation resumes in; rapid reversal cancels to the current room FIRST, then begins the reverse slide from that local state.
 
-On transition: resolve the matching cardinal `__neighbour`, compile the target (cached via `createLdtkRoomCache`), reposition the player at the seam preserving `vx`/`vy`/`facing` and resetting `contacts`, then begin the slide (cut to the destination-local origin only at the reduced-motion fallback):
+On transition: resolve the exit, map the entry, transition the state, then begin the slide:
 
 ```ts
-const exit = transitionFor(state.core, active.ldtkLevel);
-if (exit && rooms.has(exit.neighbour.levelIid)) {
-  const target = rooms.get(exit.neighbour.levelIid);   // cached CompiledLdtkRoom
-  const entry = entryPoint(state.core, active.ldtkLevel, target.ldtkLevel);
-  state = {
-    ...state,
-    core: { ...state.core, x: entry.x, y: entry.y, onGround: false, contacts: EMPTY_CONTACTS },  // keep vx/vy/facing
-  };
-  beginRoomSlide(active, target, exit.dir);            // ~0.3s slide, both rooms render (reduced-motion → cut)
+const exit = findLdtkRoomExit(state.core, active.ldtkLevel, project);
+if (exit) {
+  const target = rooms.get(exit.neighbourLevelIid);      // cached CompiledLdtkRoom (createLdtkRoomCache)
+  const entry = mapLdtkRoomEntry(state.core, active.ldtkLevel, target.ldtkLevel, exit);
+  ({ state } = transitionPlatformerToRoom(state, entry, { destinationSolids: target.solids, config }));
+  // Particle continuity: add slide.particleRebaseDelta ONCE to source-local particles.
+  slide = beginRoomSlide(
+    active, target, viewport,
+    { source: { camera: brain.camera, zoom: brain.zoom },          // current rendered view
+      destination: { camera: { x: 0, y: 0 }, zoom: fitCameraZoom(target, viewport) } },
+    { sourceLocal: { x: prevCore.x, y: prevCore.y }, destinationLocal: { x: entry.x, y: entry.y } },
+    { reducedMotion: prefersReducedMotion() },
+  );
+  brain = enterRoomSlideCameraSpace(slide, brain);      // rebase into slide space (clears selection/blend)
   active = target;
-  // brain lens eases from the previous zoom to the new room's fitZoom during the slide;
-  // on the reduced-motion cut path: brain = createCameraBrain({ x:0, y:0, zoom: brain.zoom })
+}
+// each presentation tick while slide.active:
+slide = advanceRoomSlide(slide, dt);
+const p = presentationForRoomSlide(slide);
+if (p.vcam) {
+  brain = updateCameraBrain(brain, { vcams: [p.vcam], targets: { player: state.core }, bounds: p.bounds,
+                                    viewport, activeId: ROOM_SLIDE_VCAM_ID, dt });
+  // draw BOTH rooms: drawLdtkLevel(ctx, src.ldtkLevel,  { ..., worldOffset: p.sourceOffset });
+  //                  drawLdtkLevel(ctx, dest.ldtkLevel, { ..., worldOffset: p.destinationOffset });
+  // draw the player at (destinationLocal + p.playerOffset) in slide space
+} else {
+  brain = finishRoomSlideCameraSpace(slide, brain);     // rebase into destination-local; the room vcam takes over
 }
 ```
 
-Falling out of the level with no cardinal neighbour (the void) is a respawn, not a transition.
+Falling out of the level with no cardinal neighbour (the void) is a respawn, not a transition — and a crossing that leaves through a NON-shared span (a partial seam's void edge) is also void: `findLdtkRoomExit` returns `undefined` and you respawn.
 
-> The public golden-path APIs replace the old "read the showcase" reference: `loadLdtkProjectAssets` (§5.1), `inspectLdtkPlatformerProject` (preflight), `compileLdtkRoom` / `createLdtkRoomCache` (§5.2), and the cover-fit `fitZoom` + per-room vcam above. (No `showcase/` or `src/…` path is published in the npm package — the `files` whitelist ships only `dist/` — so do not reference any as a consumer resource.)
+> The public golden-path APIs replace the old "read the showcase" reference: `loadLdtkProjectAssets` (§5.1), `inspectLdtkPlatformerProject` (preflight), `compileLdtkRoom` / `createLdtkRoomCache` (§5.2), `findLdtkRoomExit` → `transitionPlatformerToRoom` → `beginRoomSlide` (§5.5), and the cover-fit `fitCameraZoom` + per-room vcam above. (No `showcase/` or `src/…` path is published in the npm package — the `files` whitelist ships only `dist/` — so do not reference any as a consumer resource.)
 
 ### 5.6 What the supplied LDtk must contain (light contract)
 
@@ -655,10 +685,10 @@ Use the shipped events (`start`, `die`, `retry`, `win`, `next`, `pause`, `resume
 ## 9. Game Feel Checklist (the juice — every item uses the engine)
 
 - [ ] Launch stretch + landing squash (`advanceSquash` + `volumeScale` over `breathe`) — **procedural-fallback body only**; the supplied `Player.png` sprite stays stable 1:1 (squash distorts pixel art — §4.4).
-- [ ] **Hit-stop on dash-into-wall** — narrow the union first (`dash?.kind === 'dash' && dash.timer > 0`).
+- [ ] **Hit-stop on dash-into-wall** — trigger off the one-shot `dashBonk` moment on `state.moments` (horizontal AND vertical bonks; no ability-slice diffing, no velocity peeking).
 - [ ] Hit-stop on death.
-- [ ] Screen shake on dash-bonk and hard landings (`sineShake` + `shakeEnvelope`).
-- [ ] **Camera brain deadzone follow** (Celeste bands) — smooth, no jitter; the player stays inside the band until it crosses the lead edge. **Cover-fit** `fitZoom` (no empty side gaps on compact rooms).
+- [ ] Screen shake on dash-bonk and hard landings — gate on `landing.hard` / `dashBonk` from `state.moments` (`sineShake` + `shakeEnvelope`); the hard test is the tile-invariant `normalizedImpact` ratio, never a raw px/s threshold.
+- [ ] **Camera brain deadzone follow** (Celeste bands) — smooth, no jitter; the player stays inside the band until it crosses the lead edge. **Cover-fit** `fitCameraZoom` (no empty side gaps on compact rooms).
 - [ ] **Room transition is a SLIDE** (G5) — ~0.25–0.35 s, both rooms render, continuous screen position at the seam, momentum + particles carried across; reduced-motion uses an immediate seam-aligned cut.
 - [ ] Air control during jump (the kernel's `airAccelMultiplier`).
 - [ ] Dash trail particles (`spawn` 4 small white particles on each dash tick, culled by `cull`). (Seeded `mulberry32` rng — no `Math.random`.)
@@ -680,11 +710,11 @@ Unlock on first user gesture (one-shot `keydown`/`pointerdown` calling `audio.un
 - **Walk tap:** `playNoise(40, 'lowpass', 200, 0.12)` per `advanceFootPlant` event.
 - **Jump:** `playTone('sine', 200, 400, 80, 0.2)`.
 - **Wall-jump:** `playTone('triangle', 300, 500, 60, 0.18)`.
-- **Wall-grab latch:** `playTone('triangle', 180, 160, 40, 0.12)`; **stamina-out gasp:** `playNoise(80, 'lowpass', 300, 0.25)`.
+- **Wall-grab latch** (on the `grabLatch` moment): `playTone('triangle', 180, 160, 40, 0.12)`; **stamina-out gasp** (on the `staminaExhausted` moment): `playNoise(80, 'lowpass', 300, 0.25)`.
 - **Wall-slide:** while `wall?.kind === 'wallSlide' && wall.sliding`, gate `playNoise(20, 'highpass', 800, 0.05)`.
-- **Dash:** `playNoise(60, 'bandpass', 1500, 0.18)`; **dash-into-wall thump:** `playTone('square', 120, 90, 70, 0.25)`.
-- **Spring:** `playTone('sine', 300, 700, 90, 0.2)`; **dash-refill:** `playTone('triangle', 700, 1300, 50, 0.12)`.
-- **Land (hard):** `playNoise(80, 'lowpass', 300, 0.3)`; (soft): `playNoise(50, 'lowpass', 250, 0.18)`.
+- **Dash:** `playNoise(60, 'bandpass', 1500, 0.18)`; **dash-into-wall thump** (on the `dashBonk` moment): `playTone('square', 120, 90, 70, 0.25)`.
+- **Spring** (on the `springLaunch` moment): `playTone('sine', 300, 700, 90, 0.2)`; **dash-refill** (on the `dashRefill` moment): `playTone('triangle', 700, 1300, 50, 0.12)`.
+- **Land (hard)** (`landing.hard`): `playNoise(80, 'lowpass', 300, 0.3)`; (soft): `playNoise(50, 'lowpass', 250, 0.18)`.
 - **Strawberry:** two-note arpeggio — `playTone('triangle', 600, 1200, 60, 0.15)` twice ascending.
 - **Death:** `playNoise(120, 'lowpass', 400, 0.3)` + descending `playTone('sine', 400, 80, 200, 0.25)`.
 - **Respawn:** rising `playTone('sine', 200, 600, 100, 0.18)`.
@@ -697,8 +727,8 @@ Unlock on first user gesture (one-shot `keydown`/`pointerdown` calling `audio.un
 src/
   main.ts              # boot: load LDtk + tilesets, canvas, store, audio.unlock, loop.start()
   ldtk.ts              # loadLdtkProjectAssets (or parseLdtkProject+buildLdtkTilesetBundle), inspectLdtkPlatformerProject, createLdtkRoomCache
-  camera.ts            # per-room VirtualCamera config, cover-fit fitZoom, createCameraBrain/updateCameraBrain, room slide
-  transition.ts        # pure transitionFor / entryPoint (LDtk __neighbours)
+  camera.ts            # per-room VirtualCamera config, cover-fit fitCameraZoom, createCameraBrain/updateCameraBrain, room slide
+  transition.ts        # findLdtkRoomExit → mapLdtkRoomEntry → transitionPlatformerToRoom + beginRoomSlide wiring
   game/
     state.ts           # CelerockSave (collectibles: Record<levelIid, CollectibleSave>, deaths), World/Room runtime
     step.ts            # fixed-step: input → stepPlatformer → pickups → audio → brain
@@ -728,14 +758,16 @@ No `rooms/` directory, no ASCII grids, no `tile-style.ts` — the LDtk file is t
 ### 12.2 Dash-into-Wall Hit-Stop Timing
 
 - Script: place the player 2 tiles left of a solid wall, trigger a rightward dash.
-- Assert: on the contact tick, `state.abilities.dash` becomes inactive AND `isHitStopActive(hitStop)` is true for ≥4 ticks AND `shakeEnvelope` is non-zero.
+- Assert: on the contact tick, `state.moments` carries exactly one `{ kind: 'dashBonk', normalX: -1, solidId }` (horizontal dash into a right wall — the surface normal points back against the dash) AND `isHitStopActive(hitStop)` is true for ≥4 ticks AND `shakeEnvelope` is non-zero. The dash itself does NOT end on contact in this engine version (it ends on timeout; `dashEnded.reason === 'timeout'` with the ending-tick `terminalContact`) — the bonk cue keys off the `dashBonk` moment, never off the dash phase going idle.
+- Assert: a dash PINNED against the wall for multiple ticks emits exactly ONE `dashBonk` per blocked axis per dash (a second dash re-arms it).
 - Assert: the player's `state.core.x` never exceeds the wall's left edge by more than the kernel's penetration tolerance (the dash never phases through).
 
 ### 12.3 Room-Transition Smoke Test
 
-- Drive scripted input from the start room's spawn across a `__neighbours` edge into a linked room.
-- Assert: after the transition, `active.ldtkLevel.iid` is the neighbour's; the player's `vx`/`vy`/`facing` are preserved across the seam; the brain's active vcam is the new room's (no exception, no NaN position).
-- Assert: the player's SCREEN position is continuous at the seam (the slide renders both rooms; no teleport pop), and the slide respects `prefersReducedMotion()` (immediate seam-aligned cut when reduced-motion is on).
+- Drive scripted input from the start room's spawn across a `__neighbours` edge into a linked room (the engine path: `findLdtkRoomExit` → `transitionPlatformerToRoom` → `beginRoomSlide`).
+- Assert: `findLdtkRoomExit` returns `undefined` for a body still inside the room AND for a crossing outside the shared seam span (the void); inside the span it returns the cardinal exit.
+- Assert: after the transition, `active.ldtkLevel.iid` is the neighbour's; the player's `vx`/`vy`/`facing` are preserved across the seam; the transition's `spawn.source === 'seam-entry'`; the brain's active vcam is the new room's (no exception, no NaN position).
+- Assert: the player's SCREEN position is continuous at the seam (`presentationForRoomSlide(slide).playerOffset` is the full correction at `t=0` and eases to zero; the slide renders both rooms; no teleport pop), and the slide respects `prefersReducedMotion()` (immediate seam-aligned cut when reduced-motion is on).
 
 ### 12.4 Strawberry Persistence
 
@@ -758,9 +790,9 @@ No `rooms/` directory, no ASCII grids, no `tile-style.ts` — the LDtk file is t
 1. Playable in the browser via `npm run dev` with keyboard (`←→`/`A D`, `Space` jump, `Shift`/`ShiftLeft` dash, `K` grab) **and** on-screen touch buttons on coarse-pointer devices (via `createTouchButtonSet`).
 2. **Loads the supplied LDtk + tileset** and renders the tileset through `drawLdtkLevel` (pixel-crisp, untinted).
 3. The Celeste kit is present and works on the supplied geometry: **dash (8-dir, startup freeze, refills on land) + wall-grab/stamina + wall-slide + wall-jump + dash-tech.** **No `doubleJump`.** Springs, dash-refills, moving platforms, and ladders are **capability-aware** — exercise each one the preflight reports present (`report.capabilities.springs` / `.dashRefills` / `.movingPlatforms` / `.ladders`); absent ones are not a failure (G4).
-4. The **camera brain** drives the view (deadzone follow + per-room vcam + **cover-fit** `fitZoom` + slide on transition). No legacy `createCamera`/`updateCamera`.
-5. Room-to-room travel is **seamless via `__neighbours`**: a ~0.25–0.35 s **slide** (both rooms render, continuous screen position at the seam), momentum (`vx`/`vy`/`facing`) preserved, particles rebased into the destination room; reduced-motion uses an immediate seam-aligned cut. The camera does not pop between rooms.
-6. The **dash-into-wall** moment narrows the dash ability state, then applies hit-stop and shake (§12.2).
+4. The **camera brain** drives the view (deadzone follow + per-room vcam + **cover-fit** `fitCameraZoom` + slide on transition). No legacy `createCamera`/`updateCamera`.
+5. Room-to-room travel is **seamless via `__neighbours`** using the engine path (`findLdtkRoomExit` → `transitionPlatformerToRoom` → `beginRoomSlide`): a ~0.25–0.35 s **slide** (both rooms render, continuous screen position at the seam), momentum (`vx`/`vy`/`facing`) preserved, particles rebased into the destination room; reduced-motion uses an immediate seam-aligned cut. The camera does not pop between rooms.
+6. The **dash-into-wall** moment (horizontal AND vertical — read the `dashBonk` feel moment on `state.moments`, never a hand-rolled velocity threshold) applies hit-stop and shake (§12.2).
 7. Strawberries persist across page reload via `createLocalStorageSaveStorage` + `writeSave` (keyed by `level.iid`).
 8. Death counter increments every respawn and persists through the same save adapter.
 9. `prefersReducedMotion` renders the start room statically and never calls `loop.start()`.
@@ -818,7 +850,7 @@ Before the build is accepted:
 - **Drawing the tileset with custom recoloring is a failure.** The supplied tileset is the visual identity. Replacing it with `fillRect` boxes or tinting it per room is the same failure mode as the old "six grey boxes." Render through `drawLdtkLevel`, untouched.
 - **Using the legacy camera is a failure.** `createCamera`/`updateCamera` is superseded. The camera brain — vcams, deadzone follow, blends — is the only acceptable view driver.
 - **Enabling double-jump is a failure.** Celeste has no double jump. The kit is dash + grab/stamina + wall-slide + wall-jump + dash-tech. If `doubleJumpEnabled` is on, it is not Celeste.
-- **A jarring camera pop between rooms is a failure.** Room transitions must use the slide policy (G5): a ~0.25–0.35 s slide with both rooms rendered and the player's screen position continuous at the seam (immediate seam-aligned cut only under reduced-motion); the lens eases from the old zoom to the new `fitZoom`.
+- **A jarring camera pop between rooms is a failure.** Room transitions must use the engine slide path (G5): `beginRoomSlide`/`advanceRoomSlide`/`presentationForRoomSlide` with both rooms rendered and the player's screen position continuous at the seam (immediate seam-aligned cut only under reduced-motion); the lens eases from the old zoom to the new `fitCameraZoom`.
 - **Losing momentum at a `__neighbours` seam is a failure.** The player must carry `vx`/`vy`/`facing` across the seam — Celeste's rooms are continuous, not teleporting.
 - **Hand-authoring fallback ASCII rooms is a failure.** Geometry comes from LDtk. A committed `rooms/*.ts` of ASCII grids defeats the entire point of this revision.
 - **Hand-rolling a wall-grab stamina timer or a dash-frame counter is a failure.** Those are the kernel's `wallGrabAbility` and `dashAbility`. If you find yourself writing them, STOP.
@@ -831,11 +863,11 @@ Before the build is accepted:
 Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: LDtk Load + Preflight + Tileset + Camera Brain Graybox
-1. Vite + TypeScript + `aicraft-engine@0.7.0`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
+1. Vite + TypeScript + `aicraft-engine@0.8.0`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
 2. `loadLdtkProjectAssets({ projectUrl })` the supplied `.ldtk` + PNG(s) in one call.
 3. **Asset preflight (G3):** `inspectLdtkPlatformerProject(project)` — log level/spawn/capability counts. Missing springs/dash-refills/etc. are informational; a total lack of spawns is the only hard block.
 4. `createLdtkRoomCache(project, {...}).getStartRoom()` the start room; `drawLdtkLevel` it.
-5. Wire `createCameraBrain` + a per-room follow `VirtualCamera` (deadzone bands, **cover-fit** `fitZoom`).
+5. Wire `createCameraBrain` + a per-room follow `VirtualCamera` (deadzone bands, **cover-fit** `fitCameraZoom`).
 6. Drive the kernel with `PRECISION_PLATFORMER` (no Celeste opt-ins yet) so a box walks and jumps across the tileset.
 7. **Gate:** the supplied tileset renders pixel-crisp and untinted; the camera brain deadzone-follows with no side gaps; the player does not moonwalk.
 
@@ -845,9 +877,9 @@ Build in this order. Each stage must pass its gate before the next begins.
 3. **Gate:** all five core abilities demonstrably work in the supplied rooms. Stamina drains and refills. Dash refills on land.
 
 ### Stage 3: Seamless Room Transitions
-1. Implement pure `transitionFor` / `entryPoint`; pull neighbour rooms from `createLdtkRoomCache` (lazy compile + cache by `iid`).
-2. Preserve `vx`/`vy`/`facing` across the seam; reset contacts.
-3. Play the **room slide** (G5) on transition — both rooms render, continuous screen position, ease the lens to the new `fitZoom`; immediate seam-aligned cut only under reduced-motion.
+1. Wire the engine transition path: `findLdtkRoomExit(state.core, level, project)` → `mapLdtkRoomEntry` → `transitionPlatformerToRoom` (pass `destinationSolids` from the cached `CompiledLdtkRoom`); pull neighbour rooms from `createLdtkRoomCache` (lazy compile + cache by `iid`).
+2. Preserve `vx`/`vy`/`facing` across the seam; revalidate support via `destinationSolids`; carry particles with `rebasePointBetweenLdtkRooms` / `slide.particleRebaseDelta`.
+3. Play the **room slide** (G5) with `beginRoomSlide`/`advanceRoomSlide`/`presentationForRoomSlide` + the `enterRoomSlideCameraSpace`/`finishRoomSlideCameraSpace` brain rebases — both rooms render, continuous screen position, ease the lens to the new `fitCameraZoom`; immediate seam-aligned cut only under reduced-motion.
 4. **Gate:** walking/falling/jumping off a room edge flows into the next room with momentum and a smooth slide; the camera does not pop.
 
 ### Stage 4: Hazards + Strawberries + Save
@@ -903,16 +935,16 @@ Build in this order. Each stage must pass its gate before the next begins.
 ## 18. Install & Version
 
 ```bash
-npm install aicraft-engine@0.7.0
+npm install aicraft-engine@0.8.0
 ```
 
-`0.7.0` is the **first release with the supported golden path** and is the pin for this brief. It builds on three earlier system drops:
+`0.8.0` is the pin for this brief — the feel + traversal release. It builds on the `0.7.0` golden path and three earlier system drops:
 
 - **Camera brain** (`0.6.0`) — `createCameraBrain`, `updateCameraBrain`, `VirtualCamera`, deadzone follow, blends, bounds + letterbox. The blend fixes (continuity when a vcam source is removed, `dt=0` no-op, blend-clamp crossfade) are directly relevant to the §5.5 room-transition slide.
 - **LDtk loader** (`0.5.0` parser/translator/renderer, hardened through `0.6.0`) — `parseLdtkProject`, `ldtkLevelToLevelData`, `drawLdtkLevel`, `buildLdtkTilesetBundle`, `LDTK_DEFAULT_ENTITY_MAP`.
 - **Phase 0–9 movement overhaul** (`0.6.0`) — single `core.vy` authority, `LaunchIntent` arbitration, shared `LocomotionState`, decaying wall-slide, 8-dir dash + startup freeze, dash-tech (super/hyper/wavedash/duck), wall-grab + stamina + climb-hop, corner correction, springs/dash-refills, analog `moveX`, `groundDuckEnabled` opt-out.
 
-The **`0.7.0` golden-path additions** this brief now prefers — these are the reason for the pin:
+The **`0.7.0` golden-path additions** (still the load-path backbone of this brief):
 
 - **`loadLdtkProjectAssets`** — high-level fetch + decode + bundle (URL-encoding, bounded decode, skip-icons, defensive host access). Replaces the hand-rolled parse + `async` tileset loop that drifted.
 - **`inspectLdtkPlatformerProject`** — the G3 asset preflight (capability-aware acceptance, G4).
@@ -923,13 +955,21 @@ The **`0.7.0` golden-path additions** this brief now prefers — these are the r
 - **Spawn fix** — `'rest-on-surface'` resolution (no floor embed, no hand-rolled settle) + `settlePlatformerState` recovery.
 - **Game loop** — `onError` / `errorPolicy` so a consumer throw can't silently freeze the loop on its last frame.
 
-The camera/LDtk/movement floor is `0.6.0`; **the golden-path helpers + spawn fix + loop `onError` need `0.7.0`**. Do not pin below `0.7.0`.
+The **`0.8.0` feel + traversal additions** this brief now prefers — these are the reason for the pin:
+
+- **`state.moments`** — the structured feel channel (single-tick, presentation-only): `landing { impactSpeed, normalizedImpact, hard, solidId }` (the hard test is a RATIO, identical at 8/16/32 px), one-shot `dashBonk { normalX, normalY, solidId }` per blocked axis per dash (horizontal AND vertical), observation-only `dashEnded { reason, terminalContact }`, `grabLatch`/`staminaExhausted` pulses, `springLaunch { super, solidId }`/`dashRefill`. Replaces reverse-engineering feel from boolean pulses + velocity peeks (the unscaled `prevVy > 520` failure).
+- **`findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`** — the pure room-transition helpers over LDtk `__neighbours` (seam-span gated, momentum-preserving, `'seam-entry'` provenance, never settles).
+- **`beginRoomSlide` / `advanceRoomSlide` / `presentationForRoomSlide` + `enterRoomSlideCameraSpace` / `finishRoomSlideCameraSpace` / `cancelRoomSlideCameraSpace`** — the engine-owned slide orchestrator composing the camera brain (§5.5).
+- **`fitCameraZoom`** — the explicit cover/contain/native fit policy (§5.4).
+- **Compatibility note:** `0.8.0` bumps the replay physics version to 11 (the `moments` state field is replay data) — v10 replays are rejected. A consumer that manually constructs a complete `PlatformerState` must now pass `moments: []`.
+
+The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix + loop `onError` need `0.7.0`; **the feel moments + transition/slide/fit helpers need `0.8.0`**. Do not pin below `0.8.0`.
 
 ---
 
 ## 19. Summary of Key Changes from the Previous Brief
 
-| Aspect | Previous (0.4.0) | This brief (0.7.0) |
+| Aspect | Previous (0.4.0) | This brief (0.8.0) |
 |---|---|---|
 | Level geometry | 6 hand-authored ASCII room grids | **Supplied LDtk file** (`loadLdtkProjectAssets` → `parseLdtkProject` + `ldtkLevelToLevelData`) |
 | Asset preflight | (none) | **`inspectLdtkPlatformerProject`** — capability-aware (G3/G4); missing springs/dash-refills are informational |
@@ -943,7 +983,7 @@ The camera/LDtk/movement floor is `0.6.0`; **the golden-path helpers + spawn fix
 | Collectible scoping | `collectibles['room-N']` by hand index | `collectibles[level.iid]` keyed by LDtk level id |
 | Tests | Unique `fnv1a` room hashes, ASCII dimension checks, 6-room content-counts, 6 E2E scripts | LDtk load smoke, dash-into-wall timing, **room-transition smoke**, persistence, determinism |
 | Forbidden patterns | `stepPlatformer`, manual gravity, ASCII shared template, full-tile outlines | + **legacy camera**, **`doubleJump*`**, **hand-built `LevelData`**, **tile-art recoloring** |
-| Version | `aicraft-engine@0.4.0` | `aicraft-engine@0.7.0` (first golden-path release) |
+| Version | `aicraft-engine@0.4.0` | `aicraft-engine@0.8.0` (feel + traversal release) |
 
 ---
 

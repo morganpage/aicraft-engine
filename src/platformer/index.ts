@@ -42,6 +42,7 @@ export type {
   MoveInput,
   InteractionEvent,
   InteractionKind,
+  FeelMoment,
 } from './types';
 
 export {
@@ -51,7 +52,15 @@ export {
   EMPTY_CONTACTS,
   EMPTY_EVENTS,
   EMPTY_INTERACTIONS,
+  EMPTY_MOMENTS,
 } from './constants';
+
+export {
+  normalizedImpactFor,
+  hardLandingThresholdFor,
+  landingMomentFor,
+  DEFAULT_HARD_LANDING_THRESHOLD,
+} from './feel-moments';
 
 export {
   advanceSquash,
@@ -116,6 +125,43 @@ export {
   type LdtkRoomCacheOptions,
   type GetLdtkStartRoomResult,
 } from './ldtk-room';
+
+// Phase E2 — pure, canvas-free room-transition helpers (Celerock hardening
+// Workstream E). `findLdtkRoomExit → mapLdtkRoomEntry → transitionPlatformerToRoom`
+// is the supported traversal path; `rebasePointBetweenLdtkRooms` carries
+// particles across the seam. Composes the LDtk room cache + `__neighbours` graph.
+export {
+  findLdtkRoomExit,
+  mapLdtkRoomEntry,
+  transitionPlatformerToRoom,
+  rebasePointBetweenLdtkRooms,
+  type Cardinal,
+  type LdtkRoomExit,
+  type LdtkRoomEntry,
+  type TransitionPlatformerToRoomOptions,
+  type PlatformerRoomTransition,
+} from './room-transitions';
+
+// Phase E3 — slide presentation orchestrator. Composes the existing camera
+// brain (no new solver) via a transient high-priority fixed vcam in a
+// normalized two-room space, with explicit enter/finish/cancel rebases.
+export {
+  beginRoomSlide,
+  advanceRoomSlide,
+  presentationForRoomSlide,
+  enterRoomSlideCameraSpace,
+  finishRoomSlideCameraSpace,
+  cancelRoomSlideCameraSpace,
+  roomSlideEase,
+  ROOM_SLIDE_VCAM_ID,
+  DEFAULT_ROOM_SLIDE_DURATION,
+  type RoomSlideView,
+  type RoomSlideActorMapping,
+  type RoomSlideOptions,
+  type RoomSlideSpace,
+  type RoomSlideState,
+  type RoomSlidePresentation,
+} from './room-slide';
 
 export {
   drawLevelEntity,

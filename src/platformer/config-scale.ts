@@ -151,6 +151,9 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   dodgeSlideSpeedMult: 'ratio',
   duckSuperJumpXMult: 'ratio',
   duckSuperJumpYMult: 'ratio',
+  // Phase D2 — feel threshold is a ratio (impact-vs-maxFall), so the
+  // hard-landing test is identical at every tile size. Unscaled (copied).
+  hardLandingThreshold: 'ratio',
   // Stamina costs are per-second RATES against a dimensionless pool, and the
   // pool size itself, all verbatim per `constants.ts` — scale-independent.
   staminaUpCostPerSec: 'ratio',

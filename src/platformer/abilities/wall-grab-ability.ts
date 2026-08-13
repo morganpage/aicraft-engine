@@ -67,6 +67,7 @@ import type {
   AbilityContext,
   AbilityProcessor,
   AbilityResult,
+  FeelMoment,
   LaunchIntent,
   LocomotionState,
   WallGrabAbilityState,
@@ -164,15 +165,21 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
 
     // Wall on the facing side (Celeste `ClimbCheck((int)Facing)`). `probeWall`
     // is a pure geometry query independent of velocity — this is what lets the
-    // grab survive a pinned `vx = 0` (contacts would clear).
-    const wallPresent =
-      solids !== undefined &&
-      probeWall(
-        { x: core.x, y: core.y, width: core.width, height: core.height },
-        core.facing,
-        probeDist,
-        solids,
-      ) !== null;
+    // grab survive a pinned `vx = 0` (contacts would clear). Phase D2 keeps the
+    // resolved `Solid` (instead of `!== null`-reducing it) so the `grabLatch`
+    // feel moment can carry the surface id.
+    const wallSolid =
+      solids !== undefined
+        ? probeWall(
+            { x: core.x, y: core.y, width: core.width, height: core.height },
+            core.facing,
+            probeDist,
+            solids,
+          )
+        : null;
+    const wallPresent = wallSolid !== null;
+    const wallSolidId =
+      wallSolid !== null && typeof wallSolid.id === 'string' ? wallSolid.id : null;
     const side: 'left' | 'right' = core.facing === 1 ? 'right' : 'left';
 
     // Stamina is the shared pool on `locomotion`. Fall back to max if absent
@@ -183,6 +190,9 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
     let nextCore = core;
     let launch: LaunchIntent | undefined;
     let staminaPatch: number | undefined;
+    // Phase D2 — feel moments authored by this ability (grabLatch on engage,
+    // staminaExhausted on the >0 → ≤0 crossing). Appended in pipeline order.
+    const moments: FeelMoment[] = [];
 
     // ----- Ladder takes priority: if the body overlaps a ladder cell, the
     // climb (ladder) ability owns vertical motion. Release any active grab and
@@ -238,6 +248,13 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
         if (depleted <= 0) {
           // Exhausted mid-grab: release (cannot re-engage until refilled).
           grabbing = false;
+          // Phase D2 — one-tick `staminaExhausted` pulse on the strict
+          // `>0 → ≤0` crossing (the gasp/latch-out cue was previously silent).
+          // The `staminaCur > 0` guard ensures this fires once on the crossing,
+          // not on every depleted tick.
+          if (staminaCur > 0) {
+            moments.push({ kind: 'staminaExhausted' });
+          }
         }
         // Only emit a patch when stamina actually changed — descending
         // (`moveY === 1`) is free, so `depleted === staminaCur` and no patch
@@ -255,6 +272,10 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
         !dashPressed;
       if (canEngage) {
         grabbing = true;
+        // Phase D2 — one-tick `grabLatch` pulse on the `false → true` engage
+        // transition (the latch SFX was previously silent). Carries the surface
+        // id of the wall the actor grabbed.
+        moments.push({ kind: 'grabLatch', solidId: wallSolidId });
         nextCore = applyClimbVelocity(core, moveY, config);
         const depleted = depleteStamina(staminaCur, moveY, config, dt);
         if (depleted !== staminaCur) staminaPatch = depleted;
@@ -265,6 +286,10 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
       kind: 'wallGrab',
       grabbing,
       side: grabbing ? side : null,
+      // Phase D2 — capture the grabbed wall's surface id while grabbing
+      // (observation-only), so the `grabLatch` moment and any downstream
+      // rendering share the provenance. `null` while not grabbing.
+      solidId: grabbing ? wallSolidId : null,
     };
 
     return {
@@ -279,6 +304,8 @@ export const wallGrabAbility: AbilityProcessor<WallGrabAbilityState> = {
       ...(staminaPatch !== undefined
         ? { locomotionPatch: { stamina: staminaPatch } satisfies Partial<LocomotionState> }
         : {}),
+      // Phase D2 — feel moments (grabLatch / staminaExhausted) for this tick.
+      ...(moments.length > 0 ? { moments } : {}),
     };
   },
 };

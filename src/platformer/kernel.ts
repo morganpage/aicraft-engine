@@ -35,12 +35,14 @@ import {
   EMPTY_EVENTS,
   EMPTY_INTERACTIONS,
   EMPTY_LOCOMOTION,
+  EMPTY_MOMENTS,
   DEFAULT_PLATFORMER_CONFIG,
   DEFAULT_PLAYER_WIDTH,
   DEFAULT_PLAYER_HEIGHT,
 } from './constants';
 import { createRidingTracker, type SolidDisplacementProvider } from './riding-tracker';
 import { defaultPrecisionPipeline } from './pipelines';
+import { landingMomentFor } from './feel-moments';
 import type {
   AbilityContext,
   AbilityProcessor,
@@ -51,6 +53,7 @@ import type {
   DashAbilityState,
   DashTechAbilityState,
   DoubleJumpAbilityState,
+  FeelMoment,
   InteractionEvent,
   JumpAbilityState,
   LaunchIntent,
@@ -173,6 +176,8 @@ export function createPlatformerState(
     events: EMPTY_EVENTS,
     // Phase 8 — no surface interactions on a fresh state.
     interactions: EMPTY_INTERACTIONS,
+    // Phase D2 — no feel moments on a fresh state.
+    moments: EMPTY_MOMENTS,
     tick: 0,
   };
 }
@@ -245,6 +250,22 @@ export function createPlatformerController(
       // including/excluding the trigger solid from the `solids[]` it passes.
       const interactions: InteractionEvent[] = [];
 
+      // Phase D2 — single-tick feel moments (landing/dash-bonk/dash-ended/grab/
+      // stamina/spring/refill). Reset to empty each tick (same lifecycle as
+      // `events`/`interactions`). Ability-authored moments are appended below in
+      // pipeline order; the kernel adds collision/environment moments after.
+      const moments: FeelMoment[] = [];
+
+      // Phase D2 — capture the pre-pipeline dash phase so the kernel can detect
+      // the `active → idle` transition (dash timeout) AFTER the pipeline + collide
+      // and emit an observation-only `dashEnded` moment with the ending-tick
+      // terminal-contact context. No velocity/trajectory use.
+      const prevDashSlice = state.abilities['dash'] as DashAbilityState | undefined;
+      const prevDashActive =
+        prevDashSlice !== undefined &&
+        prevDashSlice.kind === 'dash' &&
+        prevDashSlice.phase === 'active';
+
       // Launch intents collected from the pipeline — at most one is applied
       // (Phase 0b vertical-velocity authority). Abilities push here via the
       // optional `launch` field on `AbilityResult`; the kernel arbitrates after
@@ -290,6 +311,12 @@ export function createPlatformerController(
         }
         if (result.locomotionPatch !== undefined) {
           locomotionPatches.push(result.locomotionPatch);
+        }
+        // Phase D2 — ability-authored feel moments (e.g. wall-grab's
+        // grabLatch/staminaExhausted) are appended in pipeline order, BEFORE the
+        // kernel's own collision/environment moments.
+        if (result.moments !== undefined && result.moments.length > 0) {
+          for (const m of result.moments) moments.push(m);
         }
         // OR-merge events: every ability returns a full PlatformerEvents
         // record (all fields, defaulted to false). A plain Object.assign would
@@ -384,6 +411,13 @@ export function createPlatformerController(
               kind: 'spring',
               entityId: typeof solid.id === 'string' ? solid.id : '',
             });
+            // Phase D2 — structured spring moment (supersedes the interaction
+            // entry, adding the `super` flag preserved at compile time).
+            moments.push({
+              kind: 'springLaunch',
+              solidId: typeof solid.id === 'string' ? solid.id : null,
+              super: solid.spring.super === true,
+            });
           }
           continue;
         }
@@ -406,6 +440,12 @@ export function createPlatformerController(
             interactions.push({
               kind: 'dashRefill',
               entityId: typeof solid.id === 'string' ? solid.id : '',
+            });
+            // Phase D2 — structured dash-refill moment (supersedes the
+            // interaction entry with a uniform solidId).
+            moments.push({
+              kind: 'dashRefill',
+              solidId: typeof solid.id === 'string' ? solid.id : null,
             });
           }
         }
@@ -932,6 +972,11 @@ export function createPlatformerController(
       // `let` (not `const`) so upward CC (Step 6d) can preserve the rising
       // velocity when it slips the body past a ceiling corner.
       let nextVy = (landed || hitCeiling) ? 0 : core.vy;
+      // Phase D2 — capture the pre-zero impact speed (absolute canonical px/s)
+      // for the `landing` feel moment. `core.vy` is still the original fall/rise
+      // speed here; the ternary above is what zeroes it. Magnitude-only so it is
+      // correct under both gravity signs. Presentation use only.
+      const impactSpeed = landed || hitCeiling ? Math.abs(core.vy) : 0;
       let groundId: string | null = null;
       let ceilingId: string | null = null;
       if (landed) {
@@ -1014,9 +1059,90 @@ export function createPlatformerController(
       const nowOnGround = invertedGravity ? hitCeiling : landed;
       if (nowOnGround && !wasOnGround) {
         events.justLanded = true;
+        // Phase D2 — structured landing feel moment on the unsupported→supported
+        // transition. The support id is gravity-facing (ceiling under inverted
+        // gravity, ground otherwise); the impact speed was captured above before
+        // the Y resolver zeroed it. `normalizedImpact`/`hard` are derived in the
+        // pure helper so they are scale-invariant across tile sizes.
+        moments.push(
+          landingMomentFor(
+            impactSpeed,
+            invertedGravity ? ceilingId : groundId,
+            config,
+          ),
+        );
       }
       if (hitCeiling) {
         events.hitCeiling = true;
+      }
+
+      // -----------------------------------------------------------------
+      // Phase D2 — dash feel moments. The dash ability never reads contacts
+      // (it ends only on timeout), so the kernel owns (a) the per-dash X/Y
+      // bonk latches that emit a one-shot `dashBonk` per blocked axis, and
+      // (b) the observation-only `dashEnded` on the active→idle transition.
+      // Neither feeds velocity/position; both are derived from contacts the
+      // kernel already resolved this tick.
+      // -----------------------------------------------------------------
+      const dashSliceNow = abilities['dash'] as DashAbilityState | undefined;
+      if (
+        dashSliceNow !== undefined &&
+        dashSliceNow.kind === 'dash'
+      ) {
+        if (dashSliceNow.phase === 'active') {
+          // One-shot bonk per blocked axis. The latch resets on each new dash
+          // (the dash ability clears `bonkedX`/`bonkedY` at dash start).
+          let dashUpdated = dashSliceNow;
+          const ddx = dashSliceNow.dirX;
+          const ddy = dashSliceNow.dirY;
+          if (ddx !== 0 && !dashSliceNow.bonkedX) {
+            const wallId = ddx > 0 ? rightWallId : leftWallId;
+            if (wallId !== null) {
+              moments.push({
+                kind: 'dashBonk',
+                // Conventional outward surface normal: a wall the actor dashed
+                // INTO points back against the dash direction.
+                normalX: ddx > 0 ? -1 : 1,
+                normalY: 0,
+                solidId: wallId,
+              });
+              dashUpdated = { ...dashUpdated, bonkedX: true };
+            }
+          }
+          if (ddy !== 0 && !dashSliceNow.bonkedY) {
+            // A ceiling (up dash, ddy < 0) gives outward normal +1; a floor
+            // (down dash, ddy > 0) gives -1.
+            const yId = ddy < 0 ? ceilingId : groundId;
+            if (yId !== null) {
+              moments.push({
+                kind: 'dashBonk',
+                normalX: 0,
+                normalY: ddy < 0 ? 1 : -1,
+                solidId: yId,
+              });
+              dashUpdated = { ...dashUpdated, bonkedY: true };
+            }
+          }
+          if (dashUpdated !== dashSliceNow) {
+            abilities = { ...abilities, dash: dashUpdated };
+          }
+        } else if (
+          prevDashActive &&
+          dashSliceNow.phase === 'idle'
+        ) {
+          // Active→idle this tick = dash timed out (the only end path in this
+          // release). Report the ending-tick resolved contact context WITHOUT
+          // claiming it caused the end. Precedence: wall > ceiling > floor.
+          let terminal: 'none' | 'wall' | 'ceiling' | 'floor' = 'none';
+          if (leftWallId !== null || rightWallId !== null) terminal = 'wall';
+          else if (ceilingId !== null) terminal = 'ceiling';
+          else if (groundId !== null) terminal = 'floor';
+          moments.push({
+            kind: 'dashEnded',
+            reason: 'timeout',
+            terminalContact: terminal,
+          });
+        }
       }
 
       core = {
@@ -1063,6 +1189,9 @@ export function createPlatformerController(
           // refills). Frozen empty when no trigger fired this tick (reference-
           // stable with EMPTY_INTERACTIONS) so consumers can cheap-compare.
           interactions: interactions.length > 0 ? interactions : EMPTY_INTERACTIONS,
+          // Phase D2 — feel moments. Frozen empty when none fired this tick
+          // (reference-stable with EMPTY_MOMENTS) so consumers can cheap-compare.
+          moments: moments.length > 0 ? moments : EMPTY_MOMENTS,
           tick: state.tick + 1,
         },
       };

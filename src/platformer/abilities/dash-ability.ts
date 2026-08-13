@@ -152,6 +152,11 @@ export const dashAbility: AbilityProcessor<DashAbilityState> = {
     let dirY = state.dirY;
     let beforeDashVx = state.beforeDashVx;
     let dashStartedOnGround = state.dashStartedOnGround;
+    // Phase D2 — per-dash bonk latches (observation-only). Carried on the slice
+    // so the kernel's per-tick `dashBonk` detection is one-shot per blocked axis
+    // per dash. Default to `false` when absent (manual state constructors).
+    let bonkedX = state.bonkedX === true;
+    let bonkedY = state.bonkedY === true;
     // Phase 5 — `hyperSlide` persists on the slice for the dash's whole active
     // phase so every sustained tick re-applies the BOOSTED speed.
     let hyperSlide = state.hyperSlide;
@@ -218,6 +223,11 @@ export const dashAbility: AbilityProcessor<DashAbilityState> = {
       // Reset the hyper flag — it is (re)set at the startup→active transition
       // if THIS dash converts to a hyper slide.
       hyperSlide = false;
+      // Phase D2 — reset the per-dash bonk latches so the new dash can emit a
+      // fresh one-shot `dashBonk` per blocked axis. The kernel sets these during
+      // the active phase; they must be clear at the start of each dash.
+      bonkedX = false;
+      bonkedY = false;
       dashesRemaining = Math.max(0, dashesRemaining - 1);
       cooldown = config.dashCooldown;
       events.dashStarting = true;
@@ -344,6 +354,8 @@ export const dashAbility: AbilityProcessor<DashAbilityState> = {
         beforeDashVx,
         dashStartedOnGround,
         hyperSlide,
+        bonkedX,
+        bonkedY,
       },
       events,
       // Phase 5 — push the hyper-slide ducking latch to the kernel's

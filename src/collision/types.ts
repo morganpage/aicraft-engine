@@ -62,9 +62,14 @@ export interface Solid extends Rect {
    * matched `InteractionEvent { kind: 'spring', entityId: solid.id }` lets the
    * consumer own per-spring cooldown / visuals.
    *
+   * Phase D2 adds the optional `super` flag so the `springLaunch` feel moment
+   * can report super-spring provenance without reverse-inferring it from a
+   * velocity equality. Level compile sets `super: power === 'super'`;
+   * hand-rolled springs omit it (treated as `false`).
+   *
    * Default: `undefined` (not a spring).
    */
-  readonly spring?: { readonly launch: number };
+  readonly spring?: { readonly launch: number; readonly super?: boolean };
   /**
    * Phase 8 — dash-refill (dash crystal) trigger volume. When `true`, the
    * solid is a NON-BLOCKING trigger volume (the AABB resolvers SKIP it, like

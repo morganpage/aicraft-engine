@@ -230,6 +230,19 @@ export const EMPTY_INTERACTIONS: readonly import('./types').InteractionEvent[] =
   Object.freeze([]);
 
 /**
+ * Empty feel-moments list (Phase D2). Used as the per-tick starting point the
+ * kernel resets `PlatformerState.moments` to each tick (same lifecycle as
+ * {@link EMPTY_EVENTS} / {@link EMPTY_INTERACTIONS}); the pipeline + collision
+ * detection push {@link FeelMoment}s onto a local list during the tick.
+ *
+ * Frozen + exported so callers can reference-stable compare against the empty
+ * case (`state.moments === EMPTY_MOMENTS`) and so the fallback state in
+ * `src/replay/player.ts` + fresh-state factories can reuse it.
+ */
+export const EMPTY_MOMENTS: readonly import('./types').FeelMoment[] =
+  Object.freeze([]);
+
+/**
  * Empty `LocomotionState` — all timers zero, no launch window, no lockout.
  * Used as the initial locomotion slice for a freshly created state and as the
  * base the kernel mutates each tick.

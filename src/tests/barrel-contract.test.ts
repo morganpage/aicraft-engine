@@ -113,6 +113,12 @@ describe('root barrel re-exports every module', () => {
     expect('followPosition' in aicraft).toBe(false);
   });
 
+  it('camera fit: fitCameraZoom is a function', () => {
+    expect(typeof aicraft.fitCameraZoom).toBe('function');
+    // cover is the default policy; a level equal to the viewport fits at zoom 1.
+    expect(aicraft.fitCameraZoom({ width: 160, height: 120 }, { width: 160, height: 120 })).toBe(1);
+  });
+
   it('input: createEdgeAccumulator and orEdges are functions', () => {
     expect(typeof aicraft.createEdgeAccumulator).toBe('function');
     expect(typeof aicraft.orEdges).toBe('function');
