@@ -485,3 +485,116 @@ describe('Phase D2 — feel moments', () => {
     expect(next.moments).toEqual([]);
   });
 });
+
+// ===========================================================================
+// 7. FLUSH-LANDING DETECTION — an exact-flush arrival (the gravity-facing
+// edge lands EXACTLY on the support edge; touching is not AABB overlap on
+// the arrival tick) must still fire the landing moment + `justLanded` on
+// the tick the start-of-tick flush probe first sees the resting body. The
+// real-world producer: a full-height held jump's symmetric arc returns the
+// body exactly to its rest height (deterministic) — the "no landing juice
+// while holding jump" repro. The flush-arrival END state is constructed
+// directly (flush + airborne + falling) so the regression is exact-integer
+// arithmetic, independent of any drop-height/tuning coincidence.
+// ===========================================================================
+describe('Phase D2 — flush-landing detection', () => {
+  const FLOOR: Solid = { id: 'floor', x: -200, y: 100, width: 800, height: 16 };
+  const W = 4;
+  const H = 12;
+  /** Bottom edge exactly on the floor top (y=88 + 12 === 100), airborne, falling at `vy`. */
+  const flushAirborne = (vy: number): PlatformerState => {
+    const base = createPlatformerState(0, 88, DEFAULT_PLATFORMER_CONFIG, W, H);
+    return { ...base, core: { ...base.core, vy } };
+  };
+
+  it('exact-flush arrival fires the landing moment + justLanded on the probe tick', () => {
+    const stepped = stepPlatformer(flushAirborne(240), idleInput(), [FLOOR], DT).state;
+    expect(stepped.events.justLanded).toBe(true);
+    const moments = findMoments(stepped, 'landing');
+    expect(moments.length).toBe(1);
+    const m = moments[0] as Extract<FeelMoment, { kind: 'landing' }>;
+    expect(m.solidId).toBe('floor');
+    // The fall speed survived to the pre-zero capture (plus a couple of
+    // gravity steps of fall-side integration applied during the tick) — far
+    // below the 0.72 hard threshold.
+    expect(m.impactSpeed).toBeGreaterThanOrEqual(240);
+    expect(m.impactSpeed).toBeLessThanOrEqual(240 + 2 * DEFAULT_PLATFORMER_CONFIG.gravity * DT);
+    expect(m.hard).toBe(false);
+    // The body is settled: grounded on the floor, resting exactly flush, vy zeroed.
+    expect(stepped.core.onGround).toBe(true);
+    expect(stepped.core.contacts.groundId).toBe('floor');
+    expect(stepped.core.vy).toBe(0);
+    expect(stepped.core.y).toBe(88);
+  });
+
+  it('the flush landing never double-fires and a settled body stays silent', () => {
+    let state = stepPlatformer(flushAirborne(240), idleInput(), [FLOOR], DT).state;
+    expect(findMoments(state, 'landing').length).toBe(1);
+    for (let i = 0; i < 60; i++) {
+      state = stepPlatformer(state, idleInput(), [FLOOR], DT).state;
+      expect(state.moments.filter((mm) => mm.kind === 'landing').length).toBe(0);
+      expect(state.events.justLanded).toBe(false);
+    }
+    // Still resting exactly flush.
+    expect(state.core.onGround).toBe(true);
+    expect(state.core.y).toBe(88);
+  });
+
+  it('penetrating (overlapping) landings are unchanged — exactly one moment', () => {
+    // 1 px above flush: the move crosses INTO the floor, so the resolver
+    // catches the landing on the arrival tick itself (pre-fix behavior).
+    const above = createPlatformerState(0, 87, DEFAULT_PLATFORMER_CONFIG, W, H);
+    const falling: PlatformerState = { ...above, core: { ...above.core, vy: 240 } };
+    const stepped = stepPlatformer(falling, idleInput(), [FLOOR], DT).state;
+    expect(stepped.events.justLanded).toBe(true);
+    expect(findMoments(stepped, 'landing').length).toBe(1);
+    expect(stepped.core.y).toBe(88); // resolved back to flush
+  });
+
+  it('negative gravity: an exact-flush arrival on a ceiling reports the same way', () => {
+    const inverted: PlatformerConfig = {
+      ...DEFAULT_PLATFORMER_CONFIG,
+      gravity: -DEFAULT_PLATFORMER_CONFIG.gravity,
+    };
+    // Ceiling occupying y ∈ [-16, 0]; body top flush at y=0, rising at 240.
+    const ceiling: Solid = { id: 'ceil', x: -200, y: -16, width: 800, height: 16 };
+    const base = createPlatformerState(0, 0, inverted, W, H);
+    const rising: PlatformerState = { ...base, core: { ...base.core, vy: -240 } };
+    const stepped = stepPlatformer(rising, idleInput(), [ceiling], DT, inverted).state;
+    expect(stepped.events.justLanded).toBe(true);
+    const moments = findMoments(stepped, 'landing');
+    expect(moments.length).toBe(1);
+    const m = moments[0] as Extract<FeelMoment, { kind: 'landing' }>;
+    // Gravity-facing support id is the CEILING id under negative gravity.
+    expect(m.solidId).toBe('ceil');
+    expect(stepped.core.contacts.ceilingId).toBe('ceil');
+    expect(stepped.core.onGround).toBe(true);
+    expect(stepped.core.y).toBe(0);
+  });
+
+  it('a full-hold jump from rest fires exactly one landing moment across the arc', () => {
+    // Integration sanity: press jump once and HOLD (variable-height jump at
+    // full height), ride the whole arc, land — exactly one landing beat,
+    // whether the discrete arc returns flush (probe-reported) or overlapping
+    // (resolver-reported).
+    let state = createPlatformerState(0, 88, DEFAULT_PLATFORMER_CONFIG, W, H);
+    // Settle one tick so the probe flags the resting body as grounded.
+    state = stepPlatformer(state, idleInput(), [FLOOR], DT).state;
+    expect(state.core.onGround).toBe(true);
+    let landings = 0;
+    let airborne = false;
+    for (let i = 0; i < 240; i++) {
+      state = stepPlatformer(
+        state,
+        i === 0 ? inputWith({ jump: pressEdge() }) : inputWith({ jump: holdEdge() }),
+        [FLOOR],
+        DT,
+      ).state;
+      if (!state.core.onGround) airborne = true;
+      landings += findMoments(state, 'landing').length;
+    }
+    expect(airborne).toBe(true); // the jump actually left the ground...
+    expect(state.core.onGround).toBe(true); // ...and came back down
+    expect(landings).toBe(1);
+  });
+});

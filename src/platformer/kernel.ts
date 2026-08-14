@@ -225,6 +225,19 @@ export function createPlatformerController(
       const wasOnGround =
         supportId !== null ||
         hasPhysicalSupport(state.core, solids, invertedGravity);
+      // The END-of-previous-tick grounded flag, read from the pristine input
+      // state (the force just below overwrites the local `core` copy only).
+      // `wasOnGround` answers "is the body supported RIGHT NOW, given current
+      // solids"; `enteredOnGround` answers "was it supported when the previous
+      // tick ended". Step 7's landing edge needs BOTH — only a body supported
+      // across the boundary AND at the tick start is "continuously supported"
+      // (never landed). The flags diverge exactly on the flush arrival: a
+      // body whose gravity-facing edge lands EXACTLY on a support edge (a
+      // full-height held jump's symmetric arc does, deterministically) is not
+      // a strict AABB overlap, so the arrival tick reports no landing — and
+      // this tick's flush probe then sees the resting body as already
+      // supported, which alone used to mask the airborne→grounded transition.
+      const enteredOnGround = state.core.onGround;
       let core = tracker.applyCarry(state.core, getDisp, supportId);
       if (core.onGround !== wasOnGround) {
         core = { ...core, onGround: wasOnGround };
@@ -1095,7 +1108,23 @@ export function createPlatformerController(
 
       // Step 7 — Update contacts & events.
       const nowOnGround = invertedGravity ? hitCeiling : landed;
-      const landedThisTick = nowOnGround && !wasOnGround;
+      // The landing edge: supported NOW, and NOT supported both when the
+      // previous tick ENDED (`enteredOnGround`) and at the START of this tick
+      // (`wasOnGround`, the probe above). The old `!wasOnGround` form dropped
+      // the exact-flush arrival — a body whose gravity-facing edge lands
+      // EXACTLY on a support edge (a full-height held jump's symmetric arc
+      // does, deterministically) is not a strict AABB overlap, so the arrival
+      // tick reports no landing, and this tick's flush probe then sees the
+      // resting body as already supported: `landedThisTick` stayed false two
+      // ticks running, silently dropping the `landing` moment + `justLanded`
+      // pulse for the whole landing. Requiring BOTH flags keeps every other
+      // configuration byte-identical to the old edge (a same-tick support
+      // swap under a gravity flip — airborne per the probe, grounded at the
+      // boundary — still reports; a body grounded across the boundary never
+      // does). A flush landing reports one tick after the contact; its
+      // `impactSpeed` is the fall speed captured above (within a couple of
+      // gravity steps of the true arrival speed).
+      const landedThisTick = nowOnGround && !(enteredOnGround && wasOnGround);
       if (landedThisTick) {
         events.justLanded = true;
         // Phase D2 — structured landing feel moment on the unsupported→supported

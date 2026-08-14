@@ -156,7 +156,13 @@ export type FeelMoment =
  * reads these from the returned state and they reset on the next tick.
  */
 export interface PlatformerEvents {
-  /** `true` on transition from unsupported to supported in gravity's direction. */
+  /**
+   * `true` on transition from unsupported to supported in gravity's
+   * direction. An exact-flush arrival (the gravity-facing edge landing
+   * exactly ON the support edge — touching is not AABB overlap on the
+   * arrival tick) reports on the tick AFTER the contact, when the kernel's
+   * flush probe first sees the resting body.
+   */
   readonly justLanded: boolean;
   /** `true` on the tick the jump ability launched the actor upward. */
   readonly justLaunched: boolean;

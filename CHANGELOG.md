@@ -5,6 +5,11 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Platformer (flush landings):** the `landing` feel moment and the `justLanded` pulse now fire when a body arrives EXACTLY flush with its support (the gravity-facing edge lands precisely on the support edge). Touching is deliberately not AABB overlap, so the arrival tick itself reports no landing — and the next tick's start-of-tick flush probe (`hasPhysicalSupport`, the same probe that keeps resting bodies flagged `onGround`) already saw the body as supported, so the old edge `landedThisTick = nowOnGround && !wasOnGround` measured the airborne→grounded transition *inside* the tick and stayed false both ticks: the whole landing was silently dropped. Deterministic producer: a full-height held jump's symmetric arc returns the body exactly to its rest height (the "no landing puff/shake/audio while holding jump" repro). The edge is now `nowOnGround && !(enteredOnGround && wasOnGround)` (with `enteredOnGround` the end-of-previous-tick flag captured before the probe overwrites the working copy) — a body reports a landing unless it was CONTINUOUSLY supported across the tick boundary, which also un-masks the downstream `justLanded` consumers — the squash/stretch landing squat, the humanoid `landingBlend` — and the super-jump ground-grace seed for a flush touchdown after a horizontal air dash. Every other configuration is byte-identical to the old edge (a same-tick support swap under a gravity flip — floor-supported one tick, ceiling-supported the next, never airborne — still reports). A flush landing reports one tick after the contact with an `impactSpeed` within a couple of gravity steps of the true arrival speed (presentation-only scaling); penetrating landings, resting ticks, contacts, and all trajectory behavior are unchanged (the probe still owns `core.onGround`; `wasOnGround` keeps its start-of-tick meaning everywhere else).
+
 ## [0.14.0] - 2026-08-14
 
 ### Changed
