@@ -3,8 +3,10 @@
  *
  * The bridge is `ldtkLevelToLevelData`: the LDtk IntGrid becomes the engine's
  * `TileGrid`, and the same compiled geometry the runtime uses drives collision.
- * The art stays LDtk's, drawn by the same `drawLdtkLevel` the editor uses, so
- * play mode is the level as it will actually ship rather than a preview.
+ * The art stays LDtk's — baked per room through `drawLdtkLevel` into a
+ * native-resolution surface cache, so play mode is the level as it will
+ * actually ship rather than a preview (and stays seam-free at fractional
+ * camera zooms).
  *
  * Ladder climbing is handled by the engine's climb ability (`climbEnabled` in
  * the config below). Ladder IntGrid values are excluded from `solid` during
@@ -61,7 +63,7 @@ import {
   type PolledEdge,
 } from '../../../src/input';
 import {
-  drawLdtkLevel,
+  createLdtkLevelSurfaceCache,
   ldtkLevelToLevelData,
   type LdtkLevel,
   type LdtkNeighbour,
@@ -491,6 +493,16 @@ export function createPlaySession(
     return runtime;
   }
 
+  // Native-resolution level surfaces. Each room's tiles are baked ONCE into an
+  // offscreen canvas at pxWid×pxHei, then the completed surface is scaled as a
+  // single blit under the camera transform. Scaling hundreds of tiles
+  // independently at the (fractional) fit zoom can expose a duplicated/empty
+  // scanline between adjacent tile rows on some browser/GPU combinations; one
+  // surface has no internal draw boundaries for the compositor to split. The
+  // cache lives in the session, so entering play mode after an edit always
+  // rebakes from the current project.
+  const levelSurfaces = createLdtkLevelSurfaceCache();
+
   // Active room. Begins as the start level — reuses the already-translated
   // start level + semantics rather than re-translating.
   let active = compileLevel(startLdtkLevel, startLevel, semantics);
@@ -748,7 +760,7 @@ export function createPlaySession(
       // offset that would compound with the camera and shove the level aside.
       context.save();
       context.scale(zoom, zoom);
-      drawLdtkLevel(context, ldtkLevel, {
+      levelSurfaces.draw(context, ldtkLevel, {
         tilesets,
         worldOffset: { x: offsetX, y: offsetY },
         view: { x: brain.camera.x, y: brain.camera.y, width: worldView.width, height: worldView.height },
@@ -831,6 +843,8 @@ export function createPlaySession(
       window.removeEventListener('keydown', suppress);
       keyboard.dispose();
       for (const actors of mobActorsByLevel.values()) actors.dispose();
+      // Free the baked level surfaces (one native-res canvas per room).
+      levelSurfaces.clear();
     },
   };
 }

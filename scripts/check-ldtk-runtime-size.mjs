@@ -27,6 +27,22 @@ const TARGETS = [
     ],
   },
   {
+    // The surface cache is a runtime draw-path leaf (it wraps render.ts for
+    // seam-free fractional zoom), so it carries the same authoring-time bans.
+    name: 'surface',
+    entry: 'src/ldtk/surface.ts',
+    maxBytes: 12000,
+    forbidden: [
+      '/ldtk/parse.ts',
+      '/ldtk/translate.ts',
+      '/ldtk/rules.ts',
+      '/ldtk/rng.ts',
+      '/ldtk/edit.ts',
+      '/ldtk/write.ts',
+      '/ldtk/format.ts',
+    ],
+  },
+  {
     name: 'auto-tiler',
     entry: 'src/ldtk/rules.ts',
     // The rule engine is useful at runtime on its own — procedurally generated

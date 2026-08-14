@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-14
+
+### Added
+- **LDtk rendering (seam-free fractional zoom):** `createLdtkLevelSurfaceCache` — a lazy, identity-preserving cache of native-resolution level surfaces. `draw(ctx, level, opts)` is a drop-in replacement for `drawLdtkLevel` under a consumer camera transform: it bakes a level once at `pxWid × pxHei` (tile art through `drawLdtkLevel` verbatim, `imageSmoothingEnabled = false`), then blits the single finished surface per frame. Scaling hundreds of tiles independently at a fractional zoom (a cover-fit, or a lens easing between rooms) can expose a duplicated/empty scanline between adjacent tile rows on some browser/GPU combinations; one surface has no internal draw boundaries for the compositor to split. `get` exposes the baked surface for consumers that own the blit; `has`/`drop(iid)`/`clear` manage rebaking after tile edits. Canvas creation mirrors the sprite tint helper (consumer `createCanvas` factory → `OffscreenCanvas` → `document.createElement`); with no canvas host, `draw` falls back to the direct `drawLdtkLevel` path so mock/non-DOM hosts never lose level art. Also cheaper per frame: one blit instead of per-tile blits, culling for free. Adopted in the showcase LDtk play mode.
+
+### Changed
+- **Celerock brief:** `games/celerock.md` §5.4 documents the seam-free surface-cache option for the golden-path render pass. Version pins bumped to `0.12.0`.
+- **Tooling:** `check:ldtk-runtime-size` now budgets the surface cache as its own runtime draw-path leaf (`ldtk surface`: 3,726 bytes max 12,000, same authoring-code bans as the render leaf).
+
 ## [0.11.0] - 2026-08-14
 
 ### Added
@@ -106,7 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/morganpage/aicraft-engine/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/morganpage/aicraft-engine/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/morganpage/aicraft-engine/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/moranpage/aicraft-engine/compare/v0.9.1...v0.9.2

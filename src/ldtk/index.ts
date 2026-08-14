@@ -114,6 +114,15 @@ export {
 } from './render';
 
 export type {
+  LdtkSurfaceCanvas,
+  LdtkSurfaceCanvasFactory,
+  LdtkLevelSurfaceCache,
+  LdtkLevelSurfaceCacheOptions,
+} from './surface';
+
+export { createLdtkLevelSurfaceCache } from './surface';
+
+export type {
   LdtkAssetDiagnosticSeverity,
   LdtkAssetDiagnostic,
   LoadLdtkProjectAssetsOptions,
