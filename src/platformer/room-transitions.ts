@@ -445,7 +445,9 @@ export interface RoomExitDetectorOptions {
 export interface RoomExitDetectorState {
   /**
    * Destination edge that must be cleared before another exit can fire, or
-   * `null` when the detector is armed (no pending re-arm gate).
+   * `null` when the detector is armed (no pending re-arm gate). The gate also
+   * releases once the body no longer overlaps the room at all (a full
+   * back-out), so a genuine reverse crossing is never suppressed indefinitely.
    */
   readonly blockedEntryEdge: Cardinal | null;
   /**
@@ -492,6 +494,24 @@ function hasClearedEntryEdge(
 }
 
 /**
+ * Does the body still overlap `level`'s rect at all (strict — zero-width
+ * contact counts as departed)? The re-arm gate exists to absorb seam jitter
+ * while the body STRADDLES the arrival seam; a body that no longer overlaps
+ * the room has unambiguously departed, so any crossing the bare helper reports
+ * is genuine, not jitter. An arrival always overlaps (entry mapping preserves
+ * world position, so a post-transition body straddles), which keeps the
+ * tick-tock protection intact.
+ */
+function bodyOverlapsRoom(body: Rect, level: LdtkLevel): boolean {
+  return (
+    body.x < level.pxWid &&
+    body.x + body.width > 0 &&
+    body.y < level.pxHei &&
+    body.y + body.height > 0
+  );
+}
+
+/**
  * Normalize a caller-supplied deadband to a finite positive value, falling back
  * to {@link DEFAULT_EXIT_DEADBAND} for anything invalid. A bad margin must never
  * permanently block the detector (e.g. `NaN`) or defeat the protection (zero).
@@ -509,7 +529,12 @@ function normalizeDeadband(deadband: number | undefined): number {
  * prevents the seam tick-tock oscillation the bare helper produces when a body
  * lingers on a seam: after an exit fires, the detector returns no further exits
  * until the actor has moved at least `deadband` pixels back inside the
- * destination room on the entry edge it arrived through.
+ * destination room on the entry edge it arrived through — or has backed fully
+ * OUT of the destination room, in which case the gate releases and the bare
+ * helper reports the genuine crossing (the reverse transition, or void if the
+ * departure is outside the shared seam span). The gate is therefore a true
+ * hysteresis band: exits are suppressed only while the body still straddles
+ * the arrival seam.
  *
  * Pure: takes the current state and returns the next state plus any exit; it
  * never mutates the input state (adopt the returned {@link RoomExitDetection.state}
@@ -540,9 +565,14 @@ export function detectLdtkRoomExit(
     blockedEdge = null;
   }
 
-  // While the entry edge has not cleared, hold the gate and emit no exit.
+  // While the body still straddles the arrival seam (overlaps the room but
+  // has not cleared the entry edge by the deadband), hold the gate and emit no
+  // exit. A body that has backed fully out of the room no longer straddles:
+  // the gate releases and the bare helper below reports the genuine crossing
+  // (or void, if out-of-span) instead of suppressing the reverse exit forever.
   if (
     blockedEdge !== null &&
+    bodyOverlapsRoom(body, level) &&
     !hasClearedEntryEdge(body, level, blockedEdge, margin)
   ) {
     return {

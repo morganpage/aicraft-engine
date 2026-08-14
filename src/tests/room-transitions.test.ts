@@ -439,6 +439,60 @@ describe('detectLdtkRoomExit', () => {
     expect(d4.state.blockedEntryEdge).toBeNull(); // re-armed
   });
 
+  it('releases the gate and fires the reverse exit when the body backs fully out', () => {
+    // The doorway back-out scenario: a quick tap through a seam crosses with
+    // sub-deadband penetration, then reverses before ever clearing the gate.
+    // The body ends up fully west of L1 (zero overlap) while still inside the
+    // shared Y span [0,112] — a genuine reverse crossing the gate must report
+    // instead of suppressing forever (previously: consumers' void checks
+    // killed the actor right after the transition).
+    const project = makeProject(...PARTIAL);
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    // Body at L1-local x = -8..0: no overlap with L1 → the gate releases.
+    const d = detectLdtkRoomExit(gated, body(-8, 50), project.levels[1], project);
+    expect(d.exit?.dir).toBe('w');
+    expect(d.exit?.neighbourLevelIid).toBe('L0');
+    // The reverse exit re-gates the east edge in the room it returns to.
+    expect(d.state.blockedEntryEdge).toBe('e');
+    expect(d.state.expectedLevelIid).toBe('L0');
+  });
+
+  it('still gates a body that straddles the arrival seam (hysteresis band)', () => {
+    const project = makeProject(...PARTIAL);
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    // Body at L1-local x = -7.9..0.1: a 0.1px overlap keeps it straddling the
+    // seam. The bare helper WOULD fire west here (that is the tick-tock); the
+    // detector must still hold until the deadband is cleared or the body
+    // departs the room entirely.
+    const d = detectLdtkRoomExit(gated, body(-7.9, 50), project.levels[1], project);
+    expect(d.exit).toBeUndefined();
+    expect(d.state.blockedEntryEdge).toBe('w');
+  });
+
+  it('an out-of-span back-out is void AND releases the gate (no infinite hold)', () => {
+    const project = makeProject(...PARTIAL);
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    // Fully west of L1 AND below the shared Y span [0,112] (body y 120..128):
+    // the departure is void per contract, and the detector must release to
+    // armed rather than holding the gate against a room the actor has left.
+    const d = detectLdtkRoomExit(gated, body(-8, 120), project.levels[1], project);
+    expect(d.exit).toBeUndefined();
+    expect(d.state.blockedEntryEdge).toBeNull();
+    expect(d.state.expectedLevelIid).toBeNull();
+  });
+
+  it('a gated body that departs through another edge is released too', () => {
+    // While gated, the hold suppressed EVERY edge — including falls out an
+    // unrelated edge. Once the body no longer overlaps the room, the gate
+    // releases and the bare helper governs: L1 has no south neighbour, so this
+    // departure is void, and the state comes back armed.
+    const project = makeProject(...PARTIAL);
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const d = detectLdtkRoomExit(gated, body(50, 129), project.levels[1], project);
+    expect(d.exit).toBeUndefined();
+    expect(d.state.blockedEntryEdge).toBeNull();
+  });
+
   it('gates each entry-edge direction independently (exact seam → margin)', () => {
     const project = makeProject(...PARTIAL);
     // West entry edge: body at the seam (x=0) is blocked; at margin it clears.
