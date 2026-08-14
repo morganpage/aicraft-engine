@@ -50,6 +50,7 @@ function createMockOscillatorNode() {
 function createMockBufferSourceNode() {
   return {
     buffer: null as unknown,
+    loop: false,
     connect: vi.fn().mockReturnThis(),
     disconnect: vi.fn(),
     start: vi.fn(),
@@ -70,6 +71,7 @@ function createMockAudioBuffer(length: number, sampleRate: number) {
   return {
     length,
     sampleRate,
+    duration: length / sampleRate,
     numberOfChannels: 1,
     getChannelData: vi.fn().mockReturnValue(new Float32Array(length)),
   };
@@ -145,6 +147,15 @@ describe('createAudioAdapter — no host (Node / SSR)', () => {
   it('playNoise is a silent no-op', () => {
     const adapter = createAudioAdapter();
     expect(() => adapter.playNoise(100, 'highpass', 2200, 0.22)).not.toThrow();
+  });
+
+  it('startNoiseLoop returns an inert handle whose methods are safe no-ops', () => {
+    const adapter = createAudioAdapter();
+    const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+    expect(handle.isPlaying()).toBe(false);
+    expect(() => handle.stop()).not.toThrow();
+    expect(() => handle.setPeak(0.5)).not.toThrow();
+    expect(handle.isPlaying()).toBe(false);
   });
 
   it('setMuted and setVolume are silent no-ops', () => {
@@ -279,6 +290,9 @@ describe('createAudioAdapter — with mock WebAudio', () => {
 
     it('creates a buffer source + biquad filter after unlock', () => {
       adapter.unlock();
+      // Spy AFTER unlock — the noise-buffer fill during unlock also consumes
+      // Math.random draws.
+      const rand = vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const ctx = getCtx();
       adapter.playNoise(100, 'highpass', 2200, 0.22);
 
@@ -288,8 +302,47 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       const filter = ctx.createBiquadFilter.mock.results[0].value;
       expect(filter.type).toBe('highpass');
       expect(filter.frequency.value).toBe(2200);
-      expect(src.start).toHaveBeenCalledWith(10);
+      // Random playback offset (0.5 × (1 s buffer − 0.12 s burst+tail) ≈ 0.44)
+      // so overlapping bursts de-correlate; duration limited to burst + tail.
+      const [when, offset, duration] = src.start.mock.calls[0];
+      expect(when).toBe(10);
+      expect(offset).toBeCloseTo(0.44, 5);
+      expect(duration).toBeCloseTo(0.12, 5);
       expect(src.stop).toHaveBeenCalledWith(10.12);
+      rand.mockRestore();
+    });
+
+    it('starts successive bursts at different random offsets (de-correlation)', () => {
+      adapter.unlock();
+      const rand = vi.spyOn(Math, 'random')
+        .mockReturnValueOnce(0.25)
+        .mockReturnValueOnce(0.75);
+      const ctx = getCtx();
+      adapter.playNoise(100, 'highpass', 2200, 0.22);
+      adapter.playNoise(100, 'highpass', 2200, 0.22);
+
+      const first = ctx.createBufferSource.mock.results[0].value;
+      const second = ctx.createBufferSource.mock.results[1].value;
+      const [, firstOffset] = first.start.mock.calls[0];
+      const [, secondOffset] = second.start.mock.calls[0];
+      // usable ≈ 0.88 s → offsets ≈ 0.22 / 0.66 — NOT both sample 0,
+      // so rapid retriggers can never phase-lock into a buzz.
+      expect(firstOffset).toBeCloseTo(0.22, 5);
+      expect(secondOffset).toBeCloseTo(0.66, 5);
+      rand.mockRestore();
+    });
+
+    it('falls back to offset 0 when the burst outlasts the buffer', () => {
+      adapter.unlock();
+      const rand = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+      const ctx = getCtx();
+      adapter.playNoise(2000, 'lowpass', 400, 0.3);
+
+      const src = ctx.createBufferSource.mock.results[0].value;
+      const [when, offset] = src.start.mock.calls[0];
+      expect(when).toBe(10);
+      expect(offset).toBe(0);
+      rand.mockRestore();
     });
 
     it('is a no-op when muted', () => {
@@ -299,6 +352,95 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       ctx.createBufferSource.mockClear();
       adapter.playNoise(100, 'highpass', 2200, 0.22);
       expect(ctx.createBufferSource).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- startNoiseLoop -------------------------------------------------------
+
+  describe('startNoiseLoop', () => {
+    it('is a no-op before unlock — inert handle, no nodes', () => {
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+      expect(handle.isPlaying()).toBe(false);
+      expect(mockWindow.AudioContext).not.toHaveBeenCalled();
+    });
+
+    it('creates a looping buffer source after unlock', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+
+      expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+      expect(ctx.createBiquadFilter).toHaveBeenCalledTimes(1);
+      const src = ctx.createBufferSource.mock.results[0].value;
+      const filter = ctx.createBiquadFilter.mock.results[0].value;
+      expect(src.loop).toBe(true);
+      expect(filter.type).toBe('lowpass');
+      expect(filter.frequency.value).toBe(600);
+      expect(src.start).toHaveBeenCalledWith(10);
+      expect(handle.isPlaying()).toBe(true);
+    });
+
+    it('attack-ramps the loop gain to the clamped peak', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      adapter.startNoiseLoop('lowpass', 600, 5); // out-of-range peak clamps to 1
+
+      const gain = ctx.createGain.mock.results[1].value; // [0] = master gain
+      expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 10.003);
+    });
+
+    it('stop() releases the voice with a fade + tail and is idempotent', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+      const src = ctx.createBufferSource.mock.results[0].value;
+      const gain = ctx.createGain.mock.results[1].value; // [0] = master gain
+
+      handle.stop();
+      // Fade from the current value over 0.1 s, then stop after the tail.
+      expect(gain.gain.cancelScheduledValues).toHaveBeenCalledWith(10);
+      expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.0001, 10.1);
+      expect(src.stop).toHaveBeenCalledWith(10.12);
+      expect(handle.isPlaying()).toBe(false);
+
+      handle.stop(); // idempotent — no second release
+      expect(src.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('setPeak() ramps to the clamped new peak; no-op after stop()', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+      const gain = ctx.createGain.mock.results[1].value; // [0] = master gain
+
+      handle.setPeak(2); // clamps to 1
+      expect(gain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 10.003);
+
+      handle.stop();
+      gain.gain.linearRampToValueAtTime.mockClear();
+      handle.setPeak(0.5);
+      expect(gain.gain.linearRampToValueAtTime).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when muted — inert handle, no nodes', () => {
+      adapter.unlock();
+      adapter.setMuted(true);
+      const ctx = getCtx();
+      ctx.createBufferSource.mockClear();
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+      expect(ctx.createBufferSource).not.toHaveBeenCalled();
+      expect(handle.isPlaying()).toBe(false);
+      expect(() => handle.stop()).not.toThrow();
+    });
+
+    it('is a no-op after dispose — inert handle', () => {
+      adapter.unlock();
+      adapter.dispose();
+      const ctx = getCtx();
+      ctx.createBufferSource.mockClear();
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+      expect(ctx.createBufferSource).not.toHaveBeenCalled();
+      expect(handle.isPlaying()).toBe(false);
     });
   });
 
@@ -435,6 +577,24 @@ describe('createAudioAdapter — defensive error handling', () => {
     const adapter = createAudioAdapter();
     adapter.unlock();
     expect(() => adapter.playNoise(100, 'highpass', 2200, 0.22)).not.toThrow();
+  });
+
+  it('startNoiseLoop returns an inert handle when createBufferSource throws', () => {
+    const ctx = createMockAudioContext();
+    ctx.createBufferSource.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    vi.stubGlobal('window', {
+      AudioContext: vi.fn(function () {
+        return ctx;
+      }),
+    });
+    const adapter = createAudioAdapter();
+    adapter.unlock();
+    const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+    expect(() => handle.stop()).not.toThrow();
+    expect(() => handle.setPeak(0.5)).not.toThrow();
+    expect(handle.isPlaying()).toBe(false);
   });
 
   it('falls back to webkitAudioContext when AudioContext is missing', () => {

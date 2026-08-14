@@ -1274,15 +1274,16 @@ Defensive save-data storage backends and JSON load/write helpers. Follows the ca
 
 ### `src/audio/`
 
-WebAudio synthesized SFX defensive adapter. Zero audio assets — every sound is generated on the fly from oscillators + a reused white-noise buffer. Follows the canonical defensive adapter pattern: lazy `AudioContext` resolution on first `unlock()` (never at module load), swallow all errors, never-throw public API, no-op fallback in Node/SSR. Per-instance factory pattern (each `createAudioAdapter` call creates an independent adapter with its own closure state). The library ships generic primitives (`playTone` / `playNoise`); consumers compose game-specific sounds from these two building blocks.
+WebAudio synthesized SFX defensive adapter. Zero audio assets — every sound is generated on the fly from oscillators + a reused white-noise buffer. Follows the canonical defensive adapter pattern: lazy `AudioContext` resolution on first `unlock()` (never at module load), swallow all errors, never-throw public API, no-op fallback in Node/SSR. Per-instance factory pattern (each `createAudioAdapter` call creates an independent adapter with its own closure state). The library ships generic primitives (`playTone` / `playNoise` one-shots, `startNoiseLoop` for sustained sounds); consumers compose game-specific sounds from these building blocks.
 
-> Note: `Math.random()` is used to fill the noise buffer. This is explicitly allowed — decorative audio side-effect, NOT deterministic simulation logic. Audio output never leaks back into game state.
+> Note: `Math.random()` fills the noise buffer and picks each `playNoise` burst's playback offset. Both are explicitly allowed — decorative audio side-effects, NOT deterministic simulation logic. Audio output never leaks back into game state. The random offset de-correlates overlapping/retriggered bursts (identical sample-0 restarts phase-lock into a retrigger buzz).
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `AudioAdapter` | interface | `{unlock(), isUnlocked(), playTone(...), playNoise(...), setMuted(...), isMuted(), setVolume(...), getVolume(), dispose()}` — WebAudio SFX adapter contract. All playback methods are no-op when muted, pre-unlock, or without WebAudio | `src/audio/types.ts` |
+| `AudioAdapter` | interface | `{unlock(), isUnlocked(), playTone(...), playNoise(...), startNoiseLoop(...), setMuted(...), isMuted(), setVolume(...), getVolume(), dispose()}` — WebAudio SFX adapter contract. All playback methods are no-op when muted, pre-unlock, or without WebAudio | `src/audio/types.ts` |
+| `NoiseLoopHandle` | interface | `{stop(), setPeak(peak), isPlaying()}` — control handle for a sustained noise loop. `stop()` fades + releases (~0.1 s natural tail) and is idempotent; inert (never-throw) in every adapter state | `src/audio/types.ts` |
 | `DEFAULT_AUDIO_VOLUME` | const | `0.7` — default SFX volume | `src/audio/constants.ts` |
-| `createAudioAdapter()` | function | Defensive factory: independent adapter with private `AudioContext`, master gain, and noise buffer. Lazily resolves `AudioContext`/`webkitAudioContext` on first `unlock()`. Never throws | `src/audio/factory.ts` |
+| `createAudioAdapter()` | function | Defensive factory: independent adapter with private `AudioContext`, master gain, and noise buffer. Lazily resolves `AudioContext`/`webkitAudioContext` on first `unlock()`. Never throws. `startNoiseLoop` returns a `NoiseLoopHandle` (an inert handle when no voice can be created, so callers never null-check) | `src/audio/factory.ts` |
 
 ### `src/music/` (shipped)
 

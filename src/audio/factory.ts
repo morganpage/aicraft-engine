@@ -12,20 +12,24 @@
  *   - Swallow all errors in every public method. Never throws.
  *   - No-op fallback in Node / SSR / old browsers (no `window` / `AudioContext`).
  *
- * The library ships the generic infrastructure — `playTone` / `playNoise` —
- * NOT the game-specific recipe table. Consumers compose sounds from these two
- * primitives (see the reference `playSound` switch for the recipe pattern).
+ * The library ships the generic infrastructure — `playTone` / `playNoise`
+ * one-shots plus `startNoiseLoop` for sustained sounds — NOT the
+ * game-specific recipe table. Consumers compose sounds from these primitives
+ * (see the reference `playSound` switch for the recipe pattern).
  *
- * `Math.random()` is used to fill the white-noise buffer. This is explicitly
- * allowed: it is a decorative audio side-effect, NOT deterministic simulation
- * logic. The determinism rules in `docs/architecture.md` only ban `Math.random`
- * in the pure core (color math, RNG seeding, entitlements, save ops). Audio
- * output can never leak back into game state.
+ * `Math.random()` fills the white-noise buffer and picks each burst's playback
+ * offset. Both are explicitly allowed: they are decorative audio side-effects,
+ * NOT deterministic simulation logic. The determinism rules in
+ * `docs/architecture.md` only ban `Math.random` in the pure core (color math,
+ * RNG seeding, entitlements, save ops). Audio output can never leak back into
+ * game state. The random offset exists so overlapping/retriggered bursts
+ * de-correlate: identical same-sample-0 restarts phase-lock into a buzz
+ * (60 retriggers/s of the same buffer ≈ a 60 Hz tone).
  *
  * @module
  */
 
-import type { AudioAdapter } from './types';
+import type { AudioAdapter, NoiseLoopHandle } from './types';
 import { DEFAULT_AUDIO_VOLUME } from './constants';
 
 /** Time constant (seconds) for the master-gain ramp — prevents click on mute. */
@@ -34,6 +38,8 @@ const MASTER_RAMP_TC = 0.015;
 const TONE_ATTACK_S = 0.005;
 /** Attack time (seconds) for the noise envelope (shorter — sharper transient). */
 const NOISE_ATTACK_S = 0.003;
+/** Release fade (seconds) for sustained noise loops on stop() — natural tail. */
+const LOOP_RELEASE_S = 0.1;
 /** Tail (seconds) added after the envelope decay before stop() to avoid clicks. */
 const STOP_TAIL_S = 0.02;
 /** Sub-audible floor used as the gain envelope baseline (never literal 0). */
@@ -47,6 +53,22 @@ function clamp01(n: number): number {
   if (n < 0) return 0;
   if (n > 1) return 1;
   return n;
+}
+
+/**
+ * A permanently-stopped {@link NoiseLoopHandle}. Returned by
+ * `startNoiseLoop` when no voice could be created (pre-unlock, muted,
+ * disposed, no WebAudio, or a swallowed synthesis error), so callers never
+ * null-check or special-case the returned handle — audio is decorative.
+ */
+function createInertNoiseLoopHandle(): NoiseLoopHandle {
+  return {
+    stop(): void {},
+    setPeak(): void {},
+    isPlaying(): boolean {
+      return false;
+    },
+  };
 }
 
 /**
@@ -68,6 +90,9 @@ function clamp01(n: number): number {
  * // from event handlers / game loop:
  * audio.playTone('sine', 200, 400, 80, 0.3);   // jump "boop"
  * audio.playNoise(50, 'lowpass', 420, 0.45);    // land "thud"
+ * // sustained sound (start on the onset edge, stop when the state ends):
+ * const scrape = audio.startNoiseLoop('lowpass', 600, 0.06); // wall slide
+ * scrape.stop();                                             // slide over
  * ```
  */
 export function createAudioAdapter(): AudioAdapter {
@@ -225,10 +250,76 @@ export function createAudioAdapter(): AudioAdapter {
         gain.gain.linearRampToValueAtTime(peak, t0 + NOISE_ATTACK_S);
         gain.gain.linearRampToValueAtTime(GAIN_FLOOR, t0 + dur);
         src.connect(filter).connect(gain).connect(master);
-        src.start(t0);
+        // Random start offset inside the shared buffer so overlapping bursts
+        // de-correlate: identical sample-0 restarts phase-lock into a retrigger
+        // buzz (60 identical restarts/s ≈ a 60 Hz tone + comb filtering). Falls
+        // back to offset 0 when the burst outlasts the one-second buffer.
+        const usable = noiseBuffer.duration - (dur + STOP_TAIL_S);
+        const offset = usable > 0 ? Math.random() * usable : 0;
+        src.start(t0, offset, dur + STOP_TAIL_S);
         src.stop(t0 + dur + STOP_TAIL_S);
       } catch {
         // Swallow — audio is decorative.
+      }
+    },
+
+    startNoiseLoop(
+      filterType: BiquadFilterType,
+      freq: number,
+      peak: number,
+    ): NoiseLoopHandle {
+      if (disposed || muted || !unlocked) return createInertNoiseLoopHandle();
+      if (!ctx || !master || !noiseBuffer) return createInertNoiseLoopHandle();
+      try {
+        // Locals so the handle closures never need non-null assertions.
+        const audio = ctx;
+        const t0 = audio.currentTime;
+        const src = audio.createBufferSource();
+        src.buffer = noiseBuffer;
+        src.loop = true; // the one-second buffer loops seamlessly
+        const filter = audio.createBiquadFilter();
+        filter.type = filterType;
+        filter.frequency.value = freq;
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(GAIN_FLOOR, t0);
+        gain.gain.linearRampToValueAtTime(clamp01(peak), t0 + NOISE_ATTACK_S);
+        src.connect(filter).connect(gain).connect(master);
+        src.start(t0);
+        let playing = true;
+        return {
+          stop(): void {
+            if (!playing) return;
+            playing = false;
+            try {
+              const t = audio.currentTime;
+              // Ramp from wherever the voice currently is → no click, a
+              // natural ~0.1 s release tail (matches a scrape ringing out).
+              gain.gain.cancelScheduledValues(t);
+              gain.gain.setValueAtTime(gain.gain.value, t);
+              gain.gain.linearRampToValueAtTime(GAIN_FLOOR, t + LOOP_RELEASE_S);
+              src.stop(t + LOOP_RELEASE_S + STOP_TAIL_S);
+            } catch {
+              // Swallow — e.g. the adapter was disposed and the context closed.
+            }
+          },
+          setPeak(next: number): void {
+            if (!playing) return;
+            try {
+              const t = audio.currentTime;
+              gain.gain.cancelScheduledValues(t);
+              gain.gain.setValueAtTime(gain.gain.value, t);
+              gain.gain.linearRampToValueAtTime(clamp01(next), t + NOISE_ATTACK_S);
+            } catch {
+              // Swallow.
+            }
+          },
+          isPlaying(): boolean {
+            return playing;
+          },
+        };
+      } catch {
+        // Swallow — inert handle so callers never null-check.
+        return createInertNoiseLoopHandle();
       }
     },
 

@@ -6,7 +6,7 @@ file is a self-contained prompt — paste it to a coding agent (Claude / Cursor 
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
 Every prompt pins the latest registry-verified release exactly — currently
-`aicraft-engine@0.4.0`.
+`aicraft-engine@0.13.0`.
 
 The common contract every prompt here enforces:
 

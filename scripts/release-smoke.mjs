@@ -235,6 +235,8 @@ import {
   beginRoomSlideFromBrain,
   // 0.11.0: follow-compatible destination framing.
   roomEntrySlideView,
+  // 0.13.0: sustained-audio layer.
+  createAudioAdapter,
 } from 'aicraft-engine';
 
 // (3) Barrel is importable and re-exports a large surface.
@@ -308,6 +310,19 @@ const destView = roomEntrySlideView(
 assert.ok(Number.isFinite(destView.camera.y), 'destView.camera.y finite');
 assert.equal(destView.zoom, 8);
 console.log('TRANSITION HARDENING: exports OK');
+
+// Sustained-audio layer (0.13.0). Plain Node has no window, so the adapter is
+// the documented inert/no-op mode — the point is that every new public name
+// exists, imports, and honors the never-throw contract off the packed tarball.
+const audio = createAudioAdapter();
+audio.playNoise(100, 'lowpass', 400, 0.3);
+const scrape = audio.startNoiseLoop('lowpass', 600, 0.06);
+assert.equal(scrape.isPlaying(), false); // inert handle — no WebAudio host
+scrape.setPeak(0.5);
+scrape.stop();
+scrape.stop(); // idempotent
+audio.dispose();
+console.log('SUSTAINED AUDIO: exports OK (inert in Node, never throws)');
 `,
   );
 
@@ -368,6 +383,8 @@ function doTypecheckConsumer(tmp, tgz) {
   beginRoomSlideFromBrain,
   // 0.11.0: follow-compatible destination framing.
   roomEntrySlideView,
+  // 0.13.0: sustained-audio layer.
+  createAudioAdapter,
 } from 'aicraft-engine';
 import type {
   GameLoop,
@@ -380,6 +397,9 @@ import type {
   RoomExitDetectorOptions,
   // 0.11.0: destination framing options.
   RoomEntrySlideViewOptions,
+  // 0.13.0: sustained-audio handle + adapter contract.
+  AudioAdapter,
+  NoiseLoopHandle,
 } from 'aicraft-engine';
 
 const loop: GameLoop = createGameLoop({
@@ -431,6 +451,14 @@ const _destView = roomEntrySlideView(
   {} as RoomEntrySlideViewOptions,
 );
 void _destView;
+
+// Sustained-audio layer (0.13.0): typed use proves the new names ship in the
+// .d.ts and typecheck under NodeNext with skipLibCheck:false.
+const _audio: AudioAdapter = createAudioAdapter();
+const _scrape: NoiseLoopHandle = _audio.startNoiseLoop('lowpass', 600, 0.06);
+_scrape.setPeak(0.5);
+_scrape.stop();
+void _scrape;
 
 void state;
 `,
@@ -526,6 +554,8 @@ function doViteConsumer(tmp, tgz) {
   seedRoomCutCamera,
   // 0.11.0: follow-compatible destination framing.
   roomEntrySlideView,
+  // 0.13.0: sustained-audio layer bundles cleanly.
+  createAudioAdapter,
 } from 'aicraft-engine';
 
 const solids = [{ x: 0, y: 200, width: 10000, height: 100, id: solidIdForEntity(0) }];
@@ -542,6 +572,12 @@ const _seeded = seedRoomCutCamera(
   { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 } as never,
 );
 void detectLdtkRoomExit; void _det; void _seeded;
+// Exercise the sustained-audio import so tree-shaking keeps it and a
+// broken/missing export fails the Vite build gate.
+const _audio = createAudioAdapter();
+const _scrape = _audio.startNoiseLoop('lowpass', 600, 0.06);
+_scrape.stop();
+void _scrape;
 const _destView2 = roomEntrySlideView(
   { ldtkLevel: { worldX: 0, worldY: 0, pxWid: 320, pxHei: 184 } } as never,
   { x: 316, y: 90, width: 4, height: 8 },

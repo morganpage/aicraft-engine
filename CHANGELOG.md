@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-14
+
+### Added
+- **Audio (sustained sounds):** `startNoiseLoop(filterType, freq, peak)` + the `NoiseLoopHandle` it returns (`stop()` fades out over ~0.1 s and releases — a natural tail; `setPeak()` live-adjusts loudness; `isPlaying()`). A sustained filtered-noise voice on the shared one-second noise buffer (`loop = true` — the buffer loops seamlessly), for sounds that last exactly as long as a game state: wall-slide scrapes, wind, hums. Starts on a state's onset edge and stops on its end — the correct replacement for the only alternative the fire-and-forget `playTone`/`playNoise` left consumers: hand-rolled per-tick grain counters in game code. Fully defensive per the adapter pattern: pre-unlock/muted/disposed/no-WebAudio returns an INERT handle (never null — callers never null-check), and every handle method swallows errors (including after adapter `dispose()` closed the context).
+
+### Changed
+- **Audio (burst de-correlation):** `playNoise` now starts each burst at a random offset inside the shared noise buffer (offset 0 only when the burst outlasts the one-second buffer). Every burst previously restarted the identical waveform from sample 0, so overlapping/retriggered bursts were phase-coherent — comb filtering, and a rate-limited per-tick retrigger pattern phase-locks into an audible 60 Hz buzz (the exact failure the Celerock brief's original wall-slide recipe produced across builds). `Math.random()` here joins the noise-buffer fill as an explicitly-allowed decorative audio side-effect. No API change; existing isolated one-shots sound identical.
+- **Celerock brief:** `games/celerock.md` §10's wall-slide recipe is now the sustained-loop pattern (start ONE `startNoiseLoop('lowpass', 600, 0.06)` on the `startedWallSlide` pulse, `handle.stop()` when sliding ends) with a general sustained-sound rule in the §10 preamble (one-shots fire on event edges; sustained sounds are start/stop — never per-tick one-shot retriggers), and the Stage 6 audio gate verifies the scrape by ear. Version pins bumped to `0.13.0`.
+
 ## [0.12.0] - 2026-08-14
 
 ### Added
@@ -115,11 +124,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/morganpage/aicraft-engine/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/morganpage/aicraft-engine/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/morganpage/aicraft-engine/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/morganpage/aicraft-engine/compare/v0.9.2...v0.10.0
-[0.9.2]: https://github.com/moranpage/aicraft-engine/compare/v0.9.1...v0.9.2
+[0.9.2]: https://github.com/morganpage/aicraft-engine/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/morganpage/aicraft-engine/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/morganpage/aicraft-engine/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/morganpage/aicraft-engine/compare/v0.8.0...v0.8.1

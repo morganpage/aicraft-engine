@@ -32,7 +32,7 @@ A small TypeScript library of procedural rendering primitives, algorithmic cosme
 | **1. Input** | Edge accumulator, keyboard adapter, touch-button adapter, multi-touch button set, gamepad adapter (Standard Gamepad, axial deadzone), OR-merge | **Shipped** |
 | **1. Game loop** | Fixed-step accumulator, defensive RAF adapter, spiral-of-death guard, visibilitychange pause | **Shipped** |
 | **1. Game state** | Pure `dt`-driven FSM reducer (`reduceGameState`, `createGameState`, `isLegalTransition`), declarative adjacency table (`DEFAULT_GAME_STATE_ADJACENCY`); menu/playing/paused/gameover/levelComplete | **Shipped** |
-| **1. Audio** | WebAudio synthesized SFX adapter (oscillator tones, filtered noise), defensive lazy-unlock, mute/volume | **Shipped** |
+| **1. Audio** | WebAudio synthesized SFX adapter (oscillator tones, filtered noise, sustained noise loops with stop handles, de-correlated noise retriggers), defensive lazy-unlock, mute/volume | **Shipped** |
 | **1. Music** | Procedural step-sequencer — pure theory, seeded patterns, boundary-correct fixed-step `advanceSequencer`, autonomous `createSequencer`, and external-event `createNoteFirePlayer` adapters | **Shipped** |
 | **1. Save** | Defensive localStorage/memory backends, JSON load/write helpers (`SaveStorage`, `loadSave`, `writeSave`) | **Shipped** |
 | **1. Replay** | Replay record/playback — fluent `createReplayRecorder` (mutable renderer-output buffer), pure `playReplay` re-sim driver (calls consumer's `step`), deterministic 32-bit `replayHash` fingerprint via `canonicalize` + `fnv1a` (share-codes / CI verification); zero new determinism work — reuses `stepPlatformer` kernel | **Shipped** |

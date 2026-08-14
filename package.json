@@ -1,6 +1,6 @@
 {
   "name": "aicraft-engine",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Ultra-minimalist procedural rendering + algorithmic cosmetics + IAP bridge for indie and procedural games. Zero runtime dependencies.",
   "keywords": [

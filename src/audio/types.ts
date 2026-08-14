@@ -15,7 +15,8 @@
  *
  * Create via {@link createAudioAdapter}. Call `unlock()` on the first user
  * gesture (browser autoplay policy). Then call `playTone`/`playNoise`
- * from event handlers or the game loop.
+ * one-shots from event edges, and `startNoiseLoop` for sustained sounds
+ * (wall scrapes, wind) that run until their handle is stopped.
  */
 export interface AudioAdapter {
   /**
@@ -51,6 +52,10 @@ export interface AudioAdapter {
   /**
    * Play a filtered white-noise burst. No-op when muted, pre-unlock, or without WebAudio.
    *
+   * Each burst starts at a RANDOM offset inside the shared noise buffer, so
+   * overlapping/retriggered bursts de-correlate instead of comb-filtering —
+   * a rate-limited burst pattern never phase-locks into a retrigger buzz.
+   *
    * @param durMs      - duration in milliseconds
    * @param filterType - biquad filter type: 'lowpass' | 'highpass' | 'bandpass'
    * @param freq       - filter cutoff frequency (Hz)
@@ -64,6 +69,25 @@ export interface AudioAdapter {
     peak: number,
     whenS?: number,
   ): void;
+
+  /**
+   * Start a sustained, looping filtered-noise voice — scrapes, wind, hums,
+   * anything that sounds until switched off. Returns a {@link NoiseLoopHandle};
+   * call `stop()` on it when the sustained state ends. Start it on the state's
+   * onset edge, NEVER once per tick.
+   *
+   * Always returns a usable handle — an inert no-op handle when muted,
+   * pre-unlock, disposed, or without WebAudio — so callers never null-check.
+   *
+   * @param filterType - biquad filter type: 'lowpass' | 'highpass' | 'bandpass'
+   * @param freq       - filter cutoff frequency (Hz)
+   * @param peak       - sustained gain [0, 1]
+   */
+  startNoiseLoop(
+    filterType: BiquadFilterType,
+    freq: number,
+    peak: number,
+  ): NoiseLoopHandle;
 
   /** Set the global mute flag. Applied to master gain with a short ramp (no clicks). */
   setMuted(value: boolean): void;
@@ -79,4 +103,27 @@ export interface AudioAdapter {
 
   /** Tear down: close the AudioContext, release resources. Idempotent. */
   dispose(): void;
+}
+
+/**
+ * Control handle for a sustained noise loop started by
+ * {@link AudioAdapter.startNoiseLoop}. Every method is safe to call in any
+ * state (pre-unlock, muted, disposed, after adapter teardown) — audio is
+ * decorative, the handle never throws.
+ */
+export interface NoiseLoopHandle {
+  /**
+   * Fade the loop out over ~0.1 s and release it (a natural tail — no click).
+   * Idempotent; a handle from an inert (no-op) start is permanently stopped.
+   */
+  stop(): void;
+
+  /**
+   * Update the loop's loudness (clamped to [0, 1]) with a short ramp — e.g.
+   * scrape volume following slide speed. No-op after `stop()`.
+   */
+  setPeak(peak: number): void;
+
+  /** Whether the loop is still sounding (false after `stop()`). */
+  isPlaying(): boolean;
 }
