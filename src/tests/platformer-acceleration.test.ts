@@ -178,7 +178,7 @@ describe('Phase 3 acceleration', () => {
       };
     }
     function makeState(overrides: Partial<WallSlideAbilityState> = {}): WallSlideAbilityState {
-      return { kind: 'wallSlide', sliding: false, side: null, lockTimer: 0, slideTimer: 0, ...overrides };
+      return { kind: 'wallSlide', sliding: false, side: null, lockTimer: 0, slideTimer: 0, graceTimer: 0, ...overrides };
     }
     function makeCtx(core: ActorCore, input: PlatformerInput = makeInput({ moveX: 1 })): AbilityContext {
       return { core, input, dt: DT, config: DEFAULT_PLATFORMER_CONFIG, solids: [WALL_RIGHT] };

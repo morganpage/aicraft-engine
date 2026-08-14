@@ -1,4 +1,4 @@
-# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.13.0`
+# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.14.0`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief. **Presume the user supplies an LDtk project file (`.ldtk`) and the tileset PNG(s) it references.** The agent produces a single runnable Vite + TypeScript browser game that loads those assets and plays them like *Celeste* — importing everything movement, camera, level, and presentation-related from `aicraft-engine` (the npm package) and writing **no** re-implementations of what the engine already provides. The agent does **not** author level geometry: rooms, tiles, hazards, and collectibles all come from the supplied LDtk file.
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo and NOT a hand-authored level set.** The previous version of this brief failed because it (a) hand-wrote six ASCII room grids and a bespoke "connected-terrain" renderer instead of using a real tileset, (b) drove the view through the legacy single follow-camera instead of the camera brain, (c) enabled a `doubleJump` which is not a Celeste mechanic, and (d) gated progression behind a per-room "win → Cleared card → next" loop instead of Celeste-style seamless room transitions. This brief fixes every one of those: **geometry and tile art come from the supplied LDtk + tileset**, the **camera brain** with per-room virtual cameras owns the view, the **Phase 0–9 movement kernel** owns the authentic Celeste kit, and **LDtk `__neighbours`** own room flow.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.13.0`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.14.0`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
 
 ---
 
@@ -19,10 +19,10 @@
 ```bash
 npm create vite@latest celerock -- --template vanilla-ts
 cd celerock
-npm install aicraft-engine@0.13.0
+npm install aicraft-engine@0.14.0
 ```
 
-> This brief targets the published `0.13.0` API exactly. `0.13.0` ships the **sustained audio layer** — `startNoiseLoop(filterType, freq, peak)` returns a `NoiseLoopHandle` (`stop()` fades out over ~0.1 s, `setPeak()` live-adjusts loudness) for sounds that last as long as a state (the §10 wall-slide scrape), and `playNoise` bursts now start at a random offset in the shared noise buffer so overlapping/retriggered bursts de-correlate instead of phase-locking into a buzz. `0.12.0` ships the **seam-free LDtk surface cache** (`createLdtkLevelSurfaceCache` — bake each room once at native resolution, one blit per frame at any fractional zoom). `0.11.0` ships the follow-compatible destination view (`roomEntrySlideView`). `0.9.0` ships the **feel + traversal layer** (the structured feel channel `state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments; the pure room-transition helpers `findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`; the slide orchestrator `beginRoomSlide` + the camera-space rebases; the explicit camera fit `fitCameraZoom`) **and the mantle wave** (direction-aware grab+jump + ledge mantle). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. Note the **`0.9.0` compatibility breaks**: the replay physics version is 12 (v11 replays rejected) and a manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.13.0`.
+> This brief targets the published `0.14.0` API exactly. `0.14.0` ships the **direction-aware wall-jump** (into-wall slide+jumps launch straight up — a single wall is chimney-climbable; release the direction and jump within `wallJumpGraceTime` for the classic away leap; replay physics version 13). `0.13.0` ships the **sustained audio layer** — `startNoiseLoop(filterType, freq, peak)` returns a `NoiseLoopHandle` (`stop()` fades out over ~0.1 s, `setPeak()` live-adjusts loudness) for sounds that last as long as a state (the §10 wall-slide scrape), and `playNoise` bursts now start at a random offset in the shared noise buffer so overlapping/retriggered bursts de-correlate instead of phase-locking into a buzz. `0.12.0` ships the **seam-free LDtk surface cache** (`createLdtkLevelSurfaceCache` — bake each room once at native resolution, one blit per frame at any fractional zoom). `0.11.0` ships the follow-compatible destination view (`roomEntrySlideView`). `0.9.0` ships the **feel + traversal layer** (the structured feel channel `state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments; the pure room-transition helpers `findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`; the slide orchestrator `beginRoomSlide` + the camera-space rebases; the explicit camera fit `fitCameraZoom`) **and the mantle wave** (direction-aware grab+jump + ledge mantle). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. Note the **compatibility breaks**: the replay physics version is 13 (v12 replays rejected — into-wall wall-jump trajectories changed on purpose) and a manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.14.0`.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -176,7 +176,7 @@ npm install aicraft-engine@0.13.0
 | Parallax background (far/mid/near) | `drawTiledParallax`, `parallaxOffset`, `PARALLAX_FAR/MID/NEAR` |
 | Vector look + glow (player, pickups, UI) | `outlineRect`, `drawGlow` |
 | Crisp Retina canvas | `resizeCanvasToBackingStore`, `getDevicePixelRatio` |
-| Death counter, room title cards | `drawText`, `drawTextOutlined` |
+| Death counter, room title cards, start menu (NEW GAME / RESUME GAME selection) | `drawText`, `drawTextOutlined` |
 | Tween (death-and-respawn flash, transition cards) | `createTweenState`, `advanceTween`, `easeOutCubic`, `easeOutBack` |
 | Synthesized SFX | `createAudioAdapter` |
 | Frame FSM (menu / playing / gameover) | `createGameState`, `reduceGameState`, `isLegalTransition`, `DEFAULT_GAME_STATE_ADJACENCY` |
@@ -229,6 +229,11 @@ function playConfigFor(tileSize: number): Readonly<PlatformerConfig> {
 
 - **Direction-aware grab+jump.** Jump while grabbing branches on the latched wall side and the SIGN of `moveX` (magnitude ignored, so analog sticks work): holding **Away** keeps the classic up-and-away climb-hop (`climbHopForceTime` push, reported through the `wallJumpLaunched` pulse — this pulse now ALSO fires for away climb-hops, a deliberate widening); **Neutral or Toward** launches a straight-up **climb-jump** (`vx = 0`, faces the wall, `climbJumpRegrabLockTime` re-grab lock so the actor actually rises — no 4 px re-cling jitter) reported through `climbJumpLaunched`. Dash beats the jump; the jump beats the mantle.
 - **Ledge mantle.** Hold grab + **Up** near the top of a clear wall and the actor performs a continuous assisted hop onto the ledge — it rises beside the wall over several ticks, crosses the lip once its feet clear, and lands through the normal collision resolver (there is NEVER a position snap; tuning lives in `mantleEnabled`/`mantleHopVx`/`mantleHopVy`/`mantleApexClearance`/`mantleLandingInset`/`mantleAssistTime`). Set `mantleEnabled: false` to opt out. A conservative preflight declines the mantle under ceilings/overhangs or onto occupied footholds; passthrough/ladder/spring/dash-refill volumes never block it.
+
+**Direction-aware wall-jump (engine-owned, physics v13):** the wall-slide's jump now branches on the SIGN of `moveX` at the press (magnitude ignored, so analog sticks work) —
+
+- **Into-wall hop.** Jump while sliding (the slide only stays engaged while holding INTO the wall, so every active-slide press is into-wall) → straight up (`vx = 0`, faces the wall). The kernel resolves `forceMoveX = sign(0) = 0`, so the standard `wallJumpLockTime` lockout holds vx at ~0 and commits the hop vertically, then normal air control resumes — a single wall becomes chimney-climbable (slide, hop, land back on the wall, repeat).
+- **Away leap (grace window).** Release the slide direction and press jump within `wallJumpGraceTime` (default 0.1 s, coyote-style: armed on every sliding tick, decaying after) with neutral or away input, while still beside the wall → the classic away push (`vx = ±wallJumpVx`, faces the leap, standard lockout). Grounded presses are NOT hijacked (the plain ground jump owns them), grab held defers to wall-grab, fast-fall and a vanished wall suppress the leap. Both variants report through the same `wallJumpLaunched` pulse and keep variable jump height.
 
 ### 4.2 Step loop
 
@@ -707,7 +712,12 @@ const dashing = dash?.kind === 'dash' && dash.timer > 0;
 
 Use the engine's `game-state` reducer. With seamless neighbour transitions there is **no per-room win/next loop** — progression is simply traversal (and, optionally, reaching a final goal):
 
-- `menu → playing` via `{ type: 'start' }` on first input.
+- `menu → playing` via `{ type: 'start' }` on menu confirm. **The menu is a start menu with two entries — NEW GAME and RESUME GAME:**
+  - **NEW GAME** wipes the persisted save (`storage.clear()` + `save = DEFAULT_SAVE`) then starts; **RESUME GAME** starts with the boot-loaded save untouched (§7's `loadSave(storage, DEFAULT_SAVE)`).
+  - **RESUME GAME is shown only while the save carries progress** — any death or collected strawberry (a consumer `hasPersistedProgress(save)` predicate: `deaths > 0` or any `collected.length > 0`). While hidden, the selection is pinned to NEW GAME; hidden means omitted entirely (not greyed).
+  - **Up/down toggles the selection** — a consumer-owned `menuSelection` on the world (`0` New, `1` Resume; the menu step owns it, render reads it). **A jump/dash/grab edge confirms** (Enter/Space are mapped to `jump`, so they confirm too; gamepad A and the touch jump button work as well).
+  - **Run the menu step BEFORE the sim** each tick, so the kernel runs on the very tick the player starts; on confirm fire the FSM `start` and trigger the start room's title card. The HUD stays hidden while in `menu` — the menu owns the screen, and the save numbers would spoil RESUME.
+  - **Render:** title + the entries in a left-aligned column (the `>` marker never shifts the label); the selected entry bright with a `>` marker, the rest dimmed (`drawTextOutlined`).
 - `playing → gameover` via `{ type: 'die' }` on a hazard.
 - `gameover → playing` via `{ type: 'retry' }` after a consumer-owned 12-tick respawn flash (respawn at the last checkpoint, or the room spawn if none).
 - **Optional** `playing → levelComplete` via `{ type: 'win' }` — only if the LDtk defines a `Goal`/`Exit` entity in a final room, for a chapter-complete card (`drawTextOutlined`, `easeOutBack`). If the supplied LDtk has no goal entity, "finishing" means exploring/reaching the last room; do not invent a goal.
@@ -831,18 +841,19 @@ No `rooms/` directory, no ASCII grids, no `tile-style.ts` — the LDtk file is t
 ### 12.7 Acceptance Criteria
 
 1. Playable in the browser via `npm run dev` with **Celeste's PC-default keyboard bindings** (`←→↑↓` move, `C` jump, `X` dash, `Z` grab, `R` respawn — see §4.3; NOT the engine's Space/Shift/KeyK standard map) **and** on-screen touch buttons on coarse-pointer devices (via `createTouchButtonSet`).
-2. **Loads the supplied LDtk + tileset** and renders the tileset through `drawLdtkLevel` (pixel-crisp, untinted).
-3. The Celeste kit is present and works on the supplied geometry: **dash (8-dir, startup freeze, refills on land) + wall-grab/stamina + wall-slide + wall-jump + dash-tech.** **No `doubleJump`.** Springs, dash-refills, moving platforms, and ladders are **capability-aware** — exercise each one the preflight reports present (`report.capabilities.springs` / `.dashRefills` / `.movingPlatforms` / `.ladders`); absent ones are not a failure (G4).
-4. The **camera brain** drives the view (deadzone follow + per-room vcam + **cover-fit** `fitCameraZoom` + slide on transition). No legacy `createCamera`/`updateCamera`.
-5. Room-to-room travel is **seamless via `__neighbours`** using the engine path (`detectLdtkRoomExit` → `transitionPlatformerToRoom` → `beginRoomSlideFromBrain`): a ~0.25–0.35 s **slide** (both rooms render, continuous screen position at the seam), momentum (`vx`/`vy`/`facing`) preserved, particles rebased into the destination room; reduced-motion uses an immediate seam-aligned cut. The camera does not pop between rooms.
-6. The **dash-into-wall** moment (horizontal AND vertical — read the `dashBonk` feel moment on `state.moments`, never a hand-rolled velocity threshold) applies hit-stop and shake (§12.2).
-7. Strawberries persist across page reload via `createLocalStorageSaveStorage` + `writeSave` (keyed by `level.iid`).
-8. Death counter increments every respawn and persists through the same save adapter.
-9. `prefersReducedMotion` renders the start room statically and never calls `loop.start()`.
-10. **Zero duplicate engine systems**: no direct animation-frame loop, no random authoritative simulation, no manual collision resolver, no manual tile-blit loop, no legacy camera.
-11. **No moonwalk.** Running left faces left — with the supplied sprite via `drawSprite(..., { facing })` (its internal `ctx.scale(facing,1)` mirror about the frame's horizontal center); with the procedural fallback via `ctx.scale(facing, 1)` around the body draw.
-12. **No appendage blow-out.** Hair uses `advanceSpringRod`, never raw `advanceSpringChain`.
-13. **Supplied `Player.png` sprite renders pixel-crisp** — no shimmer while idle (`imageSmoothingEnabled = false`, stable 1:1, no per-frame squash/breathe scaling on the sprite). Walk cycles cells 0–7 and flips with `facing`; jump plays cells 60→64 once then **clamps on the fall frame** until landing; idle = cell 0. If `Player.png` fails to load/compile at boot, the procedural body renders instead and the game is still playable.
+2. **Start menu (§8).** The game boots to a `menu` state offering **NEW GAME** and **RESUME GAME** (up/down select, jump/dash/grab edge confirms — Enter/Space confirm via the jump map). RESUME GAME is hidden while the save carries no progress; NEW GAME wipes the persisted save and starts fresh; RESUME starts with the boot-loaded save. The HUD is hidden while in `menu`.
+3. **Loads the supplied LDtk + tileset** and renders the tileset through `drawLdtkLevel` (pixel-crisp, untinted).
+4. The Celeste kit is present and works on the supplied geometry: **dash (8-dir, startup freeze, refills on land) + wall-grab/stamina + wall-slide + wall-jump + dash-tech.** **No `doubleJump`.** Springs, dash-refills, moving platforms, and ladders are **capability-aware** — exercise each one the preflight reports present (`report.capabilities.springs` / `.dashRefills` / `.movingPlatforms` / `.ladders`); absent ones are not a failure (G4).
+5. The **camera brain** drives the view (deadzone follow + per-room vcam + **cover-fit** `fitCameraZoom` + slide on transition). No legacy `createCamera`/`updateCamera`.
+6. Room-to-room travel is **seamless via `__neighbours`** using the engine path (`detectLdtkRoomExit` → `transitionPlatformerToRoom` → `beginRoomSlideFromBrain`): a ~0.25–0.35 s **slide** (both rooms render, continuous screen position at the seam), momentum (`vx`/`vy`/`facing`) preserved, particles rebased into the destination room; reduced-motion uses an immediate seam-aligned cut. The camera does not pop between rooms.
+7. The **dash-into-wall** moment (horizontal AND vertical — read the `dashBonk` feel moment on `state.moments`, never a hand-rolled velocity threshold) applies hit-stop and shake (§12.2).
+8. Strawberries persist across page reload via `createLocalStorageSaveStorage` + `writeSave` (keyed by `level.iid`).
+9. Death counter increments every respawn and persists through the same save adapter.
+10. `prefersReducedMotion` renders the start room statically and never calls `loop.start()`.
+11. **Zero duplicate engine systems**: no direct animation-frame loop, no random authoritative simulation, no manual collision resolver, no manual tile-blit loop, no legacy camera.
+12. **No moonwalk.** Running left faces left — with the supplied sprite via `drawSprite(..., { facing })` (its internal `ctx.scale(facing,1)` mirror about the frame's horizontal center); with the procedural fallback via `ctx.scale(facing, 1)` around the body draw.
+13. **No appendage blow-out.** Hair uses `advanceSpringRod`, never raw `advanceSpringChain`.
+14. **Supplied `Player.png` sprite renders pixel-crisp** — no shimmer while idle (`imageSmoothingEnabled = false`, stable 1:1, no per-frame squash/breathe scaling on the sprite). Walk cycles cells 0–7 and flips with `facing`; jump plays cells 60→64 once then **clamps on the fall frame** until landing; idle = cell 0. If `Player.png` fails to load/compile at boot, the procedural body renders instead and the game is still playable.
 
 ### 12.8 Forbidden Patterns
 
@@ -906,7 +917,7 @@ Before the build is accepted:
 Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: LDtk Load + Preflight + Tileset + Camera Brain Graybox
-1. Vite + TypeScript + `aicraft-engine@0.13.0`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
+1. Vite + TypeScript + `aicraft-engine@0.14.0`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
 2. `loadLdtkProjectAssets({ projectUrl })` the supplied `.ldtk` + PNG(s) in one call.
 3. **Asset preflight (G3):** `inspectLdtkPlatformerProject(project)` — log level/spawn/capability counts. Missing springs/dash-refills/etc. are informational; a total lack of spawns is the only hard block.
 4. `createLdtkRoomCache(project, {...}).getStartRoom()` the start room; `drawLdtkLevel` it.
@@ -930,7 +941,8 @@ Build in this order. Each stage must pass its gate before the next begins.
 1. Hazard AABB checks (static + moving-platform-child); death → hit-stop → respawn at last checkpoint.
 2. `derivePickups` → `collect` → `writeSave` per room, keyed by `level.iid`.
 3. Death counter increment + persistence.
-4. **Gate:** hazards kill and respawn correctly; strawberries persist across reload; death counter persists.
+4. Start menu (§8): NEW GAME / RESUME GAME selection — NEW GAME wipes the persisted save; RESUME GAME appears once the save carries progress (`hasPersistedProgress`).
+5. **Gate:** hazards kill and respawn correctly; strawberries persist across reload; death counter persists; NEW GAME starts from a wiped save, RESUME from the boot-loaded one.
 
 ### Stage 5: Juice + Polish
 1. Dash-into-wall hit-stop + shake; hard-landing shake; landing dust; dash trail.
@@ -979,10 +991,10 @@ Build in this order. Each stage must pass its gate before the next begins.
 ## 18. Install & Version
 
 ```bash
-npm install aicraft-engine@0.13.0
+npm install aicraft-engine@0.14.0
 ```
 
-`0.13.0` is the pin for this brief — the sustained-audio + seam-free-surfaces release. It builds on the `0.7.0` golden path and three earlier system drops:
+`0.14.0` is the pin for this brief — the direction-aware wall-jump + sustained-audio + seam-free-surfaces release. It builds on the `0.7.0` golden path and three earlier system drops:
 
 - **Camera brain** (`0.6.0`) — `createCameraBrain`, `updateCameraBrain`, `VirtualCamera`, deadzone follow, blends, bounds + letterbox. The blend fixes (continuity when a vcam source is removed, `dt=0` no-op, blend-clamp crossfade) are directly relevant to the §5.5 room-transition slide.
 - **LDtk loader** (`0.5.0` parser/translator/renderer, hardened through `0.6.0`) — `parseLdtkProject`, `ldtkLevelToLevelData`, `drawLdtkLevel`, `buildLdtkTilesetBundle`, `LDTK_DEFAULT_ENTITY_MAP`.
@@ -1008,7 +1020,7 @@ The **`0.9.0` feel + traversal + mantle additions** this brief now prefers — t
 - **Mantle wave (direction-aware grab+jump + ledge mantle)** — the §4.1/Stage 2 mechanics: neutral/toward grab+jumps launch straight up (`climbJump`), away keeps the climb-hop, and grab+Up near a clear lip mantles. New launch sources `'climbJump'`/`'mantle'`; new event pulses `climbJumpLaunched`/`mantled`; `wallJumpLaunched` deliberately widened to also fire for away climb-hops.
 - **Compatibility note (physics v11 → v12):** the feel channel + mantle change wall-grab trajectories ON PURPOSE (neutral/toward grab+jumps now rise straight up; grab+Up near a clear lip mantles), and the `moments` state field is replay data. `PlatformerEvents` gained `climbJumpLaunched` + `mantled`, and `wallJumpLaunched` was DELIBERATELY WIDENED to also fire for away climb-hops — consumers reading that pulse will start seeing climb-hops. v11 replays are rejected under v12. A consumer that manually constructs a complete `PlatformerState` must pass `moments: []`.
 
-The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix + loop `onError` need `0.7.0`; **the feel moments + transition/slide/fit helpers + the mantle wave need `0.9.0`; the re-arm detector + follow-compatible destination view need `0.11.0`; the seam-free LDtk surface cache needs `0.12.0`; the sustained-noise loop (`startNoiseLoop`/`NoiseLoopHandle`) + de-correlated noise bursts need `0.13.0`**. Do not pin below `0.13.0`.
+The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix + loop `onError` need `0.7.0`; **the feel moments + transition/slide/fit helpers + the mantle wave need `0.9.0`; the re-arm detector + follow-compatible destination view need `0.11.0`; the seam-free LDtk surface cache needs `0.12.0`; the sustained-noise loop (`startNoiseLoop`/`NoiseLoopHandle`) + de-correlated noise bursts need `0.13.0`; the direction-aware wall-jump (straight-up into-wall hop + `wallJumpGraceTime` away leap) needs `0.14.0`**. Do not pin below `0.14.0`.
 
 ---
 
@@ -1028,7 +1040,7 @@ The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers + spawn fix +
 | Collectible scoping | `collectibles['room-N']` by hand index | `collectibles[level.iid]` keyed by LDtk level id |
 | Tests | Unique `fnv1a` room hashes, ASCII dimension checks, 6-room content-counts, 6 E2E scripts | LDtk load smoke, dash-into-wall timing, **room-transition smoke**, persistence, determinism |
 | Forbidden patterns | `stepPlatformer`, manual gravity, ASCII shared template, full-tile outlines | + **legacy camera**, **`doubleJump*`**, **hand-built `LevelData`**, **tile-art recoloring** |
-| Version | `aicraft-engine@0.4.0` | `aicraft-engine@0.13.0` (feel + traversal + mantle + seam-free surfaces + sustained audio) |
+| Version | `aicraft-engine@0.4.0` | `aicraft-engine@0.14.0` (feel + traversal + mantle + seam-free surfaces + sustained audio + direction-aware wall-jump) |
 
 ---
 

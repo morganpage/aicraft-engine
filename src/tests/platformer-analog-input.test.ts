@@ -189,6 +189,7 @@ describe('Phase 9 — analog moveX', () => {
         side: null,
         lockTimer: 0,
         slideTimer: 0,
+        graceTimer: 0,
       };
     }
 

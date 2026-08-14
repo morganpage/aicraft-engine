@@ -52,6 +52,11 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   wallJumpVx: 220,
   wallJumpVy: -380,
   wallJumpLockTime: 0.12,
+  // Post-slide wall-jump grace: the away leap must stay reachable after the
+  // slide direction is released (the slide disengages the tick the intent
+  // leaves the wall). Sized with the jump feel timers — coyoteTime 0.08 /
+  // jumpBufferTime 0.1 — at ~6 ticks of slack.
+  wallJumpGraceTime: 0.1,
   dashEnabled: true,
   dashSpeed: 420,
   dashDuration: 0.12,

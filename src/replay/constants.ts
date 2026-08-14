@@ -152,6 +152,20 @@
  *     `replayHashFor` shifts (widened config/events/state + version 11→12).
  *     The mechanics are exercised in `platformer-wall-grab.test.ts` +
  *     `platformer-traces.test.ts`.
+ *   - `13` — direction-aware wall-jump + post-slide grace: a TRAJECTORY-
+ *     CHANGING update to the wall-slide family. A jump made while sliding
+ *     (holding INTO the wall, by definition of the slide gate) now launches
+ *     STRAIGHT UP (`vx = 0`, facing the wall — chimney-climbable) instead of
+ *     always being flung away from the wall; the classic away-from-wall leap
+ *     fires from a new `wallJumpGraceTime` (default 0.1 s) window after the
+ *     slide disengages, with neutral or away input while the wall is still
+ *     beside the actor. `WallSlideAbilityState` gained `graceTimer` (+ `side`
+ *     now persists through the grace window); `PlatformerConfig` gained
+ *     optional `wallJumpGraceTime`. Into-wall slide+jumps intentionally change
+ *     from up-and-away to straight-up; scenarios that never slide beside a
+ *     wall are trace-unchanged, but every `replayHashFor` shifts (widened
+ *     config/state + version 12→13). The mechanics are exercised in
+ *     `platformer-wall-slide.test.ts` + `platformer-traces.test.ts`.
  *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
    *     is missing or `0` was recorded under different math; its trajectories
    *     will not reproduce, so `assertPhysicsVersion` / `playReplay` REJECT it
@@ -161,4 +175,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 12;
+export const CURRENT_PHYSICS_VERSION = 13;

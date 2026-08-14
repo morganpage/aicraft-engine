@@ -1310,7 +1310,14 @@ function hasPhysicalSupport(
  * Build the initial `WallSlideAbilityState`.
  */
 function makeInitialWallSlideState(): WallSlideAbilityState {
-  return { kind: 'wallSlide', sliding: false, side: null, lockTimer: 0, slideTimer: 0 };
+  return {
+    kind: 'wallSlide',
+    sliding: false,
+    side: null,
+    lockTimer: 0,
+    slideTimer: 0,
+    graceTimer: 0,
+  };
 }
 
 /**

@@ -708,9 +708,11 @@ export interface JumpAbilityState extends AbilityState {
  * Wall-slide ability state. Tracks whether the actor is currently sliding down
  * a wall, which wall, a lock timer that prevents re-entering wall-slide
  * immediately after a wall-jump (so the wall-jump's horizontal push has time
- * to carry the actor away from the wall before slide re-engages), and the
+ * to carry the actor away from the wall before slide re-engages), the
  * decaying-slide timer that eases the clamp from `wallSlideStartMax` toward
- * `maxFallSpeed` (Phase 3b).
+ * `maxFallSpeed` (Phase 3b), and the post-slide wall-jump grace timer that
+ * keeps the away-leap wall jump reachable after the slide direction is
+ * released.
  */
 export interface WallSlideAbilityState extends AbilityState {
   /** Literal: `'wallSlide'`. */
@@ -727,6 +729,17 @@ export interface WallSlideAbilityState extends AbilityState {
    * `max = lerp(wallSlideStartMax, maxFallSpeed, slideTimer / wallSlideTime)`.
    */
   readonly slideTimer: number;
+  /**
+   * Remaining post-slide wall-jump grace in seconds (≥ 0). Armed to
+   * {@link PlatformerConfig.wallJumpGraceTime} on every sliding tick, then
+   * decays by `dt` (coyote-style). While `> 0` the wall jump stays armed after
+   * the slide disengages (direction released or turned away) and {@link side}
+   * is preserved so the grace jump knows which wall it leaps from — the slide
+   * itself only stays engaged while the player holds INTO the wall, so without
+   * this window the away-leap wall jump would be unreachable. Zeroed whenever
+   * a wall jump fires.
+   */
+  readonly graceTimer: number;
 }
 
 /**
@@ -1092,6 +1105,18 @@ export interface PlatformerConfig {
   readonly wallJumpVy: number;
   /** Wall-jump lock time in seconds (prevents re-wall-slide briefly). */
   readonly wallJumpLockTime: number;
+  /**
+   * Post-slide wall-jump grace in seconds. The wall jump stays armed for this
+   * long after the slide disengages (direction released or turned away): a jump
+   * press with neutral or away input during the window fires the classic
+   * away-from-wall leap. Without it the away leap would be unreachable — the
+   * slide only stays engaged while the player holds INTO the wall, so every
+   * jump made while sliding would be a straight-up into-wall hop. Sized with
+   * the jump feel timers (`coyoteTime` 0.08 / `jumpBufferTime` 0.1); set to `0`
+   * to disable (wall jumps then fire only on active slides). Omitted means the
+   * default (`0.1`).
+   */
+  readonly wallJumpGraceTime?: number;
   /** Master switch for the dash ability. */
   readonly dashEnabled: boolean;
   /** Dash speed in px/s. */

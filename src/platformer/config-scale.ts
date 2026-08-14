@@ -138,6 +138,7 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   // Times (seconds) — COPIED.
   wallSlideTime: 'time',
   wallJumpLockTime: 'time',
+  wallJumpGraceTime: 'time',
   dashDuration: 'time',
   dashStartupTime: 'time',
   dashCooldown: 'time',

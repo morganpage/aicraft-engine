@@ -431,15 +431,16 @@ describe('physicsVersion mismatch', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Mantle wave — the explicit 11→12 boundary. v12 changed wall-grab
-  // trajectories on purpose (direction-aware climb-jump + ledge mantle,
-  // widened events/config/state), so a v11 replay no longer reproduces under
-  // v12 and must be rejected; a v12 replay must play back deterministically
-  // with the feel-moment channel intact.
+  // Direction-aware wall-jump — the explicit 12→13 boundary. v13 changed
+  // wall-slide trajectories on purpose (into-wall jumps go straight up + a
+  // post-slide grace window for the away leap, widened config/state), so a
+  // v12 replay no longer reproduces under v13 and must be rejected; a v13
+  // replay must play back deterministically with the feel-moment channel
+  // intact.
   // -----------------------------------------------------------------------
-  it('a v11 replay (the immediately-previous physics version) is rejected under v12', () => {
-    expect(CURRENT_PHYSICS_VERSION).toBe(12);
-    const replay = buildReplayWithVersion(11);
+  it('a v12 replay (the immediately-previous physics version) is rejected under v13', () => {
+    expect(CURRENT_PHYSICS_VERSION).toBe(13);
+    const replay = buildReplayWithVersion(12);
     let caught: PhysicsVersionMismatchError | null = null;
     try {
       assertPhysicsVersion(replay);
@@ -447,14 +448,14 @@ describe('physicsVersion mismatch', () => {
       caught = e as PhysicsVersionMismatchError;
     }
     expect(caught).not.toBeNull();
-    expect(caught?.expected).toBe(12);
-    expect(caught?.actual).toBe(11);
+    expect(caught?.expected).toBe(13);
+    expect(caught?.actual).toBe(12);
     expect(() => playReplay(replay, (s) => s, 1 / 60)).toThrow(
       PhysicsVersionMismatchError,
     );
   });
 
-  it('a v12 replay plays back deterministically with the moments channel intact', () => {
+  it('a v13 replay plays back deterministically with the moments channel intact', () => {
     const initial = buildInitialState(0);
     const solids = [
       { x: -100, y: 100, width: 400, height: 16, id: 'floor' },

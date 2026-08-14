@@ -311,11 +311,12 @@ describe('platformer multi-tick baseline traces', () => {
     // bump; moveX widened to number, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1157456551);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2415347297);
   });
 
   // =========================================================================
-  // 2. Wall-jump impulse persistence (Phase 0b fix).
+  // 2. Wall-jump impulse persistence (Phase 0b fix) — AWAY LEAP via the
+  // post-slide grace window (physics v13).
   //
   // FIXED (was a known bug): same root cause as scenario 1. The wall-slide
   // ability used to set `core.vy = wallJumpVy` directly; the next tick the
@@ -324,12 +325,17 @@ describe('platformer multi-tick baseline traces', () => {
   // to strongly positive one tick later). Phase 0b: the wall-jump now emits a
   // `LaunchIntent` the kernel applies, so the upward impulse PERSISTS — vy
   // stays negative (rising) for several ticks after the wall-jump instead of
-  // snapping back to a fall. The trace below shows vy remaining negative
-  // (rising) for multiple ticks after the wall-jump tick.
+  // snapping back to a fall.
+  //
+  // v13: the away leap now fires from the GRACE window. The slide disengages
+  // the tick the direction leaves the wall, so the script releases INTO-wall
+  // at tick 5 (grace arms, `wallJumpGraceTime` 0.1 s) and presses jump at
+  // tick 6 with neutral input → the classic away-from-wall push. (Before v13
+  // the script had to keep holding INTO the wall through the press — under
+  // v13 that press is the straight-up hop of scenario 2b instead.)
   //
   // Setup: actor starts airborne flush against a right wall, holds into it,
-  // falls until wall-slide engages and coyote expires, then presses jump to
-  // wall-jump.
+  // falls until wall-slide engages and coyote expires, releases, then jumps.
   // =========================================================================
   it('wall-jump impulse persists across ticks (single vy authority)', () => {
     const config: PlatformerConfig = DEFAULT_PLATFORMER_CONFIG;
@@ -341,14 +347,208 @@ describe('platformer multi-tick baseline traces', () => {
     // several ticks (coyote expires) before the wall-jump.
     const initial = createPlatformerState(184, 100, config);
 
-    // ticks0-6: hold INTO the wall + fall (wall-slide engages ~tick1; the
-    // decaying clamp eases vy upward from wallSlideStartMax). tick6: STILL
-    // holding into the wall, press jump → wall-jump fires. (Phase 3b: slide
-    // now requires directional intent, so moveX must point into the wall on
-    // the jump tick — releasing first would disengage slide and the wall-jump
-    // gate `sliding && jump.pressed` would not fire.) ticks7-11: release
-    // direction; the wall-jump lockout (forceMoveX) carries vx, and vy stays
-    // negative (rising) for several ticks — the impulse is NOT discarded.
+    // ticks0-4: hold INTO the wall + fall (wall-slide engages ~tick1; the
+    // decaying clamp eases vy upward from wallSlideStartMax). tick5: RELEASE
+    // the direction — the slide disengages and the post-slide grace window
+    // arms (0.1 s ≈ 6 ticks). tick6: neutral direction + jump press → the
+    // grace leap fires the classic away push. ticks7-11: stay neutral; the
+    // wall-jump lockout (forceMoveX) carries vx, and vy stays negative
+    // (rising) for several ticks — the impulse is NOT discarded.
+    const inputs = [
+      makeInput({ moveX: 1, jump: 'idle' }),
+      makeInput({ moveX: 1, jump: 'idle' }),
+      makeInput({ moveX: 1, jump: 'idle' }),
+      makeInput({ moveX: 1, jump: 'idle' }),
+      makeInput({ moveX: 1, jump: 'idle' }),
+      makeInput({ moveX: 0, jump: 'idle' }),
+      makeInput({ moveX: 0, jump: 'press' }),
+      makeInput({ moveX: 0, jump: 'idle' }),
+      makeInput({ moveX: 0, jump: 'idle' }),
+      makeInput({ moveX: 0, jump: 'idle' }),
+      makeInput({ moveX: 0, jump: 'idle' }),
+      makeInput({ moveX: 0, jump: 'idle' }),
+    ];
+
+    const trace = runTrace({ initial, inputs, solids, config });
+
+    expect(trace).toMatchInlineSnapshot(`
+      [
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 0,
+          "vx": 0,
+          "vy": 20.408163,
+          "wallSliding": false,
+          "x": 184,
+          "y": 100.340136,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 1,
+          "vx": 0,
+          "vy": 40.816327,
+          "wallSliding": true,
+          "x": 184,
+          "y": 101.020408,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 2,
+          "vx": 0,
+          "vy": 61.22449,
+          "wallSliding": true,
+          "x": 184,
+          "y": 102.040816,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 3,
+          "vx": 0,
+          "vy": 81.632653,
+          "wallSliding": true,
+          "x": 184,
+          "y": 103.401361,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 4,
+          "vx": 0,
+          "vy": 102.040816,
+          "wallSliding": true,
+          "x": 184,
+          "y": 105.102041,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 5,
+          "vx": 0,
+          "vy": 122.44898,
+          "wallSliding": false,
+          "x": 184,
+          "y": 107.142857,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 6,
+          "vx": -200,
+          "vy": -359.591837,
+          "wallSliding": false,
+          "x": 180.666667,
+          "y": 101.14966,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 7,
+          "vx": -200,
+          "vy": -100.979592,
+          "wallSliding": false,
+          "x": 177.333333,
+          "y": 99.466667,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 8,
+          "vx": -200,
+          "vy": -49.959184,
+          "wallSliding": false,
+          "x": 174,
+          "y": 98.634014,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 9,
+          "vx": -200,
+          "vy": 1.061224,
+          "wallSliding": false,
+          "x": 170.666667,
+          "y": 98.651701,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 10,
+          "vx": -200,
+          "vy": 21.469388,
+          "wallSliding": false,
+          "x": 167.333333,
+          "y": 99.009524,
+        },
+        {
+          "climbing": false,
+          "dashTimer": 0,
+          "onGround": false,
+          "phase": "falling",
+          "tick": 11,
+          "vx": -200,
+          "vy": 41.877551,
+          "wallSliding": false,
+          "x": 164,
+          "y": 99.707483,
+        },
+      ]
+    `);
+    expect(traceHash(trace)).toBe(2645614738);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(4081963575);
+  });
+
+  // =========================================================================
+  // 2b. Direction-aware into-wall wall-jump — STRAIGHT UP (physics v13).
+  //
+  // The bug this fixes: the wall-jump push used to always point AWAY from the
+  // wall, ignoring input. Since the slide only stays engaged while holding
+  // INTO the wall, sliding + jump ALWAYS flung the player off the wall it was
+  // holding into — chimney-climbing a single wall was impossible. v13: a jump
+  // made while sliding (into-wall by definition of the slide gate) launches
+  // straight up (`vx = 0`, facing the wall). The kernel resolves
+  // `forceMoveX = sign(0) = 0`, so the lockout PRESERVES vx ≈ 0 (no sideways
+  // drift) while suppressing steering through `wallJumpLockTime` — a
+  // committed vertical hop. vy stays negative (rising) for several ticks: the
+  // upward impulse persists exactly like the away leap above.
+  // =========================================================================
+  it('into-wall wall-jump goes straight up (vx pinned at 0 through the lockout)', () => {
+    const config: PlatformerConfig = DEFAULT_PLATFORMER_CONFIG;
+    const solids: Solid[] = [
+      FLOOR_300,
+      { id: 'wall-r', x: 200, y: 0, width: 16, height: 300 },
+    ];
+    const initial = createPlatformerState(184, 100, config);
+
+    // ticks0-5: hold INTO the wall + fall (slide engages ~tick1). tick6:
+    // STILL holding into the wall, press jump → straight-up hop. ticks7-8:
+    // keep holding in — the lockout suppresses steering, vx stays 0, the
+    // actor rises flush beside the wall. ticks9-11: release; still airborne.
     const inputs = [
       makeInput({ moveX: 1, jump: 'idle' }),
       makeInput({ moveX: 1, jump: 'idle' }),
@@ -357,8 +557,8 @@ describe('platformer multi-tick baseline traces', () => {
       makeInput({ moveX: 1, jump: 'idle' }),
       makeInput({ moveX: 1, jump: 'idle' }),
       makeInput({ moveX: 1, jump: 'press' }),
-      makeInput({ moveX: 0, jump: 'idle' }),
-      makeInput({ moveX: 0, jump: 'idle' }),
+      makeInput({ moveX: 1, jump: 'idle' }),
+      makeInput({ moveX: 1, jump: 'idle' }),
       makeInput({ moveX: 0, jump: 'idle' }),
       makeInput({ moveX: 0, jump: 'idle' }),
       makeInput({ moveX: 0, jump: 'idle' }),
@@ -446,10 +646,10 @@ describe('platformer multi-tick baseline traces', () => {
           "onGround": false,
           "phase": "falling",
           "tick": 6,
-          "vx": -200,
+          "vx": 0,
           "vy": -359.591837,
           "wallSliding": false,
-          "x": 180.666667,
+          "x": 184,
           "y": 101.14966,
         },
         {
@@ -458,10 +658,10 @@ describe('platformer multi-tick baseline traces', () => {
           "onGround": false,
           "phase": "falling",
           "tick": 7,
-          "vx": -200,
+          "vx": 0,
           "vy": -100.979592,
           "wallSliding": false,
-          "x": 177.333333,
+          "x": 184,
           "y": 99.466667,
         },
         {
@@ -470,10 +670,10 @@ describe('platformer multi-tick baseline traces', () => {
           "onGround": false,
           "phase": "falling",
           "tick": 8,
-          "vx": -200,
+          "vx": 0,
           "vy": -49.959184,
           "wallSliding": false,
-          "x": 174,
+          "x": 184,
           "y": 98.634014,
         },
         {
@@ -482,10 +682,10 @@ describe('platformer multi-tick baseline traces', () => {
           "onGround": false,
           "phase": "falling",
           "tick": 9,
-          "vx": -200,
+          "vx": 0,
           "vy": 1.061224,
           "wallSliding": false,
-          "x": 170.666667,
+          "x": 184,
           "y": 98.651701,
         },
         {
@@ -494,10 +694,10 @@ describe('platformer multi-tick baseline traces', () => {
           "onGround": false,
           "phase": "falling",
           "tick": 10,
-          "vx": -200,
+          "vx": 0,
           "vy": 21.469388,
           "wallSliding": false,
-          "x": 167.333333,
+          "x": 184,
           "y": 99.009524,
         },
         {
@@ -506,32 +706,16 @@ describe('platformer multi-tick baseline traces', () => {
           "onGround": false,
           "phase": "falling",
           "tick": 11,
-          "vx": -200,
+          "vx": 0,
           "vy": 41.877551,
           "wallSliding": false,
-          "x": 164,
+          "x": 184,
           "y": 99.707483,
         },
       ]
     `);
-    expect(traceHash(trace)).toBe(1528242897);
-    // Phase 4: trace UNCHANGED (no moveY set → no fast-fall, no dash), replay
-    // hash shifts (config + physicsVersion 3→4).
-    // Phase 5: trace UNCHANGED, replay hash shifts (config + physicsVersion 4→5).
-    // Phase 6: trace UNCHANGED (no grab), replay hash shifts (wall-grab config +
-    // slice + stamina + physicsVersion 5→6).
-    // Phase 7: trace UNCHANGED (the wall-speed-retention restore check fires
-    // during the brush ticks 0–5 but the probe finds the wall each tick, so no
-    // restore; on the wall-jump tick the actor's vx flips sign and retention
-    // CANCELS — verified the lockout vx is preserved). Only replay hash shifts
-    // (config + locomotion gained the Phase 7 fields incl. the
-    // wallSpeedRetaining latch + version 6→7).
-    // Phase 8: trace UNCHANGED (no spring/crystal solid), replay hash shifts
-    // (config spring fields + interactions field + physicsVersion 7→8; Phase
-    // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
-    // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
-    // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(345736703);
+    expect(traceHash(trace)).toBe(3439204586);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2779025927);
   });
 
   // =========================================================================
@@ -1080,8 +1264,8 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(4250948109);
-    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(4022049556);
+    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(2827976253);
+    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(3484848052);
   });
 
   // =========================================================================
@@ -1240,7 +1424,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(379803257);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2494056571);
   });
 
   // =========================================================================
@@ -1520,7 +1704,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3157544254);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3922811632);
   });
 
   // =========================================================================
@@ -1583,7 +1767,7 @@ describe('platformer multi-tick baseline traces', () => {
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
     expect(traceHash(trace)).toBe(2056703830);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(992240508);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3897492110);
   });
 
   // =========================================================================
@@ -1684,7 +1868,7 @@ describe('platformer multi-tick baseline traces', () => {
     // Phase 9 re-shifted via 8→9 version bump; digital trace unchanged.
     // Phase 10 re-shifted (new groundDuckEnabled config field + 9→10 version;
     // digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1538112287);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3769366339);
   });
 });
 
@@ -1725,7 +1909,7 @@ describe('platformer multi-tick baseline traces', () => {
     expect(events.filter((e) => e.climbJumpLaunched).length).toBe(1);
 
     expect(traceHash(trace)).toBe(2990474143);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1984271317);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2307623331);
   });
 
   // =========================================================================
@@ -1759,7 +1943,7 @@ describe('platformer multi-tick baseline traces', () => {
     expect(finalX(trace)).toBeLessThan(184);
 
     expect(traceHash(trace)).toBe(2422085024);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1991849031);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3527304441);
   });
 
   // =========================================================================
@@ -1820,7 +2004,7 @@ describe('platformer multi-tick baseline traces', () => {
     }
 
     expect(traceHash(trace)).toBe(4269679983);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(1315369201);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(4077574831);
   });
 
   // =========================================================================
@@ -1860,5 +2044,5 @@ describe('platformer multi-tick baseline traces', () => {
     expect(trace.every((r) => r.x === 184)).toBe(true);
 
     expect(traceHash(trace)).toBe(1369465528);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(4064649648);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2027573966);
   });

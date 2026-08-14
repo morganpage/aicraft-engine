@@ -83,6 +83,7 @@ function makeState(overrides: Partial<WallSlideAbilityState> = {}): WallSlideAbi
     side: null,
     lockTimer: 0,
     slideTimer: 0,
+    graceTimer: 0,
     ...overrides,
   };
 }
@@ -204,32 +205,150 @@ describe('wallSlideAbility', () => {
     expect(r.core.vy).toBe(30);
   });
 
-  it('wall-jump: sliding + holding into wall + jump.pressed + lockTimer=0 → emits launch (vy/vx) + facing, lockTimer set', () => {
+  // -------------------------------------------------------------------------
+  // Direction-aware wall-jump (physics v13). The slide only stays engaged
+  // while the player holds INTO the wall, so an active-slide jump press is by
+  // definition into-wall → STRAIGHT UP (`vx = 0`, facing the wall — the actor
+  // can chimney-climb a single wall instead of being flung off it). The
+  // classic away-from-wall leap fires from the post-slide grace window
+  // (`wallJumpGraceTime`, coyote-style) with neutral or away input.
+  // -------------------------------------------------------------------------
+  it('wall-jump (into-wall): sliding + holding into wall + jump.pressed + lockTimer=0 → STRAIGHT UP (vx=0), facing the wall', () => {
     const core = makeCore({ vx: 0, vy: 60, facing: -1 });
     const state = makeState({ sliding: true, side: 'left', lockTimer: 0 });
     const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), -1), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
     // Phase 0b: wall-jump emits a LaunchIntent (kernel applies vy/vx) instead
-    // of writing core.vx/core.vy directly. Facing is still set here.
+    // of writing core.vx/core.vy directly. Facing is still set here. v13: the
+    // slide gate requires into-wall input, so the launch is a straight-up hop.
     expect(r.launch).toBeDefined();
     expect(r.launch?.vy).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpVy);
-    expect(r.launch?.vx).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpVx);
+    expect(r.launch?.vx).toBe(0);
     expect(r.launch?.source).toBe('wallJump');
-    expect(r.core.facing).toBe(1);
+    expect(r.core.facing).toBe(-1); // facing the LEFT wall
     expect(r.events.wallJumpLaunched).toBe(true);
     expect(r.state.sliding).toBe(false);
     expect(r.state.side).toBe(null);
     expect(r.state.lockTimer).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpLockTime);
+    expect(r.state.graceTimer).toBe(0);
   });
 
-  it('wall-jump on right wall: vx is negative (pushed left)', () => {
+  it('wall-jump (into-wall) on right wall: straight up, facing the right wall', () => {
     const core = makeCore({ vx: 0, vy: 60, facing: 1 });
     const state = makeState({ sliding: true, side: 'right', lockTimer: 0 });
     const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 1), DEFAULT_PLATFORMER_CONFIG, [WALL_RIGHT]), state);
     expect(r.launch).toBeDefined();
-    expect(r.launch?.vx).toBe(-DEFAULT_PLATFORMER_CONFIG.wallJumpVx);
+    expect(r.launch?.vx).toBe(0);
     expect(r.launch?.vy).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpVy);
+    expect(r.core.facing).toBe(1); // facing the RIGHT wall
+    expect(r.events.wallJumpLaunched).toBe(true);
+  });
+
+  it('grace leap: slide released (neutral input) + jump within grace → away push + facing away', () => {
+    // The tick after a sliding tick (direction released): grace is armed and
+    // `side` is remembered. Neutral + jump → the classic away-from-wall leap.
+    const core = makeCore({ vx: 0, vy: 120, facing: -1 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 0), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vx).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpVx); // away from the LEFT wall = rightward
+    expect(r.launch?.vy).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpVy);
+    expect(r.launch?.source).toBe('wallJump');
+    expect(r.core.facing).toBe(1); // face the leap
+    expect(r.events.wallJumpLaunched).toBe(true);
+    expect(r.state.sliding).toBe(false);
+    expect(r.state.side).toBe(null);
+    expect(r.state.graceTimer).toBe(0);
+    expect(r.state.lockTimer).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpLockTime);
+  });
+
+  it('grace leap: holding AWAY + jump within grace → away push (right wall → pushed left)', () => {
+    const core = makeCore({ vx: 0, vy: 120, facing: 1 });
+    const state = makeState({ sliding: false, side: 'right', graceTimer: 0.09, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), -1), DEFAULT_PLATFORMER_CONFIG, [WALL_RIGHT]), state);
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vx).toBe(-DEFAULT_PLATFORMER_CONFIG.wallJumpVx);
     expect(r.core.facing).toBe(-1);
     expect(r.events.wallJumpLaunched).toBe(true);
+  });
+
+  it('grace expired: jump after the window → no launch (the plain jump owns the press)', () => {
+    const core = makeCore({ vx: 0, vy: 120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 0), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeUndefined();
+    expect(r.events.wallJumpLaunched).toBe(false);
+    expect(r.state.side).toBe(null); // side cleared once the grace window is gone
+  });
+
+  it('grace + grounded: a jump on the ground within the window is NOT hijacked', () => {
+    // wallJump OUTRANKS jump in launch arbitration, so the grace leap must not
+    // fire while grounded — the plain ground jump would be swallowed.
+    const core = makeCore({ onGround: true, vy: 0 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 0), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeUndefined();
+    expect(r.events.wallJumpLaunched).toBe(false);
+  });
+
+  it('grace + grab held: the wall-grab ability owns the wall (no wallSlide launch)', () => {
+    const core = makeCore({ vx: 0, vy: 120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0 });
+    const input: PlatformerInput = {
+      ...makeInput(pressEdge(true), 0),
+      grab: { held: true, pressed: false, released: false },
+    };
+    const r = wallSlideAbility.advance(makeCtx(core, input, DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('grace + fast-fall (moveY=1): no grace leap (mirrors the slide suppression)', () => {
+    const core = makeCore({ vx: 0, vy: 120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 0, 1), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('grace + wall gone: no leap off a wall that is no longer beside the actor', () => {
+    const core = makeCore({ vx: 0, vy: 120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 0), DEFAULT_PLATFORMER_CONFIG, []), state);
+    expect(r.launch).toBeUndefined();
+    expect(r.events.wallJumpLaunched).toBe(false);
+  });
+
+  it('grace + holding INTO the wall but rising (slide cannot re-engage, vy < 0) → no launch', () => {
+    // Into-wall never leaps away; when the slide also cannot re-engage (rising
+    // beside the wall), the press is simply not a wall jump.
+    const core = makeCore({ vx: 0, vy: -120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), -1), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('grace + lockTimer > 0 → no grace leap (the lock outranks the window)', () => {
+    const core = makeCore({ vx: 0, vy: 120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.09, lockTimer: 0.05 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 0), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('grace timer: armed to the full window on every sliding tick', () => {
+    const core = makeCore({ vy: 60 });
+    const state = makeState({ sliding: true, side: 'left', lockTimer: 0, graceTimer: 0.02 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(idleEdge(), -1), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.state.sliding).toBe(true);
+    expect(r.state.graceTimer).toBeCloseTo(DEFAULT_PLATFORMER_CONFIG.wallJumpGraceTime ?? 0.1, 6);
+  });
+
+  it('grace timer decays after the slide disengages; side persists through the window', () => {
+    // One tick after a sliding tick (grace was armed at full): direction stays
+    // released → grace decays again and the remembered side survives.
+    const core = makeCore({ vy: 120 });
+    const state = makeState({ sliding: false, side: 'left', graceTimer: 0.1 - DT, lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(idleEdge(), 0), DEFAULT_PLATFORMER_CONFIG, [WALL_LEFT]), state);
+    expect(r.state.sliding).toBe(false);
+    expect(r.state.graceTimer).toBeCloseTo(0.1 - 2 * DT, 6);
+    expect(r.state.side).toBe('left'); // remembered while grace is live
   });
 
   it('wall-jump lock: lockTimer > 0 → wall-slide cannot reactivate', () => {
