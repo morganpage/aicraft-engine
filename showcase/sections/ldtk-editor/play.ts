@@ -465,7 +465,7 @@ export function createPlaySession(
   function compileLevel(ldtkLevel: LdtkLevel, levelData: LevelData, semantics: GeneratedTileSemantics): LevelRuntime {
     const compiled = compileGeneratedLevel(
       { level: levelData, tileSemantics: semantics },
-      { config, playerWidth, playerHeight },
+      { config, playerWidth, playerHeight, spawnResolution: 'rest-on-surface' },
     );
     const ladderValue = ladderValueFromProject(project, ldtkLevel) ?? LADDER_INT_GRID_VALUE;
     const ladders = makeLadderMask(ldtkLevel, levelData.tileSize, ladderValue);

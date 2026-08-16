@@ -318,10 +318,19 @@ describe('topology room level', () => {
 describe('compiled scenes', () => {
   it('lifts tile geometry into collision solids for both validation scenes', () => {
     for (const scene of [createGeneratedRoomScene(), createTopologyRoomScene()]) {
-      const compiled = compileGeneratedLevel(scene);
+      // Fixtures author the spawn as an actor-top-left rect; compileGeneratedLevel
+      // defaults to the LDtk feet-center convention, so the override is required.
+      const compiled = compileGeneratedLevel(scene, { spawnResolution: 'actor-top-left' });
       expect(compiled.staticSolids.length).toBeGreaterThan(0);
       expect(compiled.initialState.core.x).toBe(scene.level.spawn.x);
     }
+  });
+
+  it('defaults spawnResolution to rest-on-surface (LDtk feet-center anchors)', () => {
+    const scene = createGeneratedRoomScene();
+    const compiled = compileGeneratedLevel(scene);
+    // Default player width is 16, so rest-on-surface shifts x by half an actor.
+    expect(compiled.initialState.core.x).toBe(scene.level.spawn.x - 8);
   });
 
   it('classifies fixture tile values the way the shared semantics say', () => {

@@ -221,9 +221,11 @@ interface SceneRuntime {
 }
 
 function createSceneRuntime(scene: TileRoomScene): SceneRuntime {
+  // These fixtures author the spawn entity as an actor-top-left tile rect, not
+  // the LDtk feet-center anchor `compileGeneratedLevel` defaults to.
   const compiled = compileGeneratedLevel(
     { level: scene.level, tileSemantics: scene.tileSemantics },
-    { config: TILE_ROOM_CONFIG },
+    { config: TILE_ROOM_CONFIG, spawnResolution: 'actor-top-left' },
   );
   return {
     scene,

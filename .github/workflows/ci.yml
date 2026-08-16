@@ -40,6 +40,12 @@ jobs:
       - name: Test (vitest)
         run: npm test
 
+      - name: Showcase typecheck
+        run: npm run showcase:typecheck
+
+      - name: Showcase tests
+        run: npm run showcase:test
+
       - name: Build dist
         run: npm run build:dist
 
