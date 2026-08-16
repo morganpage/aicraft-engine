@@ -1,4 +1,4 @@
-# Flipside — A Six-Room Gravity-Flip Showcase on `aicraft-engine@0.15.0`
+# Flipside — A Six-Room Gravity-Flip Showcase on `aicraft-engine@0.16.0`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief: concept, architecture, exact data contracts, ASCII room layouts, implementation stages, acceptance gates, and anti-shortcut checks. The agent should produce a single runnable Vite + TypeScript browser game that imports everything from `aicraft-engine` (the npm package) and writes **no** re-implementations of what the engine already provides.
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo.** It is a designed game with six distinct rooms, each with a unique visual identity, escalating mechanics, and a hand-authored ASCII tile layout. The previous implementation failed because it used one shared box template for all rooms, produced a 1D corridor with no visual variety, had no enemies, no checkpoints, and a 1.85-second one-bar music loop. This brief fixes every one of those failures.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.15.0`.** Do not hand-roll fixed-step loops, AABB collision, cameras, tile rendering, joypad input, particle bursts, the music sequencer, audio synthesis, or chiptune OSC graphs. If you find yourself writing a `requestAnimationFrame` accumulator, a gravity-flip velocity integrator, an `OscillatorNode` graph, a hand-drawn tile renderer, or a `Math.random()` in the simulation, stop and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.16.0`.** Do not hand-roll fixed-step loops, AABB collision, cameras, tile rendering, joypad input, particle bursts, the music sequencer, audio synthesis, or chiptune OSC graphs. If you find yourself writing a `requestAnimationFrame` accumulator, a gravity-flip velocity integrator, an `OscillatorNode` graph, a hand-drawn tile renderer, or a `Math.random()` in the simulation, stop and use the engine instead.
 
 ---
 
@@ -19,14 +19,14 @@
 ```bash
 npm create vite@latest flipside -- --template vanilla-ts
 cd flipside
-npm install aicraft-engine@0.15.0
+npm install aicraft-engine@0.16.0
 ```
 
-> This brief targets the published `0.15.0` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.15.0`** — the export surface has been additive, so the signed-gravity controllers, the empty ability pipelines, and the fixed-step `advanceSequencer` determinism seam that headlines this brief are all unchanged. Flipside's kernel is `PUZZLE_PLATFORMER` with no abilities, so the wall-jump/mantle/dash-tech changes across `0.9.0`–`0.14.0` cannot reach it. Two compatibility breaks regardless: the replay physics version is now **13**, and a manually-constructed `PlatformerState` needs `moments: []`. One addition worth knowing: `0.13.0` de-correlated `playNoise` burst starts and added `startNoiseLoop` for sustained sounds — relevant if any of the six rooms wants a continuous ambience under the music layer rather than a per-tick retrigger.
+> This brief targets the published `0.16.0` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.16.0`** — the export surface has been additive, so the signed-gravity controllers, the empty ability pipelines, and the fixed-step `advanceSequencer` determinism seam that headlines this brief are all unchanged. Flipside's kernel is `PUZZLE_PLATFORMER` with no abilities, so the wall-jump/mantle/dash-tech changes across `0.9.0`–`0.14.0` cannot reach it. Two compatibility breaks regardless: the replay physics version is now **13**, and a manually-constructed `PlatformerState` needs `moments: []`. One addition worth knowing: `0.13.0` de-correlated `playNoise` burst starts and added `startNoiseLoop` for sustained sounds — relevant if any of the six rooms wants a continuous ambience under the music layer rather than a per-tick retrigger.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
-- **`aicraft-engine@0.15.0`** is your only runtime dependency. Import **only** from the root barrel:
+- **`aicraft-engine@0.16.0`** is your only runtime dependency. Import **only** from the root barrel:
   ```ts
   import {
     // primitives
@@ -849,10 +849,10 @@ Scripted input sequences that drive the player from A → B → C → F. These a
 ## 13. Install & Version
 
 ```bash
-npm install aicraft-engine@0.15.0
+npm install aicraft-engine@0.16.0
 ```
 
-`aicraft-engine@0.15.0` is published and stable. Do not pin below `0.15.0`. The brief targets the published `0.15.0` API exactly — signed platformer gravity, the fixed-step `advanceSequencer` step-boundary fix, `createNoteFirePlayer`, `compileLevel` returning `compiled.staticSolids` (tile-derived + solid entity geometry) and `compiled.tileQuery` (separate tile classification lookup), and the enemy archetypes pipeline (`compileEnemies`, `stepEnemies`, `createEnemyBehaviorRegistry`).
+`aicraft-engine@0.16.0` is published and stable. Do not pin below `0.16.0`. The brief targets the published `0.16.0` API exactly — signed platformer gravity, the fixed-step `advanceSequencer` step-boundary fix, `createNoteFirePlayer`, `compileLevel` returning `compiled.staticSolids` (tile-derived + solid entity geometry) and `compiled.tileQuery` (separate tile classification lookup), and the enemy archetypes pipeline (`compileEnemies`, `stepEnemies`, `createEnemyBehaviorRegistry`).
 
 ---
 
@@ -862,7 +862,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: Terrain Prototype + Visual Decision
 
-1. Set up Vite + TypeScript + `aicraft-engine@0.15.0`.
+1. Set up Vite + TypeScript + `aicraft-engine@0.16.0`.
 2. Implement the connected terrain renderer (`tile-style.ts`) with all six motifs.
 3. Produce a six-style sample sheet (one 320×240 screenshot per motif).
 4. **Gate:** Visual review confirms six distinct motifs. No two rooms look the same.
