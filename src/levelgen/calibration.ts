@@ -318,12 +318,15 @@ const DEFAULT_MISSED_DASH_CHANCE = 0.1;
  * The wrapper is deterministic — it uses the tick number and a seeded RNG
  * derived from the level canonical hash for the missed-dash chance.
  *
+ * Exported at the module level (not the barrel) so the delay semantics are
+ * unit-testable without driving a full verification run.
+ *
  * @param basePolicy  - The bot policy to wrap.
  * @param config      - Perturbation parameters.
  * @param rng         - A seeded RNG for missed-dash decisions.
  * @returns A degraded bot policy function.
  */
-function createDegradedPolicy(
+export function createDegradedPolicy(
   basePolicy: BotPolicy,
   config: Required<PerturbationConfig>,
   rng: () => number,
@@ -354,20 +357,27 @@ function createDegradedPolicy(
     // Dash is nullable — handle gracefully
     let dash: PolledEdge | null = baseInput.dash;
 
-    // Jump delay: delay jump presses
-    if (jumpPressed && !lastJumpPressed) {
+    // Jump delay: re-fire the press N ticks later. Two hazards make a naive
+    // counter wrong. The base `pressed` edge lasts exactly one tick, so gating
+    // the re-fire on it drops every delay ≥ 2 (the edge is long gone at
+    // expiry). And decrementing on the arming tick makes N=1 fire on the SAME
+    // tick — zero delay. So: latch the press (counter > 0), skip the decrement
+    // on the arming tick so N means N ticks, and fire a synthetic edge on
+    // expiry regardless of the current base edge. A delay of 0 is a pure
+    // passthrough (nothing is armed).
+    if (jumpPressed && !lastJumpPressed && config.jumpDelayTicks > 0) {
       jumpDelayed = config.jumpDelayTicks;
       // Don't press jump yet — delay it
       jumpPressed = false;
       jumpHeld = false;
-    }
-
-    if (jumpDelayed > 0) {
+    } else if (jumpDelayed > 0) {
       jumpDelayed--;
-      if (jumpDelayed === 0 && baseInput.jump.pressed) {
-        // Now press jump after the delay
+      if (jumpDelayed === 0) {
+        // Fire the latched press — the base edge cannot still be true here.
         jumpPressed = true;
         jumpHeld = true;
+      } else {
+        jumpHeld = false;
       }
     }
 

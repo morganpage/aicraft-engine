@@ -12,6 +12,11 @@ function unique(points: readonly TerrainArtPixelPoint[]): TerrainArtPixelPoint[]
 
 /** Rasterize an inclusive one-pixel Bresenham line. */
 export function terrainArtLinePixels(from: TerrainArtPixelPoint, to: TerrainArtPixelPoint): TerrainArtPixelPoint[] {
+  // Non-finite endpoints (e.g. mouse math gone wrong) never satisfy the
+  // terminating equality below — without this guard the loop never exits.
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y) || !Number.isFinite(to.x) || !Number.isFinite(to.y)) {
+    return [];
+  }
   const result: TerrainArtPixelPoint[] = [];
   let x = from.x; let y = from.y;
   const dx = Math.abs(to.x - x); const sx = x < to.x ? 1 : -1;

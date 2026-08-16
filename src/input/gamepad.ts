@@ -165,15 +165,6 @@ export function createGamepadAdapter(config: GamepadConfig): GamepadAdapter {
     // parity with the keyboard adapter and to support a future v2.
   };
 
-  if (typeof window !== 'undefined') {
-    try {
-      window.addEventListener('gamepadconnected', onConnect as EventListener);
-      window.addEventListener('gamepaddisconnected', onDisconnect as EventListener);
-    } catch {
-      // A broken window never crashes the game.
-    }
-  }
-
   if (!nav) {
     return {
       poll: () => ({}),
@@ -181,6 +172,17 @@ export function createGamepadAdapter(config: GamepadConfig): GamepadAdapter {
         // No host was ever attached.
       },
     };
+  }
+
+  // Attached only once a host is confirmed, so the no-nav adapter above never
+  // touches the host (its dispose() removes nothing).
+  if (typeof window !== 'undefined') {
+    try {
+      window.addEventListener('gamepadconnected', onConnect as EventListener);
+      window.addEventListener('gamepaddisconnected', onDisconnect as EventListener);
+    } catch {
+      // A broken window never crashes the game.
+    }
   }
 
   const buildSnapshot = (pad: ReadableGamepad): Record<string, PolledEdge> => {

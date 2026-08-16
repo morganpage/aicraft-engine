@@ -23,9 +23,12 @@ import {
   MEDIUM_DIFFICULTY_BAND,
   HIGH_DIFFICULTY_BAND,
   calibrateDifficulty,
+  createDegradedPolicy,
   runLowSkillPerturbation,
 } from '../levelgen/calibration';
 import type { CalibrationConfig, PerturbationConfig } from '../levelgen/calibration';
+import type { BotPolicy } from '../leveltest/policies';
+import type { PlatformerInput } from '../platformer/types';
 import type {
   LevelQualityReport,
   VerificationResult,
@@ -284,6 +287,93 @@ describe('calibrateDifficulty', () => {
     expect(() => {
       calibrateDifficulty(level, verification, makeQualityReport(Infinity));
     }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createDegradedPolicy — jump delay tests
+// ---------------------------------------------------------------------------
+
+/**
+ * The degraded wrapper reads no state of its own — it forwards to the base
+ * policy — so a scripted base policy that ignores its arguments drives it.
+ */
+function scriptedPolicy(script: readonly PlatformerInput[]): BotPolicy {
+  let tick = 0;
+  return (): PlatformerInput => script[Math.min(tick++, script.length - 1)];
+}
+
+const holdInput = (pressed: boolean): PlatformerInput =>
+  ({ moveX: 0, jump: { held: true, pressed, released: false }, dash: null });
+
+describe('createDegradedPolicy — jump delay', () => {
+  // Both rows of the delay table must be pinned: asserting only "the jump
+  // eventually fires" would pass against a fix that leaves the arming-tick
+  // off-by-one (delay 1 firing on the SAME tick = zero delay), and the old
+  // code dropped the press entirely at delay ≥ 2 because the base `pressed`
+  // edge is 1 tick long and cannot still be true at expiry.
+  const cfg = (jumpDelayTicks: number) => ({
+    reactionDelayTicks: 0,
+    jumpDelayTicks,
+    jumpHoldReduction: 0,
+    missedDashChance: 0,
+  });
+  const inertRng = (): number => 0; // 0 < 0 is false → hold/dash RNG never fires
+
+  it('delay 1 fires exactly 1 tick late, not on the arming tick', () => {
+    const policy = createDegradedPolicy(
+      scriptedPolicy([holdInput(true), holdInput(false), holdInput(false), holdInput(false)]),
+      cfg(1),
+      inertRng,
+    );
+    const t0 = policy(null as never, {} as never);
+    const t1 = policy(null as never, {} as never);
+    const t2 = policy(null as never, {} as never);
+    expect(t0.jump.pressed).toBe(false); // armed — suppressed this tick
+    expect(t1.jump.pressed).toBe(true);  // fires exactly 1 tick later
+    expect(t1.jump.held).toBe(true);
+    expect(t2.jump.pressed).toBe(false); // and only once
+    expect(t2.jump).toEqual({ held: true, pressed: false, released: false });
+  });
+
+  it('delay 2 fires exactly 2 ticks late, not dropped', () => {
+    const policy = createDegradedPolicy(
+      scriptedPolicy([
+        holdInput(true), holdInput(false), holdInput(false), holdInput(false), holdInput(false),
+      ]),
+      cfg(2),
+      inertRng,
+    );
+    const t0 = policy(null as never, {} as never);
+    const t1 = policy(null as never, {} as never);
+    const t2 = policy(null as never, {} as never);
+    const t3 = policy(null as never, {} as never);
+    expect(t0.jump.pressed).toBe(false); // armed
+    expect(t1.jump.pressed).toBe(false); // still inside the delay window
+    expect(t2.jump.pressed).toBe(true);  // fires exactly 2 ticks later
+    expect(t3.jump.pressed).toBe(false); // and only once
+  });
+
+  it('delay 0 is a passthrough (no arming)', () => {
+    const policy = createDegradedPolicy(
+      scriptedPolicy([holdInput(true), holdInput(false)]),
+      cfg(0),
+      inertRng,
+    );
+    expect(policy(null as never, {} as never).jump.pressed).toBe(true);
+    expect(policy(null as never, {} as never).jump.pressed).toBe(false);
+  });
+
+  it('suppresses jump hold during the delay window', () => {
+    const policy = createDegradedPolicy(
+      scriptedPolicy([holdInput(true), holdInput(false), holdInput(false)]),
+      cfg(2),
+      inertRng,
+    );
+    const t0 = policy(null as never, {} as never);
+    const t1 = policy(null as never, {} as never);
+    expect(t0.jump.held).toBe(false);
+    expect(t1.jump.held).toBe(false);
   });
 });
 

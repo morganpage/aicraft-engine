@@ -23,4 +23,12 @@ describe('terrain art pixel tools', () => {
     const fill = terrainArtFloodFillPixels(pixels, 3, 2, { x: 0, y: 0 });
     expect(fill).toEqual([{ x: 0, y: 0 }, { x: 0, y: 1 }]);
   });
+
+  // Before the finite guard this was an unguarded `while (true)`: a NaN from
+  // mouse math never satisfied the break condition → hang / OOM. Short
+  // timeout so a regression fails fast instead of stalling the suite.
+  it('returns no pixels for non-finite endpoints instead of looping forever', () => {
+    expect(terrainArtLinePixels({ x: NaN, y: 0 }, { x: 4, y: 0 })).toEqual([]);
+    expect(terrainArtLinePixels({ x: 0, y: 0 }, { x: Infinity, y: 2 })).toEqual([]);
+  }, 1_000);
 });

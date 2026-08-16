@@ -490,6 +490,13 @@ describe('createGamepadAdapter — disconnect lifecycle', () => {
     expect(listeners['gamepaddisconnected']).toBeDefined();
   });
 
+  it('dispose removes the window listeners it installed', () => {
+    expect(listeners['gamepadconnected']).toBeDefined();
+    adapter.dispose();
+    expect(listeners['gamepadconnected']).toBeUndefined();
+    expect(listeners['gamepaddisconnected']).toBeUndefined();
+  });
+
   it('disconnect resets all accumulators (no stuck button after reconnect)', () => {
     // press a button, poll it (held+pressed, edges consumed)
     bump();
@@ -524,6 +531,56 @@ describe('createGamepadAdapter — disconnect lifecycle', () => {
     // After reset, prevButtonHeld is cleared → now=false vs was=false → no
     // edges. Critically, held=false (NOT the stale cached held=true).
     expect(edges.jump).toEqual({ held: false, pressed: false, released: false });
+  });
+});
+
+describe('createGamepadAdapter — no-host listener hygiene', () => {
+  // The no-navigator path must never touch the host. The old code attached
+  // window listeners BEFORE the `!nav` early return, whose dispose() was a
+  // no-op — two listeners leaked per adapter on every no-host construction.
+  type WinListener = (e: unknown) => void;
+  let listeners: Record<string, WinListener | undefined>;
+  let originalNav: typeof globalThis.navigator;
+
+  beforeEach(() => {
+    originalNav = globalThis.navigator;
+    listeners = {};
+    // navigator WITHOUT getGamepads → the adapter takes its no-host path,
+    // while window exists — exactly the environment where the leak happened.
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {},
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        addEventListener: vi.fn((type: string, handler: WinListener) => {
+          listeners[type] = handler;
+        }),
+        removeEventListener: vi.fn((type: string, handler: WinListener) => {
+          if (listeners[type] === handler) delete listeners[type];
+        }),
+      },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: originalNav,
+      configurable: true,
+      writable: true,
+    });
+    // @ts-expect-error — restoring SSR-like state for window
+    delete globalThis.window;
+  });
+
+  it('attaches no window listeners on the no-navigator path', () => {
+    const noHost = createGamepadAdapter(FULL_CONFIG);
+    expect(Object.keys(listeners)).toEqual([]);
+    noHost.dispose();
+    expect(noHost.poll()).toEqual({});
   });
 });
 
