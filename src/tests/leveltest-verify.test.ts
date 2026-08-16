@@ -119,11 +119,35 @@ describe('verifyLevel', () => {
     expect(['proven-beatable', 'inconclusive']).toContain(result.status);
   });
 
-  it('returns inconclusive for a structurally invalid level', () => {
+  it('returns inconclusive for a structurally invalid level — fast-failing the pipeline', () => {
     const level = makeInvalidLevel();
     const result = verifyLevel(level);
     expect(result.status).toBe('inconclusive');
     expect(result.structural.valid).toBe(false);
+    // Fast-fail (observed before the change: 3 bot policies each ran ~76
+    // ticks against the untrusted world before Step 7 said inconclusive
+    // anyway). Scenario + reachability are now empty placeholders, and the
+    // same info diagnostic the full pipeline produced is present.
+    expect(result.scenario.runs).toHaveLength(0);
+    expect(result.reachability.graph.surfaces).toHaveLength(0);
+    expect(result.diagnostics.some((d) => d.code === 'STATUS_INCONCLUSIVE')).toBe(true);
+  });
+
+  it('a fixedDt of 0 degrades to 1/60 instead of freezing the scenario or the tickRate', () => {
+    const level = makeSimpleSolvableLevel();
+    // The guard normalizes fixedDt BEFORE the scenario runs, so a zero-dt run
+    // is identical to the default-dt run — not a frozen-tick degenerate one
+    // (and never a tickRate: Infinity frozen into the emitted ReplayConfig).
+    const zero = verifyLevel(level, { maxTicks: 6000, seed: 7, fixedDt: 0 });
+    const normal = verifyLevel(level, { maxTicks: 6000, seed: 7 });
+    expect(zero.status).toBe(normal.status);
+    expect(zero.scenario.runs.map((r) => r.termination))
+      .toEqual(normal.scenario.runs.map((r) => r.termination));
+    if (zero.winningReplay) {
+      const replayConfig = (zero.winningReplay as unknown as { config: { tickRate: number } }).config;
+      expect(replayConfig.tickRate).toBe(60);
+      expect(Number.isFinite(replayConfig.tickRate)).toBe(true);
+    }
   });
 
   it('never throws on any input', () => {

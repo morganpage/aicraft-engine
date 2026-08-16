@@ -30,6 +30,7 @@ import { CURRENT_PHYSICS_VERSION } from '../replay/constants';
 import type { LevelData, ValidationResult } from '../level/types';
 import type { CompileLevelOptions, CompiledLevel } from '../platformer/level-runtime';
 import { compileLevel } from '../platformer/level-runtime';
+import { createPlatformerState } from '../platformer/kernel';
 import type { PlatformerInput } from '../platformer/types';
 import type {
   SimulationTrace,
@@ -163,6 +164,50 @@ function runVerificationPipeline(
 ): VerificationResult {
   const diagnostics: VerificationDiagnostic[] = [];
 
+  // A fixedDt of 0 (or non-finite) is degenerate everywhere it flows: the
+  // scenario would run frozen ticks that can never win, and the emitted
+  // ReplayConfig would freeze tickRate = Infinity. Normalize once, here.
+  const safeFixedDt = Number.isFinite(config.fixedDt) && (config.fixedDt ?? 0) > 0
+    ? config.fixedDt!
+    : 1 / 60;
+
+  // -----------------------------------------------------------------------
+  // Step 2.5: Structural fast-fail. A level that fails structural validation
+  // can only ever end 'inconclusive' (Step 7's first branch) — running
+  // reachability plus every bot policy against a world that cannot be
+  // trusted is wasted work (observed: 3 policies × 76 ticks against an
+  // empty solid set). Return the same status and the same diagnostic the
+  // full pipeline produced, with empty scenario/reachability artifacts.
+  // -----------------------------------------------------------------------
+  if (!structural.valid) {
+    return {
+      version: 1 as const,
+      status: 'inconclusive',
+      structural,
+      reachability: {
+        version: 1,
+        confidence: 'unsupported',
+        reachable: false,
+        graph: { surfaces: [], edges: [] },
+        spawnSurface: null,
+        exitSurfaces: [],
+        reachableSurfaces: [],
+        softlockSurfaces: [],
+        diagnostics: ['Skipped: level failed structural validation.'],
+      },
+      scenario: { version: 1, status: 'inconclusive', runs: [], diagnostics: [] },
+      winningReplay: undefined,
+      winningReplayHash: undefined,
+      diagnostics: [
+        {
+          severity: 'info' as const,
+          code: 'STATUS_INCONCLUSIVE',
+          message: 'Status is inconclusive due to structural validation failure.',
+        },
+      ],
+    };
+  }
+
   // -----------------------------------------------------------------------
   // Step 3: Static reachability analysis
   // -----------------------------------------------------------------------
@@ -234,7 +279,7 @@ function runVerificationPipeline(
   try {
     scenario = verifyScenario(adapter, {
       seed: config.seed ?? DEFAULT_SEED,
-      fixedDt: config.fixedDt,
+      fixedDt: safeFixedDt,
       maxTicks: config.maxTicks,
       policies: wrappedPolicies,
     });
@@ -263,8 +308,7 @@ function runVerificationPipeline(
     try {
       const trace: SimulationTrace<PlatformerInput> = scenario.winningTrace;
       const initial = JSON.parse(JSON.stringify(compiled.initialState));
-      const safeDt = config.fixedDt ?? 1 / 60;
-      const tickRate = Math.round(1 / safeDt);
+      const tickRate = Math.round(1 / safeFixedDt);
 
       // Build a frozen Replay from the simulation trace
       winningReplay = Object.freeze({
@@ -387,11 +431,12 @@ export function verifyLevel(
   try {
     compiled = compileLevel(level, cfg.compileOptions);
   } catch {
-    // Minimal compiled level on failure
+    // Belt-and-braces (compileLevel documents itself as never-throwing): a
+    // real placeholder state, never `null as any` flowing into the pipeline.
     compiled = {
       staticSolids: [],
       movingPlatforms: [],
-      initialState: null as any,
+      initialState: createPlatformerState(0, 0),
       tileQuery: () => 'empty' as const,
     };
   }

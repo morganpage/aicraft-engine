@@ -354,6 +354,24 @@ describe('createDegradedPolicy — jump delay', () => {
     expect(t3.jump.pressed).toBe(false); // and only once
   });
 
+  it('never emits released before the delayed pressed (orphan release suppressed)', () => {
+    // Press at t0, release at t1 — both inside the delay-2 window. Pre-fix the
+    // base released edge passed straight through, so the consumer saw
+    // released(t1) BEFORE the synthetic pressed(t2) and nothing after it. The
+    // kernel's variable-jump cut keys on held-STATE (not this edge), so
+    // suppressing the orphan needs no re-emit — held already drops the tick
+    // after the synthetic press.
+    const press = holdInput(true);
+    const release: PlatformerInput = { moveX: 0, jump: { held: false, pressed: false, released: true }, dash: null };
+    const idle: PlatformerInput = { moveX: 0, jump: { held: false, pressed: false, released: false }, dash: null };
+    const policy = createDegradedPolicy(scriptedPolicy([press, release, idle, idle]), cfg(2), inertRng);
+    const out = [0, 1, 2, 3].map(() => policy(null as never, {} as never));
+    expect(out[0].jump.released).toBe(false);  // arming tick
+    expect(out[1].jump.released).toBe(false);  // suppressed during the window
+    expect(out[2].jump.pressed).toBe(true);    // fire tick
+    expect(out[3].jump.released).toBe(false);  // passthrough resumes clean
+  });
+
   it('delay 0 is a passthrough (no arming)', () => {
     const policy = createDegradedPolicy(
       scriptedPolicy([holdInput(true), holdInput(false)]),

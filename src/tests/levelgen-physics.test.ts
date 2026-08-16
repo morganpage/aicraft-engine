@@ -16,6 +16,7 @@ import {
   deriveMaxStepUp,
   derivePhysicsConstraints,
 } from '../levelgen';
+import { DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
 import type { PlatformerConfig } from '../platformer/types';
 
 /** A minimal valid PlatformerConfig for testing. */
@@ -232,5 +233,24 @@ describe('derivePhysicsConstraints', () => {
     const a = derivePhysicsConstraints(MINIMAL_CONFIG, 16);
     const b = derivePhysicsConstraints(MINIMAL_CONFIG, 16);
     expect(a).toEqual(b);
+  });
+});
+
+describe('levelgen fallback config (was a ~60-field inline duplicate)', () => {
+  it('is the canonical DEFAULT_PLATFORMER_CONFIG — the values levelgen was tuned against', () => {
+    // The inline literal the import replaced omitted five optional fields
+    // (jumpEnabled, stepHeight, wallProbeDistance, wallJumpGraceTime,
+    // groundDuckEnabled) and carried `as any`. All kernel reads go through
+    // `??` fallbacks, so the swap is behavior-neutral — these pins hold the
+    // derivation-relevant values the literal hard-coded.
+    expect(DEFAULT_PLATFORMER_CONFIG.gravity).toBe(980);
+    expect(DEFAULT_PLATFORMER_CONFIG.jump.apexHeight).toBe(48);
+    expect(DEFAULT_PLATFORMER_CONFIG.jump.timeToApex).toBe(0.28);
+    expect(DEFAULT_PLATFORMER_CONFIG.springBounceVy).toBe(-460);
+    expect(DEFAULT_PLATFORMER_CONFIG.springAutoJumpTime).toBe(0.1);
+    const derived = derivePhysicsConstraints(DEFAULT_PLATFORMER_CONFIG, 16);
+    for (const value of Object.values(derived)) {
+      if (typeof value === 'number') expect(Number.isFinite(value)).toBe(true);
+    }
   });
 });

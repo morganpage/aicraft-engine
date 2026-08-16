@@ -381,6 +381,12 @@ export function createDegradedPolicy(
       }
     }
 
+    // Edge hygiene: while a press is latched, the base release edge must not
+    // leak through — the consumer has not seen the press yet, so a `released`
+    // before any `pressed` is a lie on the wire. No re-emit on expiry: the
+    // kernel's variable-jump cut keys on held-STATE, not this edge.
+    if (jumpDelayed > 0) jumpReleased = false;
+
     // Jump hold reduction: if holding jump, reduce hold time
     if (jumpHeld && config.jumpHoldReduction > 0) {
       // Probabilistic release: each tick there's a chance to release early

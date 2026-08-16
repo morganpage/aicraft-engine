@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TileGrid } from '../level';
 import {
   createTerrainArtProject,
+  createTerrainArtRenderCache,
   drawPreparedTerrainArtDualGrid,
   generateTerrainArtMaterialAtlas,
   prepareTerrainArtDualGrid,
@@ -59,5 +60,36 @@ describe('terrain-art atlas-backed runtime drawing', () => {
       view: { x: 100, y: 100, width: 16, height: 16 },
     })).toBe(0);
     expect(drawImage).not.toHaveBeenCalled();
+  });
+});
+
+describe('createTerrainArtRenderCache invalidate', () => {
+  it('matches the materialId SEGMENT exactly — not another entry\'s variant segment', () => {
+    const cache = createTerrainArtRenderCache();
+    const stoneProject = createTerrainArtProject({ authoringResolution: 16, visualSeed: 1 });
+    const grassProject = createTerrainArtProject({ authoringResolution: 16, visualSeed: 2 });
+    // Key layout: hash:materialId:variantId:mask. The stone entry's VARIANT
+    // segment is 'grass' — the old substring match (`:${materialId}:`) deleted
+    // it on invalidate('grass'), and invalidate('default') massacred every
+    // default-variant entry in the cache.
+    cache.render(stoneProject, 'stone', 15, 'grass');
+    cache.render(grassProject, 'grass', 0, 'default');
+    expect(cache.size).toBe(2);
+    cache.invalidate('grass');
+    expect(cache.size).toBe(1); // only the grass MATERIAL entry died
+    // Re-render both: the stone/grass-variant entry survived, so it is not
+    // re-computed (size stays 1 until the grass entry re-caches).
+    cache.render(stoneProject, 'stone', 15, 'grass');
+    expect(cache.size).toBe(1);
+  });
+
+  it('invalidate() with no argument clears everything', () => {
+    const cache = createTerrainArtRenderCache();
+    const project = createTerrainArtProject({ authoringResolution: 16 });
+    cache.render(project, 'a', 0);
+    cache.render(project, 'b', 0);
+    expect(cache.size).toBe(2);
+    cache.invalidate();
+    expect(cache.size).toBe(0);
   });
 });

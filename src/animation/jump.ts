@@ -256,8 +256,14 @@ const LANDING_SETTLE_EPSILON = 0.01;
  * than calling this directly. Kept internal (not re-exported) per the proposal.
  */
 function deriveJumpPhysics(config: JumpConfig): JumpPhysics {
-  const gravity = (2 * config.apexHeight) / (config.timeToApex * config.timeToApex);
-  const launchVelocity = -(2 * config.apexHeight) / config.timeToApex;
+  // A consumer-authored `timeToApex` of 0 (or non-finite) would divide by
+  // zero and bake Infinity gravity / NaN launch into the JumpState — fall
+  // back to the default parameterization instead.
+  const time = Number.isFinite(config.timeToApex) && config.timeToApex > 0
+    ? config.timeToApex
+    : DEFAULT_JUMP.timeToApex;
+  const gravity = (2 * config.apexHeight) / (time * time);
+  const launchVelocity = -(2 * config.apexHeight) / time;
   return { gravity, launchVelocity };
 }
 
@@ -272,7 +278,12 @@ function deriveJumpPhysics(config: JumpConfig): JumpPhysics {
  * Pure: a pure function of `config`.
  */
 export function jumpLaunchVelocity(config: JumpConfig): number {
-  return -(2 * config.apexHeight) / config.timeToApex;
+  // Same zero-time guard as deriveJumpPhysics — a NaN launch impulse would
+  // poison every jump-class LaunchIntent.
+  const time = Number.isFinite(config.timeToApex) && config.timeToApex > 0
+    ? config.timeToApex
+    : DEFAULT_JUMP.timeToApex;
+  return -(2 * config.apexHeight) / time;
 }
 
 /**

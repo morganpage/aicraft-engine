@@ -23,6 +23,7 @@
 import type { LevelData } from '../level/types';
 import type { CompiledLevel } from '../platformer/level-runtime';
 import { compileLevel, entityIdFromSolidId } from '../platformer/level-runtime';
+import { createPlatformerState } from '../platformer/kernel';
 import { DEFAULT_PLATFORMER_CONFIG, DEFAULT_PLAYER_WIDTH, DEFAULT_PLAYER_HEIGHT } from '../platformer/constants';
 import { computeJumpArc } from './trajectory';
 import type { JumpArcConfig } from './trajectory';
@@ -393,7 +394,14 @@ export function analyzeReachability(
   try {
     compiled = compileLevel(level);
   } catch {
-    compiled = { staticSolids: [], movingPlatforms: [], initialState: null as any, tileQuery: () => 'empty' };
+    // Belt-and-braces (compileLevel documents itself as never-throwing): a
+    // real placeholder state, never `null as any` flowing downstream.
+    compiled = {
+      staticSolids: [],
+      movingPlatforms: [],
+      initialState: createPlatformerState(0, 0),
+      tileQuery: () => 'empty' as const,
+    };
     diagnostics.push('Failed to compile level for reachability analysis.');
   }
 

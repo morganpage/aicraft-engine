@@ -380,7 +380,10 @@ export interface CreatePrecisionPlatformerConfigOptions {
 export function createPrecisionPlatformerConfig(
   opts: CreatePrecisionPlatformerConfigOptions,
 ): PlatformerConfig {
-  const referenceTileSize = opts.referenceTileSize ?? PRECISION_REFERENCE_TILE_SIZE;
+  const referenceTileSize = opts.referenceTileSize !== undefined
+    && Number.isFinite(opts.referenceTileSize) && opts.referenceTileSize > 0
+    ? opts.referenceTileSize
+    : PRECISION_REFERENCE_TILE_SIZE;
   const scale = opts.tileSize / referenceTileSize;
 
   let config = scalePlatformerConfig(PRECISION_PLATFORMER, scale);
@@ -391,9 +394,13 @@ export function createPrecisionPlatformerConfig(
   const scaledTime = config.jump.timeToApex;
   const scaledLaunchV = (2 * scaledApex) / scaledTime;
 
-  // Apply jump apex / time / coyote overrides.
+  // Apply jump apex / time / coyote overrides. A `timeToApex` override of 0
+  // (or non-finite) would divide by zero below and multiply every
+  // jump-relative impulse by Infinity — fall back to the scaled default,
+  // symmetric with the ratio guard.
   const newApex = opts.jumpApexTiles !== undefined ? opts.jumpApexTiles * opts.tileSize : scaledApex;
-  const newTime = opts.timeToApex !== undefined ? opts.timeToApex : scaledTime;
+  const newTimeRaw = opts.timeToApex !== undefined ? opts.timeToApex : scaledTime;
+  const newTime = Number.isFinite(newTimeRaw) && newTimeRaw > 0 ? newTimeRaw : scaledTime;
   let jump: JumpConfig = { ...config.jump, apexHeight: newApex, timeToApex: newTime };
   if (opts.coyoteTime !== undefined) {
     jump = { ...jump, coyoteTime: opts.coyoteTime };

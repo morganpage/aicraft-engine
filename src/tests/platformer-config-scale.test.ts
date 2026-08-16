@@ -9,6 +9,7 @@ import {
 import { DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
 import { PRECISION_PLATFORMER } from '../platformer/presets';
 import { createPlatformerState, stepPlatformer } from '../platformer/kernel';
+import { jumpLaunchVelocity } from '../animation/jump';
 import { DEFAULT_JUMP } from '../animation/jump';
 import { DT, makeInput } from './platformer-trace-harness';
 import type { PlatformerConfig } from '../platformer/types';
@@ -376,5 +377,32 @@ describe('config-scale: feel invariance across 8 / 16 / 32 px tiles', () => {
     for (const t of travels) {
       expect(t).toBeGreaterThan(2);
     }
+  });
+});
+
+describe('degenerate parameter guards (zero-division)', () => {
+  it('createPrecisionPlatformerConfig survives timeToApex 0 without Infinity impulses', () => {
+    const config = createPrecisionPlatformerConfig({ tileSize: 8, timeToApex: 0 });
+    // Pre-guard: ratio = newLaunchV/0-guarded-actually-unscaledTime... the raw
+    // (2*apex)/0 = Infinity ratio multiplied every jump-relative impulse.
+    for (const v of [config.wallJumpVx, config.wallJumpVy, config.superJumpVx,
+                     config.springBounceVy, config.springSuperBounceVy, config.climbHopVx]) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    expect(Number.isFinite(config.jump.timeToApex)).toBe(true);
+    expect(config.jump.timeToApex).toBeGreaterThan(0);
+  });
+
+  it('createPrecisionPlatformerConfig survives referenceTileSize 0', () => {
+    const config = createPrecisionPlatformerConfig({ tileSize: 8, referenceTileSize: 0 });
+    expect(Number.isFinite(config.moveSpeed)).toBe(true);
+    expect(Number.isFinite(config.jump.apexHeight)).toBe(true);
+  });
+
+  it('jumpLaunchVelocity survives timeToApex 0 (no NaN impulse)', () => {
+    const vy = jumpLaunchVelocity({ ...DEFAULT_PLATFORMER_CONFIG.jump, timeToApex: 0 });
+    expect(Number.isFinite(vy)).toBe(true);
+    // Falls back to the default parameterization, not a degenerate one.
+    expect(vy).toBe(jumpLaunchVelocity(DEFAULT_PLATFORMER_CONFIG.jump));
   });
 });

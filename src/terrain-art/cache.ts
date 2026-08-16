@@ -24,7 +24,17 @@ export function createTerrainArtRenderCache(maxEntries = 512, resolveImportedAss
       const tile = renderTerrainArtSourceTile(project, materialId, mask, variantId, resolveImportedAsset); entries.set(key, tile);
       while (entries.size > Math.max(1, maxEntries)) entries.delete(entries.keys().next().value!); return tile;
     },
-    invalidate(materialId) { if (materialId === undefined) entries.clear(); else for (const key of entries.keys()) if (key.includes(`:${materialId}:`)) entries.delete(key); },
+    // Invalidate by EXACT second key segment. The old substring match
+    // (`key.includes(':' + materialId + ':')`) over-matched: `invalidate('grass')`
+    // also deleted `hash:stone:grass:15` (another material's VARIANT segment),
+    // and `invalidate('default')` deleted every default-variant entry.
+    invalidate(materialId) {
+      if (materialId === undefined) { entries.clear(); return; }
+      for (const key of entries.keys()) {
+        const segments = key.split(':');
+        if (segments.length > 1 && segments[1] === materialId) entries.delete(key);
+      }
+    },
     get size() { return entries.size; },
   };
 }
