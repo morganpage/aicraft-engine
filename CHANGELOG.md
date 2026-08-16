@@ -5,6 +5,22 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-08-16
+
+### Added
+- **LDtk entity display tiles (authoritative `tileRenderMode`):** `LdtkEntityDef` now carries `tileRenderMode` — a new `LdtkTileRenderMode` union covering all seven LDtk schema values (`Cover`, `FitInside`, `Repeat`, `Stretch`, `FullSizeCropped`, `FullSizeUncropped`, `NineSlice`); defs omitting the key parse as `'FitInside'` (pinned by tests at both the parse level, against the adversarial fixture, and the draw level, against a synthetic oversized instance). The parser previously dropped the field, forcing every consumer to re-derive Repeat-vs-Fit from rect geometry — a heuristic that renders exactly two of the seven modes correctly and misrepresents a `Stretch` or `Cover` author's intent as tiling.
+- **`drawLdtkEntityTile(context, tile, dest, tilesets, mode?)`:** the entity-side counterpart of the tile-layer draw path. Entities are deliberately not drawn by `drawLdtkLevel` (spawning is owned by the translated `LevelData`), so consumers rendering an entity's authored LDtk art had to hand-roll the blit — repeat-with-partial-clip, stretch, letterbox — in a codebase whose stated rule is "never hand-roll a tile blit." The helper implements `Repeat` (tiles across the rect, clipping the last partial column/row from the SOURCE rect, not by smearing), `Stretch` (one scaled blit), `FitInside` (aspect-preserving, centered), and `Cover` (aspect-covering, clipped to the rect); `NineSlice` and the `FullSize*` pair fall back to the geometry heuristic with the boundary documented in the JSDoc (nine-slice needs the def's `nineSliceBorders`, which neither the instance tile nor the parsed def carries — a known gap). An omitted `mode` also uses the geometry heuristic (instance no larger than its tile → one plain blit; larger → repeat), preserving the behavior consumers derived before the mode was parsed. Never throws; returns `false` for a missing tileset, degenerate rect, or throwing draw.
+
+### Fixed
+- **Levelgen (degraded-bot jump delay):** the jump-delay knob had no setting that produced a real delay. `delay = 1` fired on the SAME tick as the press (zero delay) because the decrement block ran inside the arming tick; `delay ≥ 2` dropped the press entirely because the re-fire gated on `baseInput.jump.pressed` — a one-tick edge that cannot still be true at expiry; and `delay = 0`, nominally a passthrough, also suppressed the press forever. The wrapper now latches the press at arming, skips the decrement on the arming tick so N means N ticks, and fires a synthetic pressed/held edge on expiry regardless of the current base edge, suppressing held during the delay window. `runLowSkillPerturbation` results shift accordingly: delay-1 configs are now actually degraded, delay-2+ configs no longer degrade past intent. `createDegradedPolicy` is now exported at the `levelgen/calibration` module level (not the barrel) so these semantics are unit-testable without a full verification run.
+- **Input (gamepad adapter listener leak):** the `gamepadconnected`/`gamepaddisconnected` window listeners were attached BEFORE the no-navigator early return, whose `dispose()` is a no-op — so every adapter constructed in a window-without-gamepad environment (the SSR/no-host guard's own path) leaked two unremovable listeners. Attachment now happens only once a host is confirmed.
+- **Terrain art (`terrainArtLinePixels`):** a NaN or non-finite endpoint (e.g. from mouse math) never satisfied the `while (true)` break condition — an editor hang/OOM. Non-finite endpoints now return `[]`, matching the defensive style of every other module.
+
+### Changed
+- **Showcase (tile-room spawn drift):** `compileGeneratedLevel` has defaulted `spawnResolution: 'rest-on-surface'` since the Celerock C1 hardening (LDtk emits feet-center spawn anchors), but the tile-room fixtures author spawns as actor-top-left rects — so both the showcase runtime and its tests spawned the player 8px left of the authored position, surfacing as a failing test that rotted silently because CI never ran the showcase suite. All three call sites now pass the resolution explicitly (`tile-room` → `'actor-top-left'`, `ldtk-editor` → `'rest-on-surface'`, matching `ldtk-room`), no call site relies on the implicit default (a future flip of the default is now safe), and a default-path assertion pins `'rest-on-surface'`.
+- **CI:** `showcase:typecheck` and `showcase:test` now run on every push/PR; `src/` was already typechecked via `build:dist`.
+- **Docs/hygiene:** the showcase section lists in `README.md` and `showcase/README.md` now list all nine sections (were four and six of nine); the three shipped plan docs moved from the repo root to `docs/design/archive/`. This entry also covers the post-0.15.0 docs-only commits (Celerock brief review pass, the six-prompt repin to 0.15.0, the CC0 asset pack) that had no changelog trace of their own.
+
 ## [0.15.0] - 2026-08-16
 
 ### Added
@@ -149,6 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
 [Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.15.0...HEAD
+[0.16.0]: https://github.com/morganpage/aicraft-engine/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/morganpage/aicraft-engine/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/morganpage/aicraft-engine/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/morganpage/aicraft-engine/compare/v0.13.0...v0.14.0
