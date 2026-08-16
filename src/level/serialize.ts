@@ -9,10 +9,7 @@
  * @module
  */
 
-/** FNV-1a 32-bit offset basis. */
-const FNV_OFFSET_BASIS = 0x811c9dc5;
-/** FNV-1a 32-bit prime. */
-const FNV_PRIME = 0x01000193;
+import { fnv1aHash } from '../hash/fnv1a';
 
 /**
  * Canonicalize a value into a deterministic JSON string.
@@ -110,10 +107,5 @@ export function canonicalize(value: unknown): string {
  * @returns Unsigned 32-bit FNV-1a hash.
  */
 export function fnv1a(text: string): number {
-  let h = FNV_OFFSET_BASIS;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, FNV_PRIME);
-  }
-  return h >>> 0;
+  return fnv1aHash(text);
 }

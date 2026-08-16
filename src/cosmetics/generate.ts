@@ -27,11 +27,8 @@ import {
   JITTER_SCALE_MIN,
   MAX_SIGNATURE_RETRIES,
 } from './constants';
+import { fnv1aHash } from '../hash/fnv1a';
 
-/** FNV-1a 32-bit offset basis. */
-const FNV_OFFSET = 0x811c9dc5;
-/** FNV-1a 32-bit prime. */
-const FNV_PRIME = 0x01000193;
 /** Prime stride mixing the variant index into the palette sub-seed. */
 const SEED_INDEX_STRIDE = 7919;
 
@@ -46,12 +43,7 @@ const SEED_INDEX_STRIDE = 7919;
  * @returns Unsigned 32-bit FNV-1a digest, base36-encoded.
  */
 function fnv1aBase36(str: string): string {
-  let h = FNV_OFFSET;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, FNV_PRIME);
-  }
-  return (h >>> 0).toString(36);
+  return fnv1aHash(str).toString(36);
 }
 
 /**

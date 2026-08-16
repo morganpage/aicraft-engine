@@ -1,5 +1,6 @@
 import { deserializeTerrainArtProject, serializeTerrainArtProject } from './serialize';
 import type { TerrainArtProject } from './types';
+import { fnv1aHash } from '../hash/fnv1a';
 
 export interface TerrainArtStorageAdapter {
   load(projectId: string): string | null | Promise<string | null>;
@@ -38,7 +39,5 @@ export async function loadTerrainArtProject(adapter: TerrainArtStorageAdapter, p
 
 export function hashTerrainArtProject(project: Readonly<TerrainArtProject>): string {
   const source = serializeTerrainArtProject(project);
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < source.length; index++) { hash ^= source.charCodeAt(index); hash = Math.imul(hash, 0x01000193); }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  return fnv1aHash(source).toString(16).padStart(8, '0');
 }
