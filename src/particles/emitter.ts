@@ -89,6 +89,15 @@ export interface EmitterConfig {
   gravityScale?: number;
   /** Per-particle drag multiplier applied to every spawned particle. Defaults to `DEFAULT_DRAG_SCALE` (1.0). */
   dragScale?: number;
+  /**
+   * Per-emitter world-gravity override. When omitted the emitter falls back
+   * to `StepEmittersOptions.gravity` — heterogeneous scenes (fire falls,
+   * smoke rises) can share one `stepEmitters` call without the
+   * gravityScale-negation workaround.
+   */
+  worldGravity?: number;
+  /** Per-emitter world-drag override. Falls back to `StepEmittersOptions.drag`. */
+  worldDrag?: number;
   /** Initial particle life in ticks. */
   life: number;
   /** Particle render size. */
@@ -119,18 +128,17 @@ export interface Emitter {
 }
 
 /**
- * Per-call options for `stepEmitters`. World-space properties (`gravity`,
- * `drag`) and global concerns (`rateScale`) live here — NOT on
- * `EmitterConfig`. Fire and smoke share the same world gravity; they differ
- * only in their per-particle `gravityScale`/`dragScale` (which is on
- * `EmitterConfig`). `rateScale` is the reduced-motion hook: the consumer
- * reads `prefersReducedMotion()` in their renderer and passes the scale here,
- * applied uniformly to every emitter in the call.
+ * Per-call options for `stepEmitters`. World-space defaults (`gravity`,
+ * `drag`) and global concerns (`rateScale`) live here; per-EMITTER gravity /
+ * drag overrides live on `EmitterConfig` (`worldGravity` / `worldDrag`) and
+ * take precedence over these. `rateScale` is the reduced-motion hook: the
+ * consumer reads `prefersReducedMotion()` in their renderer and passes the
+ * scale here, applied uniformly to every emitter in the call.
  */
 export interface StepEmittersOptions {
-  /** World gravity (px/tick²) applied to all emitters. Default `0`. */
+  /** World gravity (px/tick²) applied to emitters without a `worldGravity` override. Default `0`. */
   gravity?: number;
-  /** World drag multiplier applied to all emitters. Default `1` (no drag). */
+  /** World drag multiplier applied to emitters without a `worldDrag` override. Default `1` (no drag). */
   drag?: number;
   /** Per-call rate multiplier applied to all emitters (reduced-motion). Defaults to `DEFAULT_RATE_SCALE` (1.0). */
   rateScale?: number;
@@ -189,10 +197,13 @@ export function stepEmitters(
   opts: StepEmittersOptions = {},
 ): Emitter[] {
   const rateScale = opts.rateScale ?? DEFAULT_RATE_SCALE;
-  const gravity = opts.gravity ?? 0;
-  const drag = opts.drag ?? 1;
+  const defaultGravity = opts.gravity ?? 0;
+  const defaultDrag = opts.drag ?? 1;
   return emitters.map((emitter) => {
     const { config } = emitter;
+    // Per-emitter world override wins; the call-level option is the default.
+    const gravity = config.worldGravity ?? defaultGravity;
+    const drag = config.worldDrag ?? defaultDrag;
 
     const emit = advanceEmission(
       { accumulator: emitter.accumulator },

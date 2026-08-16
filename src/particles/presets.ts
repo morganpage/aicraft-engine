@@ -36,22 +36,16 @@ import type { EmitterConfig } from './emitter';
  * seconds-valued `dt` produces particles that emit ~60× too slow and live
  * ~60× too long — the exact mistake the consumer game made.
  *
- * ## Shared-world-gravity limitation (known footgun, tracked separately)
+ * ## Per-emitter world gravity (0.17.0)
  *
- * `stepEmitters` takes a SINGLE shared world `gravity` / `drag` for every
- * emitter in the call (see `StepEmittersOptions`). Heterogeneous behaviour
- * (fire falls back, smoke rises) is achieved ONLY via the per-particle
- * `gravityScale` / `dragScale` baked into each preset. There is currently no
- * per-emitter world-gravity override on `EmitterConfig`. The lava recipe
- * works around this by pairing BOTH emitters with the same world
- * `gravity: 0.5` and differing only in `gravityScale` (0.4 fire vs -0.4 smoke
- * — smoke NEGATES the shared world gravity to rise).
- *
- * TODO(per-emitter-gravity): add an optional per-emitter world-gravity /
- * world-drag override on `EmitterConfig` so heterogeneous scenes stop sharing
- * a single world gravity. Out of scope for this preset task — the engine's
- * `stepEmitters` signature is unchanged here. Flagged as an escalation
- * candidate for `@api-designer`.
+ * `stepEmitters` takes call-level `gravity` / `drag` defaults on
+ * `StepEmittersOptions`, and each emitter can override them via
+ * `EmitterConfig.worldGravity` / `worldDrag` — heterogeneous scenes (fire
+ * falls, smoke rises) no longer need the gravityScale-negation workaround
+ * (pairing both emitters at one shared world gravity and multiplying by
+ * opposing `gravityScale`s). The presets still ship their tuned per-particle
+ * `gravityScale` / `dragScale` multipliers, which compose with whatever
+ * world gravity the call (or emitter override) supplies.
  */
 
 /**

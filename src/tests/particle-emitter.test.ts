@@ -253,3 +253,24 @@ describe('stepEmitters — determinism', () => {
     expect(run()).toBe(run());
   });
 });
+
+describe('stepEmitters per-emitter world overrides', () => {
+  it('worldGravity/worldDrag on EmitterConfig take precedence over the call-level options', () => {
+    // Fire falls at its own gravity; smoke rises — one shared call, no
+    // gravityScale-negation workaround.
+    const fire = createEmitter(makeEmitterConfig({ worldGravity: 0.5, rate: 0 }));
+    const smoke = createEmitter(makeEmitterConfig({ worldGravity: -0.4, rate: 0 }));
+    const fireWithParticle = { ...fire, particles: [{ x: 0, y: 0, vx: 0, vy: 0, life: 5, maxLife: 5, size: 2 }] };
+    const smokeWithParticle = { ...smoke, particles: [{ x: 0, y: 0, vx: 0, vy: 0, life: 5, maxLife: 5, size: 2 }] };
+    const [nextFire, nextSmoke] = stepEmitters([fireWithParticle, smokeWithParticle], 1, { gravity: 9 });
+    expect(nextFire.particles[0].vy).toBeCloseTo(0.5, 6);   // own gravity, not the call's 9
+    expect(nextSmoke.particles[0].vy).toBeCloseTo(-0.4, 6); // rises
+  });
+
+  it('emitters without overrides still use the call-level gravity/drag', () => {
+    const plain = createEmitter(makeEmitterConfig({ rate: 0 }));
+    const withParticle = { ...plain, particles: [{ x: 0, y: 0, vx: 0, vy: 0, life: 5, maxLife: 5, size: 2 }] };
+    const [next] = stepEmitters([withParticle], 1, { gravity: 2 });
+    expect(next.particles[0].vy).toBeCloseTo(2, 6);
+  });
+});
