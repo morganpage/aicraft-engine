@@ -26,6 +26,14 @@ function positiveDpr(value: number): number {
  *
  * Invalid coordinates become zero and an invalid DPR degrades to one. The
  * function is pure and never reads `window.devicePixelRatio`.
+ *
+ * NOTE: this snaps a WORLD-SPACE translation only — it ignores zoom. For a
+ * camera render transform under a (possibly fractional) zoom, prefer the
+ * zoom-aware `cameraTransform` / `applyCameraTransform` from the `camera`
+ * module (0.16.x hardening): rounding in world units inside
+ * `ctx.scale(zoom, zoom)` still lands on a fractional DEVICE pixel, which
+ * antialiases tile edges into hairline seams. This helper remains the right
+ * tool for unscaled UI-space drawing.
  */
 export function snapCameraTranslation(
   x: number,

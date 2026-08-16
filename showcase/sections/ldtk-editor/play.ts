@@ -52,6 +52,7 @@ import {
 import type { Solid } from '../../../src/collision';
 import { DEFAULT_JUMP } from '../../../src/animation/jump';
 import {
+  cameraTransform,
   createCameraBrain,
   updateCameraBrain,
   type CameraBrain,
@@ -749,11 +750,17 @@ export function createPlaySession(
       context.fillRect(0, 0, width, height);
 
       const zoom = brain.zoom;
-      // Derive the visible world size only for tile culling (matches the brain's
-      // internal `viewport / zoom` contract).
-      const worldView = { width: viewport.width / zoom, height: viewport.height / zoom };
-      const offsetX = -Math.round(brain.camera.x);
-      const offsetY = -Math.round(brain.camera.y);
+      // Device-pixel snap via the engine's transform helper — the last
+      // hand-rolled `-Math.round(camera.x/y)` site (the editor overlay's
+      // pointer mapping uses the editor's OWN viewport model, not the brain
+      // camera, so it is unaffected). Rounding in WORLD units (the old code)
+      // still lands on a fractional device pixel under a fractional zoom,
+      // which antialiases the level's edges into hairline seams; the returned
+      // `view` is the cull rect derived from the SNAPPED position.
+      const t = cameraTransform(brain.camera, viewport, { zoom });
+      const offsetX = t.offsetX;
+      const offsetY = t.offsetY;
+      const worldView = { width: t.view.width, height: t.view.height };
       // One world-space transform: scale up, then apply the camera offset. The
       // camera's centering (it goes negative when the level is smaller than
       // worldView) letterboxes the level inside the canvas for free — no extra
