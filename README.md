@@ -131,7 +131,7 @@ npm run showcase:dev     # dev server (prints a localhost URL)
 npm run showcase:build   # production build to showcase/dist/
 ```
 
-Four sections, each an independent canvas:
+Nine sections, each an independent canvas:
 
 | Section | What it shows |
 |---|---|
@@ -139,6 +139,11 @@ Four sections, each an independent canvas:
 | Lava pool | Gerstner wave surface + heterogeneous particle emitters |
 | Playground | Playable platformer (input, collision, camera, hit-stop, game-loop) |
 | Parallax | 4-layer IMP underworld background with AI-generated raster art (`drawTiledParallax`) |
+| Spider | Multi-legged IK gait anchored to sampled terrain |
+| Tile room | Generated/topology rooms: seamless terrain art, semantic entities, compiled tile collision |
+| LDtk editor | Supplied `.ldtk` level end-to-end: parse, auto-tile rules, room transitions, camera brain |
+| Sprite demo | Sprite-sheet pipeline (`parseSpriteSheet` → `compileSpriteSheet` → `drawSprite`) |
+| Camera brain | Per-room virtual cameras, deadzone bands, cover-fit zoom (`createCameraBrain`) |
 
 The parallax section is the first to consume raster art, validating that the library's `drawTile` callback is asset-agnostic. See `showcase/README.md` for full details including the art regeneration pipeline.
 

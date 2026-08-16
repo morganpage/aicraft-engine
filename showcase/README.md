@@ -35,6 +35,9 @@ The showcase also has its own Vitest config (`showcase/vitest.config.ts`) separa
 | **Tile room** | `#tile-room` | Scrolling 60×34 generated and topology rooms; fallback/Ruins/Cavern/Mechanical/Outdoor comparison, seamless terrain, semantic entities, camera, compiled tile collision, moving-platform runtime rectangles, and deterministic visual-QA fixtures |
 | **Parallax** | `#parallax` | 4-layer IMP underworld background: `drawTiledParallax` with AI-generated raster art (primitives/parallax) |
 | **Spider** | `#spider` | Multi-legged IK gait, terrain sampling, anatomical sectors, breathing, and spring-rod pedipalps |
+| **LDtk editor** | `#ldtk-editor` | Supplied `.ldtk` level end-to-end: project parse + tileset load, LDtk auto-tile rules painting the IntGrid, ladder climbing, seam room transitions with the room-slide session, and the per-room camera brain |
+| **Sprite demo** | `#sprite-demo` | Sprite-sheet pipeline: `parseSpriteSheet` → `compileSpriteSheet` → anim state → `drawSprite` |
+| **Camera brain** | `#camera-brain` | Per-room virtual cameras, deadzone bands, and cover-fit zoom (`createCameraBrain` / `updateCameraBrain` / `fitCameraZoom`) |
 
 Every section except parallax draws entirely from procedural primitives in code.
 The parallax section consumes raster PNGs, validating that
