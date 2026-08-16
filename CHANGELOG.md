@@ -5,6 +5,15 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-08-16
+
+### Added
+- **Room transitions (session orchestrator):** `createRoomTransitionSession` / `pollRoomTransition` / `beginSessionRoomSlide` / `advanceSessionRoomSlide` / `endRoomTransitionSession` — one immutable `{ detector, slide }` state machine owning the transition layer's invariants by construction, making each named Celerock `TRANSITION_ISSUES` failure mode structurally impossible: bug 1 (tick-tock loop after a discarded/reset detector — the poll auto-adopts the returned detector state, and the per-axis containment latch re-derives from body geometry, so a consumer that discards the returned session loses only deadband jitter absorption, never the tick-tock protection), bug 2 (a second transition begun during an active slide — polls are suppressed and begins refused while `slide !== null`), bug 3 (death mid-slide leaving the camera in slide space — every abnormal exit goes through one cancel-with-rebase path, `endRoomTransitionSession`, which also owns the reset-on-respawn discipline with a fresh detector). `beginSessionRoomSlide` returns `{ session, brain, ok }` and applies the slide-space enter rebase internally on success; `advanceSessionRoomSlide` owns only the finish-rebase — while the slide is active the consumer still drives the per-tick slide camera (`presentationForRoomSlide` + their own `updateCameraBrain`). All functions pure, immutable, never-throw, no environment reads (the reduced-motion decision stays an explicit `RoomSlideOptions` input).
+- **LDtk preflight (multi-room steer):** `capabilities.multiRoom` — true iff the project has more than one level AND some level's `__neighbours` entry resolves to a DIFFERENT real level within the project (dangling/self links excluded); an info diagnostic when true (`multi-room world: N rooms chained via __neighbours — seam traversal (room-transition path) is in scope`); and the `capabilities.exits` JSDoc now states it counts Exit ENTITIES (resolved kind `'exit'`) only — NOT `__neighbours` seam traversal. Closes the observability gap behind the skipped-transitions build: a fully chained five-room world with no Exit entities now reports `exits: false, multiRoom: true` instead of burying the multi-room signal in per-level fields.
+
+### Changed
+- **Room transitions (per-axis containment latch):** `RoomExitDetectorState` gains `fullyInsideXIid`/`fullyInsideYIid`; straddle suppression is now intrinsic and reset-immune — a discarded or freshly created detector state can no longer tick-tock, because containment is re-derived from body geometry on every poll. An exit additionally requires the body to have been fully contained once on the exit's crossing axis (`e`/`w` → X, `n`/`s` → Y) in the current room; the orthogonal axis is unaffected, so diagonal seam exits and corner arrivals behave as in 0.14.1. Old serialized states (missing the fields) are treated as unlatched and latch on first containment with no lost tick. `findLdtkRoomExit` is unchanged (still the ungated stateless primitive). Plan: `docs/design/room-transition-session-hardening-plan.md`.
+
 ## [0.14.1] - 2026-08-14
 
 ### Changed
@@ -139,7 +148,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/morganpage/aicraft-engine/compare/v0.14.1...v0.15.0
+[0.14.1]: https://github.com/morganpage/aicraft-engine/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/morganpage/aicraft-engine/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/morganpage/aicraft-engine/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/morganpage/aicraft-engine/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/morganpage/aicraft-engine/compare/v0.10.0...v0.11.0
