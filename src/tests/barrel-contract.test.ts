@@ -109,9 +109,11 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.updateCamera).toBe('function');
   });
 
-  it('camera brain: createCameraBrain, updateCameraBrain, converge are functions; followPosition is NOT public', () => {
+  it('camera brain: createCameraBrain, updateCameraBrain, snapCameraBrain, converge are functions; followPosition is NOT public', () => {
     expect(typeof aicraft.createCameraBrain).toBe('function');
     expect(typeof aicraft.updateCameraBrain).toBe('function');
+    // The first-frame solver: without it a boot camera eases in from zoom 1.
+    expect(typeof aicraft.snapCameraBrain).toBe('function');
     expect(typeof aicraft.converge).toBe('function');
     expect(typeof aicraft.DEFAULT_CAMERA_MOTION).toBe('object');
     expect(aicraft.DEFAULT_BRAIN_BLEND_DURATION).toBe(0.3);
@@ -122,6 +124,15 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.fitCameraZoom).toBe('function');
     // cover is the default policy; a level equal to the viewport fits at zoom 1.
     expect(aicraft.fitCameraZoom({ width: 160, height: 120 }, { width: 160, height: 120 })).toBe(1);
+  });
+
+  it('camera transform: the pixel-snap policy is public', () => {
+    expect(typeof aicraft.cameraTransform).toBe('function');
+    expect(typeof aicraft.applyCameraTransform).toBe('function');
+    // Device snapping is the default: the origin lands on a device pixel even
+    // under a fractional zoom.
+    const t = aicraft.cameraTransform({ x: 101.37, y: 0 }, { width: 960, height: 540 }, { zoom: 2.75 });
+    expect(Number.isInteger(t.offsetX * 2.75)).toBe(true);
   });
 
   it('input: createEdgeAccumulator and orEdges are functions', () => {
@@ -264,6 +275,12 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.deriveSpriteAnimKind).toBe('function');
     expect(typeof aicraft.createSpriteTintCache).toBe('function');
     expect(aicraft.DEFAULT_FRAME_DURATION_MS).toBe(100);
+    // The kind → clip grouping and the clip-aware clock: five kinds, three
+    // clips, so one held jump arc never restarts its animation.
+    expect(typeof aicraft.spriteAnimClipFor).toBe('function');
+    expect(aicraft.spriteAnimClipFor('apex')).toBe('jump');
+    expect(typeof aicraft.createSpriteAnimPlayer).toBe('function');
+    expect(typeof aicraft.advanceSpriteAnimPlayer).toBe('function');
   });
 
   it('room-transition hardening: re-arm detector, hard-cut seed, and safe slide constructor are public', () => {

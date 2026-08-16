@@ -100,8 +100,26 @@ function normalizeBlend(b: number | undefined): number {
   return b;
 }
 
+/**
+ * Snap mode's motion override. `converge` returns `desired` outright once the
+ * remaining distance is within `snapThreshold`, so the largest finite
+ * threshold turns every solver step into an exact assignment while leaving the
+ * rest of the pipeline (bands, clamps, re-anchoring) byte-identical. It must
+ * stay FINITE — `mergeMotion` rejects a non-finite threshold and would fall
+ * back to the eased default.
+ */
+const SNAP_MOTION_THRESHOLD = Number.MAX_VALUE;
+
+/** Apply {@link SNAP_MOTION_THRESHOLD} to a resolved motion when snapping. */
+function withSnap(
+  motion: Required<DampedMotionConfig>,
+  snap: boolean,
+): Required<DampedMotionConfig> {
+  return snap ? { ...motion, snapThreshold: SNAP_MOTION_THRESHOLD } : motion;
+}
+
 /** Resolve a body config into a validated {@link ResolvedBody}, or `null` when absent/unknown. */
-function normalizeBody(body: unknown): ResolvedBody | null {
+function normalizeBody(body: unknown, snap: boolean): ResolvedBody | null {
   if (body === null || typeof body !== 'object') return null;
   const b = body as { mode?: unknown; targetKey?: unknown; followX?: unknown; followY?: unknown; motion?: unknown; padding?: unknown; x?: unknown; y?: unknown };
   if (b.mode === 'follow') {
@@ -112,7 +130,7 @@ function normalizeBody(body: unknown): ResolvedBody | null {
       targetKey,
       followX: resolveBand(b.followX as Readonly<FollowBand> | undefined, DEFAULT_FOLLOW_BODY.followX),
       followY: resolveBand(b.followY as Readonly<FollowBand> | undefined, DEFAULT_FOLLOW_BODY.followY),
-      motion: mergeMotion(b.motion as Readonly<DampedMotionConfig> | undefined, DEFAULT_CAMERA_MOTION),
+      motion: withSnap(mergeMotion(b.motion as Readonly<DampedMotionConfig> | undefined, DEFAULT_CAMERA_MOTION), snap),
       padding: isFiniteNonNegative(b.padding) ? (b.padding as number) : 0,
     };
   }
@@ -121,7 +139,7 @@ function normalizeBody(body: unknown): ResolvedBody | null {
       mode: 'fixed',
       x: typeof b.x === 'number' ? b.x : NaN,
       y: typeof b.y === 'number' ? b.y : NaN,
-      motion: mergeMotion(b.motion as Readonly<DampedMotionConfig> | undefined, DEFAULT_CAMERA_MOTION),
+      motion: withSnap(mergeMotion(b.motion as Readonly<DampedMotionConfig> | undefined, DEFAULT_CAMERA_MOTION), snap),
       padding: isFiniteNonNegative(b.padding) ? (b.padding as number) : 0,
     };
   }
@@ -129,13 +147,13 @@ function normalizeBody(body: unknown): ResolvedBody | null {
 }
 
 /** Resolve a lens config into a {@link ResolvedLens}, or `null` when absent/invalid. */
-function normalizeLens(lens: unknown): ResolvedLens | null {
+function normalizeLens(lens: unknown, snap: boolean): ResolvedLens | null {
   if (lens === null || typeof lens !== 'object') return null;
   const l = lens as { zoom?: unknown; motion?: unknown };
   if (!isFinitePositive(l.zoom)) return null;
   return {
     zoom: l.zoom,
-    motion: mergeMotion(l.motion as Readonly<DampedMotionConfig> | undefined, DEFAULT_LENS_MOTION),
+    motion: withSnap(mergeMotion(l.motion as Readonly<DampedMotionConfig> | undefined, DEFAULT_LENS_MOTION), snap),
   };
 }
 
@@ -149,6 +167,7 @@ function normalizeLens(lens: unknown): ResolvedLens | null {
  */
 function normalizeVcams(
   vcams: CameraBrainOptions['vcams'],
+  snap: boolean,
 ): readonly NormalizedVcam[] {
   const list: readonly VirtualCamera[] = Array.isArray(vcams) ? vcams : Object.values(vcams);
   const out: NormalizedVcam[] = [];
@@ -162,8 +181,8 @@ function normalizeVcams(
       id,
       priority: typeof v.priority === 'number' && Number.isFinite(v.priority) ? v.priority : 0,
       blend: normalizeBlend(v.blend),
-      body: normalizeBody(v.body),
-      lens: normalizeLens(v.lens),
+      body: normalizeBody(v.body, snap),
+      lens: normalizeLens(v.lens, snap),
     });
   }
   return out;
@@ -349,9 +368,63 @@ export function updateCameraBrain(
   state: Readonly<CameraBrain>,
   options: Readonly<CameraBrainOptions>,
 ): CameraBrain {
+  return advanceBrain(state, options, false);
+}
+
+/**
+ * Solve the brain to the steady state its easing would eventually reach, in
+ * one call: the lens lands exactly on the selected vcam's zoom, the body lands
+ * exactly on its converged placement (for a follow body, the deadzone band
+ * edge — the fixed point the ease settles at), no brain blend is started, and
+ * any blend in progress is dropped.
+ *
+ * This is what makes the FIRST RENDERED FRAME correct. A brain advanced only
+ * by {@link updateCameraBrain} starts wherever it was created — `zoom: 1` at
+ * `(0, 0)` for a bare {@link createCameraBrain} — and eases toward the room's
+ * fitted zoom and the player's framing over the following second, which reads
+ * as an unrequested zoom-in and pan the moment gameplay begins (and, if the
+ * world is drawn before the brain's first update, as a small level parked in
+ * the top-left corner). Seeding `createCameraBrain({ zoom })` fixes the zoom
+ * half only; the body still eases in from the origin.
+ *
+ * Call it wherever the view must be instantly right rather than eased there:
+ * boot, campaign reset, a hard respawn, and any teleport. `options.dt` is
+ * ignored (a snap is timeless), so the same options object used for the
+ * per-tick {@link updateCameraBrain} can be passed verbatim.
+ *
+ * ```ts
+ * // Boot at the start room's exact gameplay framing — no first-frame ease.
+ * let brain = snapCameraBrain(createCameraBrain(), cameraOptions(startRoom, dt));
+ * ```
+ *
+ * Pure, and identical in every other respect to {@link updateCameraBrain}:
+ * same selection rules, same bands, same clamps, same repair of invalid
+ * carried state.
+ */
+export function snapCameraBrain(
+  state: Readonly<CameraBrain>,
+  options: Readonly<CameraBrainOptions>,
+): CameraBrain {
+  return advanceBrain(state, options, true);
+}
+
+/**
+ * Shared implementation of {@link updateCameraBrain} (`snap: false`) and
+ * {@link snapCameraBrain} (`snap: true`). Snapping changes exactly two things:
+ * every resolved motion converges instantly (see {@link withSnap}) under a
+ * positive nominal `dt`, and no blend is ever carried or created.
+ */
+function advanceBrain(
+  state: Readonly<CameraBrain>,
+  options: Readonly<CameraBrainOptions>,
+  snap: boolean,
+): CameraBrain {
   // 1. Sanitize carried state, dt, viewport, bounds.
   const repaired = repairBrain(state);
-  const dt = Number.isFinite(options.dt) && options.dt > 0 ? options.dt : 0;
+  // A snap is timeless: `converge` refuses to move on a zero-length step, so
+  // snapping needs *some* positive dt — the value is irrelevant once every
+  // motion snaps on the first comparison.
+  const dt = snap ? 1 : Number.isFinite(options.dt) && options.dt > 0 ? options.dt : 0;
   const viewport: CameraViewport = {
     width: isFinitePositive(options.viewport?.width) ? options.viewport.width : 1,
     height: isFinitePositive(options.viewport?.height) ? options.viewport.height : 1,
@@ -362,7 +435,7 @@ export function updateCameraBrain(
   };
 
   // Selection.
-  const normalized = normalizeVcams(options.vcams);
+  const normalized = normalizeVcams(options.vcams, snap);
   const activeId = selectActive(normalized, repaired.activeId, options.activeId);
 
   if (activeId === null) return inactiveHold(repaired);
@@ -378,7 +451,12 @@ export function updateCameraBrain(
   let lensZoom = freshSeed ? repaired.zoom : repaired.lensZoom;
   let blend = repaired.blend;
 
-  if (oldActiveId === null) {
+  if (snap) {
+    // A snap publishes the live state directly: nothing to blend FROM, and a
+    // blend left in progress would re-introduce the ease this call exists to
+    // skip.
+    blend = null;
+  } else if (oldActiveId === null) {
     // First activation: no brain blend.
     blend = null;
   } else if (freshSeed) {

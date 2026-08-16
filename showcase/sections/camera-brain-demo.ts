@@ -5,15 +5,16 @@
  * stage: a moving follow target and a fixed director focus, with a visible
  * **Director focus** control that raises the fixed vcam's priority and drives a
  * real position-and-zoom blend in both directions. The canvas transform is
- * exactly the documented consumer contract:
+ * exactly the documented consumer contract — `applyCameraTransform`, which
+ * owns the scale and the device-pixel snap:
  *
- *   ctx.scale(brain.zoom, brain.zoom);
- *   ctx.translate(-round(brain.camera.x), -round(brain.camera.y));
+ *   applyCameraTransform(ctx, brain.camera, viewport, { zoom, devicePixelRatio });
  *
  * Loop/sim pattern mirrors `sections/sprite-demo.ts`; reduced-motion handling
  * mirrors `helpers/motion-gate.ts`.
  */
 
+import { applyCameraTransform } from '../../src/camera';
 import { createGameLoop, type GameLoop } from '../../src/game-loop';
 import { resizeCanvasToBackingStore } from '../../src/primitives';
 import { shouldAnimate } from '../helpers/motion-gate';
@@ -58,7 +59,11 @@ export function initCameraBrainDemo(root: HTMLElement, _store: Store<GlobalState
   const reduced = shouldAnimate(); // true when the user prefers reduced motion
 
   const render = (): void => {
-    resizeCanvasToBackingStore(canvas, VIEW_W, VIEW_H);
+    // Assigning the backing-store size RESETS the context transform, so the
+    // DPR scale has to be re-applied every frame — without it the whole scene
+    // draws into the top-left 1/dpr of the canvas on a HiDPI display.
+    const dpr = resizeCanvasToBackingStore(canvas, VIEW_W, VIEW_H);
+    ctx.scale(dpr, dpr);
     const { brain, player } = session;
 
     ctx.fillStyle = COLOR_BG;
@@ -66,8 +71,10 @@ export function initCameraBrainDemo(root: HTMLElement, _store: Store<GlobalState
 
     // --- world-space layer ------------------------------------------------
     ctx.save();
-    ctx.scale(brain.zoom, brain.zoom);
-    ctx.translate(-Math.round(brain.camera.x), -Math.round(brain.camera.y));
+    applyCameraTransform(ctx, brain.camera, DEMO_VIEWPORT, {
+      zoom: brain.zoom,
+      devicePixelRatio: dpr,
+    });
 
     // Grid so translation + zoom anchoring are visually obvious.
     ctx.strokeStyle = COLOR_GRID;

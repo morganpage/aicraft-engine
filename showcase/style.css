@@ -1864,3 +1864,24 @@ main {
   border-radius: var(--radius);
   image-rendering: pixelated;
 }
+
+/* The sprite demo had no rule at all, so its canvas box followed the
+   backing-store attributes — which `resizeCanvasToBackingStore` multiplies by
+   the DPR, doubling the demo's on-screen size on a Retina display. CSS sizing
+   is consumer-owned (the DPR helper deliberately never touches it), so the box
+   is pinned here, exactly as the camera-brain stage above pins its own. */
+.sprite-demo-stage {
+  min-width: 0;
+}
+
+.sprite-demo-stage canvas.sprite-demo {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  aspect-ratio: 480 / 270;
+  background: #0b0d12;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  image-rendering: pixelated;
+}

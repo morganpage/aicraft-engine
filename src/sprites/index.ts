@@ -70,9 +70,19 @@ export {
 } from './resolve';
 export type { SpriteAnimState } from './resolve';
 
-// Anim-state deriver
-export { deriveSpriteAnimKind } from './anim-state';
-export type { SpriteAnimKind, SpriteAnimInputs } from './anim-state';
+// Anim-state deriver + the clip-aware clock
+export {
+  deriveSpriteAnimKind,
+  spriteAnimClipFor,
+  createSpriteAnimPlayer,
+  advanceSpriteAnimPlayer,
+} from './anim-state';
+export type {
+  SpriteAnimKind,
+  SpriteAnimInputs,
+  SpriteAnimClip,
+  SpriteAnimPlayer,
+} from './anim-state';
 
 // Renderer
 export {

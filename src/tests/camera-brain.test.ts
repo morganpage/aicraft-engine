@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createCameraBrain,
   updateCameraBrain,
+  snapCameraBrain,
   converge,
   DEFAULT_CAMERA_MOTION,
   DEFAULT_LENS_MOTION,
@@ -810,5 +811,137 @@ describe('defaults', () => {
     expect(DEFAULT_FOLLOW_BODY.followX).toEqual({ trail: 0.25, lead: 0.5 });
     expect(DEFAULT_FOLLOW_BODY.followY).toEqual({ trail: 0.35, lead: 0.65 });
     expect(DEFAULT_BRAIN_BLEND_DURATION).toBe(0.3);
+  });
+});
+
+// =========================================================================
+// snapCameraBrain — first-frame correctness
+// =========================================================================
+
+describe('snapCameraBrain', () => {
+  const ROOM_ZOOM = 2.75;
+  const zoomVcam = (overrides: Partial<VirtualCamera> = {}): VirtualCamera => ({
+    ...followVcam(),
+    lens: { zoom: ROOM_ZOOM },
+    ...overrides,
+  });
+
+  it('lands the lens exactly on the target zoom in one call', () => {
+    // The regression: a brain created at the default zoom 1 eases toward the
+    // room's fitted zoom over the first second of play, which reads as an
+    // unrequested zoom-in the moment gameplay begins.
+    const options = baseOptions({ vcams: [zoomVcam()], activeId: 'follow' });
+    const eased = updateCameraBrain(createCameraBrain(), options);
+    expect(eased.zoom).toBeGreaterThan(1);
+    expect(eased.zoom).toBeLessThan(ROOM_ZOOM); // still on its way
+
+    const snapped = snapCameraBrain(createCameraBrain(), options);
+    expect(snapped.zoom).toBe(ROOM_ZOOM);
+    expect(snapped.lensZoom).toBe(ROOM_ZOOM);
+  });
+
+  it('is the fixed point of the ease: snapping again changes nothing', () => {
+    const options = baseOptions({ vcams: [zoomVcam()], activeId: 'follow' });
+    const once = snapCameraBrain(createCameraBrain(), options);
+    const twice = snapCameraBrain(once, options);
+    expect(twice).toEqual(once);
+  });
+
+  it('is where the ease settles: a long eased run converges on the snap', () => {
+    const options = baseOptions({ vcams: [zoomVcam()], activeId: 'follow' });
+    const snapped = snapCameraBrain(createCameraBrain(), options);
+    let eased = createCameraBrain();
+    for (let i = 0; i < 600; i += 1) eased = updateCameraBrain(eased, options);
+    expect(eased.zoom).toBeCloseTo(snapped.zoom, 6);
+    expect(eased.camera.x).toBeCloseTo(snapped.camera.x, 6);
+    expect(eased.camera.y).toBeCloseTo(snapped.camera.y, 6);
+  });
+
+  it('places the body at its converged framing, not at the creation seed', () => {
+    // A far-right target: the deadzone drives the camera a long way from the
+    // (0, 0) seed, and the snap must arrive there immediately.
+    const options = baseOptions({
+      vcams: [zoomVcam()],
+      targets: { player: playerAt(1500, 800) },
+      activeId: 'follow',
+    });
+    const snapped = snapCameraBrain(createCameraBrain(), options);
+    expect(snapped.camera.x).toBeGreaterThan(100);
+    expect(snapped.bodyCamera.x).toBe(snapped.camera.x);
+    expect(snapped.bodyCamera.y).toBe(snapped.camera.y);
+  });
+
+  it('honours bounds clamping exactly as the eased path does', () => {
+    const options = baseOptions({
+      vcams: [zoomVcam()],
+      targets: { player: playerAt(1e6, 1e6) }, // far outside the level
+      activeId: 'follow',
+    });
+    const snapped = snapCameraBrain(createCameraBrain(), options);
+    const visibleW = VIEWPORT.width / ROOM_ZOOM;
+    const visibleH = VIEWPORT.height / ROOM_ZOOM;
+    expect(snapped.camera.x).toBeCloseTo(BOUNDS.width - visibleW, 9);
+    expect(snapped.camera.y).toBeCloseTo(BOUNDS.height - visibleH, 9);
+  });
+
+  it('starts no blend on a vcam switch, and drops one already in progress', () => {
+    const a: VirtualCamera = { ...followVcam(), id: 'a', blend: 0.3, lens: { zoom: 1 } };
+    const b: VirtualCamera = { ...followVcam(), id: 'b', blend: 0.3, lens: { zoom: ROOM_ZOOM } };
+
+    // Establish 'a', then switch to 'b' with the eased path → a live blend.
+    let brain = updateCameraBrain(createCameraBrain(), baseOptions({ vcams: [a, b], activeId: 'a' }));
+    brain = updateCameraBrain(brain, baseOptions({ vcams: [a, b], activeId: 'b' }));
+    expect(brain.blend).not.toBeNull();
+
+    // Snapping mid-blend publishes the destination outright.
+    const snapped = snapCameraBrain(brain, baseOptions({ vcams: [a, b], activeId: 'b' }));
+    expect(snapped.blend).toBeNull();
+    expect(snapped.zoom).toBe(ROOM_ZOOM);
+    expect(snapped.activeId).toBe('b');
+  });
+
+  it('ignores dt — a snap is timeless', () => {
+    const options = baseOptions({ vcams: [zoomVcam()], activeId: 'follow' });
+    const zero = snapCameraBrain(createCameraBrain(), { ...options, dt: 0 });
+    const huge = snapCameraBrain(createCameraBrain(), { ...options, dt: 1000 });
+    const nan = snapCameraBrain(createCameraBrain(), { ...options, dt: Number.NaN });
+    expect(huge).toEqual(zero);
+    expect(nan).toEqual(zero);
+  });
+
+  it('holds, rather than snapping, when no vcam is selectable', () => {
+    const seeded = createCameraBrain({ x: 40, y: 20, zoom: 3 });
+    const held = snapCameraBrain(seeded, baseOptions({ vcams: [] }));
+    expect(held.camera).toEqual({ x: 40, y: 20 });
+    expect(held.zoom).toBe(3);
+    expect(held.activeId).toBeNull();
+  });
+
+  it('holds the current zoom when the selected vcam has no lens', () => {
+    const options = baseOptions({ vcams: [followVcam()], activeId: 'follow' });
+    const snapped = snapCameraBrain(createCameraBrain({ zoom: 4 }), options);
+    expect(snapped.zoom).toBe(4);
+  });
+
+  it('never mutates the state it was given', () => {
+    const before = createCameraBrain({ zoom: 1 });
+    const snapshot = JSON.parse(JSON.stringify(before)) as CameraBrain;
+    snapCameraBrain(before, baseOptions({ vcams: [zoomVcam()], activeId: 'follow' }));
+    expect(before).toEqual(snapshot);
+  });
+
+  it('repairs invalid carried state instead of producing NaN', () => {
+    const broken = {
+      camera: { x: Number.NaN, y: Infinity },
+      zoom: -1,
+      activeId: 'follow',
+      bodyCamera: { x: Number.NaN, y: Number.NaN },
+      lensZoom: Number.NaN,
+      blend: null,
+    } as unknown as CameraBrain;
+    const snapped = snapCameraBrain(broken, baseOptions({ vcams: [zoomVcam()], activeId: 'follow' }));
+    expect(Number.isFinite(snapped.camera.x)).toBe(true);
+    expect(Number.isFinite(snapped.camera.y)).toBe(true);
+    expect(snapped.zoom).toBe(ROOM_ZOOM);
   });
 });

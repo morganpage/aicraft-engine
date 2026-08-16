@@ -174,7 +174,11 @@ export function initSpriteDemo(root: HTMLElement, _store: Store<GlobalState>): v
     // 5. Render — a named function so it can be called both by the loop and
     //    for the initial paint (the GameLoop contract has no public render()).
     const render = (): void => {
-      resizeCanvasToBackingStore(canvas, VIEW_W, VIEW_H);
+      // Assigning the backing-store size RESETS the context transform, so the
+      // DPR scale has to be re-applied every frame — without it the whole
+      // scene draws into the top-left 1/dpr of the canvas on a HiDPI display.
+      const dpr = resizeCanvasToBackingStore(canvas, VIEW_W, VIEW_H);
+      ctx.scale(dpr, dpr);
       ctx.fillStyle = '#0b0d12';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 

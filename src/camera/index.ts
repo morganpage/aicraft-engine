@@ -48,7 +48,15 @@ export {
 } from './constants';
 export { createCamera, updateCamera } from './follow';
 export { converge } from './motion';
-export { createCameraBrain, updateCameraBrain } from './brain';
+export { createCameraBrain, updateCameraBrain, snapCameraBrain } from './brain';
 export { fitCameraZoom, type CameraFitMode, type FitCameraZoomOptions } from './fit';
+export {
+  cameraTransform,
+  applyCameraTransform,
+  type CameraSnapMode,
+  type CameraTransformOptions,
+  type CameraTransformResult,
+  type CameraWorldView,
+} from './transform';
 // NOTE: `followPosition` (motion.ts) is an implementation helper for focused
 // unit tests and is intentionally omitted from the package barrel.
