@@ -2,9 +2,32 @@
 
 This engine is zero-dependency at runtime. The assets below live under
 `assets/` for the showcase, the LDtk rules oracle, and the sprite-animation
-tests; they are not part of the compiled library (`dist/`). The published
-package ships `dist/` alone, so nothing under `assets/` reaches consumers via
-npm.
+tests, and under `games/` for the build-brief asset packs; they are not part of
+the compiled library (`dist/`). The published package ships `dist/` alone, so
+nothing under `assets/` or `games/` reaches consumers via npm.
+
+## Celerock build-brief asset pack
+
+`games/celerock.png` and `games/Player.png` are the art for the Celerock build
+brief ([`games/celerock.md`](games/celerock.md) §1.1). Unlike everything else in
+this file, these are **linked by raw URL from the brief itself and downloaded
+into generated projects** — i.e. redistributed, not merely used. Both are CC0,
+which permits that.
+
+| Asset | Pack | Author | License |
+| --- | --- | --- | --- |
+| `games/celerock.png` | [Tranquil Tunnels](https://octoshrimpy.itch.io/tranquil-tunnels) | octoshrimpy | [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/) |
+| `games/Player.png` | [Deep Night](https://v3x3d.itch.io/deep-night) | VEXED | [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/) |
+
+`games/celerock.png` is the 1024×1024 8px-tile transparent sheet from Tranquil
+Tunnels v1.3 (the LDtk tileset def still carries the upstream identifier
+`_V1_3_tranquil_tunnels_transparent`). `games/Player.png` is the 160×128 player
+sheet (10×8 grid of 16×16 frames) from Deep Night. `games/celerock.ldtk` is an
+original level authored for this repository against those tiles.
+
+CC0 requires no attribution; this section exists because the brief hands the
+files onward to third parties, and telling them where the art came from is the
+decent default.
 
 ## LDtk sample atlas tilesets
 
