@@ -174,6 +174,21 @@ export {
   type RoomEntrySlideViewOptions,
 } from './room-slide';
 
+// Room-transition session — the single orchestrator owning { detector, slide }
+// as ONE immutable state machine (0.15.0 hardening, Change B): suppressed
+// polls and refused begins during a slide, the finish-rebase exactly once, and
+// one cancel-with-rebase abnormal-exit path.
+export {
+  createRoomTransitionSession,
+  pollRoomTransition,
+  beginSessionRoomSlide,
+  advanceSessionRoomSlide,
+  endRoomTransitionSession,
+  type RoomTransitionSessionState,
+  type RoomTransitionPollResult,
+  type SessionSlideBeginInput,
+} from './room-transition-session';
+
 export {
   drawLevelEntity,
   drawActor,

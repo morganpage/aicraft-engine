@@ -237,6 +237,15 @@ import {
   roomEntrySlideView,
   // 0.13.0: sustained-audio layer.
   createAudioAdapter,
+  // Room-transition session (0.15.0): the orchestrator layer, imported
+  // explicitly so a missing / renamed export fails the packed-tarball gate.
+  createRoomTransitionSession,
+  pollRoomTransition,
+  beginSessionRoomSlide,
+  advanceSessionRoomSlide,
+  endRoomTransitionSession,
+  // Preflight (0.15.0): the multi-room steer is read off the report.
+  inspectLdtkPlatformerProject,
 } from 'aicraft-engine';
 
 // (3) Barrel is importable and re-exports a large surface.
@@ -282,10 +291,14 @@ assert.equal(DEFAULT_EXIT_DEADBAND, 1);
 const detectorState = createRoomExitDetectorState();
 assert.equal(detectorState.blockedEntryEdge, null);
 // detectLdtkRoomExit over a two-room project: body inside → no exit, armed.
+// The fixture also satisfies inspectLdtkPlatformerProject (defs arrays,
+// identifier, explicit layerInstances:null), so the 0.15.0 preflight check
+// below reuses it as a tiny synthetic multi-room chain.
 const project = {
+  defs: { layers: [], tilesets: [] },
   levels: [
-    { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, __neighbours: [{ dir: 'e', levelIid: 'L1' }] },
-    { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128, __neighbours: [{ dir: 'w', levelIid: 'L0' }] },
+    { iid: 'L0', identifier: 'Level_0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, layerInstances: null, __neighbours: [{ dir: 'e', levelIid: 'L1' }] },
+    { iid: 'L1', identifier: 'Level_1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128, layerInstances: null, __neighbours: [{ dir: 'w', levelIid: 'L0' }] },
   ],
   worlds: [],
 };
@@ -310,6 +323,47 @@ const destView = roomEntrySlideView(
 assert.ok(Number.isFinite(destView.camera.y), 'destView.camera.y finite');
 assert.equal(destView.zoom, 8);
 console.log('TRANSITION HARDENING: exports OK');
+
+// Room-transition session (0.15.0): every new public name exercised against
+// the same two-room fixture so a broken/missing export fails the gate loudly.
+const sessionBrain = { camera: { x: 0, y: 0 }, zoom: 1, activeId: null, bodyCamera: { x: 0, y: 0 }, lensZoom: 1, blend: null };
+const session0 = createRoomTransitionSession();
+assert.equal(session0.slide, null);
+const polled = pollRoomTransition(session0, { x: 50, y: 50, width: 8, height: 8 }, project.levels[0], project);
+assert.deepEqual(polled.result, { type: 'idle' });
+assert.equal(polled.session.slide, null);
+assert.equal(polled.session.detector.fullyInsideXIid, 'L0');
+// A refused begin (zero-width viewport) never throws and passes the brain
+// and session through unchanged.
+const refusedBegin = beginSessionRoomSlide(session0, {
+  source: { ldtkLevel: project.levels[0] },
+  destination: { ldtkLevel: project.levels[1] },
+  viewport: { width: 0, height: 112 },
+  brain: sessionBrain,
+  destinationView: { camera: { x: 0, y: 0 }, zoom: 1 },
+  actor: { sourceLocal: { x: 10, y: 10 }, destinationLocal: { x: -10, y: 10 } },
+});
+assert.equal(refusedBegin.ok, false);
+assert.equal(refusedBegin.session, session0);
+assert.equal(refusedBegin.brain, sessionBrain);
+// Advancing an idle session is inert; ending one returns a fresh idle session
+// with the brain unchanged (no slide to cancel).
+const idleAdvance = advanceSessionRoomSlide(polled.session, 1 / 60, sessionBrain);
+assert.equal(idleAdvance.done, true);
+assert.equal(idleAdvance.brain, sessionBrain);
+const endedSession = endRoomTransitionSession(polled.session, sessionBrain, 'destination');
+assert.equal(endedSession.brain, sessionBrain);
+assert.deepEqual(endedSession.session, createRoomTransitionSession());
+console.log('TRANSITION SESSION: exports OK');
+
+// Preflight (0.15.0 Change D): the multi-room steer is readable off a tiny
+// synthetic chained project — two levels, one resolved __neighbours link, no
+// Exit entities (multiRoom must not depend on the entity-based exits flag).
+const report = inspectLdtkPlatformerProject(project);
+assert.equal(report.levelCount, 2);
+assert.equal(report.capabilities.multiRoom, true);
+assert.equal(report.capabilities.exits, false);
+console.log('PREFLIGHT: multiRoom=true OK');
 
 // Sustained-audio layer (0.13.0). Plain Node has no window, so the adapter is
 // the documented inert/no-op mode — the point is that every new public name
@@ -385,6 +439,12 @@ function doTypecheckConsumer(tmp, tgz) {
   roomEntrySlideView,
   // 0.13.0: sustained-audio layer.
   createAudioAdapter,
+  // Room-transition session (0.15.0): value imports.
+  createRoomTransitionSession,
+  pollRoomTransition,
+  beginSessionRoomSlide,
+  advanceSessionRoomSlide,
+  endRoomTransitionSession,
 } from 'aicraft-engine';
 import type {
   GameLoop,
@@ -400,6 +460,11 @@ import type {
   // 0.13.0: sustained-audio handle + adapter contract.
   AudioAdapter,
   NoiseLoopHandle,
+  // Room-transition session (0.15.0): orchestrator types (surfaces any
+  // .d.ts specifier bug).
+  RoomTransitionSessionState,
+  RoomTransitionPollResult,
+  SessionSlideBeginInput,
 } from 'aicraft-engine';
 
 const loop: GameLoop = createGameLoop({
@@ -459,6 +524,29 @@ const _scrape: NoiseLoopHandle = _audio.startNoiseLoop('lowpass', 600, 0.06);
 _scrape.setPeak(0.5);
 _scrape.stop();
 void _scrape;
+
+// Room-transition session (0.15.0): type + value uses prove the new public
+// API ships and typechecks under NodeNext with skipLibCheck:false.
+const _session0: RoomTransitionSessionState = createRoomTransitionSession();
+const _polled = pollRoomTransition(
+  _session0,
+  { x: 50, y: 50, width: 8, height: 8 },
+  { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, __neighbours: [] } as never,
+  { levels: [] } as never,
+);
+const _pollResult: RoomTransitionPollResult = _polled.result;
+const _beginInput: SessionSlideBeginInput = {
+  source: { ldtkLevel: { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112 } } as never,
+  destination: { ldtkLevel: { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 } } as never,
+  viewport: { width: 160, height: 112 },
+  brain: { camera: { x: 0, y: 0 }, zoom: 1, activeId: null, bodyCamera: { x: 0, y: 0 }, lensZoom: 1, blend: null },
+  destinationView: { camera: { x: 0, y: 0 }, zoom: 1 } as never,
+  actor: { sourceLocal: { x: 10, y: 10 }, destinationLocal: { x: -10, y: 10 } } as never,
+};
+const _begun = beginSessionRoomSlide(_session0, _beginInput);
+const _advancedSession = advanceSessionRoomSlide(_session0, 1 / 60, _begun.brain);
+const _endedSession = endRoomTransitionSession(_session0, _begun.brain, 'destination');
+void _pollResult; void _advancedSession; void _endedSession;
 
 void state;
 `,
@@ -556,6 +644,14 @@ function doViteConsumer(tmp, tgz) {
   roomEntrySlideView,
   // 0.13.0: sustained-audio layer bundles cleanly.
   createAudioAdapter,
+  // Room-transition session (0.15.0): the orchestrator layer bundles cleanly.
+  createRoomTransitionSession,
+  pollRoomTransition,
+  beginSessionRoomSlide,
+  advanceSessionRoomSlide,
+  endRoomTransitionSession,
+  // Preflight (0.15.0): the multi-room steer read off the report.
+  inspectLdtkPlatformerProject,
 } from 'aicraft-engine';
 
 const solids = [{ x: 0, y: 200, width: 10000, height: 100, id: solidIdForEntity(0) }];
@@ -585,6 +681,23 @@ const _destView2 = roomEntrySlideView(
   8,
 );
 void _destView2;
+// Room-transition session (0.15.0): exercise the orchestrator imports so
+// tree-shaking keeps them and a broken/missing export fails the build gate.
+const _session = createRoomTransitionSession();
+const _sessionPolled = pollRoomTransition(
+  _session,
+  { x: 50, y: 50, width: 8, height: 8 },
+  { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, __neighbours: [] } as never,
+  { levels: [] } as never,
+);
+const _sessionBrain = { camera: { x: 0, y: 0 }, zoom: 1, activeId: null, bodyCamera: { x: 0, y: 0 }, lensZoom: 1, blend: null };
+const _idleAdvance = advanceSessionRoomSlide(_sessionPolled.session, 1 / 60, _sessionBrain);
+const _refusedBegin = beginSessionRoomSlide(_session, {} as never);
+const _endedSession = endRoomTransitionSession(_sessionPolled.session, _sessionBrain, 'destination');
+void _idleAdvance; void _refusedBegin; void _endedSession;
+// Preflight (0.15.0): kept as a build-gate reference — esbuild fails the
+// bundle if the export goes missing from the packed tarball.
+void inspectLdtkPlatformerProject;
 const el = document.getElementById('app');
 if (el) el.textContent = 'y=' + s.core.y.toFixed(1);
 `,

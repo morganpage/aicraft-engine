@@ -1259,6 +1259,57 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 - _research: `docs/research/platformer-kernel.md`_
 - _composes with: `src/animation/jump.ts` (`advanceJump`), `src/collision/resolve.ts` (`resolveAxisX`/`resolveAxisY`), `src/input/edges.ts` (`pollEdge`)_
 
+#### Room transitions
+
+The seam-traversal layer: pure exit detection (`room-transitions.ts`), the slide presentation orchestrator (`room-slide.ts`), and the session that composes them into one state machine (`room-transition-session.ts`). All pure, immutable, never-throw.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `Cardinal` | type | `'n' \| 's' \| 'e' \| 'w'` — a cardinal direction (`__neighbours` dir narrowed to the four edges) | `src/platformer/room-transitions.ts` |
+| `LdtkRoomExit` | interface | A detected room exit on a cardinal seam: `dir`, `neighbourLevelIid`, inclusive world-space `seamMin`/`seamMax` on the perpendicular axis (a crossing outside the span is void, not a transition) | `src/platformer/room-transitions.ts` |
+| `LdtkRoomEntry` | interface | Where the actor enters the destination room (destination-local): `x`, `y`, `dir`, `toLevelIid` | `src/platformer/room-transitions.ts` |
+| `TransitionPlatformerToRoomOptions` | interface | Options for `transitionPlatformerToRoom`: optional `destinationSolids` (revalidates exact gravity-facing support only — never settles or repositions) and `config` | `src/platformer/room-transitions.ts` |
+| `PlatformerRoomTransition` | interface | Post-transition state + seam-entry spawn provenance: `{ state, spawn }` | `src/platformer/room-transitions.ts` |
+| `findLdtkRoomExit(body, level, project)` | function | Low-level stateless primitive: the top-ranked cardinal seam crossing out of `level` (greatest normalized penetration; stable ties `n → e → s → w`), or `undefined`. No gating — per-tick consumers should use `detectLdtkRoomExit` | `src/platformer/room-transitions.ts` |
+| `mapLdtkRoomEntry(body, from, to, exit)` | function | Momentum-preserving seam entry point in destination-local coordinates; preserves the actor top-left exactly through world space. Does NOT clamp | `src/platformer/room-transitions.ts` |
+| `transitionPlatformerToRoom(state, entry, options?)` | function | Post-transition state + seam-entry spawn provenance: preserves `vx`/`vy`/`facing` and the ability/locomotion slices, clears per-tick channels, never settles | `src/platformer/room-transitions.ts` |
+| `rebasePointBetweenLdtkRooms(point, from, to)` | function | Rebase a point from `from`-room-local into `to`-room-local coordinates across the seam (particle/dust continuity) | `src/platformer/room-transitions.ts` |
+| `DEFAULT_EXIT_DEADBAND` | const | `1` — default positive re-arm margin in room/world pixels | `src/platformer/room-transitions.ts` |
+| `RoomExitDetectorOptions` | interface | Options for `detectLdtkRoomExit`: optional `deadband` — only finite values `> 0` are honored; invalid falls back to `DEFAULT_EXIT_DEADBAND` | `src/platformer/room-transitions.ts` |
+| `RoomExitDetectorState` | interface | Immutable, serializable re-arm state: `blockedEntryEdge`, `expectedLevelIid`, plus the per-axis containment latches `fullyInsideXIid`/`fullyInsideYIid`. A JSON-clone behaves identically (deterministic across save/load and replay) | `src/platformer/room-transitions.ts` |
+| `RoomExitDetection` | interface | Result of `detectLdtkRoomExit`: `{ state, exit? }` — adopt `state` transactionally only when the transition is accepted | `src/platformer/room-transitions.ts` |
+| `createRoomExitDetectorState()` | function | Factory: the armed state — no re-arm gate, no containment latches, exits enabled | `src/platformer/room-transitions.ts` |
+| `detectLdtkRoomExit(state, body, level, project, options?)` | function | Poll for a room exit with direction-specific re-arm hysteresis plus the 0.15.0 per-axis containment latch: an exit requires the body to have been fully contained once on the exit's crossing axis in the current room; the orthogonal axis is ungated; reset-immune — a fresh or discarded detector state cannot tick-tock. Returns next state + any exit; pure | `src/platformer/room-transitions.ts` |
+| `ROOM_SLIDE_VCAM_ID` | const | `'__roomSlide'` — reserved id for the transient slide-authority vcam | `src/platformer/room-slide.ts` |
+| `DEFAULT_ROOM_SLIDE_DURATION` | const | `0.3` — default slide duration in seconds (Celeste-feel) | `src/platformer/room-slide.ts` |
+| `roomSlideEase(t)` | function | The named, exported slide easing: smoothstep (`t*t*(3-2t)`), symmetric ease-in-out. Captured in `RoomSlideState.easing` so `advanceRoomSlide` finishes deterministically | `src/platformer/room-slide.ts` |
+| `RoomSlideView` | interface | Captured camera endpoint: camera top-left in that room's LOCAL coordinates in ROOM-PIXELS (not physical/screen px) + strictly-positive zoom | `src/platformer/room-slide.ts` |
+| `RoomSlideActorMapping` | interface | The actor's position in both rooms' local coordinates (continuity math) | `src/platformer/room-slide.ts` |
+| `RoomSlideOptions` | interface | Options for `beginRoomSlide`: `duration?`, `easing?`, `freezeSimulation?`, `reducedMotion?` — an explicit input; the pure core never reads host state | `src/platformer/room-slide.ts` |
+| `RoomSlideSpace` | interface | The normalized two-room coordinate space: union bounds + source/destination offsets (both ≥ 0 so the brain's zero-origin clamp stays valid) | `src/platformer/room-slide.ts` |
+| `RoomSlideState` | interface | Immutable slide clock + captured endpoints + correction deltas: `active`, `elapsed`, `duration`, `t`, level iids, `easing`, `freezeSimulation`, `space`, source/destination views, `initialPlayerOffset`, `particleRebaseDelta` | `src/platformer/room-slide.ts` |
+| `RoomSlidePresentation` | interface | Per-tick presentation output the consumer feeds to render + the camera brain: `vcam \| null`, bounds, offsets, render-only `playerOffset`, `freezeSimulation` | `src/platformer/room-slide.ts` |
+| `beginRoomSlide(source, dest, viewport, views, actor, options?)` | function | Build the slide clock, coordinate space, endpoints, and correction deltas. Pure. The caller supplies exact endpoint views (the brain advances only the selected vcam) | `src/platformer/room-slide.ts` |
+| `advanceRoomSlide(slide, dt)` | function | Advance the slide clock by `dt`. Pure | `src/platformer/room-slide.ts` |
+| `presentationForRoomSlide(slide)` | function | Vcam + bounds + render offsets for this tick. Pure | `src/platformer/room-slide.ts` |
+| `enterRoomSlideCameraSpace(slide, brain)` | function | Rebase source-local brain state into normalized slide space and clear active selection/blend. Call once at slide start. Pure | `src/platformer/room-slide.ts` |
+| `finishRoomSlideCameraSpace(slide, brain)` | function | Rebase slide-space brain state into destination-local space and clear selection/blend. Call once at slide end. Pure | `src/platformer/room-slide.ts` |
+| `cancelRoomSlideCameraSpace(slide, brain, returnTo)` | function | Abort/reverse: rebase slide-space brain state into either endpoint room's local space and clear selection/blend. Death/retry/teleport chooses the room the simulation resumes in (`'source' \| 'destination'`). Pure | `src/platformer/room-slide.ts` |
+| `seedRoomCutCamera(sourceBrain, sourceLevel, destinationLevel)` | function | Inactive destination-local brain for a HARD ROOM CUT, preserving the source brain's rendered world-space top-left and rendered zoom — no first-activation dip from the room origin. NOT a room-slide endpoint | `src/platformer/room-slide.ts` |
+| `beginRoomSlideFromBrain(source, destination, viewport, sourceBrain, destinationView, actor, options?)` | function | Safe `beginRoomSlide` constructor: derives the source endpoint directly from the rendered brain (camera AND zoom, copied not retained) — source-view/brain divergence impossible by construction. The caller still chooses the destination view | `src/platformer/room-slide.ts` |
+| `roomEntrySlideView(room, entryTarget, viewport, zoom, options?)` | function | Follow-compatible destination `RoomSlideView`: an equilibrium of the destination follow body for the supplied deadzone bands/padding (its first follow step does not move the camera). Takes the PHYSICAL viewport; returns a room-local room-px camera | `src/platformer/room-slide.ts` |
+| `RoomEntrySlideViewOptions` | interface | Options for `roomEntrySlideView`: `followX?`, `followY?`, `padding?` — pass the destination follow vcam's bands/padding | `src/platformer/room-slide.ts` |
+| `RoomTransitionSessionState` | interface | One actor's room-transition state machine: `{ detector, slide }` — `detector` is plain serializable data (persist it alone); `slide` is runtime-only (holds an easing closure), rebuilt via `createRoomTransitionSession` on load | `src/platformer/room-transition-session.ts` |
+| `createRoomTransitionSession()` | function | Factory: a fresh idle session — an armed detector (no re-arm gate, no containment latches) and `slide: null` | `src/platformer/room-transition-session.ts` |
+| `RoomTransitionPollResult` | type | Poll outcome: `'idle'` (no exit), `'suppressed-slide-active'` (a slide is in flight — exits held), or `'exit'` (carries the `LdtkRoomExit`) | `src/platformer/room-transition-session.ts` |
+| `pollRoomTransition(session, body, level, project, options?)` | function | Per-tick simulation entry: while a slide is active returns `'suppressed-slide-active'` with the session unchanged (no second transition mid-slide); otherwise delegates to `detectLdtkRoomExit` and AUTO-ADOPTS the returned detector state — storing the returned session is the whole obligation | `src/platformer/room-transition-session.ts` |
+| `SessionSlideBeginInput` | interface | Inputs for `beginSessionRoomSlide`: source/destination compiled rooms, physical viewport (finite, positive), current brain, destination view, actor mapping | `src/platformer/room-transition-session.ts` |
+| `beginSessionRoomSlide(session, input, options?)` | function | Begin the presentation slide for an accepted exit. Returns `{ session, brain, ok }` and applies the slide-space enter rebase internally on success (composes `beginRoomSlideFromBrain` + `enterRoomSlideCameraSpace`). Refuses (`ok: false`, unchanged) while a slide is active or inputs are unusable; never throws | `src/platformer/room-transition-session.ts` |
+| `advanceSessionRoomSlide(session, dt, brain)` | function | Advance the slide clock one presentation tick; applies the finish-rebase exactly once when — and only when — the slide completes. While active the brain is returned unchanged: the consumer still drives the per-tick slide camera (`presentationForRoomSlide` + their own `updateCameraBrain`). Idle sessions are inert (`done: true`, brain byte-identical). Returns `{ session, brain, done }` | `src/platformer/room-transition-session.ts` |
+| `endRoomTransitionSession(session, brain, rebaseTo)` | function | The single abnormal-exit path (death/retry/teleport/reset): if a slide is active, cancels with rebase via `cancelRoomSlideCameraSpace` BEFORE clearing; always returns a fresh idle session with a fresh detector. Never throws | `src/platformer/room-transition-session.ts` |
+
+- _Backfill pending: ~81 further platformer exports (enemies, squash/stretch, config scaler, feel moments, LDtk room cache) — tracked as a follow-up._
+
 ### `src/save/`
 
 Defensive save-data storage backends and JSON load/write helpers. Follows the canonical defensive adapter pattern (`src/primitives/motion.ts`): lazy `window.localStorage` resolution, swallow all errors, never-throw public API. Zero cross-module imports.
@@ -1877,6 +1928,9 @@ LDtk resolves auto-tiling at save time, which is enough to *play* a level but no
 | `LdtkTilesetBundle`, `LdtkTilesetImage`, `DrawLdtkLevelOptions` | types | Renderer inputs | `src/ldtk/render.ts` |
 | `LdtkRuleGridSource`, `LdtkRuleTileset`, `RunLdtkAutoLayerOptions` | types | Auto-tiler inputs | `src/ldtk/rules.ts` |
 | `LdtkDocument`, `LdtkReadResult`, `LdtkCellEdit`, `LdtkCellRect`, `LdtkEditResult` | types | Editing and round-trip surfaces | `src/ldtk/edit.ts`, `src/ldtk/write.ts` |
+| `inspectLdtkPlatformerProject(project)` | function | Pure structural preflight of a parsed project: `levelCount`, per-level `hasSpawn`/`spawn`/`neighbourIids`/`connected`, `tileSizes`, `totalSpawns`, `spawnLessRoomIids`, `disconnectedRoomIids`, `capabilities` (incl. the new `multiRoom`), `unknownTriggerIdentifiers`, info/warning `diagnostics`. `capabilities.exits` counts Exit ENTITIES (resolved kind `'exit'`) only — NOT `__neighbours` seam traversal (see `neighbourIids` / `capabilities.multiRoom`). Never throws | `src/ldtk/preflight.ts` |
+| `loadLdtkProjectAssets(options)` | function | One-call project + tileset PNG loader: fetches + parses the `.ldtk`, fetches + decodes each drawable tileset (bounded timeouts, percent-encoded URLs), builds the bundle. Returns `{ ok, project?, tilesets?, diagnostics }`; defensive, never throws — failures degrade to diagnostics | `src/ldtk/load.ts` |
+| `LdtkAssetDiagnostic` | type | A single asset-loading diagnostic: `severity` (`'error' \| 'warning' \| 'info'`), optional `tilesetUid`/`relPath`, `message` | `src/ldtk/load.ts` |
 
 - _schema reference: <https://ldtk.io/json/>_
 - _bundled CC0/PD tilesets: `assets/ldtk/samples/atlas/` (Cavernas, SunnyLand, Inca); LDtk's own sample projects are vendored as test fixtures. See `THIRD_PARTY.md`_

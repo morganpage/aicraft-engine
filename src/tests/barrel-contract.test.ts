@@ -283,4 +283,21 @@ describe('root barrel re-exports every module', () => {
   void _slideOpts;
     void _detection; void _opts;
   });
+
+  it('room-transition session (0.15.0): the five orchestrator functions and their types are public', () => {
+    // The session owns { detector, slide } as ONE state machine — suppressed
+    // polls and refused begins during a slide, the finish-rebase exactly once,
+    // one cancel-with-rebase abnormal-exit path.
+    expect(typeof aicraft.createRoomTransitionSession).toBe('function');
+    expect(typeof aicraft.pollRoomTransition).toBe('function');
+    expect(typeof aicraft.beginSessionRoomSlide).toBe('function');
+    expect(typeof aicraft.advanceSessionRoomSlide).toBe('function');
+    expect(typeof aicraft.endRoomTransitionSession).toBe('function');
+    // Compile-time type uses: the new exported types must be importable.
+    const _session: aicraft.RoomTransitionSessionState = aicraft.createRoomTransitionSession();
+    const _poll: aicraft.RoomTransitionPollResult = { type: 'idle' };
+    type _BeginInput = aicraft.SessionSlideBeginInput;
+    void 0 as _BeginInput | undefined;
+    void _session; void _poll;
+  });
 });

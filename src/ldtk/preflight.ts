@@ -29,9 +29,23 @@ export interface LdtkPlatformerCapabilities {
   readonly collectibles: boolean;
   readonly springs: boolean;
   readonly dashRefills: boolean;
+  /**
+   * Exit ENTITIES (resolved kind `'exit'` via {@link LDTK_DEFAULT_ENTITY_MAP})
+   * only — NOT `__neighbours` seam traversal. For the `__neighbours` chain
+   * see {@link LdtkPlatformerLevelReport.neighbourIids} and
+   * {@link LdtkPlatformerCapabilities.multiRoom}.
+   */
   readonly exits: boolean;
   readonly ladders: boolean;
   readonly movingPlatforms: boolean;
+  /**
+   * Multi-room world chained via `__neighbours` — seam traversal (the
+   * room-transition path) is in scope. True iff the project has more than one
+   * level AND some level's `__neighbours` entry resolves to a DIFFERENT real
+   * level within the project; dangling (unresolved) and self links do not
+   * count.
+   */
+  readonly multiRoom: boolean;
 }
 
 /** Per-level summary within a project report. */
@@ -263,6 +277,18 @@ export function inspectLdtkPlatformerProject(project: LdtkProject): LdtkPlatform
     if (t.relPath !== null && t.relPath !== '') tilesetRelPaths.push(t.relPath);
   }
 
+  // multiRoom must resolve against the real level set: the adjacency map above
+  // inserts phantom nodes for dangling neighbour iids, and per-level
+  // neighbourIids is likewise unresolved.
+  const levelIids = new Set(levels.map((l) => l.iid));
+  const multiRoom =
+    levels.length > 1 &&
+    levels.some((l) =>
+      l.__neighbours.some(
+        (n) => n.levelIid !== '' && n.levelIid !== l.iid && levelIids.has(n.levelIid),
+      ),
+    );
+
   const capabilities: LdtkPlatformerCapabilities = {
     hazards: (globalCounts['hazard'] ?? 0) > 0,
     collectibles: (globalCounts['collectible'] ?? 0) > 0,
@@ -271,6 +297,7 @@ export function inspectLdtkPlatformerProject(project: LdtkProject): LdtkPlatform
     exits: (globalCounts['exit'] ?? 0) > 0,
     ladders: projectHasLadders(levels, ladderIntGridValues(project)),
     movingPlatforms: (globalCounts['movingPlatform'] ?? 0) > 0,
+    multiRoom,
   };
 
   // --- Diagnostics (info/warning only; preflight never errors). ---
@@ -297,6 +324,12 @@ export function inspectLdtkPlatformerProject(project: LdtkProject): LdtkPlatform
     diagnostics.push({
       severity: 'warning',
       message: 'no spawn rooms found; connectivity not evaluated',
+    });
+  }
+  if (multiRoom) {
+    diagnostics.push({
+      severity: 'info',
+      message: `multi-room world: ${finalizedLevels.length} rooms chained via __neighbours — seam traversal (room-transition path) is in scope`,
     });
   }
 

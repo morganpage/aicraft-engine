@@ -7,6 +7,7 @@ import {
   createRoomExitDetectorState,
   detectLdtkRoomExit,
   DEFAULT_EXIT_DEADBAND,
+  type RoomExitDetectorState,
 } from '../platformer/room-transitions';
 import { createPlatformerState } from '../platformer/kernel';
 import { DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
@@ -98,6 +99,27 @@ const PARTIAL: LevelSpec[] = [
     pxHei: 128,
     neighbours: [{ dir: 'w', levelIid: 'L0' }],
   },
+];
+
+// Per-axis-latch fixture: C is linked WEST (W) and SOUTH (S), so a body can
+// straddle C's west seam (X unlatched) while vertically inside (Y latches),
+// then cross the south seam on a later poll while still straddling west —
+// the exact Celerock bug-1 arrival geometry plus a legitimate orthogonal
+// exit. C has NO east/north neighbours (those edges are void crossings).
+const ORTHO: LevelSpec[] = [
+  {
+    iid: 'C',
+    worldX: 100,
+    worldY: 0,
+    pxWid: 100,
+    pxHei: 100,
+    neighbours: [
+      { dir: 'w', levelIid: 'W' },
+      { dir: 's', levelIid: 'S' },
+    ],
+  },
+  { iid: 'W', worldX: 0, worldY: 0, pxWid: 100, pxHei: 100, neighbours: [{ dir: 'e', levelIid: 'C' }] },
+  { iid: 'S', worldX: 100, worldY: 100, pxWid: 100, pxHei: 100, neighbours: [{ dir: 'n', levelIid: 'C' }] },
 ];
 
 describe('room transitions — findLdtkRoomExit', () => {
@@ -263,6 +285,18 @@ describe('room transitions — findLdtkRoomExit', () => {
     };
     expect(findLdtkRoomExit(body(98, 40), project.levels[0], project)?.neighbourLevelIid).toBe('B');
   });
+
+  it('applies no gating: returns the top-ranked candidate even on an axis a detector would suppress (A.2 refactor)', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+    // West penetration 6/8 outranks south 5/8, and a fresh detector would
+    // suppress west (X unlatched) — but the stateless primitive has no
+    // containment latch: it still returns the top-ranked west candidate.
+    expect(findLdtkRoomExit(body(-6, 97), C, project)?.dir).toBe('w');
+    // A single straddling candidate is returned identically.
+    expect(findLdtkRoomExit(body(-3, 50), C, project)?.dir).toBe('w');
+    expect(findLdtkRoomExit(body(-3, 50), C, project)?.neighbourLevelIid).toBe('W');
+  });
 });
 
 describe('room transitions — mapLdtkRoomEntry / rebase', () => {
@@ -409,7 +443,15 @@ describe('detectLdtkRoomExit', () => {
     // L0 east edge at world x=160 (local x=160). Body at L0-local (158, 50):
     // right edge 166 > 160 → east exit fires.
     const project = makeProject(...PARTIAL);
-    let state = createRoomExitDetectorState();
+    // The actor has been polling inside L0 (fully contained on both axes)
+    // before walking into the east seam, so its armed state carries the
+    // containment latches.
+    let state: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'L0',
+      fullyInsideYIid: 'L0',
+    };
     const d1 = detectLdtkRoomExit(state, body(158, 50), project.levels[0], project);
     expect(d1.exit?.dir).toBe('e');
     expect(d1.exit?.neighbourLevelIid).toBe('L1');
@@ -447,7 +489,7 @@ describe('detectLdtkRoomExit', () => {
     // instead of suppressing forever (previously: consumers' void checks
     // killed the actor right after the transition).
     const project = makeProject(...PARTIAL);
-    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     // Body at L1-local x = -8..0: no overlap with L1 → the gate releases.
     const d = detectLdtkRoomExit(gated, body(-8, 50), project.levels[1], project);
     expect(d.exit?.dir).toBe('w');
@@ -459,7 +501,7 @@ describe('detectLdtkRoomExit', () => {
 
   it('still gates a body that straddles the arrival seam (hysteresis band)', () => {
     const project = makeProject(...PARTIAL);
-    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     // Body at L1-local x = -7.9..0.1: a 0.1px overlap keeps it straddling the
     // seam. The bare helper WOULD fire west here (that is the tick-tock); the
     // detector must still hold until the deadband is cleared or the body
@@ -471,7 +513,7 @@ describe('detectLdtkRoomExit', () => {
 
   it('an out-of-span back-out is void AND releases the gate (no infinite hold)', () => {
     const project = makeProject(...PARTIAL);
-    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     // Fully west of L1 AND below the shared Y span [0,112] (body y 120..128):
     // the departure is void per contract, and the detector must release to
     // armed rather than holding the gate against a room the actor has left.
@@ -487,7 +529,7 @@ describe('detectLdtkRoomExit', () => {
     // releases and the bare helper governs: L1 has no south neighbour, so this
     // departure is void, and the state comes back armed.
     const project = makeProject(...PARTIAL);
-    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const gated = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     const d = detectLdtkRoomExit(gated, body(50, 129), project.levels[1], project);
     expect(d.exit).toBeUndefined();
     expect(d.state.blockedEntryEdge).toBeNull();
@@ -496,19 +538,19 @@ describe('detectLdtkRoomExit', () => {
   it('gates each entry-edge direction independently (exact seam → margin)', () => {
     const project = makeProject(...PARTIAL);
     // West entry edge: body at the seam (x=0) is blocked; at margin it clears.
-    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     expect(detectLdtkRoomExit(blockedW, body(0, 50), project.levels[1], project).exit).toBeUndefined();
     expect(detectLdtkRoomExit(blockedW, body(DEFAULT_EXIT_DEADBAND, 50), project.levels[1], project).state.blockedEntryEdge).toBeNull();
     // East entry edge: body.right ≤ pxWid − margin. L0 pxWid=160.
-    const blockedE = { blockedEntryEdge: 'e' as const, expectedLevelIid: 'L0' };
+    const blockedE = { blockedEntryEdge: 'e' as const, expectedLevelIid: 'L0', fullyInsideXIid: null, fullyInsideYIid: null };
     expect(detectLdtkRoomExit(blockedE, body(160 - 8, 50), project.levels[0], project).exit).toBeUndefined();
     expect(detectLdtkRoomExit(blockedE, body(160 - 8 - DEFAULT_EXIT_DEADBAND, 50), project.levels[0], project).state.blockedEntryEdge).toBeNull();
     // North entry edge: body.y ≥ margin.
-    const blockedN = { blockedEntryEdge: 'n' as const, expectedLevelIid: 'L1' };
+    const blockedN = { blockedEntryEdge: 'n' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     expect(detectLdtkRoomExit(blockedN, body(50, 0), project.levels[1], project).exit).toBeUndefined();
     expect(detectLdtkRoomExit(blockedN, body(50, DEFAULT_EXIT_DEADBAND), project.levels[1], project).state.blockedEntryEdge).toBeNull();
     // South entry edge: body.bottom ≤ pxHei − margin. L0 pxHei=112.
-    const blockedS = { blockedEntryEdge: 's' as const, expectedLevelIid: 'L0' };
+    const blockedS = { blockedEntryEdge: 's' as const, expectedLevelIid: 'L0', fullyInsideXIid: null, fullyInsideYIid: null };
     expect(detectLdtkRoomExit(blockedS, body(50, 112 - 8), project.levels[0], project).exit).toBeUndefined();
     expect(detectLdtkRoomExit(blockedS, body(50, 112 - 8 - DEFAULT_EXIT_DEADBAND), project.levels[0], project).state.blockedEntryEdge).toBeNull();
   });
@@ -518,7 +560,7 @@ describe('detectLdtkRoomExit', () => {
     // while clearing a WEST entry seam must still re-arm: only the entry edge
     // is gated, not every edge. (Otherwise a grounded actor could never leave.)
     const project = makeProject(...PARTIAL);
-    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     const grounded = body(DEFAULT_EXIT_DEADBAND, 128 - 8); // flush with floor, x past margin
     const d = detectLdtkRoomExit(blockedW, grounded, project.levels[1], project);
     expect(d.state.blockedEntryEdge).toBeNull(); // west cleared despite flush south
@@ -526,7 +568,7 @@ describe('detectLdtkRoomExit', () => {
 
   it('honors a custom deadband', () => {
     const project = makeProject(...PARTIAL);
-    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     // With a 5px deadband, x=1 (which clears the default) is still blocked.
     expect(detectLdtkRoomExit(blockedW, body(1, 50), project.levels[1], project, { deadband: 5 }).exit).toBeUndefined();
     expect(detectLdtkRoomExit(blockedW, body(1, 50), project.levels[1], project, { deadband: 5 }).state.blockedEntryEdge).toBe('w');
@@ -536,7 +578,7 @@ describe('detectLdtkRoomExit', () => {
 
   it('falls back to the default deadband for NaN / Infinity / zero / negative', () => {
     const project = makeProject(...PARTIAL);
-    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const blockedW = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     for (const bad of [NaN, Infinity, -Infinity, 0, -1, -0.5]) {
       // x=1 clears the default (1px) but not any larger margin; each bad value
       // must behave as the default, never as a larger or zero margin.
@@ -549,7 +591,7 @@ describe('detectLdtkRoomExit', () => {
     // Blocked for L1, but polled in L0 — a teleport/retry/stale snapshot. The
     // detector resets to armed and polls the supplied room in the same call.
     const project = makeProject(...PARTIAL);
-    const stale = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const stale = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     // Body inside L0 → no exit; state is armed (not still gated for L1).
     const d = detectLdtkRoomExit(stale, body(50, 50), project.levels[0], project);
     expect(d.exit).toBeUndefined();
@@ -571,7 +613,7 @@ describe('detectLdtkRoomExit', () => {
 
   it('a JSON-cloned state behaves identically to the original', () => {
     const project = makeProject(...PARTIAL);
-    const state = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1' };
+    const state = { blockedEntryEdge: 'w' as const, expectedLevelIid: 'L1', fullyInsideXIid: null, fullyInsideYIid: null };
     const cloned = JSON.parse(JSON.stringify(state)) as typeof state;
     // Same inputs → same outputs, original vs JSON clone.
     const fromOriginal = detectLdtkRoomExit(state, body(0, 50), project.levels[1], project);
@@ -580,10 +622,16 @@ describe('detectLdtkRoomExit', () => {
   });
 
   it('is transactional: discarding an exit result leaves the original armed state reusable', () => {
-    // A consumer may reject a transition (e.g. destination compile pending).
-    // It must be able to keep the ORIGINAL state and re-poll next tick.
     const project = makeProject(...PARTIAL);
-    const armed = createRoomExitDetectorState();
+    // A consumer may reject a transition (e.g. destination compile pending).
+    // It must be able to keep the ORIGINAL state and re-poll next tick. The
+    // actor had been polling inside L0, so the armed state carries latches.
+    const armed: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'L0',
+      fullyInsideYIid: 'L0',
+    };
     const d = detectLdtkRoomExit(armed, body(158, 50), project.levels[0], project);
     expect(d.exit).toBeDefined();
     // Reject: do NOT adopt d.state. Re-polling the same armed state still fires.
@@ -593,7 +641,14 @@ describe('detectLdtkRoomExit', () => {
 
   it('independent detector states for two actors do not interfere', () => {
     const project = makeProject(...PARTIAL);
-    const a = createRoomExitDetectorState();
+    // Actor A has been polling inside L0 (both latches set); actor B's fresh
+    // state is unlatched. No shared mutable closure between them.
+    const a: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'L0',
+      fullyInsideYIid: 'L0',
+    };
     const b = createRoomExitDetectorState();
     const da = detectLdtkRoomExit(a, body(158, 50), project.levels[0], project);
     // Actor A has transitioned (gated); actor B's state is still armed and can
@@ -610,5 +665,289 @@ describe('detectLdtkRoomExit', () => {
     const project = makeProject(...PARTIAL);
     expect(findLdtkRoomExit(body(158, 50), project.levels[0], project)?.dir).toBe('e');
     expect(findLdtkRoomExit(body(-2, 50), project.levels[1], project)?.dir).toBe('w');
+  });
+
+  // --- per-axis containment latch (0.15.0 — Change A) ----------------------
+  //
+  // Every exit additionally requires the body to have been fully contained
+  // ON THE EXIT'S CROSSING AXIS (e/w → X, n/s → Y) in the current room once
+  // since the last exit. The latch is sticky (historical containment) and is
+  // re-derived from body geometry on every poll, so a discarded or freshly
+  // created detector state cannot tick-tock (Celerock bug-1 reset-immunity).
+
+  it('Celerock bug-1 repro: a FRESH detector cannot fire the reverse exit on a straddling arrival (reset-immunity)', () => {
+    const project = makeProject(...ORTHO);
+    const from = project.levels[0]; // C
+    const to = project.levels[1]; // W
+    const b = body(-3, 50); // straddling C's west seam, vertically inside
+
+    // Pre-transition: the actor polled inside C, so both latches are set and
+    // the west exit fires.
+    const latched: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'C',
+      fullyInsideYIid: 'C',
+    };
+    const d1 = detectLdtkRoomExit(latched, b, from, project);
+    expect(d1.exit?.dir).toBe('w');
+    expect(d1.exit?.neighbourLevelIid).toBe('W');
+
+    // mapLdtkRoomEntry preserves world position: C-local -3 → W-local 97, so
+    // the arrival straddles W's EAST edge.
+    const entry = mapLdtkRoomEntry(b, from, to, d1.exit!);
+    expect(entry.x).toBe(97);
+
+    // BUG 1: the consumer discards d1.state and installs a FRESH detector in
+    // the destination. The bare helper WOULD fire the reverse east exit; the
+    // containment latch re-derives from body geometry and suppresses it.
+    const d2 = detectLdtkRoomExit(createRoomExitDetectorState(), body(entry.x, entry.y), to, project);
+    expect(d2.exit).toBeUndefined();
+    expect(d2.state.fullyInsideXIid).toBeNull(); // still straddling east
+    expect(d2.state.fullyInsideYIid).toBe('W'); // vertically inside on arrival
+  });
+
+  it('orthogonal exit preserved: a sticky Y latch lets the south exit fire on poll 2 while west stays suppressed', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+
+    // Poll 1 — fresh detector, body straddling the west seam (x < 0) and
+    // vertically inside: no exit, X unlatched, Y latches to C. Adopt state.
+    const p1 = detectLdtkRoomExit(createRoomExitDetectorState(), body(-3, 50), C, project);
+    expect(p1.exit).toBeUndefined();
+    expect(p1.state.fullyInsideXIid).toBeNull();
+    expect(p1.state.fullyInsideYIid).toBe('C');
+
+    // Poll 2 — the body crosses the south seam while STILL straddling west.
+    // The west candidate is skipped (X unlatched); the south exit fires off
+    // the sticky Y latch carried from poll 1 (a body crossing the south seam
+    // is not Y-contained on this poll, so only stickiness can report it).
+    const p2 = detectLdtkRoomExit(p1.state, body(-3, 97), C, project);
+    expect(p2.exit?.dir).toBe('s');
+    expect(p2.exit?.neighbourLevelIid).toBe('S');
+  });
+
+  it('candidate-skip ordering: a gated west candidate that OUTRANKS south is skipped, not fatal to the poll', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+
+    // Poll 1 — same fixture shape: Y latches, X does not.
+    const p1 = detectLdtkRoomExit(createRoomExitDetectorState(), body(-6, 50), C, project);
+    expect(p1.exit).toBeUndefined();
+    expect(p1.state.fullyInsideXIid).toBeNull();
+    expect(p1.state.fullyInsideYIid).toBe('C');
+
+    // Poll 2 — west penetration 6/8 outranks south 5/8: the bare helper
+    // ranks WEST first (no gating)…
+    const b2 = body(-6, 97);
+    expect(findLdtkRoomExit(b2, C, project)?.dir).toBe('w');
+    // …but the detector walks the ranked list, skips the gated west
+    // candidate, and returns the surviving south exit.
+    const p2 = detectLdtkRoomExit(p1.state, b2, C, project);
+    expect(p2.exit?.dir).toBe('s');
+    expect(p2.exit?.neighbourLevelIid).toBe('S');
+  });
+
+  it('per-axis latch semantics: containment on one axis latches only that axis; each latch persists across straddles', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+
+    // X-contained only (straddling south): X latches, Y stays null, and the
+    // south candidate is gated by the unlatched Y axis.
+    const xOnly = detectLdtkRoomExit(createRoomExitDetectorState(), body(40, 97), C, project);
+    expect(xOnly.exit).toBeUndefined();
+    expect(xOnly.state.fullyInsideXIid).toBe('C');
+    expect(xOnly.state.fullyInsideYIid).toBeNull();
+
+    // Y-contained only (straddling west): Y latches, X stays null.
+    const yOnly = detectLdtkRoomExit(createRoomExitDetectorState(), body(-3, 50), C, project);
+    expect(yOnly.exit).toBeUndefined();
+    expect(yOnly.state.fullyInsideXIid).toBeNull();
+    expect(yOnly.state.fullyInsideYIid).toBe('C');
+
+    // Stickiness: the latched Y survives a later poll where the body is NOT
+    // Y-contained. The body straddles C's unlinked north edge (void — no
+    // candidate), so the armed return exposes the retained latches.
+    const northVoid = detectLdtkRoomExit(yOnly.state, body(40, -3), C, project);
+    expect(northVoid.exit).toBeUndefined();
+    expect(northVoid.state.fullyInsideYIid).toBe('C'); // retained, not re-derived
+    expect(northVoid.state.fullyInsideXIid).toBe('C'); // latched fresh this poll
+
+    // Mirror: the latched X survives a poll straddling the unlinked east edge.
+    const eastVoid = detectLdtkRoomExit(xOnly.state, body(97, 50), C, project);
+    expect(eastVoid.exit).toBeUndefined();
+    expect(eastVoid.state.fullyInsideXIid).toBe('C'); // retained
+    expect(eastVoid.state.fullyInsideYIid).toBe('C'); // latched fresh this poll
+  });
+
+  it('a latch keyed to a different room counts as unlatched (teleport/stale state)', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+    const foreign: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'L0', // latched in another room's coordinates
+      fullyInsideYIid: 'W',
+    };
+    // The body straddles west; the foreign X latch must NOT satisfy the gate.
+    const d = detectLdtkRoomExit(foreign, body(-3, 50), C, project);
+    expect(d.exit).toBeUndefined();
+    expect(d.state.fullyInsideXIid).toBeNull();
+    expect(d.state.fullyInsideYIid).toBe('C'); // Y re-derives from geometry
+  });
+
+  it('full back-out release: an axis-gated body that fully departs the room gets the bare helper result', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+
+    // X-gated while straddling west (X never latched in C)…
+    const straddle = detectLdtkRoomExit(createRoomExitDetectorState(), body(-3, 50), C, project);
+    expect(straddle.exit).toBeUndefined();
+
+    // …but fully west of C (zero overlap) the axis gate releases and the
+    // genuine reverse crossing is reported.
+    const reverse = detectLdtkRoomExit(straddle.state, body(-9, 50), C, project);
+    expect(reverse.exit?.dir).toBe('w');
+    expect(reverse.exit?.neighbourLevelIid).toBe('W');
+    expect(reverse.state.blockedEntryEdge).toBe('e');
+    expect(reverse.state.expectedLevelIid).toBe('W');
+
+    // A fully-departed void crossing (north has no neighbour) releases to
+    // armed instead of holding the gate forever.
+    const voidOut = detectLdtkRoomExit(straddle.state, body(40, -9), C, project);
+    expect(voidOut.exit).toBeUndefined();
+    expect(voidOut.state.blockedEntryEdge).toBeNull();
+    expect(voidOut.state.expectedLevelIid).toBeNull();
+  });
+
+  it('impossible containment: a body taller than the room never latches Y — N/S gated until back-out, E/W unaffected', () => {
+    // C2 is 100×10; an 8×20 body can never be Y-contained inside it.
+    const project = makeProject(
+      { iid: 'C2', worldX: 0, worldY: 0, pxWid: 100, pxHei: 10, neighbours: [{ dir: 'w', levelIid: 'W2' }, { dir: 's', levelIid: 'S2' }] },
+      { iid: 'W2', worldX: -100, worldY: 0, pxWid: 100, pxHei: 10, neighbours: [{ dir: 'e', levelIid: 'C2' }] },
+      { iid: 'S2', worldX: 0, worldY: 10, pxWid: 100, pxHei: 50, neighbours: [{ dir: 'n', levelIid: 'C2' }] },
+    );
+    const room = project.levels[0];
+    const tall = (x: number, y: number): Rect => body(x, y, 8, 20);
+
+    // South crossings stay suppressed poll after poll, and the state stays
+    // ARMED — the suppression lives in the latch, not blockedEntryEdge.
+    const s1 = detectLdtkRoomExit(createRoomExitDetectorState(), tall(40, 5), room, project);
+    expect(s1.exit).toBeUndefined();
+    expect(s1.state.fullyInsideYIid).toBeNull();
+    expect(s1.state.blockedEntryEdge).toBeNull();
+    const s2 = detectLdtkRoomExit(s1.state, tall(40, 8), room, project);
+    expect(s2.exit).toBeUndefined();
+    expect(s2.state.fullyInsideYIid).toBeNull();
+
+    // E/W is unaffected: X latched on the interior polls above, so a west
+    // crossing fires — even though south (10/20) OUTRANKS west (3/8) in the
+    // ranked list, the walk skips the gated south candidate and takes west.
+    expect(s2.state.fullyInsideXIid).toBe('C2');
+    const west = detectLdtkRoomExit(s2.state, tall(-3, 0), room, project);
+    expect(west.exit?.dir).toBe('w');
+    expect(west.exit?.neighbourLevelIid).toBe('W2');
+
+    // Full back-out below releases the south gate: the bare helper reports
+    // the genuine south departure even though Y never latched.
+    const south = detectLdtkRoomExit(s2.state, tall(40, 11), room, project);
+    expect(south.exit?.dir).toBe('s');
+    expect(south.exit?.neighbourLevelIid).toBe('S2');
+  });
+
+  it('corner arrival is unchanged from 0.14.1: a sticky Y latch lets the south exit fire after clearing the entry deadband', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+
+    // Arrived through C's west edge: the blocked gate holds while the body
+    // is inside the deadband, but the latch update runs BEFORE gating, so
+    // the held state already carries the Y latch.
+    const arrived: RoomExitDetectorState = {
+      blockedEntryEdge: 'w',
+      expectedLevelIid: 'C',
+      fullyInsideXIid: null,
+      fullyInsideYIid: null,
+    };
+    const p1 = detectLdtkRoomExit(arrived, body(0, 50), C, project);
+    expect(p1.exit).toBeUndefined();
+    expect(p1.state.blockedEntryEdge).toBe('w'); // still inside the deadband
+    expect(p1.state.fullyInsideYIid).toBe('C'); // latched while gated
+
+    // Poll 2 — the body clears the west deadband while now straddling the
+    // UNRELATED south edge. A non-sticky (instantaneous) latch would gate
+    // this south exit; the sticky latch keeps 0.14.1 behavior: it fires.
+    const p2 = detectLdtkRoomExit(p1.state, body(1, 97), C, project);
+    expect(p2.exit?.dir).toBe('s');
+    expect(p2.exit?.neighbourLevelIid).toBe('S');
+  });
+
+  it('a 0.14.1-serialized state (no latch fields) is treated as unlatched and loses no tick', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+    // Only the two original fields, exactly as saved by 0.14.1 consumers
+    // (JSON round-trip leaves the latch fields genuinely absent).
+    const legacy = JSON.parse(
+      JSON.stringify({ blockedEntryEdge: null, expectedLevelIid: null }),
+    ) as RoomExitDetectorState;
+
+    // Treated as unlatched: a straddling body stays suppressed…
+    const straddle = detectLdtkRoomExit(legacy, body(-3, 50), C, project);
+    expect(straddle.exit).toBeUndefined();
+
+    // …and an interior body latches BOTH axes on its first poll (step 3
+    // precedes all gating), so the very next crossing poll fires without an
+    // extra waiting tick.
+    const interior = detectLdtkRoomExit(legacy, body(40, 50), C, project);
+    expect(interior.exit).toBeUndefined();
+    expect(interior.state.fullyInsideXIid).toBe('C');
+    expect(interior.state.fullyInsideYIid).toBe('C');
+    const crossing = detectLdtkRoomExit(interior.state, body(-3, 50), C, project);
+    expect(crossing.exit?.dir).toBe('w');
+  });
+
+  it('an exit-firing poll returns the next state with both axis latches cleared', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+    const latched: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'C',
+      fullyInsideYIid: 'C',
+    };
+    const d = detectLdtkRoomExit(latched, body(-3, 50), C, project);
+    expect(d.exit?.dir).toBe('w');
+    expect(d.state).toEqual({
+      blockedEntryEdge: 'e',
+      expectedLevelIid: 'W',
+      fullyInsideXIid: null,
+      fullyInsideYIid: null,
+    });
+  });
+
+  it('purity: the new latch fields never mutate the input state; JSON clones behave identically', () => {
+    const project = makeProject(...ORTHO);
+    const C = project.levels[0];
+    const latched: RoomExitDetectorState = {
+      blockedEntryEdge: null,
+      expectedLevelIid: null,
+      fullyInsideXIid: 'C',
+      fullyInsideYIid: 'C',
+    };
+    const snapshot = { ...latched };
+    const fired = detectLdtkRoomExit(latched, body(-3, 50), C, project);
+    expect(fired.exit?.dir).toBe('w');
+    expect(latched).toEqual(snapshot); // input unchanged by a firing poll
+
+    // Deterministic and clone-stable: original vs JSON clone → equal results.
+    const clone = JSON.parse(JSON.stringify(latched)) as RoomExitDetectorState;
+    expect(detectLdtkRoomExit(clone, body(-3, 50), C, project)).toEqual(fired);
+    expect(detectLdtkRoomExit(latched, body(-3, 50), C, project)).toEqual(fired);
+
+    // The gated (no-exit) return is equally pure.
+    const held = detectLdtkRoomExit(createRoomExitDetectorState(), body(-3, 50), C, project);
+    expect(held.exit).toBeUndefined();
+    const heldSnapshot = { ...held.state };
+    detectLdtkRoomExit(held.state, body(-3, 97), C, project);
+    expect(held.state).toEqual(heldSnapshot);
   });
 });

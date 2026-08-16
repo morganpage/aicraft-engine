@@ -175,31 +175,26 @@ function seamSpanFor(
 }
 
 /**
- * Which linked shared seam (if any) the body's AABB has crossed out of `level`.
+ * Rank every cardinal seam the body's AABB has currently crossed out of
+ * `level`, greatest normalized penetration first; stable ties use
+ * `n → e → s → w`.
  *
  * Considers only cardinal neighbours that exist in `project` and whose world
  * rectangles share a non-empty seam. A crossing of the nominal east/west edge
  * outside the neighbour's shared Y span (or north/south outside the shared X
- * span) is void, not a transition. When two eligible seams are crossed at a
- * corner, the greatest normalized penetration wins; stable ties use `n → e → s → w`.
+ * span) is void, not a transition, and yields no candidate. The body is in
+ * `level`'s local coordinates.
  *
- * The body is in `level`'s local coordinates. Returns `undefined` when no seam is
- * crossed (the body is still inside `level`, or it left through a void/non-seam).
- *
- * Low-level stateless primitive. A per-tick game loop polling this directly
- * inherits seam tick-tock: after an east crossing, `mapLdtkRoomEntry` preserves
- * the actor's exact world position, which leaves part of its AABB at a negative
- * destination-local X — so the very next `findLdtkRoomExit` call in the
- * destination detects the reverse west exit before the actor clears the seam.
- * Per-tick consumers should use {@link detectLdtkRoomExit} (which adds re-arm
- * hysteresis via {@link RoomExitDetectorState}). This function remains valid for
- * callers that manage their own hysteresis or query exits outside a tick loop.
+ * Module-private ranking shared by {@link findLdtkRoomExit} (which returns
+ * the top candidate with NO gating) and {@link detectLdtkRoomExit} (which
+ * walks the list in rank order and skips candidates gated by the per-axis
+ * containment latch).
  */
-export function findLdtkRoomExit(
+function rankLdtkRoomExits(
   body: Rect,
   level: LdtkLevel,
   project: LdtkProject,
-): LdtkRoomExit | undefined {
+): readonly LdtkRoomExit[] {
   const byIid = collectLevelsByIid(project);
   const W = level.pxWid;
   const H = level.pxHei;
@@ -287,20 +282,46 @@ export function findLdtkRoomExit(
     });
   }
 
-  if (candidates.length === 0) return undefined;
   // Greatest normalized penetration; stable tie → n → e → s → w.
   candidates.sort((a, b) =>
     a.normPenetration !== b.normPenetration
       ? b.normPenetration - a.normPenetration
       : a.order - b.order,
   );
-  const win = candidates[0];
-  return {
-    dir: win.dir,
-    neighbourLevelIid: win.iid,
-    seamMin: win.seamMin,
-    seamMax: win.seamMax,
-  };
+  return candidates.map((candidate) => ({
+    dir: candidate.dir,
+    neighbourLevelIid: candidate.iid,
+    seamMin: candidate.seamMin,
+    seamMax: candidate.seamMax,
+  }));
+}
+
+/**
+ * Which linked shared seam (if any) the body's AABB has crossed out of `level`.
+ *
+ * Returns the top-ranked crossing from {@link rankLdtkRoomExits} with NO
+ * gating applied, or `undefined` when no seam is crossed (the body is still
+ * inside `level`, or it left through a void/non-seam). When two eligible
+ * seams are crossed at a corner, the greatest normalized penetration wins;
+ * stable ties use `n → e → s → w`. The body is in `level`'s local
+ * coordinates.
+ *
+ * Low-level stateless primitive. A per-tick game loop polling this directly
+ * inherits seam tick-tock: after an east crossing, `mapLdtkRoomEntry`
+ * preserves the actor's exact world position, which leaves part of its AABB
+ * at a negative destination-local X — so the very next `findLdtkRoomExit`
+ * call in the destination detects the reverse west exit before the actor
+ * clears the seam. Per-tick consumers should use {@link detectLdtkRoomExit}
+ * (which adds re-arm hysteresis via {@link RoomExitDetectorState}). This
+ * function remains valid for callers that manage their own hysteresis or
+ * query exits outside a tick loop.
+ */
+export function findLdtkRoomExit(
+  body: Rect,
+  level: LdtkLevel,
+  project: LdtkProject,
+): LdtkRoomExit | undefined {
+  return rankLdtkRoomExits(body, level, project)[0];
 }
 
 /**
@@ -457,6 +478,16 @@ export interface RoomExitDetectorState {
    * armed and polls the supplied room during the same call.
    */
   readonly expectedLevelIid: string | null;
+  /**
+   * IID of the room in which the body has been fully contained ON THE X AXIS
+   * since the last exit (latched), or null. A body not yet X-contained in the
+   * current room is straddling an east/west seam, so east/west exits are
+   * suppressed until it genuinely enters on that axis (or fully departs the
+   * room). North/south exits are unaffected.
+   */
+  readonly fullyInsideXIid: string | null;
+  /** As {@link fullyInsideXIid}, for the Y axis (gates north/south exits). */
+  readonly fullyInsideYIid: string | null;
 }
 
 /** The result of {@link detectLdtkRoomExit}: the next state, and any exit fired. */
@@ -465,9 +496,17 @@ export interface RoomExitDetection {
   readonly exit?: LdtkRoomExit;
 }
 
-/** The armed state: no pending re-arm gate, exits enabled. */
+/**
+ * The armed state: no pending re-arm gate and no containment latches
+ * recorded — exits enabled.
+ */
 export function createRoomExitDetectorState(): RoomExitDetectorState {
-  return { blockedEntryEdge: null, expectedLevelIid: null };
+  return {
+    blockedEntryEdge: null,
+    expectedLevelIid: null,
+    fullyInsideXIid: null,
+    fullyInsideYIid: null,
+  };
 }
 
 /** Opposite cardinal: the destination entry edge for a given exit direction. */
@@ -523,18 +562,34 @@ function normalizeDeadband(deadband: number | undefined): number {
 }
 
 /**
- * Poll for a room exit with direction-specific re-arm hysteresis.
+ * Poll for a room exit with direction-specific re-arm hysteresis plus a
+ * per-axis containment latch.
  *
  * Wraps {@link findLdtkRoomExit} with a {@link RoomExitDetectorState} that
  * prevents the seam tick-tock oscillation the bare helper produces when a body
- * lingers on a seam: after an exit fires, the detector returns no further exits
- * until the actor has moved at least `deadband` pixels back inside the
- * destination room on the entry edge it arrived through — or has backed fully
- * OUT of the destination room, in which case the gate releases and the bare
- * helper reports the genuine crossing (the reverse transition, or void if the
- * departure is outside the shared seam span). The gate is therefore a true
- * hysteresis band: exits are suppressed only while the body still straddles
- * the arrival seam.
+ * lingers on a seam, in two layers:
+ *
+ * - **Re-arm gate (`blockedEntryEdge` + `deadband`):** after an exit fires,
+ *   the detector returns no further exits until the actor has moved at least
+ *   `deadband` pixels back inside the destination room on the entry edge it
+ *   arrived through — or has backed fully OUT of the destination room, in
+ *   which case the gate releases and the bare helper reports the genuine
+ *   crossing (the reverse transition, or void if the departure is outside
+ *   the shared seam span).
+ * - **Per-axis containment latch (`fullyInsideXIid`/`fullyInsideYIid`):**
+ *   every exit additionally requires the body to have been fully contained
+ *   ON THE EXIT'S CROSSING AXIS (`e`/`w` → X, `n`/`s` → Y) in the current
+ *   room at least once since the last exit. This makes straddle suppression
+ *   intrinsic and reset-immune: the latch re-derives from body geometry on
+ *   every poll, so even a discarded or freshly created detector state cannot
+ *   fire the reverse exit for a body that straddles the arrival seam. The
+ *   latch is sticky (historical containment), and the orthogonal axis is
+ *   never gated by an arrival — so diagonal seam exits and corner arrivals
+ *   behave as in 0.14.1. A body that can never be contained on an axis (it
+ *   is larger than the room on that axis) has that axis's exits suppressed
+ *   only until it fully departs the room. A body that no longer overlaps the
+ *   room at all skips the axis gate entirely (full back-out release), so
+ *   genuine reverse crossings and void departures always stay reportable.
  *
  * Pure: takes the current state and returns the next state plus any exit; it
  * never mutates the input state (adopt the returned {@link RoomExitDetection.state}
@@ -552,49 +607,90 @@ export function detectLdtkRoomExit(
 ): RoomExitDetection {
   const margin = normalizeDeadband(options?.deadband);
 
-  // Resolve the effective re-arm gate for THIS room. A blocked state whose
-  // expected room differs is a teleport/retry/stale snapshot: reset to armed
-  // and continue polling in the supplied room during the same call.
-  let blockedEdge: Cardinal | null;
-  if (
-    state.blockedEntryEdge !== null &&
-    state.expectedLevelIid === level.iid
-  ) {
-    blockedEdge = state.blockedEntryEdge;
-  } else {
-    blockedEdge = null;
-  }
+  // Resolve stale/teleport state for THIS room: a blocked edge or a latch
+  // keyed to a DIFFERENT room than `level.iid` is not applicable here (the
+  // body was teleported / retried, or the snapshot is stale). The blocked
+  // edge resets to armed; a foreign latch counts as unlatched. Polling
+  // continues in the supplied room during the same call.
+  const blockedEdge =
+    state.blockedEntryEdge !== null && state.expectedLevelIid === level.iid
+      ? state.blockedEntryEdge
+      : null;
+  const latchedXIid = state.fullyInsideXIid === level.iid ? state.fullyInsideXIid : null;
+  const latchedYIid = state.fullyInsideYIid === level.iid ? state.fullyInsideYIid : null;
+
+  // Latch update BEFORE any gating, so an interior body never loses a tick.
+  // The latches are sticky — they record historical containment — and every
+  // later step tests these UPDATED values.
+  const insideX = body.x >= 0 && body.x + body.width <= level.pxWid;
+  const insideY = body.y >= 0 && body.y + body.height <= level.pxHei;
+  const fullyInsideXIid = insideX ? level.iid : latchedXIid;
+  const fullyInsideYIid = insideY ? level.iid : latchedYIid;
 
   // While the body still straddles the arrival seam (overlaps the room but
   // has not cleared the entry edge by the deadband), hold the gate and emit no
   // exit. A body that has backed fully out of the room no longer straddles:
-  // the gate releases and the bare helper below reports the genuine crossing
-  // (or void, if out-of-span) instead of suppressing the reverse exit forever.
+  // the gate releases and the ranking below reports the genuine crossing (or
+  // void, if out-of-span) instead of suppressing the reverse exit forever.
   if (
     blockedEdge !== null &&
     bodyOverlapsRoom(body, level) &&
     !hasClearedEntryEdge(body, level, blockedEdge, margin)
   ) {
     return {
-      state: { blockedEntryEdge: blockedEdge, expectedLevelIid: level.iid },
+      state: {
+        blockedEntryEdge: blockedEdge,
+        expectedLevelIid: level.iid,
+        fullyInsideXIid,
+        fullyInsideYIid,
+      },
     };
   }
 
-  // Armed (or just cleared): poll the bare helper.
-  const armed: RoomExitDetectorState = {
-    blockedEntryEdge: null,
-    expectedLevelIid: null,
-  };
-  const exit = findLdtkRoomExit(body, level, project);
-  if (exit === undefined) {
-    return { state: armed };
+  const ranked = rankLdtkRoomExits(body, level, project);
+
+  let exit: LdtkRoomExit | undefined;
+  if (!bodyOverlapsRoom(body, level)) {
+    // Full back-out release: the body has unambiguously departed, so the axis
+    // gate is skipped entirely and the bare top-ranked candidate (or void) is
+    // reported.
+    exit = ranked[0];
+  } else {
+    // Per-axis candidate filter (the new gate): walk the ranked list in rank
+    // order and take the first candidate whose crossing axis (e/w → X, n/s →
+    // Y) is latched to this room. A candidate on an unlatched axis is a
+    // straddled seam (arrival or reset artifact) and is skipped, not fatal to
+    // the poll.
+    exit = ranked.find((candidate) =>
+      candidate.dir === 'e' || candidate.dir === 'w'
+        ? fullyInsideXIid === level.iid
+        : fullyInsideYIid === level.iid,
+    );
   }
+
+  if (exit === undefined) {
+    // Armed, carrying the updated latches — the axis gate is expressed by the
+    // latches, not by `blockedEntryEdge`.
+    return {
+      state: {
+        blockedEntryEdge: null,
+        expectedLevelIid: null,
+        fullyInsideXIid,
+        fullyInsideYIid,
+      },
+    };
+  }
+
   // An exit fired: gate reverse transitions until the actor clears the entry
-  // edge in the DESTINATION room (recorded as the opposite of the exit dir).
+  // edge in the DESTINATION room (recorded as the opposite of the exit dir),
+  // and clear both latches — they are keyed to the room just left, so neither
+  // is meaningful in the destination.
   return {
     state: {
       blockedEntryEdge: OPPOSITE_CARDINAL[exit.dir],
       expectedLevelIid: exit.neighbourLevelIid,
+      fullyInsideXIid: null,
+      fullyInsideYIid: null,
     },
     exit,
   };

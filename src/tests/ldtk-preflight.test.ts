@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseLdtkProject } from '../ldtk/parse';
 import { inspectLdtkPlatformerProject } from '../ldtk/preflight';
-import type { LdtkLevel, LdtkProject } from '../ldtk/types';
+import type { LdtkEntityInstance, LdtkLevel, LdtkProject } from '../ldtk/types';
 
 /** Path to the adversarial Celerock fixture. */
 const FIXTURE_PATH = fileURLToPath(
@@ -17,6 +17,85 @@ function parseFixture(): LdtkProject {
     throw new Error(`fixture failed to parse: ${JSON.stringify(parsed.errors)}`);
   }
   return parsed.project;
+}
+
+/** The exact multi-room info diagnostic for a given room count. */
+function multiRoomInfoMessage(rooms: number): string {
+  return `multi-room world: ${rooms} rooms chained via __neighbours — seam traversal (room-transition path) is in scope`;
+}
+
+interface SyntheticLevelSpec {
+  readonly iid: string;
+  readonly neighbourIids?: readonly string[];
+  readonly entityIdentifiers?: readonly string[];
+}
+
+function syntheticEntity(identifier: string, iid: string): LdtkEntityInstance {
+  return {
+    __identifier: identifier,
+    defUid: 1,
+    iid,
+    __tags: [],
+    px: [0, 0],
+    width: 8,
+    height: 8,
+    __grid: [0, 0],
+    __pivot: [0, 0],
+    __tile: null,
+    fieldInstances: [],
+  };
+}
+
+function syntheticLevel(uid: number, spec: SyntheticLevelSpec): LdtkLevel {
+  return {
+    identifier: `Level_${uid}`,
+    iid: spec.iid,
+    uid,
+    pxWid: 64,
+    pxHei: 64,
+    worldX: 0,
+    worldY: 0,
+    worldDepth: 0,
+    fieldInstances: [],
+    externalRelPath: null,
+    __neighbours: (spec.neighbourIids ?? []).map((levelIid) => ({ dir: 'e', levelIid })),
+    layerInstances: [
+      {
+        __type: 'Entities',
+        __identifier: 'Entities',
+        __cWid: 8,
+        __cHei: 8,
+        __gridSize: 8,
+        __opacity: 1,
+        __pxTotalOffsetX: 0,
+        __pxTotalOffsetY: 0,
+        visible: true,
+        iid: `${spec.iid}-layer`,
+        levelId: spec.iid,
+        layerDefUid: 2,
+        entityInstances: (spec.entityIdentifiers ?? []).map((id, i) =>
+          syntheticEntity(id, `${spec.iid}-e${i}`),
+        ),
+        __tilesetDefUid: null,
+        __tilesetRelPath: null,
+      },
+    ],
+  };
+}
+
+function syntheticProject(specs: readonly SyntheticLevelSpec[]): LdtkProject {
+  return {
+    jsonVersion: '1.5.3',
+    iid: 'synthetic',
+    bgColor: '#000000',
+    defs: { tilesets: [], enums: [], layers: [], entities: [] },
+    levels: specs.map((spec, i) => syntheticLevel(i, spec)),
+    externalLevels: false,
+    worldLayout: null,
+    worldGridWidth: null,
+    worldGridHeight: null,
+    worlds: [],
+  };
 }
 
 describe('inspectLdtkPlatformerProject', () => {
@@ -61,6 +140,12 @@ describe('inspectLdtkPlatformerProject', () => {
     expect(report.capabilities.exits).toBe(true); // Exit
     expect(report.capabilities.movingPlatforms).toBe(true); // MovingPlatform
     expect(report.capabilities.ladders).toBe(true); // IntGrid value 3 = 'ladder'
+    // Both rooms link to each other via resolved __neighbours → multi-room.
+    expect(report.capabilities.multiRoom).toBe(true);
+    expect(report.diagnostics).toContainEqual({
+      severity: 'info',
+      message: multiRoomInfoMessage(2),
+    });
 
     // Spring & DashRefill are RECOGNIZED — they must not appear as unknown.
     expect(report.unknownTriggerIdentifiers).not.toContain('Spring');
@@ -228,6 +313,109 @@ describe('inspectLdtkPlatformerProject', () => {
     expect(report.spawnLessRoomIids).toEqual(['bbbb']);
     expect(report.diagnostics.some((d) => /disconnected/.test(d.message))).toBe(true);
     expect(report.diagnostics.some((d) => /without a spawn/.test(d.message))).toBe(true);
+    // Multi-level but zero __neighbours links → not a multi-room chain.
+    expect(report.capabilities.multiRoom).toBe(false);
+  });
+
+  it('sets multiRoom true for a multi-level project with a resolved internal __neighbours link', () => {
+    const report = inspectLdtkPlatformerProject(
+      syntheticProject([
+        { iid: 'aaaa', neighbourIids: ['bbbb'], entityIdentifiers: ['Player'] },
+        { iid: 'bbbb' },
+      ]),
+    );
+
+    expect(report.levelCount).toBe(2);
+    expect(report.capabilities.multiRoom).toBe(true);
+    expect(report.capabilities).toEqual({
+      hazards: false,
+      collectibles: false,
+      springs: false,
+      dashRefills: false,
+      exits: false,
+      ladders: false,
+      movingPlatforms: false,
+      multiRoom: true,
+    });
+    expect(report.diagnostics).toContainEqual({
+      severity: 'info',
+      message: multiRoomInfoMessage(2),
+    });
+  });
+
+  it('keeps multiRoom false for a single-level project', () => {
+    const report = inspectLdtkPlatformerProject(
+      syntheticProject([{ iid: 'aaaa', entityIdentifiers: ['Player', 'Exit'] }]),
+    );
+
+    expect(report.levelCount).toBe(1);
+    expect(report.capabilities.multiRoom).toBe(false);
+    expect(report.diagnostics.some((d) => d.message.includes('multi-room'))).toBe(false);
+  });
+
+  it('keeps multiRoom false for a single-level project with a dangling neighbour iid', () => {
+    // A dangling link would read as "chained" if the flag were derived from the
+    // BFS adjacency map (which inserts phantom nodes) or per-level neighbourIids.
+    const report = inspectLdtkPlatformerProject(
+      syntheticProject([{ iid: 'aaaa', neighbourIids: ['zzzz'], entityIdentifiers: ['Player'] }]),
+    );
+
+    expect(report.levelCount).toBe(1);
+    expect(report.capabilities.multiRoom).toBe(false);
+    expect(report.diagnostics.some((d) => d.message.includes('multi-room'))).toBe(false);
+  });
+
+  it('keeps multiRoom false when neighbour iids only point outside the project', () => {
+    const dangling = inspectLdtkPlatformerProject(
+      syntheticProject([
+        { iid: 'aaaa', neighbourIids: ['zzzz'], entityIdentifiers: ['Player'] },
+        { iid: 'bbbb', neighbourIids: ['yyyy'] },
+      ]),
+    );
+    expect(dangling.levelCount).toBe(2);
+    expect(dangling.capabilities.multiRoom).toBe(false);
+    expect(dangling.diagnostics.some((d) => d.message.includes('multi-room'))).toBe(false);
+
+    // Self-links do not chain two distinct rooms either.
+    const selfLinked = inspectLdtkPlatformerProject(
+      syntheticProject([
+        { iid: 'aaaa', neighbourIids: ['aaaa'], entityIdentifiers: ['Player'] },
+        { iid: 'bbbb', neighbourIids: ['bbbb'] },
+      ]),
+    );
+    expect(selfLinked.levelCount).toBe(2);
+    expect(selfLinked.capabilities.multiRoom).toBe(false);
+    expect(selfLinked.diagnostics.some((d) => d.message.includes('multi-room'))).toBe(false);
+  });
+
+  it('reports exits true with multiRoom false for Exit entities without internal neighbours', () => {
+    const report = inspectLdtkPlatformerProject(
+      syntheticProject([
+        { iid: 'aaaa', entityIdentifiers: ['Player', 'Exit'] },
+        { iid: 'bbbb', entityIdentifiers: ['Exit'] },
+      ]),
+    );
+
+    expect(report.capabilities.exits).toBe(true);
+    expect(report.capabilities.multiRoom).toBe(false);
+    expect(report.diagnostics.some((d) => d.message.includes('multi-room'))).toBe(false);
+  });
+
+  it('reports exits false with multiRoom true for a chain without Exit entities', () => {
+    // The Celerock shape: fully chained multi-room world, zero Exit entities.
+    const report = inspectLdtkPlatformerProject(
+      syntheticProject([
+        { iid: 'aaaa', neighbourIids: ['bbbb'], entityIdentifiers: ['Player'] },
+        { iid: 'bbbb', neighbourIids: ['aaaa'] },
+      ]),
+    );
+
+    expect(report.capabilities.exits).toBe(false);
+    expect(report.capabilities.multiRoom).toBe(true);
+    expect(report.diagnostics).toContainEqual({
+      severity: 'info',
+      message: multiRoomInfoMessage(2),
+    });
   });
 
   it('is pure: identical input yields identical output', () => {
@@ -257,5 +445,7 @@ describe('inspectLdtkPlatformerProject', () => {
     expect(report.disconnectedRoomIids).toEqual([]);
     expect(report.unknownTriggerIdentifiers).toEqual([]);
     expect(report.capabilities.hazards).toBe(false);
+    expect(report.capabilities.multiRoom).toBe(false);
+    expect(report.diagnostics.some((d) => d.message.includes('multi-room'))).toBe(false);
   });
 });
