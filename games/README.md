@@ -6,13 +6,16 @@ file is a self-contained prompt — paste it to a coding agent (Claude / Cursor 
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
 
-Every prompt pins an exact registry-verified release — the version it was
-written and compiled against, not a range. **They are not all on the same
-version.** [celerock.md](./celerock.md) tracks the current release
-(`aicraft-engine@0.15.0`) and is the reference for the modern golden path;
-the other six pin `0.4.0` and predate the LDtk, camera-brain, and
-platformer-kernel waves, so treat their API surface as historical until they
-are refreshed. Check the install line in a prompt before trusting its imports.
+All seven prompts pin `aicraft-engine@0.15.0` exactly — a version, not a range.
+Six of them were written against `0.4.0` and repinned; every import each one
+claims was typechecked against the `0.15.0` surface at repin time, so they
+compile as written. They differ in *how much* of the engine they reach:
+[celerock.md](./celerock.md) was authored against the modern golden path
+(LDtk levels, the camera brain, the room-transition session) and is the
+reference for it, while the other six teach the pillars that predate those
+waves — the hand-authored `LevelData` path, the legacy follow camera — which
+remain fully supported. Each of the six carries a version note listing the
+behavioral changes since `0.4.0` that touch it.
 
 Celerock is also the only prompt that ships **assets** — a CC0 level, tileset,
 and sprite sheet linked from its §1.1 and downloaded at scaffold time (see

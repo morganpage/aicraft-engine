@@ -1,4 +1,4 @@
-# World 1-1 — A Ten-Beat Horizontal Platformer Slice on `aicraft-engine@0.4.0`
+# World 1-1 — A Ten-Beat Horizontal Platformer Slice on `aicraft-engine@0.15.0`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief: concept, architecture, exact data contracts, beat-by-beat level design, implementation stages, acceptance gates, and anti-shortcut checks. The agent should produce a single runnable Vite + TypeScript browser game that imports everything from `aicraft-engine` (the npm package) and writes **no** re-implementations of what the engine already provides.
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo.** It is a designed level broken into **ten distinct beats**, each capturing a specific moment from SMB 1-1's iconic progression: the first goomba, the first `?`-block cluster, the first pipe, the pipe-cluster patrol, the brick-and-coin sky row, the first pit gaps, the brick corridor, the pre-staircase koopa, the end staircase, and the flagpole. The previous version of this brief listed entity counts in a flat table — a level with the right counts can still feel flat if the beats don't capture SMB 1-1's rhythm of teach → challenge → reward. This brief fixes that by specifying every beat's column range, what it teaches, its unique silhouette, and its parallax emphasis.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.4.0`.** Do not hand-roll fixed-step loops, AABB collision, cameras, jump arcs, level compilation, tile rendering, parallax, particle bursts, or audio synthesis. If you find yourself writing a `requestAnimationFrame` accumulator, a tile renderer, a `Math.random()` in the simulation, a gravity integrator, or a pixel-art Mario, stop and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.15.0`.** Do not hand-roll fixed-step loops, AABB collision, cameras, jump arcs, level compilation, tile rendering, parallax, particle bursts, or audio synthesis. If you find yourself writing a `requestAnimationFrame` accumulator, a tile renderer, a `Math.random()` in the simulation, a gravity integrator, or a pixel-art Mario, stop and use the engine instead.
 
 ---
 
@@ -19,14 +19,14 @@
 ```bash
 npm create vite@latest world-1-1 -- --template vanilla-ts
 cd world-1-1
-npm install aicraft-engine@0.4.0
+npm install aicraft-engine@0.15.0
 ```
 
-> This brief targets the published `0.4.0` API exactly.
+> This brief targets the published `0.15.0` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.15.0`** — the export surface has been additive across the intervening releases, so the hand-authored `LevelData` + `validateLevel` + `compileLevel` + `tileTypeMap` path this brief teaches is fully supported and is still the right choice for a fixed, designed level like 1-1. Two compatibility breaks to know: the replay physics version is now **13** (older recorded replays are rejected), and a manually-constructed `PlatformerState` needs a `moments: []` field. Two things worth adopting while you build: the **feel channel** `state.moments` (`0.8.0`+) reports landing impact/hardness, so the landing squash and the stomp cue read a real impact ratio instead of a hand-rolled velocity threshold; and `0.14.1` fixed landings that arrive **exactly flush** with the ground (a full-height held jump's symmetric arc previously reported no landing at all — if you ever saw a missing landing puff, that was the bug, and it is gone engine-side). The camera brain (`0.5.0`+) now supersedes the `createCamera`/`updateCamera` pair this brief uses; both remain supported, and the legacy follow camera is the correct, simpler fit for a single-screen-tall horizontal scroller.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
-- **`aicraft-engine@0.4.0`** is your only runtime dependency. Import **only** from the root barrel:
+- **`aicraft-engine@0.15.0`** is your only runtime dependency. Import **only** from the root barrel:
     ```ts
     import {
       // primitives — color, math, canvas, hit-stop, glow, parallax, bitmap text
@@ -755,7 +755,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: Terrain Prototype + Tile-Style Sample Sheet
 
-1. Set up Vite + TypeScript + `aicraft-engine@0.4.0`.
+1. Set up Vite + TypeScript + `aicraft-engine@0.15.0`.
 2. Implement the connected-terrain renderer (`tile-style.ts`) with all four tile styles: ground (grass-top + dirt-body + neighbor bitmask), brick (mortar cross), pipe (helmet + ribbing), ?-block (rivet + glyph + bump-flash).
 3. Produce a four-style sample sheet (one 64×64px swatch per tile type).
 4. **Gate:** Visual review confirms four distinct tile styles. Ground has grass-top + dirt-body. Bricks have mortar lines. Pipes have helmet + ribbing. ?-blocks have the `?` glyph.

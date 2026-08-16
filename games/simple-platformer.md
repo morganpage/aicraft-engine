@@ -1,4 +1,4 @@
-# Embertomb — A Five-Biome Procedural Descent on `aicraft-engine@0.4.0`
+# Embertomb — A Five-Biome Procedural Descent on `aicraft-engine@0.15.0`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief: concept, architecture, exact data contracts, biome specifications, implementation stages, acceptance gates, and anti-shortcut checks. The agent should produce a single runnable Vite + TypeScript browser game that imports everything from `aicraft-engine` (the npm package) and writes **no** re-implementations of what the engine already provides.
 
@@ -12,7 +12,7 @@
 
 **This brief is expanded to preempt the failure modes the Flipside rewrite addressed.** The previous Flipside implementation failed because it used one shared box template for all rooms, producing procedural mush with no visual variety — every room looked identical, the music was a 1.85-second ringtone, and the result was a bland, unfun game. Embertomb's generator risks the exact same failure: a `mulberry32`-driven room generator without explicit biome specifications produces rooms that all look the same. This brief fixes that risk up front by specifying five biome archetypes the generator selects between based on depth, each with a complete design contract.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.4.0`.** Do not hand-roll fixed-step loops, AABB collision, cameras, footstep detection, particles, jump arcs, locomotion, palettes, or audio — those are all in the engine. If you find yourself writing a `requestAnimationFrame` accumulator, an AABB resolver, a sine-based walk cycle, a hand-drawn tile renderer, or a `Math.random()` in the simulation, stop and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.15.0`.** Do not hand-roll fixed-step loops, AABB collision, cameras, footstep detection, particles, jump arcs, locomotion, palettes, or audio — those are all in the engine. If you find yourself writing a `requestAnimationFrame` accumulator, an AABB resolver, a sine-based walk cycle, a hand-drawn tile renderer, or a `Math.random()` in the simulation, stop and use the engine instead.
 
 ---
 
@@ -21,7 +21,7 @@
 ```bash
 npm create vite@latest embertomb -- --template vanilla-ts
 cd embertomb
-npm install aicraft-engine@0.4.0
+npm install aicraft-engine@0.15.0
 ```
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
@@ -60,7 +60,7 @@ npm install aicraft-engine@0.4.0
   ```
   (The published package only exposes the root `"."` entry — never deep-import subpaths like `aicraft-engine/animation`; use the root barrel. Tree-shaking works because each module has its own barrel.)
 
-> This brief targets the published `0.4.0` API exactly.
+> This brief targets the published `0.15.0` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.15.0`** — the export surface has been additive, so the per-axis collision resolver path this brief teaches (`resolveAxisX`/`resolveAxisY` + `resolveTileX`/`resolveTileY`, driven by hand instead of through the platformer kernel) is unchanged and still the point of the exercise. Embertomb is the one prompt in the catalog that deliberately does **not** use the kernel, so the kernel-side changes across `0.5.0`–`0.15.0` (wall-jump, mantle, dash-tech, the room-transition layer) do not touch it at all. What is worth adopting: `0.13.0`'s **sustained audio** — `startNoiseLoop(filterType, freq, peak)` returns a handle you `stop()` when a state ends, which is the correct shape for continuous sounds like lava hiss or water, replacing per-tick `playNoise` retriggering (that pattern phase-locks into an audible buzz, and `0.13.0` also de-correlates burst starts to fix it). Note also the replay physics version is now **13**, and a manually-constructed `PlatformerState` needs `moments: []`.
 
 ---
 
@@ -603,10 +603,10 @@ Scripted input sequences that drive the player from depth 0 through depth 16 (on
 ## 14. Install & Version
 
 ```bash
-npm install aicraft-engine@0.4.0
+npm install aicraft-engine@0.15.0
 ```
 
-`aicraft-engine@0.4.0` is published and stable. Do not pin to `0.3.0`. The brief targets the published `0.4.0` API exactly — the per-axis collision resolver (`resolveAxisX`/`resolveTileX`/etc.), the ratified emitter presets (`LAVA_FIRE_PARTICLES` / `LAVA_SMOKE_PARTICLES` / `WATER_BUBBLE_PARTICLES`), the wave-line surfaces (`generateWaveLine` + `DEFAULT_GERSTNER` / `DEFAULT_WAVE_LINE`), the locomotion / foot-plant / jump / spring-rod animation primitives, and the `shade`/`mixHex`/`fnv1a` helpers used by the connected-terrain renderer and biome unique-hash tests.
+`aicraft-engine@0.15.0` is published and stable. Do not pin below `0.15.0`. The brief targets the published `0.15.0` API exactly — the per-axis collision resolver (`resolveAxisX`/`resolveTileX`/etc.), the ratified emitter presets (`LAVA_FIRE_PARTICLES` / `LAVA_SMOKE_PARTICLES` / `WATER_BUBBLE_PARTICLES`), the wave-line surfaces (`generateWaveLine` + `DEFAULT_GERSTNER` / `DEFAULT_WAVE_LINE`), the locomotion / foot-plant / jump / spring-rod animation primitives, and the `shade`/`mixHex`/`fnv1a` helpers used by the connected-terrain renderer and biome unique-hash tests.
 
 ---
 
@@ -616,7 +616,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: Terrain Prototype + 5-Motif Sample Sheet
 
-1. Set up Vite + TypeScript + `aicraft-engine@0.4.0`.
+1. Set up Vite + TypeScript + `aicraft-engine@0.15.0`.
 2. Implement the connected-terrain renderer (`tile-style.ts`) per §8.4 — neighbor bitmask, fill/highlight/shadow/outline, and all five biome motifs (mortar lines, ember veins, rivulet streaks, riveted plates, crystal lattice).
 3. Generate one hand-crafted test room per biome (a fixed tile grid, not procedurally generated yet) wired to its motif + palette.
 4. Produce a five-style sample sheet (one 320×240 screenshot per biome motif).
