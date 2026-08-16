@@ -155,6 +155,56 @@ describe('Phase 8 — springs', () => {
   });
 
   // =========================================================================
+  // 2b. A buffered press survives a spring launch (Celeste BounceAutoJumpTime,
+  // physics v14). Pre-v14 the winning spring launch zeroed the jump buffer —
+  // a press just before the bounce was swallowed by the higher-priority
+  // spring. The kernel now preserves it (max'd with springAutoJumpTime) on
+  // BOTH the locomotion mirror and the authoritative jump slice.
+  // =========================================================================
+  it('a buffered press survives a spring launch for springAutoJumpTime', () => {
+    const config = DEFAULT_PLATFORMER_CONFIG;
+    const spring: Solid = {
+      id: 'spring-1',
+      x: 0,
+      y: 100,
+      width: 16,
+      height: 16,
+      spring: { launch: config.springBounceVy },
+    };
+    const floor: Solid = { id: 'floor', x: -200, y: 400, width: 600, height: 16 };
+    let state = makeFallingStateOverSpring(0, 100, 200, config);
+
+    // Spring tick, WITH a jump press on it: airborne + no coyote means the
+    // jump ability cannot launch — the press only arms the buffer — and the
+    // spring launch wins arbitration. Pre-v14 this tick left
+    // jumpBufferTimer === 0 (the press was gone).
+    state = stepPlatformer(
+      state,
+      { moveX: 0 as -1 | 0 | 1, jump: { held: true, pressed: true, released: false }, dash: null },
+      [spring, floor],
+      DT,
+      config,
+    ).state;
+
+    // The bounce fired...
+    expect(state.core.vy).toBeLessThan(0);
+    expect(state.interactions.some((i) => i.kind === 'spring')).toBe(true);
+    // ...and the buffered press survived it — mirror AND slice agree.
+    expect(state.locomotion.jumpBufferTimer).toBeGreaterThan(0);
+    const jumpSlice = state.abilities.jump as { jump: { jumpBufferTimer: number } };
+    expect(jumpSlice.jump.jumpBufferTimer).toBeGreaterThan(0);
+    // One tick later the buffer is still inside the springAutoJumpTime window.
+    state = stepPlatformer(
+      state,
+      { moveX: 0 as -1 | 0 | 1, jump: { held: false, pressed: false, released: false }, dash: null },
+      [spring, floor],
+      DT,
+      config,
+    ).state;
+    expect(state.locomotion.jumpBufferTimer).toBeGreaterThan(0);
+  });
+
+  // =========================================================================
   // 3. Super spring launches at the super velocity.
   // =========================================================================
   it('super spring launches at springSuperBounceVy', () => {

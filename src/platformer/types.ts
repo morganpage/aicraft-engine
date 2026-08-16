@@ -1495,12 +1495,10 @@ export interface PlatformerConfig {
   readonly springVarJumpTime: number;
   /**
    * Auto-rejump grace a spring grants, in seconds (Phase 8 — Celeste
-   * `BounceAutoJumpTime 0.1`, `Player.cs:38`). Celeste re-fires a jump buffer
-   * for this long off a bounce so a press just before landing still jumps off
-   * the spring. Reserved: added + pegged for parity; not yet wired into the
-   * jump buffer plumbing (the spring LaunchIntent already opens the variable-
-   * jump window, which covers the common case). TODO when full buffered-rejump
-   * off a spring is wired.
+   * `BounceAutoJumpTime 0.1`, `Player.cs:38`). A spring launch preserves a
+   * buffered jump press for this long (physics v14) so a press just before
+   * the bounce still fires as a jump off the spring instead of being
+   * swallowed by the higher-priority spring launch.
    */
   readonly springAutoJumpTime: number;
   // -----------------------------------------------------------------------

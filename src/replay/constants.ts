@@ -175,4 +175,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 13;
+export const CURRENT_PHYSICS_VERSION = 14;

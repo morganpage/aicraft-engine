@@ -516,8 +516,16 @@ export function createPlatformerController(
             needsForceMove && launch.vx !== undefined
               ? (Math.sign(launch.vx) as -1 | 0 | 1)
               : 0,
-          // The buffered press is consumed by whichever launch won.
-          jumpBufferTimer: 0,
+          // The buffered press is consumed by whichever launch won — EXCEPT a
+          // spring: a spring launch must not swallow a buffered press (Celeste
+          // `BounceAutoJumpTime`, `Player.cs:38`). Keep the buffer alive for
+          // `springAutoJumpTime` so a press just before the bounce still fires
+          // as a jump off the spring via the buffered-rejump machinery; the
+          // jump slice's own buffer is re-armed in the launch re-sync below.
+          jumpBufferTimer:
+            launch.source === 'spring'
+              ? Math.max(locomotion.jumpBufferTimer, config.springAutoJumpTime)
+              : 0,
           // Phase 5 — any launch clears ducking (jumping out of a duck ends it).
           ducking: false,
         };
@@ -628,7 +636,21 @@ export function createPlatformerController(
             // -----------------------------------------------------------------
           abilities = {
             ...abilities,
-            jump: { ...jumpSlice0, jump: { ...jumpSlice0.jump, vy: launch.vy } },
+            jump: {
+              ...jumpSlice0,
+              jump: {
+                ...jumpSlice0.jump,
+                vy: launch.vy,
+                // Spring wiring (physics v14): preserve the buffered press on
+                // the SLICE too — the locomotion mirror alone would be
+                // re-synced from this value next tick. Max'd with
+                // springAutoJumpTime per the kernel comment above.
+                jumpBufferTimer:
+                  launch.source === 'spring'
+                    ? Math.max(jumpSlice0.jump.jumpBufferTimer, config.springAutoJumpTime)
+                    : jumpSlice0.jump.jumpBufferTimer,
+              },
+            },
           };
         }
       }

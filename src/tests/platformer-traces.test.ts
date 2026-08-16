@@ -311,7 +311,7 @@ describe('platformer multi-tick baseline traces', () => {
     // bump; moveX widened to number, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(2415347297);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(4174956450);
   });
 
   // =========================================================================
@@ -520,7 +520,7 @@ describe('platformer multi-tick baseline traces', () => {
       ]
     `);
     expect(traceHash(trace)).toBe(2645614738);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(4081963575);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3168294488);
   });
 
   // =========================================================================
@@ -715,7 +715,7 @@ describe('platformer multi-tick baseline traces', () => {
       ]
     `);
     expect(traceHash(trace)).toBe(3439204586);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(2779025927);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3989263304);
   });
 
   // =========================================================================
@@ -1264,8 +1264,8 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(2827976253);
-    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(3484848052);
+    expect(replayHashFor(42, heldInitial, heldInputs, config)).toBe(3182732294);
+    expect(replayHashFor(42, tappedInitial, tappedInputs, config)).toBe(1491646225);
   });
 
   // =========================================================================
@@ -1424,7 +1424,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(2494056571);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(480487768);
   });
 
   // =========================================================================
@@ -1704,7 +1704,7 @@ describe('platformer multi-tick baseline traces', () => {
     // 9 re-shifted via 8→9 version bump, digital trace unchanged); Phase 10
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3922811632);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(855738639);
   });
 
   // =========================================================================
@@ -1767,7 +1767,7 @@ describe('platformer multi-tick baseline traces', () => {
     // re-shifted (new groundDuckEnabled config field + 9→10 version; digital
     // trace unchanged).
     expect(traceHash(trace)).toBe(2056703830);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3897492110);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(694294447);
   });
 
   // =========================================================================
@@ -1868,7 +1868,7 @@ describe('platformer multi-tick baseline traces', () => {
     // Phase 9 re-shifted via 8→9 version bump; digital trace unchanged.
     // Phase 10 re-shifted (new groundDuckEnabled config field + 9→10 version;
     // digital trace unchanged).
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3769366339);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(3527847618);
   });
 });
 
@@ -1909,7 +1909,7 @@ describe('platformer multi-tick baseline traces', () => {
     expect(events.filter((e) => e.climbJumpLaunched).length).toBe(1);
 
     expect(traceHash(trace)).toBe(2990474143);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(2307623331);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(76537692);
   });
 
   // =========================================================================
@@ -1943,7 +1943,7 @@ describe('platformer multi-tick baseline traces', () => {
     expect(finalX(trace)).toBeLessThan(184);
 
     expect(traceHash(trace)).toBe(2422085024);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(3527304441);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(1865127102);
   });
 
   // =========================================================================
@@ -2004,7 +2004,7 @@ describe('platformer multi-tick baseline traces', () => {
     }
 
     expect(traceHash(trace)).toBe(4269679983);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(4077574831);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2531300766);
   });
 
   // =========================================================================
@@ -2044,5 +2044,5 @@ describe('platformer multi-tick baseline traces', () => {
     expect(trace.every((r) => r.x === 184)).toBe(true);
 
     expect(traceHash(trace)).toBe(1369465528);
-    expect(replayHashFor(42, initial, inputs, config)).toBe(2027573966);
+    expect(replayHashFor(42, initial, inputs, config)).toBe(2032181833);
   });

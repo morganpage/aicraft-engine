@@ -27,8 +27,14 @@ import { aabbOverlap } from './aabb';
  * against that solid's edge:
  * - moving right (`vx > 0`) → body's right edge meets solid's left edge,
  * - moving left (`vx < 0`) → body's left edge meets solid's right edge,
- * and `vx` is zeroed. Iteration continues so a body wedged between multiple
- * walls settles against the nearest one.
+ * and `vx` is zeroed. When the ORIGINAL moved rect overlaps several solids,
+ * the body settles against the NEAREST one — the minimum (moving right) /
+ * maximum (moving left) candidate face, computed directly. The snap is never
+ * re-derived from an already-snapped position: the pre-v14 resolver iterated
+ * re-snaps off the updated position, which made the result depend on array
+ * order and could cascade the body through solids the original move never
+ * overlapped (pinned before the change by
+ * `collision-snap-characterization.test.ts`).
  *
  * Zero velocity short-circuits: no movement means no collision is possible,
  * so even a body already overlapping a wall returns its position unchanged
@@ -52,7 +58,10 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
   if (vx === 0) return { x: body.x, vx: 0, hitWall: false };
 
   const dir = Math.sign(vx);
-  let newX = body.x + vx;
+  // The collision candidates are fixed by the ORIGINAL move — every overlap
+  // test below runs against this one rect, never against an updated position.
+  const moved: Rect = { x: body.x + vx, y: body.y, width: body.width, height: body.height };
+  let newX = moved.x;
   let outVx = vx;
   let hitWall = false;
 
@@ -61,9 +70,10 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
     if (solid.ladder) continue;
     if (solid.spring !== undefined) continue;
     if (solid.dashRefill) continue;
-    const moved: Rect = { x: newX, y: body.y, width: body.width, height: body.height };
     if (!aabbOverlap(moved, solid)) continue;
-    newX = dir > 0 ? solid.x - body.width : solid.x + solid.width;
+    // Nearest wall among the candidates: min face moving right, max moving left.
+    const face = dir > 0 ? solid.x - body.width : solid.x + solid.width;
+    if (!hitWall || (dir > 0 ? face < newX : face > newX)) newX = face;
     outVx = 0;
     hitWall = true;
   }
@@ -88,8 +98,11 @@ export function resolveAxisX(body: Rect, vx: number, solids: readonly Solid[]): 
  * Landing snaps the body so its bottom edge meets the solid's top
  * (`y = solid.y - body.height`); ceiling hits snap the body so its top edge
  * meets the solid's bottom (`y = solid.y + solid.height`). In both cases `vy`
- * is zeroed. Iteration continues so a body overlapping several surfaces
- * settles correctly (e.g. lands on the highest platform beneath it).
+ * is zeroed. When the ORIGINAL moved rect overlaps several solids, the body
+ * settles on the HIGHEST floor beneath it when falling / the LOWEST ceiling
+ * above it when rising — the min/max candidate face, computed directly. As on
+ * the X axis, the pre-v14 resolver's iterative re-snap was array-order-
+ * dependent and could cascade through surfaces the move never overlapped.
  *
  * Zero velocity short-circuits: no movement means no collision is possible.
  *
@@ -124,7 +137,9 @@ export function resolveAxisY(
   if (vy === 0) return { y: body.y, vy: 0, landed: false, hitCeiling: false };
 
   const falling = vy > 0;
-  let newY = body.y + vy;
+  // Candidates are fixed by the ORIGINAL move — no re-snap off updated positions.
+  const moved: Rect = { x: body.x, y: body.y + vy, width: body.width, height: body.height };
+  let newY = moved.y;
   let outVy = vy;
   let landed = false;
   let hitCeiling = false;
@@ -136,14 +151,17 @@ export function resolveAxisY(
     if (solid.passthrough) {
       if (!falling || prevBottom > solid.y) continue;
     }
-    const moved: Rect = { x: body.x, y: newY, width: body.width, height: body.height };
     if (!aabbOverlap(moved, solid)) continue;
     if (falling) {
-      newY = solid.y - body.height;
+      // Highest floor: the minimum candidate top.
+      const face = solid.y - body.height;
+      if (!landed || face < newY) newY = face;
       outVy = 0;
       landed = true;
     } else {
-      newY = solid.y + solid.height;
+      // Lowest ceiling: the maximum candidate bottom.
+      const face = solid.y + solid.height;
+      if (!hitCeiling || face > newY) newY = face;
       outVy = 0;
       hitCeiling = true;
     }
