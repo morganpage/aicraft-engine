@@ -256,6 +256,60 @@ export function drawLdtkLevel(
 }
 
 /**
+ * Draw the 9 slices of a bordered tile into a rect (standard 9-slice:
+ * corners 1:1, edges stretched along one axis, center both). Borders are in
+ * LDtk schema order `[up, right, down, left]`.
+ *
+ * Under-sized rects: each border clamps to half the rect on its axis (the
+ * schema is silent on this case), and any slice whose SOURCE or DEST span
+ * comes out ≤ 0 is skipped — a zero-size `drawImage` throws, which would
+ * fail the whole entity to the engine fallback rather than degrade one
+ * slice. With uniform borders on a too-narrow rect this drops the center
+ * and the horizontal edge strips; the side edges still stretch, which is
+ * the correct degenerate rendering (the door's sides run its full height).
+ */
+function drawNineSlices(
+  context: CanvasRenderingContext2D,
+  image: CanvasImageSource,
+  tile: Readonly<{ x: number; y: number; w: number; h: number }>,
+  dest: Readonly<{ x: number; y: number; width: number; height: number }>,
+  borders: readonly [number, number, number, number],
+): void {
+  const maxW = Math.floor(dest.width / 2);
+  const maxH = Math.floor(dest.height / 2);
+  const top = Math.min(borders[0], maxH);
+  const right = Math.min(borders[1], maxW);
+  const bottom = Math.min(borders[2], maxH);
+  const left = Math.min(borders[3], maxW);
+  // Source spans come from the tile geometry (unclamped borders).
+  const sxL = tile.x + borders[3];
+  const sxR = tile.x + tile.w - borders[1];
+  const syT = tile.y + borders[0];
+  const syB = tile.y + tile.h - borders[2];
+  // Dest spans use the clamped borders.
+  const dxL = dest.x + left;
+  const dxR = dest.x + dest.width - right;
+  const dyT = dest.y + top;
+  const dyB = dest.y + dest.height - bottom;
+  const slices: ReadonlyArray<readonly [number, number, number, number, number, number, number, number]> = [
+    // [sx, sy, sw, sh, dx, dy, dw, dh]
+    [tile.x, tile.y, borders[3], borders[0], dest.x, dest.y, left, top],          // top-left
+    [sxL, tile.y, sxR - sxL, borders[0], dxL, dest.y, dxR - dxL, top],            // top edge
+    [sxR, tile.y, borders[1], borders[0], dxR, dest.y, right, top],               // top-right
+    [tile.x, syT, borders[3], syB - syT, dest.x, dyT, left, dyB - dyT],           // left edge
+    [sxL, syT, sxR - sxL, syB - syT, dxL, dyT, dxR - dxL, dyB - dyT],             // center
+    [sxR, syT, borders[1], syB - syT, dxR, dyT, right, dyB - dyT],                // right edge
+    [tile.x, syB, borders[3], borders[2], dest.x, dyB, left, bottom],             // bottom-left
+    [sxL, syB, sxR - sxL, borders[2], dxL, dyB, dxR - dxL, bottom],               // bottom edge
+    [sxR, syB, borders[1], borders[2], dxR, dyB, right, bottom],                  // bottom-right
+  ];
+  for (const [sx, sy, sw, sh, dx, dy, dw, dh] of slices) {
+    if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) continue;
+    context.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+}
+
+/**
  * Draw one entity's authored display tile into its instance rect.
  *
  * Entities are NOT drawn by {@link drawLdtkLevel} — spawning is owned by the
@@ -269,11 +323,18 @@ export function drawLdtkLevel(
  *  - `Stretch` — one scaled blit filling the rect.
  *  - `FitInside` — scale to fit inside the rect preserving aspect, centered.
  *  - `Cover` — scale to cover the rect preserving aspect, clipped to it.
- *  - `NineSlice` / `FullSizeCropped` / `FullSizeUncropped` — documented
- *    fallback: nine-slice needs the def's `nineSliceBorders`, which neither
- *    the instance tile nor `LdtkEntityDef` carries (a known parser gap), and
- *    the `FullSize*` pair ships in no known fixture. Both render via the
- *    geometry heuristic described below until a pack needs them.
+ *  - `NineSlice` — standard 9-slice when `nineSliceBorders` is supplied
+ *    (schema order `[up, right, down, left]`): corners 1:1, top/bottom edges
+ *    stretch horizontally, left/right edges stretch vertically, the center
+ *    stretches both. Borders clamp to half the rect on their axis, and any
+ *    slice whose source or dest span comes out ≤ 0 is SKIPPED — the schema
+ *    is silent on under-sized rects and one ships in-repo (Entities.ldtk's
+ *    Door: 12px wide against 6+6 borders, a zero-width center by
+ *    construction; a zero-size `drawImage` is an error condition, not a
+ *    no-op). Without borders, falls back to the geometry heuristic.
+ *  - `FullSizeCropped` / `FullSizeUncropped` — the tile at its NATIVE pixel
+ *    size, centered in the rect, clipped / not clipped to it (the schema
+ *    names but does not define these; semantics per the LDtk editor).
  *  - omitted — the geometry heuristic: an instance no larger than its tile
  *    on both axes draws one plain blit scaled to the rect; a larger instance
  *    repeat-tiles. This preserves how consumers derived the behavior before
@@ -288,6 +349,8 @@ export function drawLdtkLevel(
  * @param dest - Destination rect (the entity's instance rect).
  * @param tilesets - Tileset bundle the tile's `tilesetUid` resolves against.
  * @param mode - The def's `tileRenderMode`; omit for the geometry heuristic.
+ * @param nineSliceBorders - The def's parsed `nineSliceBorders` (required to
+ *   render real `NineSlice`; its absence selects the fallback).
  * @returns `true` iff the tile was drawn.
  */
 export function drawLdtkEntityTile(
@@ -296,6 +359,7 @@ export function drawLdtkEntityTile(
   dest: Readonly<{ x: number; y: number; width: number; height: number }>,
   tilesets: Readonly<LdtkTilesetBundle>,
   mode?: LdtkTileRenderMode,
+  nineSliceBorders?: readonly [number, number, number, number] | null,
 ): boolean {
   if (
     context === null || typeof context !== 'object' ||
@@ -311,6 +375,13 @@ export function drawLdtkEntityTile(
   let resolved: LdtkTileRenderMode;
   if (mode === 'Repeat' || mode === 'Stretch' || mode === 'FitInside' || mode === 'Cover') {
     resolved = mode;
+  } else if (
+    mode === 'NineSlice' &&
+    Array.isArray(nineSliceBorders) && nineSliceBorders.length === 4
+  ) {
+    resolved = 'NineSlice';
+  } else if (mode === 'FullSizeCropped' || mode === 'FullSizeUncropped') {
+    resolved = mode;
   } else {
     resolved = dest.width <= tile.w && dest.height <= tile.h ? 'Stretch' : 'Repeat';
   }
@@ -325,6 +396,29 @@ export function drawLdtkEntityTile(
           const h = Math.min(tile.h, dest.height - dy); // and the last partial row
           context.drawImage(entry.image, tile.x, tile.y, w, h, dest.x + dx, dest.y + dy, w, h);
         }
+      }
+      return true;
+    }
+    if (resolved === 'NineSlice') {
+      drawNineSlices(context, entry.image, tile, dest, nineSliceBorders!);
+      return true;
+    }
+    if (resolved === 'FullSizeCropped' || resolved === 'FullSizeUncropped') {
+      // Native pixel size, centered on the rect; Cropped clips to it.
+      const dx = dest.x + (dest.width - tile.w) / 2;
+      const dy = dest.y + (dest.height - tile.h) / 2;
+      if (resolved === 'FullSizeUncropped') {
+        context.drawImage(entry.image, tile.x, tile.y, tile.w, tile.h, dx, dy, tile.w, tile.h);
+        return true;
+      }
+      context.save();
+      try {
+        context.beginPath();
+        context.rect(dest.x, dest.y, dest.width, dest.height);
+        context.clip();
+        context.drawImage(entry.image, tile.x, tile.y, tile.w, tile.h, dx, dy, tile.w, tile.h);
+      } finally {
+        context.restore();
       }
       return true;
     }

@@ -346,13 +346,11 @@ describe('drawLdtkEntityTile', () => {
     expect(pixel(small, 5, 1)).toEqual([0, 0, 0, 0]);
   });
 
-  it('NineSlice and the FullSize* pair fall back to the geometry heuristic (documented boundary)', () => {
+  it('NineSlice WITHOUT borders falls back to the geometry heuristic (a def that lost its borders)', () => {
     const bundle = makeBundle(makeTileset(TILE_SIZE));
-    for (const mode of ['NineSlice', 'FullSizeCropped', 'FullSizeUncropped'] as const) {
-      const ctx = ctx2d(24, 8);
-      expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 24, height: 8 }, bundle, mode)).toBe(true);
-      expect(pixel(ctx, 23, 1)).toEqual([255, 0, 0, 255]); // repeated across, not one smear
-    }
+    const ctx = ctx2d(24, 8);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 24, height: 8 }, bundle, 'NineSlice')).toBe(true);
+    expect(pixel(ctx, 23, 1)).toEqual([255, 0, 0, 255]); // repeated across, not one smear
   });
 
   it('returns false (and draws nothing) for an unknown tileset uid, empty bundle, or degenerate rects', () => {
@@ -367,6 +365,91 @@ describe('drawLdtkEntityTile', () => {
     expect(pixel(ctx, 1, 1)).toEqual([0, 0, 0, 0]);
   });
 
+
+  // ---------------------------------------------------------------------
+  // NineSlice + FullSize* (0.17.0). The 3x3 helper paints nine distinct
+  // colors into one tile so every slice is identifiable in the output.
+  // ---------------------------------------------------------------------
+  const NINE = {
+    tl: [255, 0, 0], tr: [0, 255, 0], bl: [0, 0, 255], br: [255, 255, 0],
+    top: [255, 0, 255], bottom: [0, 255, 255], left: [255, 128, 0],
+    right: [128, 0, 255], center: [255, 255, 255],
+  } as const;
+  const rgba = (c: readonly number[]): [number, number, number, number] => [c[0], c[1], c[2], 255];
+
+  /** One 8x8 tile, borders [2,2,2,2], nine distinct slice colors. */
+  function makeNineSliceTileset(): LdtkTilesetBundle {
+    const ts = makeTileset(TILE_SIZE); // start from tile0=red / tile1=green
+    const tctx = ts.canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
+    const paint = (x: number, y: number, w: number, h: number, c: readonly number[]) => {
+      tctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+      tctx.fillRect(x, y, w, h);
+    };
+    // Overwrite tile 0 entirely with the 3x3 layout (border size 2 on 8px).
+    paint(0, 0, 8, 8, NINE.center);
+    paint(0, 0, 2, 2, NINE.tl); paint(6, 0, 2, 2, NINE.tr);
+    paint(0, 6, 2, 2, NINE.bl); paint(6, 6, 2, 2, NINE.br);
+    paint(2, 0, 4, 2, NINE.top); paint(2, 6, 4, 2, NINE.bottom);
+    paint(0, 2, 2, 4, NINE.left); paint(6, 2, 2, 4, NINE.right);
+    return makeBundle(ts);
+  }
+
+  it('NineSlice stretches edges one axis and the center both; corners stay 1:1', () => {
+    const bundle = makeNineSliceTileset();
+    const ctx = ctx2d(12, 16);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 12, height: 16 }, bundle, 'NineSlice', [2, 2, 2, 2])).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual(rgba(NINE.tl));
+    expect(pixel(ctx, 10, 1)).toEqual(rgba(NINE.tr));
+    expect(pixel(ctx, 1, 14)).toEqual(rgba(NINE.bl));
+    expect(pixel(ctx, 10, 14)).toEqual(rgba(NINE.br));
+    expect(pixel(ctx, 5, 1)).toEqual(rgba(NINE.top));     // stretched to 8 wide
+    expect(pixel(ctx, 1, 7)).toEqual(rgba(NINE.left));    // stretched to 12 tall
+    expect(pixel(ctx, 5, 7)).toEqual(rgba(NINE.center));  // stretched both
+  });
+
+  it('NineSlice skips zero-span slices instead of throwing (the Door case, scaled: 4 wide against 2+2 borders)', () => {
+    // dest.width 4 with borders 2+2 → the center and the horizontal edge
+    // strips have zero DEST width and are skipped; the side edges still
+    // stretch the full height (their source spans stay positive — the
+    // in-repo Door is 12 wide against 6+6 over a 16px tile, same shape).
+    // A zero-size drawImage THROWS — this must not.
+    const bundle = makeNineSliceTileset();
+    const ctx = ctx2d(4, 16);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 4, height: 16 }, bundle, 'NineSlice', [2, 2, 2, 2])).toBe(true);
+    expect(pixel(ctx, 0, 1)).toEqual(rgba(NINE.tl));
+    expect(pixel(ctx, 3, 1)).toEqual(rgba(NINE.tr));
+    expect(pixel(ctx, 0, 7)).toEqual(rgba(NINE.left));    // side edge survives
+    expect(pixel(ctx, 3, 7)).toEqual(rgba(NINE.right));   // side edge survives
+  });
+
+  it('NineSlice clamps borders past half the rect (odd under-size)', () => {
+    // borders 2 on a 3-wide rect clamp to 1 → corners squash 2px→1px but
+    // every span stays positive; the center keeps a 1px column.
+    const bundle = makeNineSliceTileset();
+    const ctx = ctx2d(3, 16);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 3, height: 16 }, bundle, 'NineSlice', [2, 2, 2, 2])).toBe(true);
+    expect(pixel(ctx, 0, 1)).toEqual(rgba(NINE.tl));      // 1px squashed corner
+    expect(pixel(ctx, 2, 1)).toEqual(rgba(NINE.tr));
+    expect(pixel(ctx, 1, 7)).toEqual(rgba(NINE.center));  // clamped-but-positive center
+  });
+
+  it('FullSizeCropped draws the tile at NATIVE size, clipped to the rect', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(8, 8);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 4, height: 4 }, bundle, 'FullSizeCropped')).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual([255, 0, 0, 255]);   // native 8x8 centered over the 4x4 rect
+    expect(pixel(ctx, 5, 5)).toEqual([0, 0, 0, 0]);       // clipped outside the rect
+  });
+
+  it('FullSizeUncropped overflows the rect at native size', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(8, 8);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 4, height: 4 }, bundle, 'FullSizeUncropped')).toBe(true);
+    // Native 8x8 centered over the 4x4 rect covers -2..5 on each axis.
+    expect(pixel(ctx, 1, 1)).toEqual([255, 0, 0, 255]);
+    expect(pixel(ctx, 5, 5)).toEqual([255, 0, 0, 255]);   // outside the rect, NOT clipped
+    expect(pixel(ctx, 6, 6)).toEqual([0, 0, 0, 0]);       // past the native-size image
+  });
   it('pins the parsed default end-to-end: a def omitting tileRenderMode draws ONE centered blit, not a repeat run', () => {
     // Synthetic older-file shape: a tile-bearing def with the key absent (the
     // adversarial fixture has no tile-bearing defs, so this pin is synthetic

@@ -510,6 +510,13 @@ export interface LdtkEntityDef {
    * key resolve to `'FitInside'`.
    */
   readonly tileRenderMode: LdtkTileRenderMode;
+  /**
+   * Nine-slice borders `[up, right, down, left]` (schema order), present only
+   * when `tileRenderMode === 'NineSlice'`. Parses to the tuple for a 4-int
+   * array; `null` for absent/empty/malformed (including a `NineSlice` def
+   * that lost its borders — renderers fall back to the geometry heuristic).
+   */
+  readonly nineSliceBorders: readonly [number, number, number, number] | null;
   /** Pivot in `[0,1]` (0,0 = top-left). */
   readonly pivotX: number;
   readonly pivotY: number;

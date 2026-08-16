@@ -479,6 +479,17 @@ function parseTileRenderMode(v: unknown): LdtkTileRenderMode {
   return 'FitInside';
 }
 
+function parseNineSliceBorders(v: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(v) || v.length !== 4) return null;
+  const borders: number[] = [];
+  for (const item of v) {
+    const n = int(item);
+    if (n === undefined || n < 0) return null;
+    borders.push(n);
+  }
+  return [borders[0], borders[1], borders[2], borders[3]];
+}
+
 function parseEntityDef(raw: unknown): LdtkEntityDef | undefined {
   if (!isPlainObject(raw)) return undefined;
   let tileRect: LdtkEntityDef['tileRect'] = null;
@@ -509,6 +520,7 @@ function parseEntityDef(raw: unknown): LdtkEntityDef | undefined {
     color: str(raw.color) ?? '#94D9B3',
     renderMode: parseEntityRenderMode(raw.renderMode),
     tileRenderMode: parseTileRenderMode(raw.tileRenderMode),
+    nineSliceBorders: parseNineSliceBorders(raw.nineSliceBorders),
     pivotX: num(raw.pivotX) ?? 0,
     pivotY: num(raw.pivotY) ?? 0,
     tilesetId: nullableUid(raw.tilesetId),

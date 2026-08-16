@@ -299,6 +299,29 @@ describe('parseLdtkProject', () => {
     expect(defs.find((d) => d.identifier === 'Garbage')!.tileRenderMode).toBe('FitInside');
   });
 
+  it('parses nineSliceBorders as [up, right, down, left]; malformed to null', () => {
+    const raw = JSON.parse(JSON.stringify(SAMPLE_PROJECT));
+    raw.defs.entities = [
+      { identifier: 'Door', uid: 1, renderMode: 'Tile', tileRenderMode: 'NineSlice',
+        tileRect: { tilesetUid: 1, x: 0, y: 0, w: 16, h: 16 }, nineSliceBorders: [6, 6, 6, 6] },
+      { identifier: 'Empty', uid: 2, renderMode: 'Tile', tileRenderMode: 'FitInside',
+        tileRect: { tilesetUid: 1, x: 0, y: 0, w: 16, h: 16 }, nineSliceBorders: [] },
+      { identifier: 'Absent', uid: 3, renderMode: 'Tile', tileRenderMode: 'NineSlice',
+        tileRect: { tilesetUid: 1, x: 0, y: 0, w: 16, h: 16 } },
+      { identifier: 'Short', uid: 4, renderMode: 'Tile', tileRenderMode: 'NineSlice',
+        tileRect: { tilesetUid: 1, x: 0, y: 0, w: 16, h: 16 }, nineSliceBorders: [1, 2] },
+      { identifier: 'Negative', uid: 5, renderMode: 'Tile', tileRenderMode: 'NineSlice',
+        tileRect: { tilesetUid: 1, x: 0, y: 0, w: 16, h: 16 }, nineSliceBorders: [-1, 0, 0, 0] },
+    ];
+    const { project } = parseLdtkProject(JSON.stringify(raw));
+    const defs = project!.defs.entities;
+    expect(defs.find((d) => d.identifier === 'Door')!.nineSliceBorders).toEqual([6, 6, 6, 6]);
+    expect(defs.find((d) => d.identifier === 'Empty')!.nineSliceBorders).toBeNull();
+    expect(defs.find((d) => d.identifier === 'Absent')!.nineSliceBorders).toBeNull();
+    expect(defs.find((d) => d.identifier === 'Short')!.nineSliceBorders).toBeNull();
+    expect(defs.find((d) => d.identifier === 'Negative')!.nineSliceBorders).toBeNull();
+  });
+
   it('defaults every adversarial-fixture entity def to FitInside (zero tileRenderMode keys in the raw file)', () => {
     const url = new URL('./fixtures/celerock-adversarial.ldtk', import.meta.url);
     const { project } = parseLdtkProject(readFileSync(url, 'utf8'));
