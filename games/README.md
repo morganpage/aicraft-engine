@@ -5,8 +5,18 @@ A catalog of build-briefs (prompts) for games built **on top of** the
 file is a self-contained prompt — paste it to a coding agent (Claude / Cursor /
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
-Every prompt pins the latest registry-verified release exactly — currently
-`aicraft-engine@0.13.0`.
+
+Every prompt pins an exact registry-verified release — the version it was
+written and compiled against, not a range. **They are not all on the same
+version.** [celerock.md](./celerock.md) tracks the current release
+(`aicraft-engine@0.15.0`) and is the reference for the modern golden path;
+the other six pin `0.4.0` and predate the LDtk, camera-brain, and
+platformer-kernel waves, so treat their API surface as historical until they
+are refreshed. Check the install line in a prompt before trusting its imports.
+
+Celerock is also the only prompt that ships **assets** — a CC0 level, tileset,
+and sprite sheet linked from its §1.1 and downloaded at scaffold time (see
+[`THIRD_PARTY.md`](../THIRD_PARTY.md) for provenance).
 
 The common contract every prompt here enforces:
 
@@ -29,7 +39,7 @@ The common contract every prompt here enforces:
 | Game | File | Genre | Engine pillars exercised |
 |---|---|---|---|
 | **Embertomb** | [simple-platformer.md](./simple-platformer.md) | Side-view platformer | loop, input, tile/AABB collision, camera, hit-stop, squash, locomotion, foot-plant audio, jump, **spring rods**, particles, emitters (lava/water presets), wave-lines (water+lava), parallax, glow, palettes, RNG level-gen |
-| **Celerock** | [celerock.md](./celerock.md) | Single-screen precision platformer | **platformer kernel** (`defaultPrecisionPipeline`: jump + wall-slide + dash), `compileLevel` + `drawTileGrid` + `drawActor`, **collectibles** (`collect`/`hasCollected`), `save`, bitmap text, hit-stop + sineShake, tween, parallax |
+| **Celerock** | [celerock.md](./celerock.md) | Multi-room Celeste-like precision platformer (LDtk-driven) | The whole modern golden path: **LDtk as the level source** (`loadLdtkProjectAssets` + `inspectLdtkPlatformerProject` preflight + `createLdtkRoomCache` + `drawLdtkLevel`), the **camera brain** (per-room vcams, `fitCameraZoom`), the **full Celeste movement kernel** (8-dir dash, wall-grab/stamina, wall-slide, direction-aware wall-jump, mantle, dash-tech), the **room-transition session orchestrator** (`createRoomTransitionSession` → `pollRoomTransition` → `beginSessionRoomSlide`) across `__neighbours` seams, `state.moments` feel channel, the **sprite pipeline** (`parseSpriteSheet` → `drawSprite`), collectibles + `save`, hit-stop + shake, sustained-noise audio. **Ships its own CC0 asset pack.** |
 | **World 1-1** | [world-1-1.md](./world-1-1.md) | Horizontal-scrolling classic platformer | **platformer kernel** (`CLASSIC_PLATFORMER`: jump, no double-jump), hand-authored `LevelData` + `validateLevel`, unified `compileLevel`, moving platforms, parallax, collectibles + save |
 | **Flipside** | [flipside.md](./flipside.md) | No-jump gravity-flip explorer | Signed-gravity controllers with empty ability pipelines, unified tile compilation, and fixed-step `advanceSequencer` events rendered by `createNoteFirePlayer` |
 | **Spin Loop** | [spin-loop.md](./spin-loop.md) | Momentum-speed horizontal act | **Signed-gravity two-controller pattern** for the loop-de-loop (`PRECISION_PLATFORMER` + `gravity: ±magnitude`), `sampleConeVelocity` for the **lost-rings burst**, speed-scaled camera + `sineShake`, `compileLevel` + `tileTypeMap`, 3-layer `drawTiledParallax`, `collectibles` + `save`, `replay` stretch |
