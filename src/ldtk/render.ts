@@ -34,6 +34,7 @@ import type {
   LdtkLayerInstance,
   LdtkLevel,
   LdtkTile,
+  LdtkTileRenderMode,
   LdtkTilesetDef,
 } from './types';
 
@@ -252,6 +253,114 @@ export function drawLdtkLevel(
     context.restore();
   }
   return total;
+}
+
+/**
+ * Draw one entity's authored display tile into its instance rect.
+ *
+ * Entities are NOT drawn by {@link drawLdtkLevel} — spawning is owned by the
+ * translated `LevelData` — so this is the blit for consumers rendering entity
+ * art from the LDtk file: an entity def's `tileRect` resolved to the
+ * instance `__tile`.
+ *
+ * Mode semantics (the entity def's `tileRenderMode`):
+ *  - `Repeat` — tile across the rect, clipping the last partial column/row
+ *    (an authored 40×8 spike strip over an 8×8 tile draws five tiles).
+ *  - `Stretch` — one scaled blit filling the rect.
+ *  - `FitInside` — scale to fit inside the rect preserving aspect, centered.
+ *  - `Cover` — scale to cover the rect preserving aspect, clipped to it.
+ *  - `NineSlice` / `FullSizeCropped` / `FullSizeUncropped` — documented
+ *    fallback: nine-slice needs the def's `nineSliceBorders`, which neither
+ *    the instance tile nor `LdtkEntityDef` carries (a known parser gap), and
+ *    the `FullSize*` pair ships in no known fixture. Both render via the
+ *    geometry heuristic described below until a pack needs them.
+ *  - omitted — the geometry heuristic: an instance no larger than its tile
+ *    on both axes draws one plain blit scaled to the rect; a larger instance
+ *    repeat-tiles. This preserves how consumers derived the behavior before
+ *    the mode was parsed.
+ *
+ * **Never throws** — a missing tileset, degenerate tile, or throwing draw
+ * returns `false` and draws nothing.
+ *
+ * @param context - The 2D canvas context. Caller owns the base transform;
+ *   `dest` is in the context's current coordinate space.
+ * @param tile - Source rect — the instance `__tile` (or the def `tileRect`).
+ * @param dest - Destination rect (the entity's instance rect).
+ * @param tilesets - Tileset bundle the tile's `tilesetUid` resolves against.
+ * @param mode - The def's `tileRenderMode`; omit for the geometry heuristic.
+ * @returns `true` iff the tile was drawn.
+ */
+export function drawLdtkEntityTile(
+  context: CanvasRenderingContext2D,
+  tile: Readonly<{ tilesetUid: number; x: number; y: number; w: number; h: number }>,
+  dest: Readonly<{ x: number; y: number; width: number; height: number }>,
+  tilesets: Readonly<LdtkTilesetBundle>,
+  mode?: LdtkTileRenderMode,
+): boolean {
+  if (
+    context === null || typeof context !== 'object' ||
+    tile === null || typeof tile !== 'object' ||
+    dest === null || typeof dest !== 'object' ||
+    tilesets === null || typeof tilesets !== 'object'
+  ) return false;
+  if (!isPositiveFinite(tile.w) || !isPositiveFinite(tile.h)) return false;
+  if (!isPositiveFinite(dest.width) || !isPositiveFinite(dest.height)) return false;
+  const entry = tilesets.get(tile.tilesetUid);
+  if (entry === undefined) return false;
+
+  let resolved: LdtkTileRenderMode;
+  if (mode === 'Repeat' || mode === 'Stretch' || mode === 'FitInside' || mode === 'Cover') {
+    resolved = mode;
+  } else {
+    resolved = dest.width <= tile.w && dest.height <= tile.h ? 'Stretch' : 'Repeat';
+  }
+
+  context.save();
+  try {
+    context.imageSmoothingEnabled = false;
+    if (resolved === 'Repeat') {
+      for (let dy = 0; dy < dest.height; dy += tile.h) {
+        for (let dx = 0; dx < dest.width; dx += tile.w) {
+          const w = Math.min(tile.w, dest.width - dx); // clip the last partial column
+          const h = Math.min(tile.h, dest.height - dy); // and the last partial row
+          context.drawImage(entry.image, tile.x, tile.y, w, h, dest.x + dx, dest.y + dy, w, h);
+        }
+      }
+      return true;
+    }
+    if (resolved === 'Stretch') {
+      context.drawImage(entry.image, tile.x, tile.y, tile.w, tile.h,
+        dest.x, dest.y, dest.width, dest.height);
+      return true;
+    }
+    if (resolved === 'FitInside') {
+      const scale = Math.min(dest.width / tile.w, dest.height / tile.h);
+      const w = tile.w * scale;
+      const h = tile.h * scale;
+      context.drawImage(entry.image, tile.x, tile.y, tile.w, tile.h,
+        dest.x + (dest.width - w) / 2, dest.y + (dest.height - h) / 2, w, h);
+      return true;
+    }
+    // Cover — scale to cover, clipped to the rect.
+    const scale = Math.max(dest.width / tile.w, dest.height / tile.h);
+    const w = tile.w * scale;
+    const h = tile.h * scale;
+    context.save();
+    try {
+      context.beginPath();
+      context.rect(dest.x, dest.y, dest.width, dest.height);
+      context.clip();
+      context.drawImage(entry.image, tile.x, tile.y, tile.w, tile.h,
+        dest.x + (dest.width - w) / 2, dest.y + (dest.height - h) / 2, w, h);
+    } finally {
+      context.restore();
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    context.restore();
+  }
 }
 
 /**

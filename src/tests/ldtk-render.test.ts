@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createCanvas } from 'canvas';
 import {
   buildLdtkTilesetBundle,
+  drawLdtkEntityTile,
   drawLdtkLayer,
   drawLdtkLevel,
 } from '../ldtk/render';
+import { parseLdtkProject } from '../ldtk/parse';
 import type { LdtkTilesetBundle, LdtkTilesetImage } from '../ldtk/render';
 import type { LdtkLayerInstance, LdtkLevel } from '../ldtk/types';
 
@@ -271,5 +273,122 @@ describe('buildLdtkTilesetBundle', () => {
     const ts = makeTileset(TILE_SIZE);
     const bundle = buildLdtkTilesetBundle([ts.def], () => undefined);
     expect(bundle.size).toBe(0);
+  });
+});
+
+describe('drawLdtkEntityTile', () => {
+  const RED_TILE = { tilesetUid: 1, x: 0, y: 0, w: TILE_SIZE, h: TILE_SIZE };
+
+  /** First tile painted left-red / right-blue so scaled and clipped draws are tellable apart. */
+  function makeTwoToneTileset(): LdtkTilesetBundle {
+    const ts = makeTileset(TILE_SIZE);
+    const tctx = ts.canvas.getContext('2d') as unknown as CanvasRenderingContext2D;
+    tctx.fillStyle = '#0000ff';
+    tctx.fillRect(TILE_SIZE / 2, 0, TILE_SIZE / 2, TILE_SIZE);
+    return makeBundle(ts);
+  }
+
+  it('Repeat tiles a 40x8 strip over the 8x8 tile into five tiles', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(48, 8);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 40, height: 8 }, bundle, 'Repeat')).toBe(true);
+    for (const x of [1, 9, 17, 25, 33, 39]) {
+      expect(pixel(ctx, x, 1)).toEqual([255, 0, 0, 255]);
+    }
+  });
+
+  it('Repeat clips the last partial column from the SOURCE rect, not by smearing', () => {
+    const bundle = makeTwoToneTileset();
+    const ctx = ctx2d(16, 8);
+    // 12 wide = one full tile + a 4px partial column.
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 12, height: 8 }, bundle, 'Repeat')).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual([255, 0, 0, 255]);   // full tile, left half
+    expect(pixel(ctx, 7, 1)).toEqual([0, 0, 255, 255]);   // full tile, right half
+    expect(pixel(ctx, 11, 1)).toEqual([255, 0, 0, 255]);  // partial column = SOURCE pixels 0-3
+    expect(pixel(ctx, 12, 1)).toEqual([0, 0, 0, 0]);      // nothing past the rect
+  });
+
+  it('Stretch fills the rect with one scaled blit', () => {
+    const bundle = makeTwoToneTileset();
+    const ctx = ctx2d(16, 8);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 16, height: 8 }, bundle, 'Stretch')).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual([255, 0, 0, 255]);   // source left half
+    expect(pixel(ctx, 14, 1)).toEqual([0, 0, 255, 255]);  // source right half covers dest x >= 8
+  });
+
+  it('FitInside letterboxes: aspect-preserving and centered', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(16, 8);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 16, height: 8 }, bundle, 'FitInside')).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual([0, 0, 0, 0]);        // letterbox left
+    expect(pixel(ctx, 5, 1)).toEqual([255, 0, 0, 255]);    // centered 8x8 blit
+    expect(pixel(ctx, 14, 1)).toEqual([0, 0, 0, 0]);       // letterbox right
+  });
+
+  it('Cover fills the rect and clips to it', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(16, 12);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 16, height: 8 }, bundle, 'Cover')).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual([255, 0, 0, 255]);
+    expect(pixel(ctx, 14, 7)).toEqual([255, 0, 0, 255]);
+    expect(pixel(ctx, 1, 9)).toEqual([0, 0, 0, 0]);        // clipped below the rect
+  });
+
+  it('omitted mode uses the geometry heuristic: oversized repeats, undersized blits', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const big = ctx2d(24, 8);
+    expect(drawLdtkEntityTile(big, RED_TILE, { x: 0, y: 0, width: 24, height: 8 }, bundle)).toBe(true);
+    expect(pixel(big, 1, 1)).toEqual([255, 0, 0, 255]);
+    expect(pixel(big, 23, 1)).toEqual([255, 0, 0, 255]);   // third repeat tile, not a smear
+    const small = ctx2d(8, 8);
+    expect(drawLdtkEntityTile(small, RED_TILE, { x: 0, y: 0, width: 4, height: 8 }, bundle)).toBe(true);
+    expect(pixel(small, 1, 1)).toEqual([255, 0, 0, 255]);
+    expect(pixel(small, 5, 1)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('NineSlice and the FullSize* pair fall back to the geometry heuristic (documented boundary)', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    for (const mode of ['NineSlice', 'FullSizeCropped', 'FullSizeUncropped'] as const) {
+      const ctx = ctx2d(24, 8);
+      expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 24, height: 8 }, bundle, mode)).toBe(true);
+      expect(pixel(ctx, 23, 1)).toEqual([255, 0, 0, 255]); // repeated across, not one smear
+    }
+  });
+
+  it('returns false (and draws nothing) for an unknown tileset uid, empty bundle, or degenerate rects', () => {
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(16, 8);
+    const dest = { x: 0, y: 0, width: 8, height: 8 };
+    expect(drawLdtkEntityTile(ctx, { ...RED_TILE, tilesetUid: 999 }, dest, bundle, 'Repeat')).toBe(false);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, dest, new Map())).toBe(false);
+    expect(drawLdtkEntityTile(ctx, { ...RED_TILE, w: 0 }, dest, bundle)).toBe(false);
+    expect(drawLdtkEntityTile(ctx, RED_TILE, { x: 0, y: 0, width: 0, height: 8 }, bundle)).toBe(false);
+    expect(drawLdtkEntityTile(null as unknown as CanvasRenderingContext2D, RED_TILE, dest, bundle)).toBe(false);
+    expect(pixel(ctx, 1, 1)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('pins the parsed default end-to-end: a def omitting tileRenderMode draws ONE centered blit, not a repeat run', () => {
+    // Synthetic older-file shape: a tile-bearing def with the key absent (the
+    // adversarial fixture has no tile-bearing defs, so this pin is synthetic
+    // by necessity). The parsed default — 'FitInside' — must decide the draw:
+    // a 40x8 instance letterboxes to one centered 8x8 blit. This test puts
+    // that default choice on the record; if it looks wrong, change the parse
+    // default, not this assertion.
+    const { project } = parseLdtkProject(JSON.stringify({
+      jsonVersion: '1.5.3',
+      defs: { entities: [{
+        identifier: 'Strip', uid: 1, renderMode: 'Tile',
+        tileRect: { tilesetUid: 1, x: 0, y: 0, w: TILE_SIZE, h: TILE_SIZE },
+        // no tileRenderMode key
+      }] },
+    }));
+    const def = project!.defs.entities[0];
+    expect(def.tileRenderMode).toBe('FitInside');
+    const bundle = makeBundle(makeTileset(TILE_SIZE));
+    const ctx = ctx2d(48, 8);
+    expect(drawLdtkEntityTile(ctx, def.tileRect!, { x: 0, y: 0, width: 40, height: 8 }, bundle, def.tileRenderMode)).toBe(true);
+    expect(pixel(ctx, 1, 1)).toEqual([0, 0, 0, 0]);        // no repeat run
+    expect(pixel(ctx, 20, 1)).toEqual([255, 0, 0, 255]);   // the one centered blit
+    expect(pixel(ctx, 39, 1)).toEqual([0, 0, 0, 0]);
   });
 });

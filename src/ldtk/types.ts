@@ -474,6 +474,20 @@ export interface LdtkFieldDef {
 export type LdtkEntityRenderMode = 'Rectangle' | 'Ellipse' | 'Tile' | 'Cross';
 
 /**
+ * How a tile-bearing entity's display tile renders inside the entity bounds
+ * (`tileRenderMode` on LDtk entity defs). All seven schema values — see
+ * https://ldtk.io/json/.
+ */
+export type LdtkTileRenderMode =
+  | 'Cover'
+  | 'FitInside'
+  | 'Repeat'
+  | 'Stretch'
+  | 'FullSizeCropped'
+  | 'FullSizeUncropped'
+  | 'NineSlice';
+
+/**
  * Entity definition — the palette entry an author places instances of.
  * Needed to offer an entity palette and to size new instances correctly.
  */
@@ -489,6 +503,13 @@ export interface LdtkEntityDef {
   /** Display color hex. */
   readonly color: string;
   readonly renderMode: LdtkEntityRenderMode;
+  /**
+   * How the display tile renders inside resized instances (`Repeat` tiles,
+   * `Stretch` scales, `FitInside` letterboxes — see
+   * {@link LdtkTileRenderMode}). Parsed from the raw def; defs omitting the
+   * key resolve to `'FitInside'`.
+   */
+  readonly tileRenderMode: LdtkTileRenderMode;
   /** Pivot in `[0,1]` (0,0 = top-left). */
   readonly pivotX: number;
   readonly pivotY: number;

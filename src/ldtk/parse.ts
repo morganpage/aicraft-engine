@@ -32,6 +32,7 @@ import type {
   LdtkTile,
   LdtkTilesetDef,
   LdtkTileMode,
+  LdtkTileRenderMode,
   LdtkWorld,
 } from './types';
 
@@ -468,6 +469,16 @@ function parseEntityRenderMode(v: unknown): LdtkEntityRenderMode {
   return 'Rectangle';
 }
 
+function parseTileRenderMode(v: unknown): LdtkTileRenderMode {
+  if (
+    v === 'Cover' || v === 'FitInside' || v === 'Repeat' || v === 'Stretch' ||
+    v === 'FullSizeCropped' || v === 'FullSizeUncropped' || v === 'NineSlice'
+  ) return v;
+  // Modern LDtk writes the key on every def; older files without it get the
+  // least-surprise single unscaled blit.
+  return 'FitInside';
+}
+
 function parseEntityDef(raw: unknown): LdtkEntityDef | undefined {
   if (!isPlainObject(raw)) return undefined;
   let tileRect: LdtkEntityDef['tileRect'] = null;
@@ -497,6 +508,7 @@ function parseEntityDef(raw: unknown): LdtkEntityDef | undefined {
     resizableY: raw.resizableY === true,
     color: str(raw.color) ?? '#94D9B3',
     renderMode: parseEntityRenderMode(raw.renderMode),
+    tileRenderMode: parseTileRenderMode(raw.tileRenderMode),
     pivotX: num(raw.pivotX) ?? 0,
     pivotY: num(raw.pivotY) ?? 0,
     tilesetId: nullableUid(raw.tilesetId),

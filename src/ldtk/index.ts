@@ -40,6 +40,7 @@ export type {
   LdtkCheckerMode,
   LdtkEntityDef,
   LdtkEntityRenderMode,
+  LdtkTileRenderMode,
   LdtkFieldDef,
 } from './types';
 
@@ -110,6 +111,7 @@ export type {
 export {
   drawLdtkLayer,
   drawLdtkLevel,
+  drawLdtkEntityTile,
   buildLdtkTilesetBundle,
 } from './render';
 

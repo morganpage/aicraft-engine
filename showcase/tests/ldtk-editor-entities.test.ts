@@ -44,6 +44,7 @@ function def(over: Partial<LdtkEntityDef> = {}): LdtkEntityDef {
     resizableY: false,
     color: '#ffd24e',
     renderMode: 'Rectangle',
+    tileRenderMode: 'FitInside',
     pivotX: 0,
     pivotY: 0,
     tilesetId: null,

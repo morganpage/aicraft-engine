@@ -41,6 +41,11 @@ describe('root barrel re-exports every module', () => {
     // patterns cannot encode them without these.
     expect(aicraft.LDTK_RULE_ANY_VALUE).toBe(1000001);
     expect(aicraft.LDTK_RULE_GROUP_STRIDE).toBe(1000);
+    // Entity display tiles (0.16.0) — the blit + the parsed render mode.
+    expect(typeof aicraft.drawLdtkEntityTile).toBe('function');
+    // Compile-time type use: the mode union must be importable.
+    const _mode: aicraft.LdtkTileRenderMode = 'FitInside';
+    void _mode;
   });
 
   it('primitives: outlineRect is a function, DEFAULT_OUTLINE_COLOR is a string', () => {
