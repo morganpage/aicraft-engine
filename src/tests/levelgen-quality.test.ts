@@ -28,6 +28,11 @@ import { generateLevel } from '../levelgen/generate';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Minimal surfaces for the reachability graph (count is what quality reads). */
+function surfaces(count: number): { id: string; x: number; y: number; width: number; passthrough: boolean }[] {
+  return Array.from({ length: count }, (_, i) => ({ id: `s${i}`, x: 0, y: 0, width: 16, passthrough: false }));
+}
+
 /**
  * Create a minimal VerificationResult for testing quality scoring.
  * Uses 'inconclusive' status by default.
@@ -43,10 +48,15 @@ function makeVerificationResult(
       errors: [],
     },
     reachability: {
-      confidence: 'heuristic',
+      version: 1,
+      confidence: 'heuristic' as const,
       reachable: true,
-      nodeCount: 10,
-      summary: 'Reachable (heuristic).',
+      graph: { surfaces: surfaces(10), edges: [] },
+      spawnSurface: null,
+      exitSurfaces: [],
+      reachableSurfaces: [],
+      softlockSurfaces: [],
+      diagnostics: ['Reachable (heuristic).'],
     },
     scenario: {
       version: 1,
@@ -163,10 +173,15 @@ describe('evaluateLevelQuality', () => {
     const ver = makeVerificationResult({
       status: 'proven-unreachable',
       reachability: {
-        confidence: 'sound-over-approximation',
+        version: 1,
+        confidence: 'sound-over-approximation' as const,
         reachable: false,
-        nodeCount: 5,
-        summary: 'No path found.',
+        graph: { surfaces: surfaces(5), edges: [] },
+        spawnSurface: null,
+        exitSurfaces: [],
+        reachableSurfaces: [],
+        softlockSurfaces: [],
+        diagnostics: ['No path found.'],
       },
     });
 

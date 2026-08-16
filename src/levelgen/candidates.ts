@@ -146,53 +146,41 @@ function deriveCandidateSeed(rootSeed: number, salt: number, index: number): num
 // ---------------------------------------------------------------------------
 
 /**
- * Call verifyLevel and adapt the result to the levelgen VerificationResult type.
- *
- * The leveltest and levelgen VerificationResult types have the same shape
- * but differ in their ReachabilityResult sub-type. This function bridges
- * the gap with a minimal type adaptation.
+ * Call verifyLevel and return its result — the levelgen VerificationResult
+ * IS the leveltest type since the 0.17.0 consolidation; only the
+ * never-throw guard remains.
  */
 function verifyAndAdapt(
   level: LevelData,
 ): VerificationResult {
+  // 0.17.0: levelgen's VerificationResult IS leveltest's now (consolidated),
+  // so no adaptation is needed — only the never-throw guard remains.
   try {
-    const lvResult = verifyLevelOriginal(level);
-    const reach = lvResult.reachability;
-    const lvReach = reach as unknown as Record<string, unknown>;
-    return {
-      version: 1 as const,
-      status: lvResult.status as VerificationResult['status'],
-      structural: lvResult.structural,
-      reachability: {
-        confidence: reach.confidence,
-        reachable: reach.reachable,
-        nodeCount: (typeof lvReach.graph === 'object' && lvReach.graph !== null
-          ? ((lvReach.graph as Record<string, unknown>).surfaces as unknown[] | undefined)?.length ?? 0
-          : 0),
-        summary: (Array.isArray(lvReach.diagnostics) ? (lvReach.diagnostics as string[]).join('; ') : ''),
-      },
-      scenario: lvResult.scenario as unknown as VerificationResult['scenario'],
-      winningReplay: lvResult.winningReplay,
-      winningReplayHash: lvResult.winningReplayHash,
-      diagnostics: lvResult.diagnostics as unknown as VerificationResult['diagnostics'],
-    };
+    return verifyLevelOriginal(level);
   } catch {
     return {
       version: 1 as const,
       status: 'inconclusive' as const,
       structural: { valid: false, errors: [] },
       reachability: {
+        version: 1,
         confidence: 'unsupported' as const,
         reachable: false,
-        nodeCount: 0,
-        summary: 'Verification threw.',
+        graph: { surfaces: [], edges: [] },
+        spawnSurface: null,
+        exitSurfaces: [],
+        reachableSurfaces: [],
+        softlockSurfaces: [],
+        diagnostics: ['Verification threw.'],
       },
       scenario: {
-        version: 1 as const,
+        version: 1,
         status: 'inconclusive' as const,
         runs: [],
         diagnostics: [],
       },
+      winningReplay: undefined,
+      winningReplayHash: undefined,
       diagnostics: [],
     };
   }

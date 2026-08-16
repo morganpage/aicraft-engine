@@ -498,12 +498,19 @@ export function realizeBlueprint(
       status: 'inconclusive',
       structural: validationResult,
       reachability: {
-        confidence: 'heuristic',
+        version: 1,
+        confidence: 'heuristic' as const,
         reachable: validationResult.valid,
-        nodeCount: safeBlueprint.route.nodes.length,
-        summary: validationResult.valid
-          ? 'Structural validation passed. Full verification requires Phase 5.'
-          : 'Structural validation failed.',
+        graph: { surfaces: [], edges: [] },
+        spawnSurface: null,
+        exitSurfaces: [],
+        reachableSurfaces: [],
+        softlockSurfaces: [],
+        diagnostics: [
+          validationResult.valid
+            ? 'Structural validation passed. Full verification requires Phase 5.'
+            : 'Structural validation failed.',
+        ],
       },
       scenario: {
         version: 1,

@@ -167,19 +167,9 @@ export interface CalibrationResult {
  * console.log(`Band: ${result.band.label}, within: ${result.withinBand}`);
  * ```
  */
-/**
- * Helper to cast a leveltest VerificationResult to a levelgen VerificationResult.
- * Both types have the same conceptual shape but are defined in different modules.
- */
-function toLevelGenVerification(
-  v: import('../leveltest/verify').VerificationResult,
-): VerificationResult {
-  return v as unknown as VerificationResult;
-}
-
 export function calibrateDifficulty(
   _level: LevelData,
-  _verification: VerificationResult,  // eslint-disable-line @typescript-eslint/no-unused-vars
+  verification: VerificationResult | undefined,
   quality: LevelQualityReport,
   config?: CalibrationConfig,
 ): CalibrationResult {
@@ -197,6 +187,18 @@ export function calibrateDifficulty(
         : 0;
 
     const diagnostics: string[] = [];
+
+    // The verification parameter earns its keep (0.17.0): a verification that
+    // did not prove the level beatable is surfaced, not silently ignored.
+    if (verification?.status === 'inconclusive') {
+      diagnostics.push(
+        'Verification was inconclusive — difficulty is calibrated against an unverified level.',
+      );
+    } else if (verification?.status === 'proven-unreachable') {
+      diagnostics.push(
+        'Verification proved the level unreachable — difficulty calibration is advisory only.',
+      );
+    }
 
     // Find the band containing the measured difficulty
     let band = bands[0];
@@ -474,7 +476,7 @@ export function runLowSkillPerturbation(
     // Step 1: Run original verification
     // -----------------------------------------------------------------------
     const originalVerification = verifyLevel(lvl);
-    const originalQuality = evaluateLevelQuality(lvl, toLevelGenVerification(originalVerification));
+    const originalQuality = evaluateLevelQuality(lvl, originalVerification);
     const originalDifficulty = originalQuality.measuredDifficulty;
 
     // -----------------------------------------------------------------------
@@ -505,7 +507,7 @@ export function runLowSkillPerturbation(
     };
 
     const perturbedVerification = verifyLevel(lvl, testConfig);
-    const perturbedQuality = evaluateLevelQuality(lvl, toLevelGenVerification(perturbedVerification));
+    const perturbedQuality = evaluateLevelQuality(lvl, perturbedVerification);
     const perturbedDifficulty = perturbedQuality.measuredDifficulty;
 
     // -----------------------------------------------------------------------

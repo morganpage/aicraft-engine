@@ -11,10 +11,6 @@
  * @module
  */
 
-import type { ValidationResult } from '../level/types';
-import type { PlatformerInput } from '../platformer/types';
-import type { Replay } from '../replay/types';
-import type { ScenarioVerificationResult } from '../simtest/types';
 import type { PlatformerConfig } from '../platformer/types';
 import type { GeneratedTileSemantics } from '../level/tile-semantics';
 
@@ -292,76 +288,49 @@ export interface LevelQualityReport {
 // Verification result (Phase 4 stub — full implementation in Phase 5)
 // ---------------------------------------------------------------------------
 
-/**
- * Confidence level of the static reachability analysis.
- *
- * - `'sound-over-approximation'`: over-approximating model; may prove unreachable.
- * - `'heuristic'`: best-effort graph; cannot prove failure.
- * - `'unsupported'`: level uses mechanics not modeled by this analysis.
- */
-export type ReachabilityConfidence =
-  | 'sound-over-approximation'
-  | 'heuristic'
-  | 'unsupported';
+// ---------------------------------------------------------------------------
+// Verification types — consolidated onto leveltest (0.17.0)
+//
+// These were hand-re-duplicated here with a 4-field reachability summary
+// versus leveltest's 9-field graph result — a divergence that forced
+// `as unknown as` bridges in calibration.ts and candidates.ts. They are now
+// re-exported from their canonical homes; summarizeReachability projects
+// the compact shape levelgen historically consumed.
+// ---------------------------------------------------------------------------
 
-/**
- * Result of static reachability analysis on a compiled level.
- */
-export interface ReachabilityResult {
-  /** Confidence level of this analysis. */
+import type { ReachabilityConfidence, ReachabilityResult } from '../leveltest/types';
+import type {
+  VerificationResult,
+  VerificationStatus,
+  VerificationDiagnostic,
+} from '../leveltest/verify';
+
+export type { ReachabilityConfidence, ReachabilityResult };
+export type { VerificationResult, VerificationStatus, VerificationDiagnostic };
+
+/** Compact reachability summary — the pre-consolidation levelgen shape. */
+export interface VerificationSummary {
+  /** Confidence level of the analysis. */
   readonly confidence: ReachabilityConfidence;
   /** Whether a reachable path from spawn to any exit was found. */
   readonly reachable: boolean;
-  /** Number of nodes in the reachability graph. */
+  /** Number of surfaces in the reachability graph. */
   readonly nodeCount: number;
-  /** Human-readable summary. */
+  /** Human-readable summary (joined reachability diagnostics). */
   readonly summary: string;
 }
 
 /**
- * Tri-state verification status for a level.
- *
- * - `'proven-beatable'`: a winning replay was produced.
- * - `'proven-unreachable'`: sound static analysis proved no path exists.
- * - `'inconclusive'`: no proof either way (bot exhaustion is NOT impossibility).
+ * Project a leveltest {@link ReachabilityResult} into the compact
+ * {@link VerificationSummary} levelgen historically consumed. Pure, total.
  */
-export type VerificationStatus =
-  | 'proven-beatable'
-  | 'proven-unreachable'
-  | 'inconclusive';
-
-/**
- * Diagnostic messages from verification.
- */
-export interface VerificationDiagnostic {
-  readonly severity: 'info' | 'warning' | 'error';
-  readonly code: string;
-  readonly message: string;
-}
-
-/**
- * Complete verification result for a generated level.
- *
- * Combines structural validation, static reachability, and simulation-based
- * scenario verification into one report.
- */
-export interface VerificationResult {
-  /** Schema version. Must be `1`. */
-  readonly version: 1;
-  /** Overall verification status. */
-  readonly status: VerificationStatus;
-  /** Structural validation result. */
-  readonly structural: ValidationResult;
-  /** Static reachability analysis. */
-  readonly reachability: ReachabilityResult;
-  /** Simulation-based scenario verification. */
-  readonly scenario: ScenarioVerificationResult<PlatformerInput>;
-  /** Winning platformer replay, if `status === 'proven-beatable'`. */
-  readonly winningReplay?: Replay;
-  /** Deterministic fingerprint of the winning replay, if available. */
-  readonly winningReplayHash?: number;
-  /** Verification diagnostics. */
-  readonly diagnostics: readonly VerificationDiagnostic[];
+export function summarizeReachability(reach: ReachabilityResult): VerificationSummary {
+  return {
+    confidence: reach.confidence,
+    reachable: reach.reachable,
+    nodeCount: Array.isArray(reach.graph?.surfaces) ? reach.graph.surfaces.length : 0,
+    summary: Array.isArray(reach.diagnostics) ? reach.diagnostics.join('; ') : '',
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -53,10 +53,15 @@ function makeVerificationResult(
       errors: [],
     },
     reachability: {
-      confidence: 'heuristic',
+      version: 1,
+      confidence: 'heuristic' as const,
       reachable: true,
-      nodeCount: 10,
-      summary: 'Reachable (heuristic).',
+      graph: { surfaces: [], edges: [] },
+      spawnSurface: null,
+      exitSurfaces: [],
+      reachableSurfaces: [],
+      softlockSurfaces: [],
+      diagnostics: ['Reachable (heuristic).'],
     },
     scenario: {
       version: 1,

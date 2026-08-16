@@ -25,6 +25,7 @@ import type {
   JumpSafetyMetric,
   QualityDiagnostic,
 } from './types';
+import { summarizeReachability } from './types';
 import { DEFAULT_QUALITY_WEIGHTS } from './constants';
 
 // ---------------------------------------------------------------------------
@@ -335,9 +336,8 @@ function extractSafetyMargins(
   // If reachability has data, derive safety margins
   const reachability = verification.reachability;
   if (reachability && typeof reachability === 'object') {
-    const r = reachability as unknown as Record<string, unknown>;
-    const nodeCount = r.nodeCount as number | undefined;
-    if (typeof nodeCount === 'number' && nodeCount > 0) {
+    const nodeCount = summarizeReachability(reachability).nodeCount;
+    if (nodeCount > 0) {
       margins.push({
         from: 'spawn',
         to: 'exit',

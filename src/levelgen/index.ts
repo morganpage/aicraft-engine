@@ -34,10 +34,12 @@ export type {
   VerificationStatus,
   VerificationDiagnostic,
   VerificationResult,
+  VerificationSummary,
   GenerationReport,
   GeneratedLevel,
 } from './types';
 
+export { summarizeReachability } from './types';
 export type { PhysicsConstraints } from './physics';
 export type { Motif } from './motifs';
 
