@@ -16,7 +16,10 @@
  * cache (0.12.0), sustained audio (0.13.0), the direction-aware wall-jump and
  * room-transition session (0.14–0.15), and the entity-art pair (0.16.0) — that
  * cumulative legitimate growth exhausted the 0.6.0 headroom, so the baseline is
- * now pegged to the 0.16.0 distribution. The 0.5.0 baseline rationale is
+ * now pegged to the 0.17.0 distribution (the 0.17.0 minor added the Celerock
+ * FIXES.md hardening APIs — sprite clip player, camera snap/transform — plus
+ * the entity NineSlice borders, per-emitter particle gravity, the shared
+ * fnv1a leaf, and the physics-v14 collision/spring changes). The 0.5.0 baseline rationale is
  * recorded in `docs/design/0.5.0-scope-decision.md`; the Phase 0 numbers in
  * `docs/design/level-visual-rendering-phase0-record.md` §2.1 are the original
  * historical baseline and are no longer the live gate.
@@ -32,9 +35,9 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dist = join(root, 'dist');
 const baseline = Object.freeze({
-  total: 2_957_156,
-  js: 1_819_329,
-  declarations: 1_137_827,
+  total: 3_012_389,
+  js: 1_845_386,
+  declarations: 1_153_363,
 });
 const ceiling = Object.freeze({
   total: Math.floor(baseline.total * 1.10),
@@ -64,7 +67,7 @@ for (const key of ['total', 'js', 'declarations']) {
   const ok = sizes[key] <= ceiling[key];
   console.log(
     `${ok ? 'ok  ' : 'FAIL'} ${key.padEnd(12)} ${String(sizes[key]).padStart(9)} bytes ` +
-    `(${delta >= 0 ? '+' : ''}${percent}% vs 0.16.0 baseline; ceiling ${ceiling[key]})`,
+    `(${delta >= 0 ? '+' : ''}${percent}% vs 0.17.0 baseline; ceiling ${ceiling[key]})`,
   );
   if (!ok) failed = true;
 }
