@@ -1,4 +1,4 @@
-# Prompt: "Doodle Knight" — a procedural endless climber with music-driven difficulty on `aicraft-engine@0.17.2`
+# Prompt: "Doodle Knight" — a procedural endless climber with music-driven difficulty on `aicraft-engine@0.17.3`
 
 > Paste this whole document to a coding agent (Claude / Cursor / etc.). It is a complete build brief: concept, tech stack, architecture mapped to the engine's real API, the **five-band climb structure** that is the heart of the game, per-system specs, ASCII climb map, implementation stages, acceptance gates, and anti-shortcut checks. The agent should produce a single runnable Vite + TypeScript browser game that imports everything from `aicraft-engine` (the npm package) and writes **no** re-implementations of what the engine already provides.
 
@@ -12,7 +12,7 @@
 
 The feel target is **floaty Sokpop-meets-Doodle-Jump**: loose physics, a whip-physics helmet plume, a procedural chiptune whose lead track's note density **is** the difficulty curve (composing with the band tables, not fighting them — §5.3.3), and the cleanest demo of the `cosmetics` + `iap` pillars.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.2`.** Do not hand-roll fixed-step loops, AABB collision, the camera, platform spawning randomness, particle stepping, jump arcs, the music sequencer, audio synthesis, or a cosmetic/IAP store. If you find yourself writing a `requestAnimationFrame` accumulator, an AABB resolver, a hand-rolled platform spawner that is not seeded by `mulberry32`, a raw `OscillatorNode`, or `Math.random()` in the simulation, STOP and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.3`.** Do not hand-roll fixed-step loops, AABB collision, the camera, platform spawning randomness, particle stepping, jump arcs, the music sequencer, audio synthesis, or a cosmetic/IAP store. If you find yourself writing a `requestAnimationFrame` accumulator, an AABB resolver, a hand-rolled platform spawner that is not seeded by `mulberry32`, a raw `OscillatorNode`, or `Math.random()` in the simulation, STOP and use the engine instead.
 
 This prompt has **THREE headlines**, the only one in the catalog with three:
 
@@ -29,17 +29,17 @@ This prompt has **THREE headlines**, the only one in the catalog with three:
 ```bash
 npm create vite@latest doodle-knight -- --template vanilla-ts
 cd doodle-knight
-npm install aicraft-engine@0.17.2
+npm install aicraft-engine@0.17.3
 ```
 
-> This brief targets the published `0.17.2` API exactly. It was originally
+> This brief targets the published `0.17.3` API exactly. It was originally
 > written against `0.4.0` and repinned; **every API it names still exists and
 > compiles at `0.17.0`** — the export surface has been additive. The features
 > it leans on landed in `0.4.0` and still hold: the
 > `PlatformerConfig.jumpEnabled` switch, signed platformer gravity, the
 > fixed-step `advanceSequencer` step-boundary fix, `createNoteFirePlayer`, and
 > the `volumeScale` sign (positive for stretch-up, negative for squash).
-> Do not pin below `0.17.2`.
+> Do not pin below `0.17.3`.
 >
 > Since `jumpEnabled: false` means the knight never fires the jump ability,
 > the kernel's jump-adjacent changes (the `0.14.0` direction-aware wall-jump,
@@ -914,7 +914,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: Spawner Prototype + 5-Band Sample Sheet
 
-1. Set up Vite + TypeScript + `aicraft-engine@0.17.2`.
+1. Set up Vite + TypeScript + `aicraft-engine@0.17.3`.
 2. Implement the band-aware spawner (§5.5): `bandForAltitude`, `BAND_TABLES`, `spawnNextPlatform`.
 3. Implement the five platform-art motifs (§5.4.1) and per-band parallax triples (§5.4.2).
 4. Produce a five-style sample sheet (one 200×320 screenshot per band, packed with that band's platform mix).

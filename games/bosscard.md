@@ -1,4 +1,4 @@
-# Bosscard — A Three-Phase Bullet-Hell Boss Fight on `aicraft-engine@0.17.2`
+# Bosscard — A Three-Phase Bullet-Hell Boss Fight on `aicraft-engine@0.17.3`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief: concept, architecture, exact data contracts, the centerpiece custom boss behavior code, per-phase specs, ASCII timeline, implementation stages, acceptance gates, and anti-shortcut checks. The agent should produce a single runnable Vite + TypeScript browser game that imports everything from `aicraft-engine` (the npm package) and writes **no** re-implementations of what the engine already provides.
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo.** It is a designed boss fight with three distinct phases, each with its own bullet-pattern rhythm, its own telegraph, its own visual identity (aura colour + boss pose), and its own difficulty target. The previous version of this brief had the boss behavior code right but only a one-line-per-phase table — agents produced bullet soup with no phase identity. This brief fixes that by specifying the **feel** of each phase, the intro animation, the inter-phase transition layer (the Cuphead mercy mechanic of dropping heal coins), and a screenshot gate per phase.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.2`.** Do not hand-roll fixed-step loops, AABB collision, bullet velocity math, cameras, palettes, particles, or audio — those are all in the engine. If you find yourself writing `Math.cos(angle) * speed` to spawn a bullet, a `requestAnimationFrame` accumulator, a manual AABB resolver, or `Math.random()` in the simulation, STOP and use the engine instead. The whole point of Bosscard is to show off two things Embertomb / Celerock / World 1-1 only hint at: **(a)** a *custom* boss behavior plugged into `createEnemyBehaviorRegistry` (the registry is not limited to the shipped `spinny`/`spider`/`turret` archetypes), and **(b)** `sampleConeVelocity` as the canonical bullet-hell pattern helper.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.3`.** Do not hand-roll fixed-step loops, AABB collision, bullet velocity math, cameras, palettes, particles, or audio — those are all in the engine. If you find yourself writing `Math.cos(angle) * speed` to spawn a bullet, a `requestAnimationFrame` accumulator, a manual AABB resolver, or `Math.random()` in the simulation, STOP and use the engine instead. The whole point of Bosscard is to show off two things Embertomb / Celerock / World 1-1 only hint at: **(a)** a *custom* boss behavior plugged into `createEnemyBehaviorRegistry` (the registry is not limited to the shipped `spinny`/`spider`/`turret` archetypes), and **(b)** `sampleConeVelocity` as the canonical bullet-hell pattern helper.
 
 ---
 
@@ -19,14 +19,14 @@
 ```bash
 npm create vite@latest bosscard -- --template vanilla-ts
 cd bosscard
-npm install aicraft-engine@0.17.2
+npm install aicraft-engine@0.17.3
 ```
 
-> This brief targets the published `0.17.2` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.17.0`** — the export surface has been additive, so `createEnemyBehaviorRegistry`, the `sampleConeVelocity` bullet patterns, and the cosmetics/IAP surface are all unchanged. (References below to the "0.4.0 `volumeScale` sign" and signed `PlatformerConfig.gravity` are historical provenance — those landed in `0.4.0` and still hold.) **The kernel changed underneath you, and this prompt uses `PRECISION_PLATFORMER`:** `0.14.0` made the wall-jump direction-aware (into-wall slide+jump launches straight up; the away leap now fires from a `wallJumpGraceTime` window), `0.9.2` fixed super-jump grace to seed-once-and-decay, and `0.9.0` added the mantle and a direction-aware climb-jump — all reachable from the arena's walls, so retune the dodge feel against current behavior rather than the `0.4.0` notes. **Compatibility breaks:** the replay physics version is **14** (0.17.0: the collision snap is order-independent nearest-wall/highest-floor, and a spring launch preserves a buffered jump press — v13 replays are rejected) (the §19 share-code stretch cannot match pre-repin hashes), and a manually-constructed `PlatformerState` needs `moments: []`. Worth adopting: `state.moments` (`0.8.0`+) gives you one-shot `dashBonk` moments with a surface normal — a better hit-stop trigger than inferring contact from the dash phase — and `0.13.0`'s `startNoiseLoop` is the right shape for sustained boss-phase drones.
+> This brief targets the published `0.17.3` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.17.0`** — the export surface has been additive, so `createEnemyBehaviorRegistry`, the `sampleConeVelocity` bullet patterns, and the cosmetics/IAP surface are all unchanged. (References below to the "0.4.0 `volumeScale` sign" and signed `PlatformerConfig.gravity` are historical provenance — those landed in `0.4.0` and still hold.) **The kernel changed underneath you, and this prompt uses `PRECISION_PLATFORMER`:** `0.14.0` made the wall-jump direction-aware (into-wall slide+jump launches straight up; the away leap now fires from a `wallJumpGraceTime` window), `0.9.2` fixed super-jump grace to seed-once-and-decay, and `0.9.0` added the mantle and a direction-aware climb-jump — all reachable from the arena's walls, so retune the dodge feel against current behavior rather than the `0.4.0` notes. **Compatibility breaks:** the replay physics version is **14** (0.17.0: the collision snap is order-independent nearest-wall/highest-floor, and a spring launch preserves a buffered jump press — v13 replays are rejected) (the §19 share-code stretch cannot match pre-repin hashes), and a manually-constructed `PlatformerState` needs `moments: []`. Worth adopting: `state.moments` (`0.8.0`+) gives you one-shot `dashBonk` moments with a surface normal — a better hit-stop trigger than inferring contact from the dash phase — and `0.13.0`'s `startNoiseLoop` is the right shape for sustained boss-phase drones.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
-- **`aicraft-engine@0.17.2`** is your only runtime dependency. Import from the **root barrel only**:
+- **`aicraft-engine@0.17.3`** is your only runtime dependency. Import from the **root barrel only**:
   ```ts
   import {
     // game-loop + state FSM
@@ -793,7 +793,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: Arena + Hero + Camera (Graybox)
 
-1. Set up Vite + TypeScript + `aicraft-engine@0.17.2`.
+1. Set up Vite + TypeScript + `aicraft-engine@0.17.3`.
 2. Implement the hand-authored arena `LevelData` (§5) with `validateLevel` + `compileLevel`.
 3. Render the arena via `drawTileGrid`.
 4. Wire the hero (`PRECISION_PLATFORMER` + `defaultPrecisionPipeline`) with keyboard + touch input.

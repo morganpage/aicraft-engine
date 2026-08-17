@@ -1,4 +1,4 @@
-# Spin Loop — A Seven-Beat Momentum-Sonic Act on `aicraft-engine@0.17.2`
+# Spin Loop — A Seven-Beat Momentum-Sonic Act on `aicraft-engine@0.17.3`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief: concept, architecture, exact data contracts, ASCII act map, implementation stages, acceptance gates, and anti-shortcut checks. The agent should produce a single runnable Vite + TypeScript browser game that imports everything from `aicraft-engine` (the npm package) and writes **no** re-implementations of what the engine already provides.
 
@@ -12,7 +12,7 @@ The engine's **0.4.0 signed-gravity platformer kernel** is the *headline* of thi
 
 **This is NOT a tech demo.** It is a designed act with seven distinct beats, each with a unique visual identity, escalating Sonic-feel moments, and a hand-authored tile layout. The previous implementation risked a flat obstacle course with a Sonic skin — a sequence of unconnected platforms with no momentum curve, a "loop" sign that wasn't a loop, mace placement that stopped the run, no speed-scaled payoff, and a signpost with no momentum lead-in. This brief fixes every one of those failure modes by specifying seven beats with per-beat geometry, silhouette, speed expectation, hazard placement, camera behavior, and parallax emphasis.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.2`.** Do not hand-roll the controller, fixed-step loops, AABB collision, cameras, ring pickups, particle bursts, jump arcs, palettes, or audio. If you find yourself writing a circular-collision routine for the loop, a second vertical-velocity integrator, a `Math.random()` in the simulation, or a `CLASSIC_PLATFORMER` import, STOP and use the engine instead. Spin Loop's headline is **momentum + signed gravity**, not dash-precision — Celerock owns that lane.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.3`.** Do not hand-roll the controller, fixed-step loops, AABB collision, cameras, ring pickups, particle bursts, jump arcs, palettes, or audio. If you find yourself writing a circular-collision routine for the loop, a second vertical-velocity integrator, a `Math.random()` in the simulation, or a `CLASSIC_PLATFORMER` import, STOP and use the engine instead. Spin Loop's headline is **momentum + signed gravity**, not dash-precision — Celerock owns that lane.
 
 ---
 
@@ -21,10 +21,10 @@ The engine's **0.4.0 signed-gravity platformer kernel** is the *headline* of thi
 ```bash
 npm create vite@latest spin-loop -- --template vanilla-ts
 cd spin-loop
-npm install aicraft-engine@0.17.2
+npm install aicraft-engine@0.17.3
 ```
 
-> This brief targets the published `0.17.2` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.17.0`** — the export surface has been additive, and the signed-gravity two-controller loop-de-loop pattern that headlines this brief is unchanged. (References below to "the 0.4.0 signed-gravity kernel" and "the 0.4.0 `volumeScale` sign" are historical provenance — those landed in `0.4.0` and still hold; they are not stale pins.) **The kernel changed underneath you, though, and this prompt uses `PRECISION_PLATFORMER`:** `0.14.0` made the wall-jump direction-aware (jumping while sliding INTO a wall now launches straight up; the classic away leap fires from the new `wallJumpGraceTime` window after you release or turn away), `0.9.2` fixed super-jump grace so it seeds once and decays instead of refreshing every grounded tick (previously "dash, land, stand still, then jump" flung you across the screen), and `0.9.0` added the ledge mantle plus a direction-aware climb-jump. If Spin Loop's feel targets were tuned against the old behavior, retune rather than fighting the kernel. **Compatibility breaks:** the replay physics version is **14**, so the §14 share-code stretch cannot verify against any hash recorded before this repin (v13 and older replays are rejected outright); a manually-constructed `PlatformerState` needs `moments: []`. Also new and useful here: `state.moments` (`0.8.0`+) reports landing impact ratio and one-shot dash bonks, which is a cleaner source for the speed-scaled shake than reading `vx` yourself.
+> This brief targets the published `0.17.3` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.17.0`** — the export surface has been additive, and the signed-gravity two-controller loop-de-loop pattern that headlines this brief is unchanged. (References below to "the 0.4.0 signed-gravity kernel" and "the 0.4.0 `volumeScale` sign" are historical provenance — those landed in `0.4.0` and still hold; they are not stale pins.) **The kernel changed underneath you, though, and this prompt uses `PRECISION_PLATFORMER`:** `0.14.0` made the wall-jump direction-aware (jumping while sliding INTO a wall now launches straight up; the classic away leap fires from the new `wallJumpGraceTime` window after you release or turn away), `0.9.2` fixed super-jump grace so it seeds once and decays instead of refreshing every grounded tick (previously "dash, land, stand still, then jump" flung you across the screen), and `0.9.0` added the ledge mantle plus a direction-aware climb-jump. If Spin Loop's feel targets were tuned against the old behavior, retune rather than fighting the kernel. **Compatibility breaks:** the replay physics version is **14**, so the §14 share-code stretch cannot verify against any hash recorded before this repin (v13 and older replays are rejected outright); a manually-constructed `PlatformerState` needs `moments: []`. Also new and useful here: `state.moments` (`0.8.0`+) reports landing impact ratio and one-shot dash bonks, which is a cleaner source for the speed-scaled shake than reading `vx` yourself.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -734,7 +734,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: Terrain Prototype + 7-Motif Sample Sheet
 
-1. Set up Vite + TypeScript + `aicraft-engine@0.17.2`.
+1. Set up Vite + TypeScript + `aicraft-engine@0.17.3`.
 2. Implement the connected terrain renderer (`tile-style.ts`) with all seven motifs (§5.4).
 3. Produce a 7-motif sample sheet (one 320×224 screenshot per motif, on a hero-tile proving ground for each).
 4. **Gate:** Visual review confirms seven distinct motifs. No two beats look the same.
