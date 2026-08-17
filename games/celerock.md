@@ -1,4 +1,4 @@
-# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.17.3`
+# Celerock — A Celeste-like Precision Platformer that Plays a Supplied LDtk Level on `aicraft-engine@0.17.4`
 
 > Paste this entire document to a coding agent (Claude / Cursor / etc.). It is a complete, self-contained build brief. **The level, the tileset, and the player sprite ship with this brief — download them from the links in §1.1 (all CC0).** The agent produces a single runnable Vite + TypeScript browser game that loads those assets and plays them like *Celeste* — importing everything movement, camera, level, and presentation-related from `aicraft-engine` (the npm package) and writing **no** re-implementations of what the engine already provides. The agent does **not** author level geometry: rooms, tiles, hazards, and collectibles all come from the LDtk file. (A user may substitute their own `.ldtk` + tileset; everything below is written against the LDtk *format*, not against these specific rooms, so the build works either way. Where the bundled pack's exact contents matter, §1.1 and §5.6 say so.)
 
@@ -10,7 +10,7 @@
 
 **This is NOT a tech demo and NOT a hand-authored level set.** The previous version of this brief failed because it (a) hand-wrote six ASCII room grids and a bespoke "connected-terrain" renderer instead of using a real tileset, (b) drove the view through the legacy single follow-camera instead of the camera brain, (c) enabled a `doubleJump` which is not a Celeste mechanic, and (d) gated progression behind a per-room "win → Cleared card → next" loop instead of Celeste-style seamless room transitions. This brief fixes every one of those: **geometry and tile art come from the supplied LDtk + tileset**, the **camera brain** with per-room virtual cameras owns the view, the **Phase 0–9 movement kernel** owns the authentic Celeste kit, and **LDtk `__neighbours`** own room flow.
 
-**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.3`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
+**Non-negotiable: build the entire game on top of `aicraft-engine@0.17.4`.** Do not hand-roll the controller, fixed-step loops, collision, the camera, tile rendering, particles, jump arcs, locomotion, palettes, audio, feel thresholds, or room transitions — those are all in the engine. If you find yourself writing a horizontal-velocity clamp, a wall-slide timer, a dash-frame counter, a stamina drain, an unscaled landing-impact threshold, a camera lerp, a tile-blit loop, a room-transition slide, or `Math.random()` in the simulation, STOP and use the engine instead.
 
 ---
 
@@ -19,10 +19,10 @@
 ```bash
 npm create vite@latest celerock -- --template vanilla-ts
 cd celerock
-npm install aicraft-engine@0.17.3
+npm install aicraft-engine@0.17.4
 ```
 
-> This brief targets the published `0.17.3` API exactly. `0.17.3` is `0.17.2` plus the **surface-cache smoothing guard** (the cache's blit owns `imageSmoothingEnabled` — under caller-default smoothing a fractional zoom bilinear-blurred the whole baked level; found in a real build with crisp sprites and blurry platforms, since `drawSprite` always guarded its own). `0.17.2` is `0.17.1` plus **`canvasCssViewport`** (§5.4 — the viewport in CSS units; passing the DPR-multiplied backing store doubles the camera's assumed view on Retina, invisibly fine at `dpr` 1). `0.17.1` is `0.17.0` plus the **`drawSprite` `snap` option** (§4.4 — pixel-grid destination rounding: raw physics floats under zoom land on fractional device pixels, the mid-jump shimmer; `cameraTransform` fixed the level's seam, `snap` fixes the sprite's). `0.17.0` is `0.16.0` plus the **FIXES.md hardening pair (§4.4/§5.4)** — `spriteAnimClipFor`/`createSpriteAnimPlayer`/`advanceSpriteAnimPlayer` (the clip-aware clock: a jump arc plays straight through) and `snapCameraBrain` + `cameraTransform`/`applyCameraTransform` (solved first-frame framing; device-pixel snapping for the render transform) — the **per-emitter `worldGravity`/`worldDrag`** particle overrides, and **`nineSliceBorders` + full `NineSlice`/`FullSize*` rendering** in `drawLdtkEntityTile`. **Compatibility break: replay physics version 14** (the collision snap is now order-independent nearest-wall/highest-floor over the original move's overlaps, and a spring launch preserves a buffered jump press — v13 replays are rejected). `0.16.0` is `0.15.0` plus the **entity-art pair (§7.1)**: `LdtkEntityDef.tileRenderMode` — the def's authored render mode, parsed (all seven LDtk schema values; defs omitting the key parse as `'FitInside'`) — and **`drawLdtkEntityTile(ctx, tile, dest, tilesets, mode?)`**, the engine-owned blit for an entity's authored display tile (`Repeat` tiles across resized instances, `Stretch`/`FitInside`/`Cover` scale; never throws). `0.15.0` is `0.14.1` plus the **room-transition session orchestrator** (`createRoomTransitionSession` / `pollRoomTransition` / `beginSessionRoomSlide` / `advanceSessionRoomSlide` / `endRoomTransitionSession` — one immutable `{ detector, slide }` state machine that makes the seam-transition invariants structural, §5.5), the **per-axis containment latch** on `detectLdtkRoomExit` (an exit additionally requires the body to have been fully contained once on that exit's crossing axis; straddle suppression is intrinsic and reset-immune — a discarded or fresh detector state cannot tick-tock), and the **preflight `multiRoom` flag** (`capabilities.multiRoom` — the multi-room signal `capabilities.exits` never was, since `exits` counts Exit ENTITIES, not `__neighbours` seam traversal). `0.14.1` is `0.14.0` plus the **flush-landing fix** (an exact-flush arrival — e.g. a full-height held jump's symmetric arc — fires its `landing` moment + `justLanded` one tick after contact, engine-side, so no game-layer landing compensation is needed). `0.14.0` ships the **direction-aware wall-jump** (into-wall slide+jumps launch straight up — a single wall is chimney-climbable; release the direction and jump within `wallJumpGraceTime` for the classic away leap; replay physics version 13). `0.13.0` ships the **sustained audio layer** — `startNoiseLoop(filterType, freq, peak)` returns a `NoiseLoopHandle` (`stop()` fades out over ~0.1 s, `setPeak()` live-adjusts loudness) for sounds that last as long as a state (the §10 wall-slide scrape), and `playNoise` bursts now start at a random offset in the shared noise buffer so overlapping/retriggered bursts de-correlate instead of phase-locking into a buzz. `0.12.0` ships the **seam-free LDtk surface cache** (`createLdtkLevelSurfaceCache` — bake each room once at native resolution, one blit per frame at any fractional zoom). `0.11.0` ships the follow-compatible destination view (`roomEntrySlideView`). `0.9.0` ships the **feel + traversal layer** (the structured feel channel `state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments; the pure room-transition helpers `findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`; the slide orchestrator `beginRoomSlide` + the camera-space rebases; the explicit camera fit `fitCameraZoom`) **and the mantle wave** (direction-aware grab+jump + ledge mantle). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. A manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.17.3`.
+> This brief targets the published `0.17.4` API exactly. `0.17.4` is `0.17.3` plus the **render-composition pair (§5.4)** — `composeCameraTransform` (apply an already-resolved `cameraTransform` to the context: THE world-space boundary, so every layer a game draws itself moves with the camera) and `applyCameraLetterbox` / `cameraLetterbox` + `CameraLetterbox` / `CameraFrameRect` (the contain-fit mask: bars outside the room frame, clip to it). Both close defects from a real build — a dash trail pinned to the screen while the level scrolled, and an unmasked margin that read as playable level. `0.17.3` is `0.17.2` plus the **surface-cache smoothing guard** (the cache's blit owns `imageSmoothingEnabled` — under caller-default smoothing a fractional zoom bilinear-blurred the whole baked level; found in a real build with crisp sprites and blurry platforms, since `drawSprite` always guarded its own). `0.17.2` is `0.17.1` plus **`canvasCssViewport`** (§5.4 — the viewport in CSS units; passing the DPR-multiplied backing store doubles the camera's assumed view on Retina, invisibly fine at `dpr` 1). `0.17.1` is `0.17.0` plus the **`drawSprite` `snap` option** (§4.4 — pixel-grid destination rounding: raw physics floats under zoom land on fractional device pixels, the mid-jump shimmer; `cameraTransform` fixed the level's seam, `snap` fixes the sprite's). `0.17.0` is `0.16.0` plus the **FIXES.md hardening pair (§4.4/§5.4)** — `spriteAnimClipFor`/`createSpriteAnimPlayer`/`advanceSpriteAnimPlayer` (the clip-aware clock: a jump arc plays straight through) and `snapCameraBrain` + `cameraTransform`/`applyCameraTransform` (solved first-frame framing; device-pixel snapping for the render transform) — the **per-emitter `worldGravity`/`worldDrag`** particle overrides, and **`nineSliceBorders` + full `NineSlice`/`FullSize*` rendering** in `drawLdtkEntityTile`. **Compatibility break: replay physics version 14** (the collision snap is now order-independent nearest-wall/highest-floor over the original move's overlaps, and a spring launch preserves a buffered jump press — v13 replays are rejected). `0.16.0` is `0.15.0` plus the **entity-art pair (§7.1)**: `LdtkEntityDef.tileRenderMode` — the def's authored render mode, parsed (all seven LDtk schema values; defs omitting the key parse as `'FitInside'`) — and **`drawLdtkEntityTile(ctx, tile, dest, tilesets, mode?)`**, the engine-owned blit for an entity's authored display tile (`Repeat` tiles across resized instances, `Stretch`/`FitInside`/`Cover` scale; never throws). `0.15.0` is `0.14.1` plus the **room-transition session orchestrator** (`createRoomTransitionSession` / `pollRoomTransition` / `beginSessionRoomSlide` / `advanceSessionRoomSlide` / `endRoomTransitionSession` — one immutable `{ detector, slide }` state machine that makes the seam-transition invariants structural, §5.5), the **per-axis containment latch** on `detectLdtkRoomExit` (an exit additionally requires the body to have been fully contained once on that exit's crossing axis; straddle suppression is intrinsic and reset-immune — a discarded or fresh detector state cannot tick-tock), and the **preflight `multiRoom` flag** (`capabilities.multiRoom` — the multi-room signal `capabilities.exits` never was, since `exits` counts Exit ENTITIES, not `__neighbours` seam traversal). `0.14.1` is `0.14.0` plus the **flush-landing fix** (an exact-flush arrival — e.g. a full-height held jump's symmetric arc — fires its `landing` moment + `justLanded` one tick after contact, engine-side, so no game-layer landing compensation is needed). `0.14.0` ships the **direction-aware wall-jump** (into-wall slide+jumps launch straight up — a single wall is chimney-climbable; release the direction and jump within `wallJumpGraceTime` for the classic away leap; replay physics version 13). `0.13.0` ships the **sustained audio layer** — `startNoiseLoop(filterType, freq, peak)` returns a `NoiseLoopHandle` (`stop()` fades out over ~0.1 s, `setPeak()` live-adjusts loudness) for sounds that last as long as a state (the §10 wall-slide scrape), and `playNoise` bursts now start at a random offset in the shared noise buffer so overlapping/retriggered bursts de-correlate instead of phase-locking into a buzz. `0.12.0` ships the **seam-free LDtk surface cache** (`createLdtkLevelSurfaceCache` — bake each room once at native resolution, one blit per frame at any fractional zoom). `0.11.0` ships the follow-compatible destination view (`roomEntrySlideView`). `0.9.0` ships the **feel + traversal layer** (the structured feel channel `state.moments` — landing impact ratio/hard, one-shot dash bonks with normal + surface id, dashEnded context, grab/stamina pulses, spring/refill moments; the pure room-transition helpers `findLdtkRoomExit` / `mapLdtkRoomEntry` / `transitionPlatformerToRoom` / `rebasePointBetweenLdtkRooms`; the slide orchestrator `beginRoomSlide` + the camera-space rebases; the explicit camera fit `fitCameraZoom`) **and the mantle wave** (direction-aware grab+jump + ledge mantle). The `0.7.0` golden path (high-level LDtk loader, preflight, per-room compiler + cache, config scaler, input maps, solid-id helpers, spawn fix, loop `onError`) and the earlier camera-brain/LDtk/movement drops (`0.5.0`/`0.6.0`) all remain. A manually-constructed `PlatformerState` needs `moments: []`. Do not pin below `0.17.4`.
 
 - **TypeScript**, strict. Target ES2021, `moduleResolution: bundler` (matches the engine; Vite resolves its ESM fine).
 - **Vite** dev server + build. Single `<canvas>` in `index.html`.
@@ -80,9 +80,12 @@ npm install aicraft-engine@0.17.3
     createCameraBrain, updateCameraBrain, fitCameraZoom,                 // contain-fit letterboxed per-room zoom (§5.4)
     snapCameraBrain,                                                     // 0.17.0 §5.4: first-frame framing (the ease's fixed point)
     cameraTransform,                                                     // 0.17.0 §5.4: device-pixel snap for the render transform
+    composeCameraTransform,                                              // 0.17.4 §5.4: THE world-space boundary — scale + snapped offset onto the ctx
+    applyCameraLetterbox, cameraLetterbox,                               // 0.17.4 §5.4: contain-fit mask — bars outside the room frame + clip
     DEFAULT_CAMERA_MOTION, DEFAULT_LENS_MOTION, DEFAULT_BRAIN_BLEND_DURATION,
     type CameraBrain, type CameraBrainOptions, type VirtualCamera,
     type CameraTarget, type CameraBounds,
+    type CameraLetterbox, type CameraFrameRect,                          // 0.17.4 §5.4
 
     // collision (only for hazards — the player uses the kernel)
     aabbOverlap, tileToWorld, worldToTile, type Rect,
@@ -632,9 +635,15 @@ brain = updateCameraBrain(brain, {
   dt,
 });
 
-// Each render:
-ctx.imageSmoothingEnabled = false;
+// Each render — ONE world transform, and EVERY world-space layer inside it:
+ctx.setTransform(1, 0, 0, 1, 0, 0);
+ctx.imageSmoothingEnabled = false;                // FIRST line — see the state-reset rule below
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+
 ctx.save();
+ctx.scale(dpr, dpr);                              // CSS-pixel space from here (DPR rule below)
+drawBackdrop(ctx, viewport);                      // atmosphere/parallax — SCREEN space, behind everything
+
 // Device-pixel snap: rounding in WORLD units (the old recipe) still lands on
 // a fractional device pixel under a fractional fitted zoom, which
 // antialiases the level's edges into a hairline seam.
@@ -642,21 +651,56 @@ const t = cameraTransform(brain.camera, viewport, {
   zoom: brain.zoom,
   devicePixelRatio: dpr,          // from resizeCanvasToBackingStore
 });
-ctx.scale(t.zoom, t.zoom);
+
+// LETTERBOX MASK (0.17.4). A contain fit always leaves slack on one axis, and
+// the backdrop above just painted it. Fill bars outside the room frame and
+// clip the world to that frame, or the empty margin reads as playable level.
+// The aperture is ONE ROOM — never the slide's union (see the rule below).
+applyCameraLetterbox(ctx, active, viewport, t, { fill: '#070b18' });
+
+ctx.translate(shake.x, shake.y);  // shake INSIDE the clip — the mask stays welded to the viewport
+composeCameraTransform(ctx, t);   // ◀── WORLD SPACE FROM HERE (scale + the snapped camera offset)
+
 surfaceCache.draw(ctx, active.ldtkLevel, {
   tilesets,
-  worldOffset: { x: t.offsetX, y: t.offsetY },
-  view: t.view,                   // derived from the SNAPPED position
-});
-// ...player art, entities, particles, UI...
+  view: t.view,                   // cull rect derived from the SNAPPED position
+});                               // NO worldOffset — the camera lives in the context now
+drawEntities(ctx, active);        // §7.1 — world coords
+drawPlayer(ctx, state.core);      // §4.4 — world coords
+drawParticles(ctx, particles);    // §9  — world coords, so the trail tracks the camera
 ctx.restore();
+
+// HUD, menu, death flash: AFTER the restore, in CSS-pixel screen space, and
+// deliberately outside the letterbox clip.
+```
+
+**One world transform (the rule a real build got wrong next).** `composeCameraTransform(ctx, t)` is the boundary: everything before it is screen space, everything after it is world space. **Every world-space layer you draw yourself — particles, entity art, the player, debug overlays — goes after that line and takes RAW world coordinates.** The alternative the older recipe implied, leaving the camera offset out of the context and passing it as each draw's own `worldOffset`, has one standing failure mode: the layers the engine does not draw for you never receive the offset, and nothing forces the issue. A real build spawned its dash trail at correct world positions, drew it under the zoom alone, and shipped particles pinned to the screen while the level scrolled behind them — the spawn coordinates were never the bug, and "fixing" them would have been the wrong repair. Compose once. `worldOffset` is then left for its actual job: a room's own origin *within* world space — omitted entirely in the single-room case, and `p.sourceOffset` / `p.destinationOffset` during a §5.5 slide.
+
+**Letterbox the contain fit (the rule the same build got wrong).** `mode: 'contain'` means part of the viewport is not the room, on every frame, on most aspect ratios. That area must be visually **not the level**: `applyCameraLetterbox(ctx, bounds, viewport, t, { fill })` (0.17.4) fills the bars outside the room frame and clips world rendering to it, so the backdrop cannot masquerade as playable space and the camera clamp cannot be mistaken for a bug. It returns the resolved `CameraLetterbox` (`frame`, `clip`, `bars`, `covered`) if you want to draw your own vignette or frame line; `cameraLetterbox(...)` is the pure geometry alone. Call it **before** the zoom is composed (the frame is already in screen units) and **before** the shake translate (the mask holds still while the world shakes inside it); the caller's `save`/`restore` owns the clip.
+
+**The aperture is one room, never the slide's union (the rule this brief itself got wrong).** `presentationForRoomSlide(slide).bounds` is the camera's CLAMP SPACE while two rooms are on screen — roughly twice a room wide. Mask with it and the frame exceeds the viewport, so every bar vanishes for the length of the transition and the world spills across the entire window before snapping back; a real build shipped exactly that, on this brief's instructions. **The window the player looks through does not change during a slide: the rooms move, the window stays put.** Mask with the ROOM (interpolating source→destination if their sizes differ), clamp the brain with the union. And note the frame's POSITION cannot come from the slide camera either — that camera is sweeping through union space, so a camera-derived frame slides across the screen with it. During a slide, derive the frame from the room size and the viewport directly:
+
+```ts
+// Aperture: one room, centred, capped at the viewport. In the steady state this
+// is identical to the camera-derived frame (the clamp centres a room smaller
+// than the view); during a slide it is the only version that holds still.
+const room = slideRoomSize(session.slide, active);      // interpolated src→dst, else active
+const fw = Math.min(viewport.width, room.width * t.zoom);
+const fh = Math.min(viewport.height, room.height * t.zoom);
+const frame = { x: (viewport.width - fw) / 2, y: (viewport.height - fh) / 2, width: fw, height: fh };
+``` Atmosphere/parallax may still animate *behind* the room — what it must not do is fill the margin with something that reads as level.
+
+```ts
+const box = applyCameraLetterbox(ctx, bounds, viewport, t, { fill: '#070b18' });
+box.covered   // true when the room fills the viewport (nothing letterboxed this frame)
+box.frame     // the room's screen rect — the anchor for a frame line or vignette
 ```
 
 **DPR composition (the rule two showcase demos got wrong).** `resizeCanvasToBackingStore` multiplies the backing store by the device pixel ratio and **returns that ratio precisely so the caller composes it** — `ctx.scale(dpr, dpr)`, once, before the world transform. If the resize runs inside the render loop, re-apply the scale **every frame**: assigning `canvas.width`/`height` resets **ALL context state** — the transform *and* `imageSmoothingEnabled` (back to `true`, the canvas default). A build that sets smoothing once at boot silently re-blurs after its first window resize, and one that never sets it blurs every fractionally-scaled draw: the engine's tile/sprite/entity paths each guard their own smoothing, but anything you scale yourself (backdrops, minimaps, your own blits) inherits the caller state. **First line of every render: `ctx.imageSmoothingEnabled = false`.**
 
 **Viewport units under DPR (the rule a real build got wrong next).** After the resize, `canvas.width`/`height` hold the **DPR-multiplied backing store** — on a Retina display, 2× the layout size. The viewport you hand `fitCameraZoom`, `updateCameraBrain`, and `cameraTransform` must be in **CSS pixels** (drawing runs under `ctx.scale(dpr, dpr)`, and `cameraTransform` does its own device-grid math via `devicePixelRatio`). Pass the backing-store size and the assumed viewport doubles — the zoom and framing come out wrong by the DPR factor, and at `dpr === 1` the two coincide, so the bug ships invisible on a standard display and detonates on the first high-DPI laptop. Use **`canvasCssViewport(canvas)`** (0.17.2) — the unit is in the name. Re-read it every render tick and on `resize`.
 
-`fitCameraZoom(level, viewport, options?)` is the **engine-owned** fit helper (a `{ width, height }` or a `CompiledLdtkRoom` + a viewport → zoom). Celerock's required policy is **`mode: 'contain'`** (`Math.min`): the complete authored room remains visible at every aspect ratio, centred in the available viewport. Any unused side or top/bottom area is intentional letterbox space filled by the existing atmosphere/parallax pass — never stretch the room and never expose a different amount of gameplay because the device is wider or taller. `mode: 'cover'` (the engine default) fills both axes by cropping the overflow axis and is **not** the Celerock policy; `mode: 'native'` is `1`. Optional `integerScale: true` is a separate crispness choice (down, minimum 1, for contain; sub-unit fits stay fractional), and `minZoom`/`maxZoom` clamp last. Do **not** hand-roll a `fitZoom`: call `fitCameraZoom(room, viewport, { mode: 'contain' })` and keep `imageSmoothingEnabled = false`.
+`fitCameraZoom(level, viewport, options?)` is the **engine-owned** fit helper (a `{ width, height }` or a `CompiledLdtkRoom` + a viewport → zoom). Celerock's required policy is **`mode: 'contain'`** (`Math.min`): the complete authored room remains visible at every aspect ratio, centred in the available viewport. Any unused side or top/bottom area is intentional letterbox space, and it is **masked** — bars over the backdrop plus a clip to the room frame, per the letterbox rule above; atmosphere/parallax animates behind the room, never as a stand-in for level in the margin. Never stretch the room and never expose a different amount of gameplay because the device is wider or taller. `mode: 'cover'` (the engine default) fills both axes by cropping the overflow axis and is **not** the Celerock policy; `mode: 'native'` is `1`. Optional `integerScale: true` is a separate crispness choice (down, minimum 1, for contain; sub-unit fits stay fractional), and `minZoom`/`maxZoom` clamp last. Do **not** hand-roll a `fitZoom`: call `fitCameraZoom(room, viewport, { mode: 'contain' })` and keep `imageSmoothingEnabled = false`.
 
 ```ts
 const zoom = fitCameraZoom(room, viewport, { mode: 'contain' });     // CELEROCK POLICY — full room + letterbox
@@ -723,13 +767,20 @@ if (session.slide !== null) {
   const p = presentationForRoomSlide(session.slide);
   brain = updateCameraBrain(brain, { vcams: [p.vcam!], targets: { player: state.core }, bounds: p.bounds,
                                     viewport, activeId: ROOM_SLIDE_VCAM_ID, dt });
-  // draw BOTH rooms through the surface cache — worldOffset is each room's offset in slide space:
+  // RENDER, all of it INSIDE the §5.4 composeCameraTransform (the slide camera is
+  // in SLIDE space, so the mask bounds are p.bounds and the world transform is the
+  // same one call). worldOffset then carries ONLY each room's origin in slide space:
   //   cache.draw(ctx, src.ldtkLevel,  { tilesets, worldOffset: p.sourceOffset });
   //   cache.draw(ctx, dest.ldtkLevel, { tilesets, worldOffset: p.destinationOffset });
+  // Adding the camera offset here as well is double-counting; OMITTING the camera
+  // transform and drawing at p.sourceOffset alone pins the view to the union's
+  // top-left for the whole slide (the rooms sit still, then snap when it ends).
   // draw EACH room's entities (§7.1) under that SAME offset — drawLevelEntity has no
   // worldOffset param, so ctx.translate(p.sourceOffset) / (p.destinationOffset) around
   // each room's entity loop, or the entities detach from their tiles mid-slide.
-  // draw the player at (destinationLocal + p.playerOffset) in slide space
+  // draw the player at (p.destinationOffset + destinationLocal + p.playerOffset)
+  // and the (already-rebased) particles at (p.destinationOffset + particle) — same
+  // slide space, same transform, one rule.
 }
 // advanced.done === (session.slide === null): the FINISH rebase
 // (finishRoomSlideCameraSpace) was applied exactly once on the completing
@@ -1006,7 +1057,11 @@ Use the engine's `game-state` reducer. With seamless neighbour transitions there
   - **Render:** title + the entries in a left-aligned column (the `>` marker never shifts the label); the selected entry bright with a `>` marker, the rest dimmed (`drawTextOutlined`).
 - `playing → gameover` via `{ type: 'die' }` on a hazard.
 - `gameover → playing` via `{ type: 'retry' }` after a consumer-owned 12-tick respawn flash. **Respawn anchor, in priority order: (1) the last checkpoint, (2) the current room's authored spawn, (3) the point at which the player entered the current room across its seam.** Rule (3) is not a fallback curiosity — it is the normal case for 4 of the 5 shipped rooms (§5.6), and it is Celeste's own model: you restart at the edge you came in through, not back at the start of the chapter. Store the arrival position when `transitionPlatformerToRoom` resolves (`spawn.source === 'seam-entry'`) and keep it as the room's respawn anchor for as long as that room is active; respawn with zeroed velocity and the entry `facing`. A room with none of the three (never entered, no spawn) is unreachable and cannot be respawned into — that is a hard block, not a runtime state. **The respawn anchor is the only part of this the game owns:** the transition layer's own reset goes through `endRoomTransitionSession(session, brain, 'destination')` (§5.5), which returns a fresh detector and rebases the camera out of slide space if the death landed mid-slide. Call it on every `playing → gameover`, then respawn at the anchor — do not hand-reset the detector or the brain.
-- **Chapter complete — terminal-room rule (§5.5 world contract, §12.7 #15), CORE.** The **terminal room** is the level with no `e` neighbour in `__neighbours`, derived from the project at boot (`Level_5` in the shipped pack — never hardcode the identifier). On seam-entry into the terminal room, fire the chapter-complete card (`drawTextOutlined`, `easeOutBack` via `createTweenState`) and transition the FSM however the game already handles completion. No `Goal` entity is created, the `.ldtk` is never edited, and the FSM `win` event stays unused. (For a substituted `.ldtk` that DOES define a `Goal`/`Exit` entity in a final room, the optional `playing → levelComplete` via `{ type: 'win' }` fires instead — a chapter-complete card on the authored goal.)
+- **Chapter complete — terminal-room rule (§5.5 world contract, §12.7 #15), CORE.** The **terminal room** is the level with no `e` neighbour in `__neighbours`, derived from the project at boot (`Level_5` in the shipped pack — never hardcode the identifier). On seam-entry into the terminal room, fire `{ type: 'win' }` → **`levelComplete`** and show the chapter-complete card (`drawTextOutlined`, `easeOutBack` via `createTweenState`). No `Goal` entity is created and the `.ldtk` is never edited; the same `win` path serves a substituted `.ldtk` that DOES define a `Goal`/`Exit` entity. **`levelComplete` is the FSM state, and it is what makes the ending an ending — the run is over, so the player stops driving:**
+  - **Feed the kernel a NEUTRAL input** (`moveX: 0`, `moveY: 0`, `jump`/`dash`/`grab` = `IDLE_EDGE`) rather than skipping `stepPlatformer`. Arrivals are airborne as often as not: freezing the sim strands the player mid-stride in the air, while a neutral step lets them fall, land, kick up the landing dust, and settle. **Do not gate the sim on `current === 'playing'` and call it done** — that is the frozen-mid-air ending.
+  - **Nothing can undo the ending.** Hazard checks, the void/out-of-room respawn, and the room-transition poll are all part of being playable: skip them in `levelComplete`, or the player dies on a spike under the victory card, or drifts back across the seam they arrived through and un-completes the chapter.
+  - **The card owns the only way out, and must say so.** Input is locked, so a card with no stated exit is a dead end that needs a page reload — the worst possible last impression. Hold the card for a grace window (~90 ticks) so the jump that finished the climb cannot skip its own reward, then show the prompt and accept a jump/dash/grab edge as `{ type: 'quit' }` → `menu`.
+  - The camera brain and the sprite clock keep running. That is deliberate: it is where a **celebration animation** slots in later (a held pose or a dedicated clip driven off a summit tick counter) without any of the above changing.
 
 ```ts
 let gameState = createGameState();
@@ -1047,7 +1102,12 @@ if (dash?.kind === 'dash' && dash.timer > 0) {
 }
 trail = cull(advanceParticles(trail, dt));
 
-// Per render, inside the world transform — 2px white rects fading with life:
+// Per render — AFTER §5.4's composeCameraTransform, in the same world space as
+// the tiles, in RAW world coordinates. Particles are spawned in world space and
+// stay there; a draw pass that runs under the zoom alone (or after the ctx has
+// been restored to screen space) renders a trail welded to the screen while the
+// level scrolls behind it. That defect shipped once — the spawn coordinates were
+// correct and the render was one transform short. 2px white rects fading with life:
 for (const particle of trail) {
   ctx.globalAlpha = particle.life / particle.maxLife;
   ctx.fillStyle = '#ffffff';
@@ -1062,6 +1122,7 @@ ctx.globalAlpha = 1;
 - [ ] **Player sprite (supplied `Player.png`)** — per §4.4's policy: stable **1:1**, facing mirror (no moonwalk), walk 0–7, jump 60→64 straight through then clamps on the fall frame, idle = cell 0; no idle shimmer; dash aura + after-image kept.
 - [ ] **Entity art from the LDtk (§7.1)** — the strawberry is the authored `Gem` tile (glow behind it, never instead of it) and spikes are the authored `Spike` tile repeat-tiled across each resized strip; entities the `.ldtk` left undressed keep the engine's `DEFAULT_ENTITY_PALETTE` shape.
 - [ ] **Spring-rod hair (`advanceSpringRod`)** — **OPTIONAL when using the supplied sprite**: the sprite art owns the silhouette, so hair is a cosmetic extra, **never an acceptance requirement** (per G5). Only add it for the wag-when-moving / lift-during-dash flourish; draw it OUTSIDE the sprite's facing mirror.
+- [ ] **Summit celebration (OPTIONAL polish, never an acceptance requirement).** `levelComplete` already leaves the camera and the sprite clock running (§8), so the hook is a one-line clip override at the anim-kind derivation — hold a pose, or drive a dedicated clip off a summit tick counter. Note the supplied `Player.png` has **no authored victory row**: its 8 rows are walk/run cycles, two 3-frame lean poses, and the 5-frame jump arc (60–64). A real celebration wants new art; until then the honest options are a held frame with the procedural-fallback `advanceSquash`/`breathe` (sprite-safe only if you do NOT scale the pixel art — §4.4) or a particle burst over a settled idle.
 - [ ] Reduced-motion gate (`prefersReducedMotion`) renders room 1 and starts no loop.
 - [ ] Room title cards fade in over 0.6 s (`createTweenState` + `easeOutCubic`); transition/"Cleared" cards use `easeOutBack`.
 
@@ -1174,6 +1235,17 @@ Assert against the shipped pack's known shape (§1.1) — these are exact, not l
 - Assert: a dash PINNED against the wall for multiple ticks emits exactly ONE `dashBonk` per blocked axis per dash (a second dash re-arms it).
 - Assert: the player's `state.core.x` never exceeds the wall's left edge by more than the kernel's penetration tolerance (the dash never phases through).
 
+### 12.2b World-Space Composition (the render transform)
+
+**This file is `tests/render-composition.test.ts`.** It is a pure-arithmetic test — no canvas needed beyond a stub that accumulates `scale`/`translate` — and it is the only cheap way to catch a layer that does not move with the camera, because every such bug looks like working code and fails only on screen.
+
+- Build `t = cameraTransform({ x: 137.4, y: 62.8 }, viewport, { zoom, devicePixelRatio: 2 })` — a camera deliberately off the origin, since **every** composition bug is invisible at camera `(0, 0)`.
+- Compose `composeCameraTransform(stub, t)` and map a world point through the accumulated transform. Assert it equals the same point mapped through `scale(zoom)` + the engine's own `worldOffset` translate — the two paths are the same space.
+- Assert the *defect* fails the same assertion: the point mapped under `scale(zoom)` alone (no offset) differs whenever the camera is off the origin. A test that cannot fail on the bug is not a test.
+- Assert the game's own render helpers take raw world coordinates: call `drawParticles(stub, [{ x: 200, y: 96, … }])` and assert the emitted rect is at `200, 96` in the *current* space — not at `200 + t.offsetX`. Any hand-added offset inside a world-space draw helper is the double-offset failure, and this catches it.
+- Slide case: with `p.sourceOffset` / `p.destinationOffset` from a real `presentationForRoomSlide`, assert the destination room's origin maps `(destinationOffset.x - camera.x) · zoom` — i.e. the room offset composes ON TOP of the camera offset, and dropping either one moves the whole world.
+- `cameraLetterbox(bounds, viewport, t).bars` is empty exactly when the room covers the viewport, and `bars` + `clip` tile the viewport with no overlap at 16:9, 4:3, ultrawide, and portrait. **And the aperture is invariant across a slide:** sample the frame every tick through a full transition and assert its width and height never change (they may only differ if the two rooms differ in size, in which case assert a monotonic morph). A frame that grows mid-slide is the union-bounds mistake, and it is invisible in any single-frame test.
+
 ### 12.3 Room-Transition Smoke Test
 
 **This file is `tests/transition-smoke.test.ts` — it must exist and pass before Stage 4 begins (§14).**
@@ -1205,9 +1277,9 @@ Assert against the shipped pack's known shape (§1.1) — these are exact, not l
 
 1. Playable in the browser via `npm run dev` with **Celeste's PC-default keyboard bindings** (`←→↑↓` move, `C` jump, `X` dash, `Z` grab, `R` respawn — see §4.3; NOT the engine's Space/Shift/KeyK standard map) **and** on-screen touch buttons on coarse-pointer devices (via `createTouchButtonSet`).
 2. **Start menu (§8).** The game boots to a `menu` state offering **NEW GAME** and **RESUME GAME** (up/down select, jump/dash/grab edge confirms — Enter/Space confirm via the jump map). RESUME GAME is hidden while the save carries no progress; NEW GAME wipes the persisted save and starts fresh; RESUME starts with the boot-loaded save. The HUD is hidden while in `menu`.
-3. **Loads the supplied LDtk + tileset** and renders the tileset through the **surface cache** (`createLdtkLevelSurfaceCache` — pixel-crisp at any zoom, untinted; `drawLdtkLevel` remains the underlying baker). The surface blit guards its own smoothing since 0.17.3 — but the render's first line is still `ctx.imageSmoothingEnabled = false` for everything you scale yourself.
+3. **Loads the supplied LDtk + tileset** and renders the tileset through the **surface cache** (`createLdtkLevelSurfaceCache` — pixel-crisp at any zoom, untinted; `drawLdtkLevel` remains the underlying baker). The surface blit guards its own smoothing since 0.17.4 — but the render's first line is still `ctx.imageSmoothingEnabled = false` for everything you scale yourself.
 4. The Celeste kit is present and works on the supplied geometry: **dash (8-dir, startup freeze, refills on land) + wall-grab/stamina + wall-slide + wall-jump + dash-tech.** **No `doubleJump`.** Springs, dash-refills, moving platforms, and ladders are **capability-aware** — exercise each one the preflight reports present (`report.capabilities.springs` / `.dashRefills` / `.movingPlatforms` / `.ladders`); absent ones are not a failure (G4).
-5. The **camera brain** drives the view (deadzone follow + per-room vcam + **contain-fit** `fitCameraZoom(..., { mode: 'contain' })` + slide on transition); the viewport passed to all of them is in **CSS units** (`canvasCssViewport` — the backing store is the engine's business), so framing is identical at `dpr` 1 and 2 and the complete room remains visible at 16:9, 16:10, 4:3, ultrawide, and portrait aspect ratios. Atmosphere/parallax fills the intentional letterbox area. No legacy `createCamera`/`updateCamera`.
+5. The **camera brain** drives the view (deadzone follow + per-room vcam + **contain-fit** `fitCameraZoom(..., { mode: 'contain' })` + slide on transition); the viewport passed to all of them is in **CSS units** (`canvasCssViewport` — the backing store is the engine's business), so framing is identical at `dpr` 1 and 2 and the complete room remains visible at 16:9, 16:10, 4:3, ultrawide, and portrait aspect ratios. No legacy `createCamera`/`updateCamera`.
 6. Room-to-room travel is **seamless via `__neighbours`** using the session path (`pollRoomTransition` → `transitionPlatformerToRoom` → `beginSessionRoomSlide` → `advanceSessionRoomSlide`; §5.5): a ~0.25–0.35 s **slide** (both rooms render, continuous screen position at the seam), momentum (`vx`/`vy`/`facing`) preserved, particles rebased into the destination room; reduced-motion uses an immediate seam-aligned cut. The camera does not pop between rooms.
 7. The **dash-into-wall** moment (horizontal AND vertical — read the `dashBonk` feel moment on `state.moments`, never a hand-rolled velocity threshold) applies hit-stop and shake (§12.2).
 8. Strawberries persist across page reload via `createLocalStorageSaveStorage` + `writeSave` (keyed by `level.iid`) — and a collected gem's **TILE disappears from the render list on the pickup tick** (render from `remaining`, §7; a halo-only filter leaves ghost gems — a real build shipped that).
@@ -1217,11 +1289,13 @@ Assert against the shipped pack's known shape (§1.1) — these are exact, not l
 12. **No moonwalk.** Running left faces left — with the supplied sprite via `drawSprite(..., { facing })` (its internal `ctx.scale(facing,1)` mirror about the frame's horizontal center); with the procedural fallback via `ctx.scale(facing, 1)` around the body draw.
 13. **No appendage blow-out.** Hair uses `advanceSpringRod`, never raw `advanceSpringChain`.
 14. **Supplied `Player.png` sprite renders pixel-crisp** — no shimmer while idle (`imageSmoothingEnabled = false`, stable 1:1, no per-frame squash/breathe scaling on the sprite). Walk cycles cells 0–7 and flips with `facing`; jump plays cells 60→64 once then **clamps on the fall frame** until landing; idle = cell 0. If `Player.png` fails to load/compile at boot, the procedural body renders instead and the game is still playable. A single jump plays its clip once, straight through — the launch frames never replay mid-arc (the clip player restarts only on a CLIP change, §4.4).
-15. **Terminal-room completion.** Reaching the **terminal room** (no `e` neighbour — derived at boot per §1.1) fires the chapter-complete card (`createTweenState` + `easeOutBack`). No `Goal` entity is created; the `.ldtk` is never edited.
+15. **Terminal-room completion, and the ending is not playable.** Reaching the **terminal room** (no `e` neighbour — derived at boot per §1.1) fires `{ type: 'win' }` → `levelComplete` and the chapter-complete card (`createTweenState` + `easeOutBack`). No `Goal` entity is created; the `.ldtk` is never edited. From that tick the player is a spectator (§8): holding every key at once moves nothing — no walk, no jump, no dash, no grab — while the body still finishes its arrival (falls, lands, settles) instead of freezing mid-air. Hazards cannot kill and the seam cannot be re-crossed. The card states its exit and a confirm edge returns to the menu after the grace window; a completion screen you cannot leave without reloading the page fails this criterion.
 16. **Entities render their authored LDtk tile (§7.1).** The strawberry draws as the `Gem` tile from `celerock.png` — not a procedural diamond — and spikes draw as the `Spike` tile **repeat-tiled** across each resized instance (not stretched, not a flat red box). Entities whose LDtk def assigns no tile fall back to `drawLevelEntity`'s `DEFAULT_ENTITY_PALETTE` shape.
 17. **Dev-time LDtk hot reload (§5.7) — standard scope.** Under `npm run dev`, saving `public/celerock.ldtk` swaps the edited world into the live game within ~1 s per §5.7's full contract — swap-atomic and transactional, active room recompiled by iid, surface cache cleared + rebaked, §7.1 index and hazard rects rebuilt, terminal room re-derived, live player state / save / death counter / FSM preserved verbatim, invalid edits rejected with the playable world untouched, mid-slide saves deferred, embedded bodies recovered via `settlePlatformerToRoom`. The `vite build` output contains none of this wiring (`apply: 'serve'` + the `import.meta.hot` guard).
 18. **Minimum audio is wired and audible (§10).** The adapter unlocks on the first `keydown`/`pointerdown` gesture, and at least the jump, dash, and hard-landing cues are audible during normal play. Audio failure is SILENT — nothing errors — so this criterion exists purely to catch the mute build (a real build never constructed the adapter).
 19. **Dash trail renders (§9).** While dashing, white 2px trail particles spawn from the seeded `mulberry32` stream each dash tick, advance, cull, and fade with remaining life (§9's recipe — no `Math.random`, no per-tick re-fire of one-shots).
+20. **The letterbox area is masked, not decorated (§5.4).** `applyCameraLetterbox` fills bars outside the room frame and clips world rendering to it, every frame. **The aperture is ONE ROOM, and it does not move or resize during a room slide** — mask with the room, clamp the brain with the union; a frame sized from `presentationForRoomSlide(...).bounds` is twice a room wide, swallows the bars mid-transition, and lets the world fill the window. At any aspect ratio the play area ends at a visible edge: no backdrop stretching to the canvas corners as if it were level, and nothing from the world draws outside the frame. A build whose camera bounds are correct but whose margin is unmasked still fails this — that is exactly how it shipped once.
+21. **Every world layer moves with the camera (§5.4).** Tiles, entities, the player, and particles are all drawn after one `composeCameraTransform`, in raw world coordinates. Verified, not assumed: with the camera parked away from the origin, a particle at a known world position lands on the same screen pixel as the tile at that position (§12.2b), and in play the dash trail stays glued to the player through a full room's worth of scrolling — including across a seam slide, where the rooms, the player, and the rebased particles share the slide-space transform.
 
 ### 12.8 Forbidden Patterns
 
@@ -1243,6 +1317,9 @@ Assert against the shipped pack's known shape (§1.1) — these are exact, not l
 - **No camera pop between rooms** — every `__neighbours` crossing must use the engine slide path (G5): `beginSessionRoomSlide` / `advanceSessionRoomSlide`, driving the slide camera via `presentationForRoomSlide` + `updateCameraBrain`, with both rooms rendered, the player's screen position continuous at the seam, and the lens easing from the old zoom to the new `fitCameraZoom` (immediate seam-aligned cut only under reduced-motion). **A jarring camera pop between rooms is a failure** — the view must not snap on a seam crossing.
 - **No momentum loss at a `__neighbours` seam** — the player must carry `vx` / `vy` / `facing` across the seam; Celeste's rooms are continuous, not teleporting. **Losing momentum at a seam is a failure.**
 - **No silent dash-into-wall** — the bonk is the signature Celeste feel beat; on contact it must fire `triggerHitStop` + `sineShake`. **A silent dash-into-wall is a failure** — missing those cues means the runtime does not teach dash feel.
+- **No world-space draw outside the composed camera transform** — grep the render module for a world-coordinate draw (`particle.x`, `core.x`, `entity.rect.x`) that runs before `composeCameraTransform` or after the matching `ctx.restore()`, and for a second hand-added `+ offsetX` / `worldOffset: { x: t.offsetX … }` on a layer already inside it. One is a layer pinned to the screen, the other is a layer at double the camera offset; both look like "the camera is broken" and neither is. **A particle, entity, or player draw that does not move with the camera is a failure**, and the repair is the transform, never the spawn coordinates.
+- **No playable ending** — a chapter-complete card drawn over a player who can still walk, jump, dash, and die is a failure (§8). The card is not a HUD overlay on continuing gameplay; it is the end of the run. Equally forbidden in the other direction: an ending that freezes the sim outright (the player hangs mid-air on arrival) or that offers no way back to the menu.
+- **No unmasked contain-fit margin** — a backdrop/parallax `fillRect` over the full viewport with no `applyCameraLetterbox` (or an equivalent bars-plus-clip pass) after it is a failure. The symptom is reported as "the camera lets you see past the level"; the cause is that nothing ever drew the level's edge.
 - **No refresh-based "hot reload"** — `location.reload()` (or any full-page teardown) as the `.ldtk` edit loop discards exactly the live state §5.7 exists to preserve, and it is the cheap implementation this section forbids. **A page refresh on `.ldtk` save is a failure**: the swap must be live, swap-atomic, and transactional (§5.7).
 
 ---
@@ -1260,7 +1337,9 @@ Before the build is accepted:
 7. **Sprite gate** — screenshot evidence for §12.7 #14: pixel-crisp, no idle shimmer, no moonwalk, jump clamps on the fall frame (or the procedural fallback renders and plays).
 8. **Entity-art gate** — screenshot evidence for §12.7 #16: `Level_0`'s strawberry as the `Gem` tile and `Level_4`'s five spike rows repeat-tiled at the 8px pitch. The stretch-vs-tile error is invisible in code review and obvious here — this gate exists for exactly that.
 9. **Hot-reload gate** — a before/after screenshot pair for one live edit (§5.7): the edit landed, the surface cache rebaked, and the player is still mid-run at the same position with the same momentum.
-10. **Resolution/letterbox gate** — screenshot pairs at 16:9, 16:10, 4:3, ultrawide, and portrait, including at least one `dpr: 2` capture: the complete room is visible in every shot, centred without stretching; only the atmosphere/parallax letterbox area changes, and DPR never changes gameplay framing.
+10. **Resolution/letterbox gate** — screenshot pairs at 16:9, 16:10, 4:3, ultrawide, and portrait, including at least one `dpr: 2` capture: the complete room is visible in every shot, centred without stretching; DPR never changes gameplay framing. In every shot the room's edge is **visible as an edge** — the masked margin reads as frame, not as more level. The ultrawide and portrait shots are the ones that fail when the mask is missing, so capture them last and look at them, not at the code.
+11. **Summit gate** — reach the terminal room, then hold every control at once for several seconds: the player must not move, jump, dash, grab, or die, and the card must be legible over a body that has landed and settled (not one hanging in the air). Then confirm and land back on the menu. This is a 20-second check and it is the last thing a player sees.
+12. **Camera-tracking gate** — one capture mid-dash with the camera well away from the room origin (deep in a room, not at spawn): the trail particles sit on the player, and the same shot repeated a second later at a different scroll position still shows them on the player. A trail that drifts toward a fixed screen point across the pair is the missing world transform (§5.4), not a spawn-position bug. Repeat once mid-seam-slide, where the rooms, the player, and the rebased particles must all move together.
 
 ---
 
@@ -1269,14 +1348,14 @@ Before the build is accepted:
 Build in this order. Each stage must pass its gate before the next begins.
 
 ### Stage 1: LDtk Load + Preflight + Tileset + Camera Brain Graybox
-1. Vite + TypeScript + `aicraft-engine@0.17.3`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
+1. Vite + TypeScript + `aicraft-engine@0.17.4`. Wire `createGameLoop` with an `onError` handler (§2) so a throw can't silently freeze the loop.
 2. `loadLdtkProjectAssets({ projectUrl })` the supplied `.ldtk` + PNG(s) in one call.
 3. **Asset preflight (G3):** `inspectLdtkPlatformerProject(project)` — log the FULL report: `levelCount`, per-level `neighbourIids` and `connected`, and `capabilities` (including `multiRoom`). Treat `capabilities.multiRoom === true` as the signal that Stage 3 is in scope. (Recall §5.1: `capabilities.exits` counts Exit ENTITIES only — `false` here even though all six rooms are chained.) Missing springs/dash-refills/etc. are informational; a total lack of spawns is the only hard block.
 4. `createLdtkRoomCache(project, {...}).getStartRoom()` the start room; render it through the surface cache (`createLdtkLevelSurfaceCache`, which bakes via `drawLdtkLevel`).
 5. Wire `createCameraBrain` + a per-room follow `VirtualCamera` (deadzone bands, **contain-fit** `fitCameraZoom(room, viewport, { mode: 'contain' })`).
 6. Drive the kernel with `PRECISION_PLATFORMER` (no Celeste opt-ins yet) so a box walks and jumps across the tileset. **This box is a temporary graybox only** — it is replaced by the `Player.png` sprite at the very start of Stage 2 (there is intentionally no "procedural player then swap to sprite" phase).
 7. **Wire §5.7 LDtk hot reload (dev-time, standard).** Author the `vite.config.ts` watcher plugin and the `import.meta.hot` handler exactly as §5.7 specifies (cache-busted re-load, fresh cache from `ROOM_CACHE_OPTIONS`, iid-resolved active room, `surfaceCache.clear()`, transactional reject). From this stage on, the design loop for every later stage is "edit `public/celerock.ldtk`, save, watch it land live."
-8. **Gate:** the supplied tileset renders pixel-crisp and untinted; the camera brain deadzone-follows with the complete room visible and centred while atmosphere/parallax fills any letterbox area; the player does not moonwalk; **saving a trivial `.ldtk` edit while the graybox walks lands live within ~1 s with the box's state preserved.**
+8. **Gate:** the supplied tileset renders pixel-crisp and untinted; the camera brain deadzone-follows with the complete room visible and centred, **with the contain-fit margin masked** (`applyCameraLetterbox` — bars + clip, §5.4) so the room's edge is visible as an edge at every window size; the player does not moonwalk; **saving a trivial `.ldtk` edit while the graybox walks lands live within ~1 s with the box's state preserved.** Establish the §5.4 render skeleton here — one `composeCameraTransform`, every world layer after it — because every layer added in Stages 2–5 inherits it.
 
 ### Stage 2: Celeste Movement Feel + Sprite Player
 1. Apply the full `playConfigFor` kit (`groundDuckEnabled: false` is baked into `playConfigFor` — §4.1; `climbEnabled` is a harmless default, since the shipped pack has no ladders), plus the Celeste-default key bindings (§4.3: Arrows + `C` jump / `X` dash / `Z` grab / `R` respawn — do NOT use the engine's `STANDARD_KEYBOARD_PLATFORMER_MAP`).
@@ -1302,7 +1381,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 1. Dash-into-wall hit-stop + shake; hard-landing shake; landing dust; dash trail.
 2. Squash & stretch (`advanceSquash`) — **procedural-fallback body only**; the supplied `Player.png` sprite stays stable 1:1 (squash distorts pixel art — §4.4). Spring-rod hair (optional under the sprite); parallax background.
 3. Stamina bar UI; room title cards; HUD (death counter).
-4. **Gate:** the game feel matches Celeste-tight. The dash-into-wall bonk is satisfying. Grab/stamina reads clearly.
+4. **Gate:** the game feel matches Celeste-tight. The dash-into-wall bonk is satisfying. Grab/stamina reads clearly. **Every particle layer added here draws after §5.4's `composeCameraTransform` in raw world coordinates** — dash away from the room origin and confirm the trail travels with the player rather than drifting toward a fixed screen point (§13 gate 12).
 
 ### Stage 6: Audio
 1. `createAudioAdapter` + all §10 cues; unlock on first gesture.
@@ -1316,7 +1395,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 
 ---
 
-## 15. Stretch Goals (only after criteria 1–19)
+## 15. Stretch Goals (only after criteria 1–21)
 
 - **"Focus" virtual camera.** A second vcam with higher `priority` that takes over for vistas, reveals, or boss moments (a `fixed` body or tighter follow), blended in/out via the brain's priority selection.
 - **Badeline chase ghost (visual only):** render a tinted "ghost" whose input snapshot is the player's from N frames ago — buffer the last N `PlatformerInput`s in a ring, replay them through a second kernel instance each tick. No new physics code.
@@ -1328,14 +1407,14 @@ Build in this order. Each stage must pass its gate before the next begins.
 ## 16. Install & Version
 
 ```bash
-npm install aicraft-engine@0.17.3
+npm install aicraft-engine@0.17.4
 ```
 
-`0.17.3` is the pin for this brief — the **surface-cache smoothing guard** (crisp platforms under fractional zoom) on top of **`canvasCssViewport`** (§5.4's viewport-units rule) and the **`drawSprite` `snap` option** (§4.4's shimmer fix) and the **FIXES.md hardening pair** (§4.4's clip player, §5.4's `snapCameraBrain` + `cameraTransform`) and **physics v14** (order-independent collision snap + the spring auto-jump buffer; v13 replays rejected), on top of the 0.16.0 entity-art pair and the room-transition session line:
+`0.17.4` is the pin for this brief — the **render-composition pair** (`composeCameraTransform`, §5.4's one world transform; `applyCameraLetterbox`, §5.4's contain-fit mask) on top of the **surface-cache smoothing guard** (crisp platforms under fractional zoom) and **`canvasCssViewport`** (§5.4's viewport-units rule) and the **`drawSprite` `snap` option** (§4.4's shimmer fix) and the **FIXES.md hardening pair** (§4.4's clip player, §5.4's `snapCameraBrain` + `cameraTransform`) and **physics v14** (order-independent collision snap + the spring auto-jump buffer; v13 replays rejected), on top of the 0.16.0 entity-art pair and the room-transition session line:
 
 The inherited additions are all still required (each version's full story lives in §1's install blockquote and the CHANGELOG): the **`0.6.0`** camera brain + LDtk loader + Phase 0–9 movement overhaul (`LaunchIntent` arbitration, decaying wall-slide, 8-dir dash + dash-tech, wall-grab/stamina, corner correction); the **`0.7.0`** golden path (`loadLdtkProjectAssets`, `inspectLdtkPlatformerProject`, `compileLdtkRoom`/`createLdtkRoomCache`, unit-aware config scaling, exported input maps + solid-id helpers, the `'rest-on-surface'` spawn fix, loop `onError`); the **`0.9.0`** feel channel `state.moments`, the pure transition helpers + slide orchestrator + `fitCameraZoom`, and the mantle wave (physics v12: `wallJumpLaunched` deliberately widened to also cover away climb-hops; a manually-constructed `PlatformerState` needs `moments: []`); the **`0.15.0`** room-transition session orchestrator + per-axis containment latch + preflight `multiRoom`; and the **`0.16.0`** entity-art pair — the authoritative `tileRenderMode` parse and `drawLdtkEntityTile` (§7.1 renders through it; §12.8 keeps its blanket no-manual-tile-blit rule with no carve-out).
 
-The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers need `0.7.0`; the feel moments + transition/slide/fit helpers + mantle wave need `0.9.0`; the destination view `0.11.0`; the surface cache `0.12.0`; sustained audio `0.13.0`; the direction-aware wall-jump `0.14.1`; the transition session `0.15.0`; the entity-art pair `0.16.0`; **the clip player + camera snap/transform + per-emitter gravity + NineSlice need `0.17.0`; the `drawSprite` `snap` option needs `0.17.1`** — and physics v14 (v13 replays rejected) makes `0.17.0` the hard floor. Do not pin below `0.17.3`.
+The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers need `0.7.0`; the feel moments + transition/slide/fit helpers + mantle wave need `0.9.0`; the destination view `0.11.0`; the surface cache `0.12.0`; sustained audio `0.13.0`; the direction-aware wall-jump `0.14.1`; the transition session `0.15.0`; the entity-art pair `0.16.0`; **the clip player + camera snap/transform + per-emitter gravity + NineSlice need `0.17.0`; the `drawSprite` `snap` option needs `0.17.1`; `canvasCssViewport` needs `0.17.2`; the surface-cache smoothing guard needs `0.17.3`; `composeCameraTransform` + `applyCameraLetterbox` need `0.17.4`** — and physics v14 (v13 replays rejected) makes `0.17.0` the hard floor. Do not pin below `0.17.4`.
 
 ---
 
