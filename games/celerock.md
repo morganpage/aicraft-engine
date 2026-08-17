@@ -77,7 +77,7 @@ npm install aicraft-engine@0.17.2
     type LdtkRoomExit, type LdtkRoomEntry,
 
     // camera brain — Cinemachine-style vcams, blends, deadzone follow
-    createCameraBrain, updateCameraBrain, fitCameraZoom,                 // cover-fit per-room zoom (§5.4)
+    createCameraBrain, updateCameraBrain, fitCameraZoom,                 // contain-fit letterboxed per-room zoom (§5.4)
     snapCameraBrain,                                                     // 0.17.0 §5.4: first-frame framing (the ease's fixed point)
     cameraTransform,                                                     // 0.17.0 §5.4: device-pixel snap for the render transform
     DEFAULT_CAMERA_MOTION, DEFAULT_LENS_MOTION, DEFAULT_BRAIN_BLEND_DURATION,
@@ -613,7 +613,7 @@ const vcam: VirtualCamera = {
     followY: { trail: 0.35, lead: 0.65 },
     padding: 0,
   },
-  lens: { zoom: fitCameraZoom(room, viewport) },          // ENGINE cover-fit (accepts the CompiledLdtkRoom directly)
+  lens: { zoom: fitCameraZoom(room, viewport, { mode: 'contain' }) }, // ENGINE letterbox fit (accepts the CompiledLdtkRoom directly)
 };
 
 // Boot solved to the FIRST FRAME's framing — seeding only the zoom still
@@ -636,7 +636,7 @@ brain = updateCameraBrain(brain, {
 ctx.imageSmoothingEnabled = false;
 ctx.save();
 // Device-pixel snap: rounding in WORLD units (the old recipe) still lands on
-// a fractional device pixel under a fractional cover-fit zoom, which
+// a fractional device pixel under a fractional fitted zoom, which
 // antialiases the level's edges into a hairline seam.
 const t = cameraTransform(brain.camera, viewport, {
   zoom: brain.zoom,
@@ -656,15 +656,15 @@ ctx.restore();
 
 **Viewport units under DPR (the rule a real build got wrong next).** After the resize, `canvas.width`/`height` hold the **DPR-multiplied backing store** — on a Retina display, 2× the layout size. The viewport you hand `fitCameraZoom`, `updateCameraBrain`, and `cameraTransform` must be in **CSS pixels** (drawing runs under `ctx.scale(dpr, dpr)`, and `cameraTransform` does its own device-grid math via `devicePixelRatio`). Pass the backing-store size and the assumed viewport doubles — the zoom and framing come out wrong by the DPR factor, and at `dpr === 1` the two coincide, so the bug ships invisible on a standard display and detonates on the first high-DPI laptop. Use **`canvasCssViewport(canvas)`** (0.17.2) — the unit is in the name. Re-read it every render tick and on `resize`.
 
-`fitCameraZoom(level, viewport, options?)` is the **engine-owned** fit helper (a `{ width, height }` or a `CompiledLdtkRoom` + a viewport → zoom). Its policy is explicit and tested: **`mode: 'cover'` (the default)** fills the viewport on BOTH axes so the level owns the screen, with the deadzone follow scrolling the overflow axis — no empty side/bottom gaps on compact rooms. `mode: 'contain'` (`Math.min`) letterboxes; `mode: 'native'` is `1`. Optional `integerScale: true` quantises best-effort (up for cover, down min 1 for contain, sub-unit stays fractional), and `minZoom`/`maxZoom` clamp last. For compact Celeste-like rooms a `contain` fit (`Math.min(...)`) leaves exactly the side/bottom gap a prior build fixed with a one-line `Math.min → Math.max` flip — that policy is now engine-owned, so do **not** hand-roll a `fitZoom`: call `fitCameraZoom(room, viewport)` and keep `imageSmoothingEnabled = false`. (Nudge the result down a hair — `* 0.98` — only if a room that *just* fits round-overflows its border by a pixel.)
+`fitCameraZoom(level, viewport, options?)` is the **engine-owned** fit helper (a `{ width, height }` or a `CompiledLdtkRoom` + a viewport → zoom). Celerock's required policy is **`mode: 'contain'`** (`Math.min`): the complete authored room remains visible at every aspect ratio, centred in the available viewport. Any unused side or top/bottom area is intentional letterbox space filled by the existing atmosphere/parallax pass — never stretch the room and never expose a different amount of gameplay because the device is wider or taller. `mode: 'cover'` (the engine default) fills both axes by cropping the overflow axis and is **not** the Celerock policy; `mode: 'native'` is `1`. Optional `integerScale: true` is a separate crispness choice (down, minimum 1, for contain; sub-unit fits stay fractional), and `minZoom`/`maxZoom` clamp last. Do **not** hand-roll a `fitZoom`: call `fitCameraZoom(room, viewport, { mode: 'contain' })` and keep `imageSmoothingEnabled = false`.
 
 ```ts
-const zoom = fitCameraZoom(room, viewport);                          // cover (default) — no side gaps
-const zoom = fitCameraZoom(room, viewport, { mode: 'contain' });     // letterbox (NOT the Celerock policy)
-const zoom = fitCameraZoom(room, viewport, { integerScale: true });  // best-effort crisp-pixel quantise
+const zoom = fitCameraZoom(room, viewport, { mode: 'contain' });     // CELEROCK POLICY — full room + letterbox
+const cover = fitCameraZoom(room, viewport);                         // engine default; crops gameplay (do not use here)
+const crisp = fitCameraZoom(room, viewport, { mode: 'contain', integerScale: true }); // optional crispness trade-off
 ```
 
-**Seamless fractional zoom — the canonical tile draw.** `drawLdtkLevel` blits every tile separately, so under a fractional `brain.zoom` (a cover-fit 4.75×, or the lens easing between rooms mid-§5.5-slide) some browser/GPU combinations expose a duplicated or empty scanline between adjacent tile rows — a hairline seam. The mid-slide lens ease is *guaranteed* fractional zoom, which is exactly the case the **surface cache** exists for: `createLdtkLevelSurfaceCache()` (shipped in `0.12.0`) returns a cache whose `draw(ctx, level, opts)` bakes the room's tiles verbatim through `drawLdtkLevel` into one `pxWid × pxHei` offscreen canvas on first use, then blits that single surface per frame — no internal draw boundaries for the compositor to split, at any zoom. `drop(iid)`/`clear()` rebake (after tile edits — §5.7's hot reload calls `clear()` on every applied swap, since ANY room may have changed, not just the active one); in hosts with no canvas factory it silently falls back to the direct draw. **Use `cache.draw(...)` everywhere** (the §5.5 slide draws both rooms through it; §5.4's per-frame draw above is the cache); `drawLdtkLevel` remains the underlying baker, not the call-site renderer. Snapping fixes the **origin**; only an integral `zoom · dpr` maps the whole world grid onto device pixels — `cameraTransform`'s `pixelAligned` flag reports which case you are in, and `fitCameraZoom(..., { integerScale: true })` is the lever when edge crispness outranks exact viewport fill.
+**Seamless fractional zoom — the canonical tile draw.** `drawLdtkLevel` blits every tile separately, so under a fractional `brain.zoom` (a contain-fit such as 4.5×, or the lens easing between rooms mid-§5.5-slide) some browser/GPU combinations expose a duplicated or empty scanline between adjacent tile rows — a hairline seam. The mid-slide lens ease is *guaranteed* fractional zoom, which is exactly the case the **surface cache** exists for: `createLdtkLevelSurfaceCache()` (shipped in `0.12.0`) returns a cache whose `draw(ctx, level, opts)` bakes the room's tiles verbatim through `drawLdtkLevel` into one `pxWid × pxHei` offscreen canvas on first use, then blits that single surface per frame — no internal draw boundaries for the compositor to split, at any zoom. `drop(iid)`/`clear()` rebake (after tile edits — §5.7's hot reload calls `clear()` on every applied swap, since ANY room may have changed, not just the active one); in hosts with no canvas factory it silently falls back to the direct draw. **Use `cache.draw(...)` everywhere** (the §5.5 slide draws both rooms through it; §5.4's per-frame draw above is the cache); `drawLdtkLevel` remains the underlying baker, not the call-site renderer. Snapping fixes the **origin**; only an integral `zoom · dpr` maps the whole world grid onto device pixels — `cameraTransform`'s `pixelAligned` flag reports which case you are in, and `fitCameraZoom(..., { mode: 'contain', integerScale: true })` is the lever when edge crispness outranks using all available screen height/width.
 
 ### 5.5 Room transitions — seamless, momentum-preserving
 
@@ -689,7 +689,7 @@ if (poll.result.type === 'exit') {
   // 0.11.0: roomEntrySlideView computes the follow-compatible destination
   // framing (room-local room-px) — do NOT hardcode { x: 0, y: 0 }. Pass the
   // same follow bands/padding as the destination follow vcam.
-  const destinationZoom = fitCameraZoom(target, viewport);
+  const destinationZoom = fitCameraZoom(target, viewport, { mode: 'contain' });
   const destinationView = roomEntrySlideView(target, state.core, viewport, destinationZoom,
     { followX: FOLLOW_X, followY: FOLLOW_Y, padding: 0 });
   // Particle continuity: add slide.particleRebaseDelta ONCE to source-local particles.
@@ -747,7 +747,7 @@ brain = ended.brain;                          // cancel-with-rebase applied firs
 
 Falling out of the level with no cardinal neighbour (the void) is a respawn, not a transition — and a crossing that leaves through a NON-shared span (a partial seam's void edge) is also void: the poll returns `'idle'` (no exit) and you respawn.
 
-> The public golden-path APIs replace the old "read the showcase" reference: `loadLdtkProjectAssets` (§5.1), `inspectLdtkPlatformerProject` (preflight), `compileLdtkRoom` / `createLdtkRoomCache` (§5.2), the **room-transition session** (`createRoomTransitionSession` → `pollRoomTransition` → `mapLdtkRoomEntry` → `transitionPlatformerToRoom` → `beginSessionRoomSlide` → `advanceSessionRoomSlide` → `endRoomTransitionSession`; §5.5), and the cover-fit `fitCameraZoom` + per-room vcam above. (No `showcase/` or `src/…` path is published in the npm package — the `files` whitelist ships only `dist/` — so do not reference any as a consumer resource.)
+> The public golden-path APIs replace the old "read the showcase" reference: `loadLdtkProjectAssets` (§5.1), `inspectLdtkPlatformerProject` (preflight), `compileLdtkRoom` / `createLdtkRoomCache` (§5.2), the **room-transition session** (`createRoomTransitionSession` → `pollRoomTransition` → `mapLdtkRoomEntry` → `transitionPlatformerToRoom` → `beginSessionRoomSlide` → `advanceSessionRoomSlide` → `endRoomTransitionSession`; §5.5), and the contain-fit `fitCameraZoom` + per-room vcam above. (No `showcase/` or `src/…` path is published in the npm package — the `files` whitelist ships only `dist/` — so do not reference any as a consumer resource.)
 
 ### 5.6 What the LDtk contains (the shipped pack, and the general contract)
 
@@ -1023,7 +1023,7 @@ Use the shipped events (`start`, `die`, `retry`, `win`, `next`, `pause`, `resume
 - [ ] **Hit-stop on dash-into-wall** — trigger off the one-shot `dashBonk` moment on `state.moments` (horizontal AND vertical bonks; no ability-slice diffing, no velocity peeking).
 - [ ] Hit-stop on death.
 - [ ] Screen shake on dash-bonk and hard landings — gate on `landing.hard` / `dashBonk` from `state.moments` (`sineShake` + `shakeEnvelope`); the hard test is the tile-invariant `normalizedImpact` ratio, never a raw px/s threshold.
-- [ ] **Camera brain deadzone follow** (Celeste bands) — smooth, no jitter; the player stays inside the band until it crosses the lead edge. **Cover-fit** `fitCameraZoom` (no empty side gaps on compact rooms).
+- [ ] **Camera brain deadzone follow** (Celeste bands) — smooth, no jitter; the player stays inside the band until it crosses the lead edge. **Contain-fit** `fitCameraZoom` keeps the complete room visible; atmosphere/parallax fills the intentional letterbox area.
 - [ ] **Room transition is a SLIDE** (G5) — ~0.25–0.35 s, both rooms render, continuous screen position at the seam, momentum + particles carried across; reduced-motion uses an immediate seam-aligned cut.
 - [ ] Air control during jump (the kernel's `airAccelMultiplier`).
 - [ ] Dash trail particles (`spawn` 4 small white particles on each dash tick, culled by `cull`). (Seeded `mulberry32` rng — no `Math.random`.) — the recipe is below; checklist items without recipes do not survive codegen (a real build skipped the trail entirely).
@@ -1120,7 +1120,7 @@ public/                # the §1.1 assets, FLAT — the .ldtk names its tileset 
 src/
   main.ts              # boot: load LDtk + tilesets, canvas, store, audio.unlock, loop.start()
   ldtk.ts              # loadLdtkProjectAssets (or parseLdtkProject+buildLdtkTilesetBundle), inspectLdtkPlatformerProject, createLdtkRoomCache
-  camera.ts            # per-room VirtualCamera config, cover-fit fitCameraZoom, createCameraBrain/updateCameraBrain, room slide
+  camera.ts            # per-room VirtualCamera config, contain-fit letterboxed fitCameraZoom, createCameraBrain/updateCameraBrain, room slide
   transition.ts        # room-transition session wiring: pollRoomTransition → mapLdtkRoomEntry → transitionPlatformerToRoom → beginSessionRoomSlide / advanceSessionRoomSlide / endRoomTransitionSession
   game/
     state.ts           # CelerockSave (collectibles: Record<levelIid, CollectibleSave>, deaths), World/Room runtime
@@ -1207,7 +1207,7 @@ Assert against the shipped pack's known shape (§1.1) — these are exact, not l
 2. **Start menu (§8).** The game boots to a `menu` state offering **NEW GAME** and **RESUME GAME** (up/down select, jump/dash/grab edge confirms — Enter/Space confirm via the jump map). RESUME GAME is hidden while the save carries no progress; NEW GAME wipes the persisted save and starts fresh; RESUME starts with the boot-loaded save. The HUD is hidden while in `menu`.
 3. **Loads the supplied LDtk + tileset** and renders the tileset through the **surface cache** (`createLdtkLevelSurfaceCache` — pixel-crisp, untinted; `drawLdtkLevel` remains the underlying baker).
 4. The Celeste kit is present and works on the supplied geometry: **dash (8-dir, startup freeze, refills on land) + wall-grab/stamina + wall-slide + wall-jump + dash-tech.** **No `doubleJump`.** Springs, dash-refills, moving platforms, and ladders are **capability-aware** — exercise each one the preflight reports present (`report.capabilities.springs` / `.dashRefills` / `.movingPlatforms` / `.ladders`); absent ones are not a failure (G4).
-5. The **camera brain** drives the view (deadzone follow + per-room vcam + **cover-fit** `fitCameraZoom` + slide on transition); the viewport passed to all of them is in **CSS units** (`canvasCssViewport` — the backing store is the engine's business), so framing is identical at `dpr` 1 and 2. No legacy `createCamera`/`updateCamera`.
+5. The **camera brain** drives the view (deadzone follow + per-room vcam + **contain-fit** `fitCameraZoom(..., { mode: 'contain' })` + slide on transition); the viewport passed to all of them is in **CSS units** (`canvasCssViewport` — the backing store is the engine's business), so framing is identical at `dpr` 1 and 2 and the complete room remains visible at 16:9, 16:10, 4:3, ultrawide, and portrait aspect ratios. Atmosphere/parallax fills the intentional letterbox area. No legacy `createCamera`/`updateCamera`.
 6. Room-to-room travel is **seamless via `__neighbours`** using the session path (`pollRoomTransition` → `transitionPlatformerToRoom` → `beginSessionRoomSlide` → `advanceSessionRoomSlide`; §5.5): a ~0.25–0.35 s **slide** (both rooms render, continuous screen position at the seam), momentum (`vx`/`vy`/`facing`) preserved, particles rebased into the destination room; reduced-motion uses an immediate seam-aligned cut. The camera does not pop between rooms.
 7. The **dash-into-wall** moment (horizontal AND vertical — read the `dashBonk` feel moment on `state.moments`, never a hand-rolled velocity threshold) applies hit-stop and shake (§12.2).
 8. Strawberries persist across page reload via `createLocalStorageSaveStorage` + `writeSave` (keyed by `level.iid`) — and a collected gem's **TILE disappears from the render list on the pickup tick** (render from `remaining`, §7; a halo-only filter leaves ghost gems — a real build shipped that).
@@ -1260,6 +1260,7 @@ Before the build is accepted:
 7. **Sprite gate** — screenshot evidence for §12.7 #14: pixel-crisp, no idle shimmer, no moonwalk, jump clamps on the fall frame (or the procedural fallback renders and plays).
 8. **Entity-art gate** — screenshot evidence for §12.7 #16: `Level_0`'s strawberry as the `Gem` tile and `Level_4`'s five spike rows repeat-tiled at the 8px pitch. The stretch-vs-tile error is invisible in code review and obvious here — this gate exists for exactly that.
 9. **Hot-reload gate** — a before/after screenshot pair for one live edit (§5.7): the edit landed, the surface cache rebaked, and the player is still mid-run at the same position with the same momentum.
+10. **Resolution/letterbox gate** — screenshot pairs at 16:9, 16:10, 4:3, ultrawide, and portrait, including at least one `dpr: 2` capture: the complete room is visible in every shot, centred without stretching; only the atmosphere/parallax letterbox area changes, and DPR never changes gameplay framing.
 
 ---
 
@@ -1272,10 +1273,10 @@ Build in this order. Each stage must pass its gate before the next begins.
 2. `loadLdtkProjectAssets({ projectUrl })` the supplied `.ldtk` + PNG(s) in one call.
 3. **Asset preflight (G3):** `inspectLdtkPlatformerProject(project)` — log the FULL report: `levelCount`, per-level `neighbourIids` and `connected`, and `capabilities` (including `multiRoom`). Treat `capabilities.multiRoom === true` as the signal that Stage 3 is in scope. (Recall §5.1: `capabilities.exits` counts Exit ENTITIES only — `false` here even though all six rooms are chained.) Missing springs/dash-refills/etc. are informational; a total lack of spawns is the only hard block.
 4. `createLdtkRoomCache(project, {...}).getStartRoom()` the start room; render it through the surface cache (`createLdtkLevelSurfaceCache`, which bakes via `drawLdtkLevel`).
-5. Wire `createCameraBrain` + a per-room follow `VirtualCamera` (deadzone bands, **cover-fit** `fitCameraZoom`).
+5. Wire `createCameraBrain` + a per-room follow `VirtualCamera` (deadzone bands, **contain-fit** `fitCameraZoom(room, viewport, { mode: 'contain' })`).
 6. Drive the kernel with `PRECISION_PLATFORMER` (no Celeste opt-ins yet) so a box walks and jumps across the tileset. **This box is a temporary graybox only** — it is replaced by the `Player.png` sprite at the very start of Stage 2 (there is intentionally no "procedural player then swap to sprite" phase).
 7. **Wire §5.7 LDtk hot reload (dev-time, standard).** Author the `vite.config.ts` watcher plugin and the `import.meta.hot` handler exactly as §5.7 specifies (cache-busted re-load, fresh cache from `ROOM_CACHE_OPTIONS`, iid-resolved active room, `surfaceCache.clear()`, transactional reject). From this stage on, the design loop for every later stage is "edit `public/celerock.ldtk`, save, watch it land live."
-8. **Gate:** the supplied tileset renders pixel-crisp and untinted; the camera brain deadzone-follows with no side gaps; the player does not moonwalk; **saving a trivial `.ldtk` edit while the graybox walks lands live within ~1 s with the box's state preserved.**
+8. **Gate:** the supplied tileset renders pixel-crisp and untinted; the camera brain deadzone-follows with the complete room visible and centred while atmosphere/parallax fills any letterbox area; the player does not moonwalk; **saving a trivial `.ldtk` edit while the graybox walks lands live within ~1 s with the box's state preserved.**
 
 ### Stage 2: Celeste Movement Feel + Sprite Player
 1. Apply the full `playConfigFor` kit (`groundDuckEnabled: false` is baked into `playConfigFor` — §4.1; `climbEnabled` is a harmless default, since the shipped pack has no ladders), plus the Celeste-default key bindings (§4.3: Arrows + `C` jump / `X` dash / `Z` grab / `R` respawn — do NOT use the engine's `STANDARD_KEYBOARD_PLATFORMER_MAP`).
@@ -1340,4 +1341,4 @@ The camera/LDtk/movement floor is `0.6.0`; the golden-path helpers need `0.7.0`;
 
 **Build order:** LDtk load + tileset + camera brain graybox → Celeste movement feel → seamless `__neighbours` transitions → hazards + strawberries + save → juice + polish → audio → verification.
 
-**The game is not done when the LDtk renders. It is done when the supplied tileset is drawn faithfully, every entity the `.ldtk` dressed wears its own authored tile (§7.1), the camera brain deadzone-follows with a cover-fit and slides cleanly between rooms (momentum + screen position continuous at the seam), the Celeste kit (dash + grab/stamina + wall-slide + wall-jump + dash-tech) all feel tight, the dash-into-wall bonk fires hit-stop and shake, a human player can traverse the supplied LDtk end-to-end, and saving the `.ldtk` mid-run lands live without losing the run (§5.7).**
+**The game is not done when the LDtk renders. It is done when the supplied tileset is drawn faithfully, every entity the `.ldtk` dressed wears its own authored tile (§7.1), the camera brain deadzone-follows with a contain-fit letterbox policy and slides cleanly between rooms (momentum + screen position continuous at the seam), the Celeste kit (dash + grab/stamina + wall-slide + wall-jump + dash-tech) all feel tight, the dash-into-wall bonk fires hit-stop and shake, a human player can traverse the supplied LDtk end-to-end, and saving the `.ldtk` mid-run lands live without losing the run (§5.7).**
