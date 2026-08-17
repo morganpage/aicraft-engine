@@ -13,6 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import {
+  cameraApertureLetterbox,
   applyCameraLetterbox,
   cameraLetterbox,
   cameraTransform,
@@ -148,6 +149,28 @@ describe('cameraLetterbox — invariants', () => {
         expect(r.height).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+});
+
+describe('cameraApertureLetterbox — centered room-slide aperture', () => {
+  it('keeps the aperture centered independently of the slide camera position', () => {
+    const viewport: CameraViewport = { width: 1280, height: 1000 };
+    const aperture = cameraApertureLetterbox(ROOM, viewport, 4);
+
+    expect(aperture.frame).toEqual({ x: 0, y: 132, width: 1280, height: 736 });
+    expect(aperture.clip).toEqual(aperture.frame);
+    expect(aperture.bars).toEqual([
+      { x: 0, y: 0, width: 1280, height: 132 },
+      { x: 0, y: 868, width: 1280, height: 132 },
+    ]);
+  });
+
+  it('uses the interpolated room dimensions, never the two-room union', () => {
+    const viewport: CameraViewport = { width: 1280, height: 1000 };
+    const middle = cameraApertureLetterbox({ width: 152, height: 120 }, viewport, 4);
+
+    expect(middle.frame).toEqual({ x: 336, y: 260, width: 608, height: 480 });
+    expect(middle.bars).toHaveLength(4);
   });
 });
 

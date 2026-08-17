@@ -297,13 +297,23 @@ describe('root barrel re-exports every module', () => {
     // The bare primitives remain public (back-compat).
     expect(typeof aicraft.findLdtkRoomExit).toBe('function');
     expect(typeof aicraft.beginRoomSlide).toBe('function');
+    expect(typeof aicraft.stabilizePlatformerRoomEntry).toBe('function');
+    expect(typeof aicraft.protectGroundedRoomSlide).toBe('function');
+    expect(typeof aicraft.cameraApertureLetterbox).toBe('function');
+    expect(typeof aicraft.applyCameraApertureLetterbox).toBe('function');
     // Compile-time type uses: the new exported types must be importable.
     const _state: aicraft.RoomExitDetectorState = aicraft.createRoomExitDetectorState();
     const _detection: aicraft.RoomExitDetection = { state: _state };
     const _opts: aicraft.RoomExitDetectorOptions = {};
+    const _entryOpts: aicraft.RoomEntrySupportOptions = {};
+    const _entryResult: aicraft.PlatformerRoomEntryStabilization = {
+      state: {} as aicraft.PlatformerState,
+      entry: { x: 0, y: 0, dir: 'e', toLevelIid: 'room' },
+      corrected: false,
+    };
   const _slideOpts: aicraft.RoomEntrySlideViewOptions = {};
   void _slideOpts;
-    void _detection; void _opts;
+    void _detection; void _opts; void _entryOpts; void _entryResult;
   });
 
   it('room-transition session (0.15.0): the five orchestrator functions and their types are public', () => {

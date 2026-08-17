@@ -191,6 +191,59 @@ export function cameraLetterbox(
 }
 
 /**
+ * Resolve a centered, room-sized aperture for a room slide.
+ *
+ * Unlike {@link cameraLetterbox}, this intentionally ignores the camera
+ * offset. A room slide's camera moves through the two-room union, but the
+ * player's window remains centered in the viewport while the rooms move
+ * behind it. Pass {@link RoomSlidePresentation.aperture} here rather than its
+ * union `bounds`.
+ *
+ * Pure and canvas-free. Invalid dimensions degrade to a full-viewport frame.
+ */
+export function cameraApertureLetterbox(
+  bounds: FitLevel | CompiledLdtkRoom,
+  viewport: Readonly<CameraViewport>,
+  zoom: number,
+): CameraLetterbox {
+  const vw = positive(viewport?.width, 0);
+  const vh = positive(viewport?.height, 0);
+  const viewportRect = rect(0, 0, vw, vh);
+  const full: CameraLetterbox = {
+    frame: viewportRect,
+    clip: viewportRect,
+    bars: [],
+    covered: true,
+  };
+  if (vw === 0 || vh === 0) return full;
+
+  const dims = resolveLevelDims(bounds);
+  const z = positive(zoom, 0);
+  if (z === 0 || !(dims.width > 0) || !(dims.height > 0)) return full;
+
+  const width = Math.min(vw, dims.width * z);
+  const height = Math.min(vh, dims.height * z);
+  const frame = rect((vw - width) / 2, (vh - height) / 2, width, height);
+  const left = clamp(frame.x, 0, vw);
+  const right = clamp(frame.x + frame.width, 0, vw);
+  const top = clamp(frame.y, 0, vh);
+  const bottom = clamp(frame.y + frame.height, 0, vh);
+  const bars: CameraFrameRect[] = [];
+  if (top > 0) bars.push(rect(0, 0, vw, top));
+  if (bottom < vh) bars.push(rect(0, bottom, vw, vh - bottom));
+  const bandHeight = Math.max(0, bottom - top);
+  if (left > 0 && bandHeight > 0) bars.push(rect(0, top, left, bandHeight));
+  if (right < vw && bandHeight > 0) bars.push(rect(right, top, vw - right, bandHeight));
+
+  return {
+    frame,
+    clip: rect(left, top, right - left, bottom - top),
+    bars,
+    covered: bars.length === 0,
+  };
+}
+
+/**
  * Fill the letterbox bars and clip subsequent drawing to the level frame.
  *
  * Same shape as {@link applyCameraTransform}: compute + apply + return the
@@ -220,6 +273,36 @@ export function applyCameraLetterbox(
   options: Readonly<ApplyCameraLetterboxOptions> = {},
 ): CameraLetterbox {
   const box = cameraLetterbox(bounds, viewport, transform);
+  const fill = options.fill === undefined ? '#000000' : options.fill;
+
+  if (fill !== null && box.bars.length > 0) {
+    ctx.save();
+    try {
+      ctx.fillStyle = fill;
+      for (const bar of box.bars) ctx.fillRect(bar.x, bar.y, bar.width, bar.height);
+    } finally {
+      ctx.restore();
+    }
+  }
+
+  if (options.clip !== false) {
+    ctx.beginPath();
+    ctx.rect(box.clip.x, box.clip.y, box.clip.width, box.clip.height);
+    ctx.clip();
+  }
+
+  return box;
+}
+
+/** Fill and clip a centered room-slide aperture. */
+export function applyCameraApertureLetterbox(
+  ctx: CanvasRenderingContext2D,
+  bounds: FitLevel | CompiledLdtkRoom,
+  viewport: Readonly<CameraViewport>,
+  zoom: number,
+  options: Readonly<ApplyCameraLetterboxOptions> = {},
+): CameraLetterbox {
+  const box = cameraApertureLetterbox(bounds, viewport, zoom);
   const fill = options.fill === undefined ? '#000000' : options.fill;
 
   if (fill !== null && box.bars.length > 0) {

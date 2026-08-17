@@ -75,7 +75,28 @@ export interface TransitionPlatformerToRoomOptions {
    * reposition the actor.
    */
   readonly destinationSolids?: readonly Solid[];
+  /**
+   * Apply {@link stabilizePlatformerRoomEntry} before the transition. This is
+   * opt-in because the base transition deliberately preserves exact mapped
+   * positions for games that want fully custom seam-entry policy.
+   */
+  readonly stabilizeEntrySupport?: boolean;
+  /** Tolerance passed to the optional support repair. Defaults to `1`. */
+  readonly entrySupportTolerance?: number;
   readonly config?: Readonly<PlatformerConfig>;
+}
+
+/** Options for {@link stabilizePlatformerRoomEntry}. */
+export interface RoomEntrySupportOptions {
+  /** Maximum embedded/near-support correction in room pixels. Defaults to `1`. */
+  readonly tolerance?: number;
+}
+
+/** Result of the optional, tolerance-limited seam-entry support repair. */
+export interface PlatformerRoomEntryStabilization {
+  readonly state: PlatformerState;
+  readonly entry: LdtkRoomEntry;
+  readonly corrected: boolean;
 }
 
 /** The post-transition state + seam-entry spawn provenance. */
@@ -360,8 +381,10 @@ export function mapLdtkRoomEntry(
  *  - Without `destinationSolids`, conservatively set `onGround: false` and clear
  *    all contacts (the next destination tick re-establishes support).
  *
- * Never calls `settlePlatformerState` — settling would destroy valid mid-air
- * momentum. The state uses its existing `core.width`/`core.height`.
+ * Never settles by default — settling would destroy valid mid-air momentum.
+ * Callers that want the generic tolerance-limited repair can opt into
+ * `stabilizeEntrySupport` in the options. The state uses its existing
+ * `core.width`/`core.height`.
  */
 export function transitionPlatformerToRoom(
   state: PlatformerState,
@@ -370,14 +393,25 @@ export function transitionPlatformerToRoom(
 ): PlatformerRoomTransition {
   const config = options?.config ?? DEFAULT_PLATFORMER_CONFIG;
   const inverted = config.gravity < 0;
-  const { width, height } = state.core;
+  const entryPreparation = options?.stabilizeEntrySupport === true && options.destinationSolids !== undefined
+    ? stabilizePlatformerRoomEntry(
+      state,
+      entry,
+      options.destinationSolids,
+      config.gravity,
+      { tolerance: options.entrySupportTolerance },
+    )
+    : { state, entry, corrected: false };
+  const transitionState = entryPreparation.state;
+  const transitionEntry = entryPreparation.entry;
+  const { width, height } = transitionState.core;
 
   // Revalidate exact gravity-facing support at the mapped position (no move).
   let onGround = false;
   let contacts: Contacts = EMPTY_CONTACTS;
   const solids = options?.destinationSolids;
   if (solids !== undefined) {
-    const bodyRect: Rect = { x: entry.x, y: entry.y, width, height };
+    const bodyRect: Rect = { x: transitionEntry.x, y: transitionEntry.y, width, height };
     // Small tolerance so a flush rest (body.bottom === solid.y) is detected.
     const tolerance = 1;
     const support = inverted
@@ -394,30 +428,101 @@ export function transitionPlatformerToRoom(
 
   const nextState: PlatformerState = {
     core: {
-      ...state.core,
-      x: entry.x,
-      y: entry.y,
+      ...transitionState.core,
+      x: transitionEntry.x,
+      y: transitionEntry.y,
       // Momentum + facing preserved across the seam.
       onGround,
       contacts,
     },
     // Ability/locomotion slices are carried verbatim (a dash in flight stays in
     // flight; stamina/coyote/buffer survive the seam).
-    abilities: state.abilities,
-    locomotion: state.locomotion,
+    abilities: transitionState.abilities,
+    locomotion: transitionState.locomotion,
     events: EMPTY_EVENTS,
     interactions: EMPTY_INTERACTIONS,
     moments: EMPTY_MOMENTS,
-    tick: state.tick,
+    tick: transitionState.tick,
   };
 
   const spawn: ResolvedPlatformerSpawn = {
-    x: entry.x,
-    y: entry.y,
+    x: transitionEntry.x,
+    y: transitionEntry.y,
     source: 'seam-entry',
   };
 
   return { state: nextState, spawn };
+}
+
+/**
+ * Repair a seam entry that is within a small tolerance of gravity-facing
+ * support, without settling a genuinely airborne crossing.
+ *
+ * Exact world-position mapping preserves momentum, but a falling actor can
+ * arrive embedded a fraction of a pixel into a destination floor. The next
+ * collision step can then interpret that floor as a side wall and let the
+ * actor fall through it. This helper moves only the entry point's Y coordinate
+ * to the nearest support face and zeros vertical velocity when:
+ *
+ * - gravity points toward that face;
+ * - velocity is also pointing toward that face; and
+ * - the existing entry is no farther than `tolerance` from the face.
+ *
+ * Horizontal position and momentum are untouched. A genuinely mid-air entry
+ * is returned byte-for-byte equivalent apart from fresh wrapper objects. The
+ * ordinary {@link transitionPlatformerToRoom} call should still follow this
+ * helper so destination contacts are revalidated in the normal way.
+ *
+ * Pure and never mutates its inputs.
+ */
+export function stabilizePlatformerRoomEntry(
+  state: Readonly<PlatformerState>,
+  entry: Readonly<LdtkRoomEntry>,
+  solids: readonly Solid[],
+  gravity: number,
+  options?: Readonly<RoomEntrySupportOptions>,
+): PlatformerRoomEntryStabilization {
+  const requestedTolerance = options?.tolerance;
+  const tolerance = Number.isFinite(requestedTolerance) && (requestedTolerance as number) >= 0
+    ? (requestedTolerance as number)
+    : 1;
+  const core = state.core;
+  const horizontalOverlap = (solid: Solid): boolean =>
+    entry.x < solid.x + solid.width && solid.x < entry.x + core.width;
+  const supports = solids.filter((solid) =>
+    !solid.ladder && solid.spring === undefined && !solid.dashRefill && horizontalOverlap(solid),
+  );
+
+  if (gravity >= 0 && core.vy >= 0) {
+    const bottom = entry.y + core.height;
+    const floor = supports
+      .filter((solid) => Math.abs(bottom - solid.y) <= tolerance)
+      .sort((a, b) => Math.abs(bottom - a.y) - Math.abs(bottom - b.y))[0];
+    if (floor !== undefined) {
+      return {
+        state: { ...state, core: { ...core, vy: 0 } },
+        entry: { ...entry, y: floor.y - core.height },
+        corrected: true,
+      };
+    }
+  }
+
+  if (gravity < 0 && core.vy <= 0) {
+    const top = entry.y;
+    const ceiling = supports
+      .filter((solid) => Math.abs(top - (solid.y + solid.height)) <= tolerance)
+      .sort((a, b) =>
+        Math.abs(top - (a.y + a.height)) - Math.abs(top - (b.y + b.height)))[0];
+    if (ceiling !== undefined) {
+      return {
+        state: { ...state, core: { ...core, vy: 0 } },
+        entry: { ...entry, y: ceiling.y + ceiling.height },
+        corrected: true,
+      };
+    }
+  }
+
+  return { state: { ...state }, entry: { ...entry }, corrected: false };
 }
 
 /**

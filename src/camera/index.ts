@@ -61,7 +61,9 @@ export {
 } from './transform';
 export {
   cameraLetterbox,
+  cameraApertureLetterbox,
   applyCameraLetterbox,
+  applyCameraApertureLetterbox,
   type ApplyCameraLetterboxOptions,
   type CameraFrameRect,
   type CameraLetterbox,

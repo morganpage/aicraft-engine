@@ -117,6 +117,10 @@ export interface RoomSlideState {
   readonly easing: (t: number) => number;
   readonly freezeSimulation: boolean;
   readonly space: RoomSlideSpace;
+  /** Source room rectangle used as the render aperture, not camera clamp space. */
+  readonly sourceAperture: CameraBounds;
+  /** Destination room rectangle used as the render aperture, not camera clamp space. */
+  readonly destinationAperture: CameraBounds;
   readonly sourceView: RoomSlideView;
   readonly destinationView: RoomSlideView;
   /** Dest-player render correction at `t = 0`; presentation eases it to zero. */
@@ -150,6 +154,11 @@ export interface RoomSlidePresentation {
    * the rooms move behind it; mask with the room, clamp with this.
    */
   readonly bounds: CameraBounds;
+  /**
+   * The one-room render aperture for this tick. Interpolate this with the
+   * slide's easing when room dimensions differ; never use `bounds` here.
+   */
+  readonly aperture: CameraBounds;
   /** The source room's origin in slide space. Composes with the camera. */
   readonly sourceOffset: Readonly<{ x: number; y: number }>;
   /** The destination room's origin in slide space. Composes with the camera. */
@@ -231,6 +240,8 @@ export function beginRoomSlide(
     height: Math.max(s.bottom, d.bottom, sCamWy + sViewH, dCamWy + dViewH) - minY,
   };
   const space: RoomSlideSpace = { bounds, sourceOffset, destinationOffset };
+  const sourceAperture: CameraBounds = { width: s.right - s.x, height: s.bottom - s.y };
+  const destinationAperture: CameraBounds = { width: d.right - d.x, height: d.bottom - d.y };
 
   // Player screen-position continuity at slide start: drawing the dest-local
   // player at destinationOffset would jump it; this correction (eased to 0)
@@ -264,6 +275,8 @@ export function beginRoomSlide(
     easing,
     freezeSimulation,
     space,
+    sourceAperture,
+    destinationAperture,
     sourceView: views.source,
     destinationView: views.destination,
     initialPlayerOffset,
@@ -288,6 +301,7 @@ export function presentationForRoomSlide(slide: RoomSlideState): RoomSlidePresen
     return {
       vcam: null,
       bounds: space.bounds,
+      aperture: slide.destinationAperture,
       sourceOffset: space.sourceOffset,
       destinationOffset: space.destinationOffset,
       playerOffset: { x: 0, y: 0 },
@@ -296,6 +310,10 @@ export function presentationForRoomSlide(slide: RoomSlideState): RoomSlidePresen
   }
 
   const easedT = slide.easing(slide.t);
+  const aperture: CameraBounds = {
+    width: slide.sourceAperture.width + (slide.destinationAperture.width - slide.sourceAperture.width) * easedT,
+    height: slide.sourceAperture.height + (slide.destinationAperture.height - slide.sourceAperture.height) * easedT,
+  };
   // Endpoint top-lefts expressed in slide space (room-local + room offset).
   const srcCamX = sourceView.camera.x + space.sourceOffset.x;
   const srcCamY = sourceView.camera.y + space.sourceOffset.y;
@@ -330,6 +348,7 @@ export function presentationForRoomSlide(slide: RoomSlideState): RoomSlidePresen
   return {
     vcam,
     bounds: space.bounds,
+    aperture,
     sourceOffset: space.sourceOffset,
     destinationOffset: space.destinationOffset,
     playerOffset,

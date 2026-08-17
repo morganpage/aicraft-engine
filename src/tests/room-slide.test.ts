@@ -182,6 +182,21 @@ describe('room slide — clock + named path (advance/presentation)', () => {
     expect(p.vcam?.lens?.zoom).toBe(2);
   });
 
+  it('keeps the render aperture separate from the two-room camera clamp bounds', () => {
+    let slide = beginRoomSlide(SRC, DST, VIEWPORT, VIEWS, IDENTITY_ACTOR);
+    expect(presentationForRoomSlide(slide).bounds).toEqual({ width: 304, height: 128 });
+    expect(presentationForRoomSlide(slide).aperture).toEqual({ width: 160, height: 112 });
+
+    slide = advanceRoomSlide(slide, 0.15);
+    const middle = presentationForRoomSlide(slide);
+    expect(middle.aperture.width).toBeCloseTo(152, 12);
+    expect(middle.aperture.height).toBeCloseTo(120, 12);
+    expect(middle.bounds.width).toBe(304);
+
+    slide = advanceRoomSlide(slide, 0.15);
+    expect(presentationForRoomSlide(slide).aperture).toEqual({ width: 144, height: 128 });
+  });
+
   it('follows the exact named easing curve — no stacked blend/damping', () => {
     const slide = beginRoomSlide(SRC, DST, VIEWPORT, VIEWS, IDENTITY_ACTOR);
     // Sample the path across the slide and compare against the pure

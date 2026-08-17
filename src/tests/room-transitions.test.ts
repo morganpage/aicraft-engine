@@ -3,6 +3,7 @@ import {
   findLdtkRoomExit,
   mapLdtkRoomEntry,
   transitionPlatformerToRoom,
+  stabilizePlatformerRoomEntry,
   rebasePointBetweenLdtkRooms,
   createRoomExitDetectorState,
   detectLdtkRoomExit,
@@ -426,6 +427,37 @@ describe('room transitions — transitionPlatformerToRoom', () => {
     // Body top at 4... ceiling bottom at 4 → flush under inverted gravity.
     expect(next.core.onGround).toBe(true);
     expect(next.core.contacts.ceilingId).toBe('dest-ceil');
+  });
+
+  it('repairs a shallow falling seam entry onto destination support', () => {
+    const state = makeStateWith({ vx: -100, vy: 15 });
+    const entry = { x: 40, y: 76.25, dir: 'e' as const, toLevelIid: 'L1' };
+    const floor: Solid = { id: 'dest-floor', x: -100, y: 100, width: 400, height: 16 };
+    const stabilized = stabilizePlatformerRoomEntry(state, entry, [floor], 980);
+
+    expect(stabilized.corrected).toBe(true);
+    expect(stabilized.entry.y).toBe(76);
+    expect(stabilized.state.core.vy).toBe(0);
+    expect(stabilized.state.core.vx).toBe(-100);
+
+    const transitioned = transitionPlatformerToRoom(state, entry, {
+      destinationSolids: [floor],
+      stabilizeEntrySupport: true,
+    });
+    expect(transitioned.state.core.y).toBe(76);
+    expect(transitioned.state.core.vy).toBe(0);
+    expect(transitioned.state.core.onGround).toBe(true);
+  });
+
+  it('does not settle a genuinely mid-air seam entry', () => {
+    const state = makeStateWith({ vx: -100, vy: 60 });
+    const entry = { x: 40, y: 70, dir: 'e' as const, toLevelIid: 'L1' };
+    const floor: Solid = { id: 'dest-floor', x: -100, y: 100, width: 400, height: 16 };
+    const stabilized = stabilizePlatformerRoomEntry(state, entry, [floor], 980);
+
+    expect(stabilized.corrected).toBe(false);
+    expect(stabilized.entry).toEqual(entry);
+    expect(stabilized.state.core.vy).toBe(60);
   });
 });
 

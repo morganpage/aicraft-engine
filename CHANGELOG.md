@@ -5,9 +5,17 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.17.4] - 2026-08-17
+## [0.17.4] - 2026-08-18
 
 ### Added
+- **Room-slide render aperture:** `RoomSlidePresentation.aperture` is now
+  separate from the two-room camera-clamp `bounds`, and
+  `cameraApertureLetterbox` / `applyCameraApertureLetterbox` provide the
+  centered mask for that aperture.
+- **Generic seam safety:** `stabilizePlatformerRoomEntry` repairs sub-pixel
+  support embedding without settling genuine airborne entries, and
+  `protectGroundedRoomSlide` prevents a grounded actor from being carried off
+  a short support surface while a slide is active.
 - **`composeCameraTransform(ctx, transform)` — the world-space boundary as a named call.** `applyCameraTransform` already composed `scale` + `translate` in one step, but the published recipe for a level draw did the opposite: `ctx.scale(zoom, zoom)` alone, with the camera offset handed to the draw as its own `worldOffset` parameter. That works for every layer the engine draws and silently fails for every layer the consumer draws — nothing forces a hand-written particle, entity, or debug pass to receive the offset. A real Celerock build spawned its dash trail at correct world positions, drew it under the zoom alone, and shipped particles welded to the screen while the level scrolled behind them; the spawn coordinates were never wrong, so the obvious "fix" would have been the wrong repair. This is the second half of `applyCameraTransform`, split out because the result is often needed before the context is touched — the letterbox mask below needs `zoom` to place the level frame in screen units, and both have to agree on the same snapped offset. Compose once and `worldOffset` is left for its real job: a room's own origin *within* world space (a room slide's `sourceOffset`/`destinationOffset`), which composes on top rather than replacing the camera. Degrades a non-finite zoom/offset to an identity-safe composition. `applyCameraTransform` is now implemented in terms of it — no behaviour change.
 - **`cameraLetterbox` / `applyCameraLetterbox` (+ `CameraLetterbox`, `CameraFrameRect`, `ApplyCameraLetterboxOptions`) — the contain-fit mask the fit helper never covered.** `fitCameraZoom(..., { mode: 'contain' })` guarantees the whole authored room stays visible, which necessarily leaves slack on one axis, and the engine said nothing about that slack. The consistent real-build outcome: backdrop painted across the entire canvas, world drawn unclipped on top, and the empty margin reads as playable level — reported as "the camera lets you see past the level" when the camera bounds were right all along. `cameraLetterbox(bounds, viewport, transform)` resolves the level's screen `frame`, the `clip` rect (frame ∩ viewport), and the 0–4 **disjoint** bars outside it (full-width top/bottom first, side bars spanning only the band between them, so a translucent fill never doubles); `applyCameraLetterbox` fills the bars and clips, mirroring `applyCameraTransform`'s compute-apply-return shape. Bounds accept a bare `{ width, height }` or a compiled LDtk room, the same duck-typing `fitCameraZoom` does, and they are the APERTURE — one room — never a room slide's union (see the aperture note below). Units are the caller's current transform (CSS pixels under `ctx.scale(dpr, dpr)`), computed BEFORE the zoom is composed — applying it under the zoom would square the frame. The fill is internally save/restored so `fillStyle` never leaks; the clip deliberately survives the call, because it is the point, and the caller's `restore()` owns it. Invalid bounds, a degenerate viewport, or a non-finite transform all resolve to a full-viewport frame with no bars: a masking helper that cannot compute its mask must never blank the game.
 
@@ -214,7 +222,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.3...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.4...HEAD
+[0.17.4]: https://github.com/morganpage/aicraft-engine/compare/v0.17.3...v0.17.4
 [0.17.3]: https://github.com/morganpage/aicraft-engine/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/morganpage/aicraft-engine/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/morganpage/aicraft-engine/compare/v0.17.0...v0.17.1

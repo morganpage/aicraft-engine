@@ -135,6 +135,7 @@ export {
   findLdtkRoomExit,
   mapLdtkRoomEntry,
   transitionPlatformerToRoom,
+  stabilizePlatformerRoomEntry,
   rebasePointBetweenLdtkRooms,
   DEFAULT_EXIT_DEADBAND,
   createRoomExitDetectorState,
@@ -143,11 +144,18 @@ export {
   type LdtkRoomExit,
   type LdtkRoomEntry,
   type TransitionPlatformerToRoomOptions,
+  type RoomEntrySupportOptions,
   type PlatformerRoomTransition,
+  type PlatformerRoomEntryStabilization,
   type RoomExitDetectorOptions,
   type RoomExitDetectorState,
   type RoomExitDetection,
 } from './room-transitions';
+
+export {
+  protectGroundedRoomSlide,
+  ROOM_SLIDE_SUPPORT_EPSILON,
+} from './room-slide-safety';
 
 // Phase E3 — slide presentation orchestrator. Composes the existing camera
 // brain (no new solver) via a transient high-priority fixed vcam in a

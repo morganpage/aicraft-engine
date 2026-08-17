@@ -244,6 +244,10 @@ import {
   beginSessionRoomSlide,
   advanceSessionRoomSlide,
   endRoomTransitionSession,
+  stabilizePlatformerRoomEntry,
+  protectGroundedRoomSlide,
+  cameraApertureLetterbox,
+  applyCameraApertureLetterbox,
   // Preflight (0.15.0): the multi-room steer is read off the report.
   inspectLdtkPlatformerProject,
 } from 'aicraft-engine';
@@ -323,6 +327,21 @@ const destView = roomEntrySlideView(
 assert.ok(Number.isFinite(destView.camera.y), 'destView.camera.y finite');
 assert.equal(destView.zoom, 8);
 console.log('TRANSITION HARDENING: exports OK');
+
+// Room-slide render/simulation safety: the aperture is centered independently
+// of the two-room clamp union, and the generic support APIs are packed exports.
+const aperture = cameraApertureLetterbox({ width: 320, height: 184 }, { width: 1280, height: 1000 }, 4);
+assert.deepEqual(aperture.frame, { x: 0, y: 132, width: 1280, height: 736 });
+assert.equal(typeof applyCameraApertureLetterbox, 'function');
+const entrySafety = stabilizePlatformerRoomEntry(
+  createPlatformerState(40, 76.25),
+  { x: 40, y: 76.25, dir: 'e', toLevelIid: 'L1' },
+  [{ id: 'floor', x: 0, y: 100, width: 400, height: 16 }],
+  980,
+);
+assert.equal(entrySafety.corrected, true);
+assert.equal(typeof protectGroundedRoomSlide, 'function');
+console.log('ROOM-SLIDE SAFETY: exports OK');
 
 // Room-transition session (0.15.0): every new public name exercised against
 // the same two-room fixture so a broken/missing export fails the gate loudly.
@@ -445,6 +464,10 @@ function doTypecheckConsumer(tmp, tgz) {
   beginSessionRoomSlide,
   advanceSessionRoomSlide,
   endRoomTransitionSession,
+  stabilizePlatformerRoomEntry,
+  protectGroundedRoomSlide,
+  cameraApertureLetterbox,
+  applyCameraApertureLetterbox,
 } from 'aicraft-engine';
 import type {
   GameLoop,
@@ -465,6 +488,8 @@ import type {
   RoomTransitionSessionState,
   RoomTransitionPollResult,
   SessionSlideBeginInput,
+  RoomEntrySupportOptions,
+  PlatformerRoomEntryStabilization,
 } from 'aicraft-engine';
 
 const loop: GameLoop = createGameLoop({
@@ -516,6 +541,13 @@ const _destView = roomEntrySlideView(
   {} as RoomEntrySlideViewOptions,
 );
 void _destView;
+void stabilizePlatformerRoomEntry;
+void protectGroundedRoomSlide;
+void cameraApertureLetterbox;
+void applyCameraApertureLetterbox;
+const _entryOpts: RoomEntrySupportOptions = {};
+const _entryResult: PlatformerRoomEntryStabilization | undefined = undefined;
+void _entryOpts; void _entryResult;
 
 // Sustained-audio layer (0.13.0): typed use proves the new names ship in the
 // .d.ts and typecheck under NodeNext with skipLibCheck:false.
