@@ -53,10 +53,18 @@ export { fitCameraZoom, type CameraFitMode, type FitCameraZoomOptions } from './
 export {
   cameraTransform,
   applyCameraTransform,
+  composeCameraTransform,
   type CameraSnapMode,
   type CameraTransformOptions,
   type CameraTransformResult,
   type CameraWorldView,
 } from './transform';
+export {
+  cameraLetterbox,
+  applyCameraLetterbox,
+  type ApplyCameraLetterboxOptions,
+  type CameraFrameRect,
+  type CameraLetterbox,
+} from './letterbox';
 // NOTE: `followPosition` (motion.ts) is an implementation helper for focused
 // unit tests and is intentionally omitted from the package barrel.

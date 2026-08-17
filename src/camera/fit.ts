@@ -55,12 +55,18 @@ function isFinitePositive(n: unknown): n is number {
  * LDtk room. A compiled room exposes no top-level `width`/`height`; its pixel
  * dimensions live on `levelData` (the translated engine level), with the raw
  * LDtk pixel size on `ldtkLevel` as a fallback.
+ *
+ * Module-internal (shared with `./letterbox`), deliberately NOT re-exported
+ * from `./index` — the public surface is the two helpers that consume it.
+ * Anything that is not an object reads as `NaN × NaN` so callers degrade
+ * through their own invalid-dimension path instead of throwing.
  */
-function levelDims(level: FitLevel | CompiledLdtkRoom): { width: number; height: number } {
+export function resolveLevelDims(
+  level: FitLevel | CompiledLdtkRoom,
+): { width: number; height: number } {
+  if (level === null || typeof level !== 'object') return { width: NaN, height: NaN };
   const room = level as Partial<CompiledLdtkRoom>;
   if (
-    room !== null &&
-    typeof room === 'object' &&
     'levelData' in room &&
     room.levelData !== null &&
     typeof room.levelData === 'object'
@@ -89,7 +95,7 @@ export function fitCameraZoom(
   viewport: { readonly width: number; readonly height: number },
   options?: Readonly<FitCameraZoomOptions>,
 ): number {
-  const { width, height } = levelDims(level);
+  const { width, height } = resolveLevelDims(level);
   const vpW = viewport.width;
   const vpH = viewport.height;
   // Invalid / non-positive dimensions: no meaningful fit.

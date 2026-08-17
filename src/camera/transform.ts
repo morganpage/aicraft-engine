@@ -217,7 +217,43 @@ export function applyCameraTransform(
   options: Readonly<CameraTransformOptions> = {},
 ): CameraTransformResult {
   const resolved = cameraTransform(camera, viewport, options);
-  ctx.scale(resolved.zoom, resolved.zoom);
-  ctx.translate(resolved.offsetX, resolved.offsetY);
+  composeCameraTransform(ctx, resolved);
   return resolved;
+}
+
+/**
+ * Compose an ALREADY-RESOLVED transform onto the context: `scale(zoom, zoom)`
+ * then `translate(offsetX, offsetY)`. The second half of
+ * {@link applyCameraTransform}, split out for the common case where the result
+ * is needed before the context is touched — a letterbox mask
+ * (`applyCameraLetterbox`) needs `zoom` to place the level frame in screen
+ * units, and both have to agree on the same snapped offset.
+ *
+ * **This call is the world-space boundary, and that is the point of naming
+ * it.** Everything drawn after it is in world coordinates — engine draws and
+ * hand-written ones alike. The alternative, leaving the offset out of the
+ * context and passing it as each draw's own `worldOffset`, has a standing
+ * failure mode: the layers a consumer writes by hand (particles, debug
+ * overlays, custom entity art) silently render at camera-independent positions
+ * because nothing forces them to receive the offset. Compose once, then draw
+ * everything in world units; a room's own offset within that space — a slide's
+ * `sourceOffset`/`destinationOffset` — is what `worldOffset` is left for.
+ *
+ * ```ts
+ * const t = cameraTransform(brain.camera, viewport, { zoom: brain.zoom, devicePixelRatio: dpr });
+ * ctx.save();
+ * applyCameraLetterbox(ctx, bounds, viewport, t);
+ * composeCameraTransform(ctx, t);
+ * cache.draw(ctx, room.ldtkLevel, { tilesets, view: t.view });   // no worldOffset needed
+ * drawParticles(ctx, particles);                                  // world coords, tracks the camera
+ * ctx.restore();
+ * ```
+ */
+export function composeCameraTransform(
+  ctx: CanvasRenderingContext2D,
+  transform: Readonly<Pick<CameraTransformResult, 'zoom' | 'offsetX' | 'offsetY'>>,
+): void {
+  const zoom = positive(transform?.zoom, 1);
+  ctx.scale(zoom, zoom);
+  ctx.translate(finiteOrZero(transform?.offsetX), finiteOrZero(transform?.offsetY));
 }

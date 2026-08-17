@@ -125,12 +125,34 @@ export interface RoomSlideState {
   readonly particleRebaseDelta: Readonly<{ x: number; y: number }>;
 }
 
-/** Per-tick presentation output the consumer feeds to render + the camera brain. */
+/**
+ * Per-tick presentation output the consumer feeds to render + the camera brain.
+ *
+ * **Composition.** The offsets below are each room's STATIC origin inside slide
+ * space, and the slide vcam moves the camera through that same space — so they
+ * compose with the camera transform, they do not replace it. Render under one
+ * `composeCameraTransform(ctx, cameraTransform(brain.camera, …))` and pass an
+ * offset as a draw's own `worldOffset` (or `ctx.translate`) on top. Drawing at
+ * `sourceOffset` alone pins the view to the union's top-left for the whole
+ * slide; adding the camera offset into `worldOffset` as well double-counts it.
+ */
 export interface RoomSlidePresentation {
   /** The transient slide-authority vcam, or `null` when the slide is done. */
   readonly vcam: VirtualCamera | null;
+  /**
+   * The union bounds the brain is clamped against this tick.
+   *
+   * CLAMP SPACE, NOT AN APERTURE. Do not hand these to a letterbox mask: the
+   * union spans both rooms, so a mask sized from it is roughly twice a room
+   * wide and swallows the bars for the length of the slide (a real build
+   * shipped exactly that — the world filled the window mid-transition, then
+   * snapped back). The window the player looks through stays ONE ROOM while
+   * the rooms move behind it; mask with the room, clamp with this.
+   */
   readonly bounds: CameraBounds;
+  /** The source room's origin in slide space. Composes with the camera. */
   readonly sourceOffset: Readonly<{ x: number; y: number }>;
+  /** The destination room's origin in slide space. Composes with the camera. */
   readonly destinationOffset: Readonly<{ x: number; y: number }>;
   /** Render-only player correction this tick (eases to zero). */
   readonly playerOffset: Readonly<{ x: number; y: number }>;
