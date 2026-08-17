@@ -53,6 +53,7 @@ import type { Solid } from '../../../src/collision';
 import { DEFAULT_JUMP } from '../../../src/animation/jump';
 import {
   cameraTransform,
+  composeCameraTransform,
   createCameraBrain,
   updateCameraBrain,
   type CameraBrain,
@@ -758,28 +759,28 @@ export function createPlaySession(
       // which antialiases the level's edges into hairline seams; the returned
       // `view` is the cull rect derived from the SNAPPED position.
       const t = cameraTransform(brain.camera, viewport, { zoom });
-      const offsetX = t.offsetX;
-      const offsetY = t.offsetY;
-      const worldView = { width: t.view.width, height: t.view.height };
-      // One world-space transform: scale up, then apply the camera offset. The
+      // ONE world-space transform, composed into the context: scale, then the
+      // snapped camera offset. Everything below this line is in world
+      // coordinates — the level surface, the mobs, the player — so no draw can
+      // be written that silently renders camera-independent (the defect that
+      // shipped a Celerock build's particles pinned to the screen). The
       // camera's centering (it goes negative when the level is smaller than
-      // worldView) letterboxes the level inside the canvas for free — no extra
-      // offset that would compound with the camera and shove the level aside.
+      // the view) letterboxes the level inside the canvas for free.
       context.save();
-      context.scale(zoom, zoom);
+      composeCameraTransform(context, t);
       levelSurfaces.draw(context, ldtkLevel, {
         tilesets,
-        worldOffset: { x: offsetX, y: offsetY },
-        view: { x: brain.camera.x, y: brain.camera.y, width: worldView.width, height: worldView.height },
+        // No `worldOffset`: the camera offset is in the context now. The cull
+        // rect comes from the SNAPPED position, which is what was drawn.
+        view: t.view,
       });
 
       const { core } = state;
 
       // Patrolling mobs: drawn before the player so the player reads on top.
-      // `MobActors.draw` takes the camera offset since the world transform is
-      // scale-only here (the level was drawn with an explicit `worldOffset`).
+      // World coordinates — the composed transform already carries the camera.
       if (mobs !== null) {
-        mobs.draw(context, { x: offsetX, y: offsetY });
+        mobs.draw(context, { x: 0, y: 0 });
       }
 
       // Player: sprite when a bundle is present (selected from physics), else
@@ -797,8 +798,8 @@ export function createPlaySession(
       // pushing off the ground and a landing squash reads as compressing into
       // it. Identity (`1, 1`) is a no-op transform, so the squash only changes
       // the silhouette when an event fired or the ease-back is mid-recovery.
-      const feetX = core.x + offsetX + core.width / 2;
-      const feetY = core.y + offsetY + core.height;
+      const feetX = core.x + core.width / 2;
+      const feetY = core.y + core.height;
       context.save();
       context.translate(feetX, feetY);
       context.scale(currentSquash.scaleX, currentSquash.scaleY);
@@ -817,9 +818,9 @@ export function createPlaySession(
           playerAnim,
           kind,
           // Centre the (square) sprite on the narrow body.
-          Math.round(core.x + offsetX + (core.width - spriteSize) / 2),
+          Math.round(core.x + (core.width - spriteSize) / 2),
           // Bottom-anchor: the sprite's feet meet the body's bottom edge.
-          Math.round(core.y + offsetY + core.height - spriteSize),
+          Math.round(core.y + core.height - spriteSize),
           core.facing,
           spriteSize,
         );
@@ -828,12 +829,12 @@ export function createPlaySession(
         context.fillStyle = isOnLadder(core, active.ladders)
           ? PLAYER_LADDER_COLOR
           : PLAYER_COLOR;
-        context.fillRect(core.x + offsetX, core.y + offsetY, core.width, core.height);
+        context.fillRect(core.x, core.y, core.width, core.height);
         context.strokeStyle = PLAYER_OUTLINE;
         context.lineWidth = 1 / zoom;
         context.strokeRect(
-          core.x + offsetX + 0.5 / zoom,
-          core.y + offsetY + 0.5 / zoom,
+          core.x + 0.5 / zoom,
+          core.y + 0.5 / zoom,
           core.width - 1 / zoom,
           core.height - 1 / zoom,
         );
