@@ -244,3 +244,52 @@ describe('createLdtkLevelSurfaceCache', () => {
     expect(second).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Smoothing guard (0.17.3) — the cache's blit owns its pixel-art contract.
+// ---------------------------------------------------------------------------
+describe('createLdtkLevelSurfaceCache — the blit owns imageSmoothingEnabled', () => {
+  it('a fractional-zoom blit stays hard-edged even under CALLER-default smoothing', () => {
+    // The blur from the real build: caller never sets imageSmoothingEnabled
+    // (canvas default true); the whole baked room was one bilinear-resampled
+    // drawImage. Now the blit saves/disables/restores internally, so every
+    // destination pixel is either pure tile color or pure background — no
+    // intermediate colors anywhere along the red/green boundary.
+    const ts = makeTileset(TILE_SIZE);
+    const bundle = makeBundle(ts);
+    const surfaces = createLdtkLevelSurfaceCache({ createCanvas: factory });
+    const level = makeLevel();
+
+    // The real-world pattern: the CALLER holds the zoom (fractional 2.5x)
+    // and the cache blits its baked surface 1:1 underneath it, with the
+    // caller's smoothing left at the canvas default (true).
+    const ctx = ctx2d(40, 20);
+    ctx.imageSmoothingEnabled = true;
+    ctx.scale(2.5, 2.5);
+    expect(surfaces.draw(ctx, level, {
+      tilesets: bundle,
+      view: { x: 0, y: 0, width: 16, height: 8 },
+    })).toBe(2);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    const saw = new Set<string>();
+    for (let y = 0; y < 20; y++) {
+      for (let x = 0; x < 40; x++) {
+        const [r, g, b, a] = pixel(ctx, x, y);
+        saw.add(`${r},${g},${b},${a}`);
+      }
+    }
+    const colors = [...saw].filter((c) => !c.startsWith('0,0,0,0'));
+    // Hard edges only: pure red and pure green (255 channels), no blended
+    // intermediates (a bilinear resample would produce dozens).
+    for (const c of colors) {
+      const [r, g, b] = c.split(',').map(Number);
+      const pureRed = r > 200 && g < 60 && b < 60;
+      const pureGreen = r < 60 && g > 200 && b < 60;
+      expect(pureRed || pureGreen).toBe(true);
+    }
+
+    // And the caller's own state is restored (guard must not leak false).
+    expect(ctx.imageSmoothingEnabled).toBe(true);
+  });
+});

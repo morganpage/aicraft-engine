@@ -202,6 +202,13 @@ export function createLdtkLevelSurfaceCache(
         if (offset !== undefined && (offset.x !== 0 || offset.y !== 0)) {
           context.translate(offset.x, offset.y);
         }
+        // Own the smoothing state like every sibling pixel-art path does
+        // (drawLdtkLayer, drawSprite, drawLdtkEntityTile): this is THE scaled
+        // blit of the whole baked room, and under caller-default smoothing a
+        // fractional zoom bilinear-filters the level into a uniform blur
+        // (found in a real build that never set ctx.imageSmoothingEnabled).
+        // Also survives the canvas.width-assignment state reset on resize.
+        context.imageSmoothingEnabled = false;
         context.drawImage(entry.canvas as unknown as CanvasImageSource, 0, 0);
       } finally {
         // Balance the save even if the blit throws, so the fallback draw (and
