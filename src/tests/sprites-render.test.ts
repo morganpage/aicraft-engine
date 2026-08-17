@@ -3,6 +3,7 @@ import { createCanvas } from 'canvas';
 import { drawSprite, createSpriteTintCache } from '../sprites/render';
 import { compileSpriteSheet } from '../sprites/compile';
 import type { SpriteSheetJSON } from '../sprites/types';
+import type { CompiledSpriteSheet } from '../sprites/compile';
 
 /**
  * Build a 2x1 sheet canvas: tile 0 = solid white (left), tile 1 = solid
@@ -170,4 +171,45 @@ describe('drawSprite', () => {
     const drew = drawSprite(ctx, {} as CanvasImageSource, compiled, 0, 0, 0);
     expect(drew).toBe(false);
   });
+});
+
+describe('drawSprite snap option (0.17.1)', () => {
+  it('snap: true pins fractional destination coordinates to round() — pixel-identical to the direct integer call', () => {
+    // The shim's raison d'être is browser-side: Skia antialiases fractional
+    // image destinations even under imageSmoothingEnabled = false (the
+    // shimmering edge column a real Celerock build showed mid-jump), while
+    // node-canvas's Cairo rounds-to-nearest on its own — so the BLUR cannot
+    // be reproduced here. What CAN be pinned is the contract: for any
+    // fractional dest, snap renders exactly what the direct integer call
+    // renders, across a sweep and under the facing mirror too.
+    const canvas = createCanvas(2, 2);
+    const tctx = canvas.getContext('2d');
+    tctx.fillStyle = '#ff0000'; tctx.fillRect(0, 0, 1, 2);
+    tctx.fillStyle = '#0000ff'; tctx.fillRect(1, 0, 1, 2);
+    const sheet = {
+      image: 'snap-test.png',
+      frames: [{ x: 0, y: 0, width: 2, height: 2 }],
+      anims: new Map(),
+      imageSize: { width: 2, height: 2 },
+      characters: new Map(),
+    } as unknown as CompiledSpriteSheet;
+    const image = canvas as unknown as CanvasImageSource;
+
+    const snapshot = (dx: number, dy: number, opts: { snap?: boolean; facing?: 1 | -1 }): string => {
+      const c = createCanvas(8, 8).getContext('2d') as unknown as CanvasRenderingContext2D;
+      expect(drawSprite(c, image, sheet, 0, dx, dy, opts)).toBe(true);
+      let out = '';
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+        out += c.getImageData(x, y, 1, 1).data.join(',');
+      }
+      return out;
+    };
+
+    for (const f of [-1.7, -0.51, 0.25, 0.5, 1.49, 2.7]) {
+      expect(snapshot(f, f, { snap: true })).toBe(snapshot(Math.round(f), Math.round(f), {}));
+      // Mirrored sprites stay on the same grid.
+      expect(snapshot(f, f, { snap: true, facing: -1 })).toBe(snapshot(Math.round(f), Math.round(f), { facing: -1 }));
+    }
+  });
+
 });

@@ -48,6 +48,17 @@ export interface DrawSpriteOptions {
    * used; create with {@link createSpriteTintCache}.
    */
   tintCache?: SpriteTintCache;
+  /**
+   * Round the destination coordinates to whole canvas units before drawing.
+   * Pixel-art correctness under zoom: raw physics floats (a body's `x`/`y`)
+   * scaled by a `ctx.scale(zoom, zoom)` land on FRACTIONAL device pixels, and
+   * the rasterizer antialiases one sprite edge — a shimmering artifact column
+   * that tracks the fractional position (most visible during a jump, where
+   * `vy` sweeps fractions every frame). Snapping the dest pins the sprite to
+   * the pixel grid the same way {@link cameraTransform} pins the level.
+   * Default `false` (exact coordinates — smooth-scrolling consumers).
+   */
+  snap?: boolean;
 }
 
 /** A canvas the tint helper can draw into. Accepts both browser
@@ -204,6 +215,10 @@ export function drawSprite(
   const destW = options.destWidth ?? rect.width;
   const destH = options.destHeight ?? rect.height;
   const alpha = options.alpha ?? 1;
+  // Optional pixel-grid snap — see DrawSpriteOptions.snap. Rounds BEFORE the
+  // facing mirror so the mirrored sprite sits on the same grid.
+  const x = options.snap ? Math.round(destX) : destX;
+  const y = options.snap ? Math.round(destY) : destY;
 
   ctx.save();
   const smoothing = ctx.imageSmoothingEnabled;
@@ -212,11 +227,11 @@ export function drawSprite(
     if (alpha < 1) ctx.globalAlpha *= alpha;
     if (facing === -1) {
       // Mirror around the sprite's horizontal center.
-      ctx.translate(destX + destW / 2, destY);
+      ctx.translate(x + destW / 2, y);
       ctx.scale(-1, 1);
       ctx.drawImage(source, rect.x, rect.y, rect.width, rect.height, -destW / 2, 0, destW, destH);
     } else {
-      ctx.drawImage(source, rect.x, rect.y, rect.width, rect.height, destX, destY, destW, destH);
+      ctx.drawImage(source, rect.x, rect.y, rect.width, rect.height, x, y, destW, destH);
     }
     return true;
   } catch {
