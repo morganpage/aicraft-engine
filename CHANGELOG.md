@@ -5,6 +5,11 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.3] - 2026-08-17
+
+### Fixed
+- **Surface cache owns its smoothing (crisp levels under fractional zoom).** `LdtkLevelSurfaceCache.draw`'s single scaled blit of the baked room ran under the CALLER's `imageSmoothingEnabled` — every other pixel-art path in the engine guards its own (`drawLdtkLayer`, `drawSprite`, `drawLdtkEntityTile`), but the one draw whose entire job is a fractional-zoom resample did not. A consumer that never set the flag (canvas default `true`) got the whole level bilinear-blurred while sprites stayed crisp — exactly the "platforms are blurry" report from a real build. The blit now saves/disables/restores internally. Related trap now documented on the brief: assigning `canvas.width`/`height` resets ALL context state — the transform AND smoothing — so even a set-once-at-boot build silently re-blurs after its first resize. Regression-tested red/green: a 2.5x caller-scaled blit with caller-default smoothing must produce only pure tile colors (a bilinear resample yields blends), and the caller's own state must come back untouched.
+
 ## [0.17.2] - 2026-08-17
 
 ### Added
@@ -196,7 +201,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.2...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.3...HEAD
+[0.17.3]: https://github.com/morganpage/aicraft-engine/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/morganpage/aicraft-engine/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/morganpage/aicraft-engine/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/morganpage/aicraft-engine/compare/v0.16.0...v0.17.0
