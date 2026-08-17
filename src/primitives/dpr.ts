@@ -153,3 +153,58 @@ export function resizeCanvasToBackingStore(
     return FALLBACK_DPR;
   }
 }
+
+/**
+ * The canvas's layout size in CSS pixels — the viewport unit the camera
+ * stack consumes.
+ *
+ * THE UNITS TRAP this helper exists to prevent: after
+ * {@link resizeCanvasToBackingStore}, `canvas.width`/`canvas.height` hold the
+ * DPR-MULTIPLIED BACKING STORE, not the layout size — on a Retina display
+ * they are 2× (or 3×) the CSS pixels. Everything you hand the camera brain,
+ * `fitCameraZoom`, and `cameraTransform` must be in CSS units (drawing runs
+ * under `ctx.scale(dpr, dpr)`, and `cameraTransform` does its own
+ * device-grid math via `devicePixelRatio`); passing the backing-store size
+ * doubles the assumed viewport, and the zoom/framing come out wrong by the
+ * DPR factor. At `dpr === 1` the two coincide — which is exactly why the
+ * bug ships invisible on a standard display and detonates on the first
+ * high-DPI laptop (a real Celerock build did precisely this, with
+ * `viewportFor` reading `canvas.width`).
+ *
+ * Defensively reads `clientWidth`/`clientHeight`; when either is unreadable
+ * or non-positive (not laid out yet, SSR stub), falls back to the backing
+ * store divided by the fresh DPR — the best layout estimate available.
+ *
+ * **Layer / determinism contract — HOST-TOUCHING, NOT deterministic.** Call
+ * at canvas setup / on `resize` / at the top of the render tick; never
+ * inside the fixed-step sim.
+ *
+ * @example
+ * ```ts
+ * const dpr = resizeCanvasToBackingStore(canvas, 600, 400);
+ * // Per tick — the VIEWPORT is CSS units; the backing store is the
+ * // engine's business via devicePixelRatio:
+ * const viewport = canvasCssViewport(canvas);
+ * brain = updateCameraBrain(brain, { vcams, targets, viewport, ... });
+ * ```
+ *
+ * @param canvas - The canvas whose CSS layout size to read.
+ * @returns `{ width, height }` in CSS pixels, both ≥ 1.
+ */
+export function canvasCssViewport(
+  canvas: HTMLCanvasElement,
+): { width: number; height: number } {
+  try {
+    const width = Math.max(1, canvas.clientWidth);
+    const height = Math.max(1, canvas.clientHeight);
+    if (Number.isFinite(width) && Number.isFinite(height)) return { width, height };
+  } catch {
+    // fall through to the backing-store estimate
+  }
+  try {
+    const dpr = readFreshDevicePixelRatio();
+    return { width: Math.max(1, canvas.width / dpr), height: Math.max(1, canvas.height / dpr) };
+  } catch {
+    return { width: Math.max(1, canvas.width), height: Math.max(1, canvas.height) };
+  }
+}

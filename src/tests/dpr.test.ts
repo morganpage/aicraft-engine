@@ -4,6 +4,7 @@ import {
   getDevicePixelRatio,
   resetDprCacheForTests,
   resizeCanvasToBackingStore,
+  canvasCssViewport,
 } from '../primitives/dpr';
 
 /**
@@ -218,5 +219,43 @@ describe('resizeCanvasToBackingStore', () => {
       400,
     );
     expect(dpr).toBe(FALLBACK_DPR);
+  });
+});
+
+describe('canvasCssViewport (0.17.2)', () => {
+  it('returns clientWidth/clientHeight — the CSS layout size, NOT the backing store', () => {
+    const canvas = { ...createMockCanvas(), width: 1920, height: 1080, clientWidth: 960, clientHeight: 540 } as unknown as HTMLCanvasElement;
+    expect(canvasCssViewport(canvas)).toEqual({ width: 960, height: 540 });
+  });
+
+  it('falls back to the backing store / fresh DPR when client size is unreadable', () => {
+    // No clientWidth at all (SSR stub): in Node (window undefined) the fresh
+    // DPR read is FALLBACK_DPR = 1, so the estimate equals the backing store.
+    const canvas = { ...createMockCanvas(), width: 1920, height: 1080 } as unknown as HTMLCanvasElement;
+    expect(canvasCssViewport(canvas)).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it('clamps non-positive client sizes to 1 (canvas not laid out yet)', () => {
+    const canvas = { ...createMockCanvas(), width: 0, height: 0, clientWidth: 0, clientHeight: 0 } as unknown as HTMLCanvasElement;
+    expect(canvasCssViewport(canvas)).toEqual({ width: 1, height: 1 });
+  });
+
+  it('never throws when clientWidth reads explode', () => {
+    const canvas = createMockCanvas();
+    Object.defineProperty(canvas, 'clientWidth', {
+      configurable: true,
+      get: () => { throw new Error('clientWidth exploded'); },
+    });
+    let out: { width: number; height: number } | null = null;
+    expect(() => {
+      out = canvasCssViewport(canvas as unknown as HTMLCanvasElement);
+    }).not.toThrow();
+    expect(out).not.toBeNull();
+  });
+
+  it('guards against NaN client sizes via the backing-store estimate', () => {
+    const canvas = { ...createMockCanvas(), width: 1200, height: 800, clientWidth: Number.NaN, clientHeight: Number.NaN } as unknown as HTMLCanvasElement;
+    // NaN fails Number.isFinite → falls back to backing store / dpr (1 in Node).
+    expect(canvasCssViewport(canvas)).toEqual({ width: 1200, height: 800 });
   });
 });

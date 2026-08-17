@@ -24,6 +24,7 @@ export {
   getDevicePixelRatio,
   resetDprCacheForTests,
   resizeCanvasToBackingStore,
+  canvasCssViewport,
 } from './dpr';
 export {
   createHitStop,
