@@ -6,7 +6,7 @@ file is a self-contained prompt — paste it to a coding agent (Claude / Cursor 
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
 
-All seven prompts pin `aicraft-engine@0.17.1` exactly — a version, not a range.
+All seven prompts pin `aicraft-engine@0.17.2` exactly — a version, not a range.
 Six of them were written against `0.4.0` and repinned; every import each one
 claims was typechecked against the `0.15.0` surface at repin time, so they
 compile as written. They differ in *how much* of the engine they reach:
