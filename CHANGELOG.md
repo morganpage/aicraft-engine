@@ -5,6 +5,11 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.2] - 2026-08-17
+
+### Added
+- **`canvasCssViewport(canvas)`:** the canvas's layout size in CSS pixels — the viewport unit the camera stack consumes, with the unit in the name so it cannot be confused with `canvas.width`. Exists because of the second DPR-composition trap (found in a real Celerock build): after `resizeCanvasToBackingStore`, `canvas.width`/`height` hold the DPR-MULTIPLIED backing store, and passing that as the viewport doubles the camera's assumed view on Retina — zoom and framing wrong by the DPR factor, while at `dpr === 1` the two coincide, so the bug ships invisible on a standard display and detonates on the first high-DPI laptop. Everything handed to `fitCameraZoom` / `updateCameraBrain` / `cameraTransform` must be CSS units (drawing runs under `ctx.scale(dpr, dpr)`; `cameraTransform` does its own device-grid math via `devicePixelRatio`). Defensively reads `clientWidth`/`clientHeight` with a backing-store/fresh-DPR fallback; host-touching, call at setup / on resize / top of render, never inside the fixed-step sim.
+
 ## [0.17.1] - 2026-08-17
 
 ### Added
@@ -191,7 +196,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.2...HEAD
+[0.17.2]: https://github.com/morganpage/aicraft-engine/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/morganpage/aicraft-engine/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/morganpage/aicraft-engine/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/morganpage/aicraft-engine/compare/v0.15.0...v0.16.0
