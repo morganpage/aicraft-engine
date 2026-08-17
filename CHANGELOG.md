@@ -5,6 +5,11 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.1] - 2026-08-17
+
+### Added
+- **`DrawSpriteOptions.snap` (default `false`):** rounds the sprite's destination coordinates before drawing (before the facing mirror, so mirrored sprites stay on the same grid). Pixel-art correctness under zoom — raw physics floats (a body's `x`/`y`) scaled by `ctx.scale(zoom, zoom)` land on fractional device pixels, and browser rasterizers antialias the image edge even under `imageSmoothingEnabled = false`: a shimmering artifact column tracking the fractional position, most visible mid-jump as `vy` sweeps fractions every frame. Found in a real Celerock build whose level seams were already fixed by `cameraTransform` (0.17.0) but whose sprite destinations were never pinned. Tested by the environment-independent contract — for a sweep of fractional destinations, `snap` renders pixel-identically to the direct integer call, with and without the mirror (node-canvas's Cairo rounds-to-nearest on its own, so the browser-only blur cannot be reproduced in CI).
+
 ## [0.17.0] - 2026-08-16
 
 ### Changed
@@ -186,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/morganpage/aicraft-engine/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/morganpage/aicraft-engine/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/morganpage/aicraft-engine/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/morganpage/aicraft-engine/compare/v0.14.1...v0.15.0
