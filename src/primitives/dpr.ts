@@ -155,6 +155,43 @@ export function resizeCanvasToBackingStore(
 }
 
 /**
+ * Replace a canvas context's transform with the CSS-pixel DPR base transform.
+ *
+ * A render pass normally starts in CSS-pixel coordinates under
+ * `scale(dpr, dpr)`. Calling `scale` to restore that state is fragile: it
+ * COMPOSES with whatever camera, shake, or previous pass left on the context,
+ * so a HUD can accidentally be camera-translated or scaled by DPR twice on a
+ * high-DPI display. This helper uses `setTransform` instead, making the
+ * screen-space boundary explicit and idempotent.
+ *
+ * Pass the DPR returned by {@link resizeCanvasToBackingStore}; this helper
+ * deliberately does not read `window`, so render code remains explicit about
+ * host state. Invalid DPR values degrade to {@link FALLBACK_DPR}.
+ *
+ * ```ts
+ * ctx.save();
+ * composeCameraTransform(ctx, worldTransform);
+ * drawWorld(ctx);
+ * ctx.restore();
+ *
+ * applyCanvasDprTransform(ctx, dpr);
+ * drawHud(ctx); // CSS-pixel coordinates; never inherits the world transform
+ * ```
+ *
+ * @returns The finite positive DPR installed on the context.
+ */
+export function applyCanvasDprTransform(
+  ctx: CanvasRenderingContext2D,
+  devicePixelRatio: number,
+): number {
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
+    ? devicePixelRatio
+    : FALLBACK_DPR;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return dpr;
+}
+
+/**
  * The canvas's layout size in CSS pixels — the viewport unit the camera
  * stack consumes.
  *

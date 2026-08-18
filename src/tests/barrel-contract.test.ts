@@ -51,6 +51,7 @@ describe('root barrel re-exports every module', () => {
   it('primitives: outlineRect is a function, DEFAULT_OUTLINE_COLOR is a string', () => {
     expect(typeof aicraft.outlineRect).toBe('function');
     expect(typeof aicraft.DEFAULT_OUTLINE_COLOR).toBe('string');
+    expect(typeof aicraft.applyCanvasDprTransform).toBe('function');
   });
 
   it('primitives: bitmap-font — measureText, drawText are functions, DEFAULT_FONT is an object', () => {

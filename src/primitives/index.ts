@@ -24,6 +24,7 @@ export {
   getDevicePixelRatio,
   resetDprCacheForTests,
   resizeCanvasToBackingStore,
+  applyCanvasDprTransform,
   canvasCssViewport,
 } from './dpr';
 export {

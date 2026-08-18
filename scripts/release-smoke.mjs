@@ -248,6 +248,7 @@ import {
   protectGroundedRoomSlide,
   cameraApertureLetterbox,
   applyCameraApertureLetterbox,
+  applyCanvasDprTransform,
   // Preflight (0.15.0): the multi-room steer is read off the report.
   inspectLdtkPlatformerProject,
 } from 'aicraft-engine';
@@ -260,6 +261,10 @@ console.log('NODE EXPORTS: %s keys', keys);
 // Exercise the named exports so a missing / renamed export fails loudly.
 assert.equal(solidIdForEntity(7), 'entity-7');
 assert.deepEqual(IDLE_EDGE, { held: false, pressed: false, released: false });
+const dprCalls = [];
+assert.equal(applyCanvasDprTransform({ setTransform: (...args) => dprCalls.push(args) }, 2), 2);
+assert.deepEqual(dprCalls, [[2, 0, 0, 2, 0, 0]]);
+console.log('DPR BASE: export OK');
 // scale=1 is the documented identity invariant for distance fields.
 assert.equal(
   scalePlatformerConfig(PRECISION_PLATFORMER, 1).moveSpeed,
@@ -468,6 +473,7 @@ function doTypecheckConsumer(tmp, tgz) {
   protectGroundedRoomSlide,
   cameraApertureLetterbox,
   applyCameraApertureLetterbox,
+  applyCanvasDprTransform,
 } from 'aicraft-engine';
 import type {
   GameLoop,
@@ -545,6 +551,7 @@ void stabilizePlatformerRoomEntry;
 void protectGroundedRoomSlide;
 void cameraApertureLetterbox;
 void applyCameraApertureLetterbox;
+void applyCanvasDprTransform;
 const _entryOpts: RoomEntrySupportOptions = {};
 const _entryResult: PlatformerRoomEntryStabilization | undefined = undefined;
 void _entryOpts; void _entryResult;

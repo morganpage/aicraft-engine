@@ -5,6 +5,15 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.5] - 2026-08-18
+
+### Added
+- **`applyCanvasDprTransform(ctx, dpr)`:** the explicit screen-space boundary
+  for a DPR-aware canvas. It replaces, rather than composes with, the current
+  transform, so a HUD or menu cannot inherit a camera transform or be scaled
+  by DPR twice after a world pass. Use the DPR returned by
+  `resizeCanvasToBackingStore` before drawing screen-space UI.
+
 ## [0.17.4] - 2026-08-18
 
 ### Added
@@ -222,7 +231,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.4...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.5...HEAD
+[0.17.5]: https://github.com/morganpage/aicraft-engine/compare/v0.17.4...v0.17.5
 [0.17.4]: https://github.com/morganpage/aicraft-engine/compare/v0.17.3...v0.17.4
 [0.17.3]: https://github.com/morganpage/aicraft-engine/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/morganpage/aicraft-engine/compare/v0.17.1...v0.17.2

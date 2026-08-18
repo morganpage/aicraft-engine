@@ -4,6 +4,7 @@ import {
   getDevicePixelRatio,
   resetDprCacheForTests,
   resizeCanvasToBackingStore,
+  applyCanvasDprTransform,
   canvasCssViewport,
 } from '../primitives/dpr';
 
@@ -32,6 +33,25 @@ beforeEach(() => {
 describe('FALLBACK_DPR', () => {
   it('is 1', () => {
     expect(FALLBACK_DPR).toBe(1);
+  });
+});
+
+describe('applyCanvasDprTransform', () => {
+  it('replaces an arbitrary context transform with the DPR base', () => {
+    const setTransform = vi.fn();
+    const ctx = { setTransform } as unknown as CanvasRenderingContext2D;
+
+    expect(applyCanvasDprTransform(ctx, 2)).toBe(2);
+    expect(setTransform).toHaveBeenCalledExactlyOnceWith(2, 0, 0, 2, 0, 0);
+  });
+
+  it('falls back to 1 for invalid DPR values', () => {
+    for (const dpr of [0, -1, Number.NaN, Infinity]) {
+      const setTransform = vi.fn();
+      const ctx = { setTransform } as unknown as CanvasRenderingContext2D;
+      expect(applyCanvasDprTransform(ctx, dpr)).toBe(FALLBACK_DPR);
+      expect(setTransform).toHaveBeenCalledExactlyOnceWith(1, 0, 0, 1, 0, 0);
+    }
   });
 });
 
