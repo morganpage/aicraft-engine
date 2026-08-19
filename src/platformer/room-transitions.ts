@@ -155,8 +155,16 @@ function intervalsOverlap(
  * For a cardinal neighbour of `level`, compute the shared seam span (perpendicular
  * axis, world space) and the flush status. Returns `null` when the rooms do not
  * share a non-empty seam on that side.
+ *
+ * **The single definition of "linked seam" in the engine.** The exit poll
+ * (`rankLdtkRoomExits` below) and the collision apron
+ * (`./room-seam-apron.ts`) both resolve seams through this function, so they
+ * can never disagree about which crossings are real and which are void. That
+ * matters concretely: a body crossing a room edge OUTSIDE the shared span is
+ * void by the poll's rule, and the apron must not grow a phantom floor under
+ * it — an author-intended pit at a partial seam stays a pit.
  */
-function seamSpanFor(
+export function seamSpanFor(
   dir: Cardinal,
   level: LdtkLevel,
   nb: LdtkLevel,

@@ -299,7 +299,14 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.findLdtkRoomExit).toBe('function');
     expect(typeof aicraft.beginRoomSlide).toBe('function');
     expect(typeof aicraft.stabilizePlatformerRoomEntry).toBe('function');
-    expect(typeof aicraft.protectGroundedRoomSlide).toBe('function');
+    // Seam apron (0.18.0) — the structural replacement for the removed
+    // protectGroundedRoomSlide guard (no post-hoc clamps: the neighbour's
+    // floor simply exists in the tick set).
+    expect(typeof aicraft.compileRoomSeamApron).toBe('function');
+    expect(typeof aicraft.createSeamApronCache).toBe('function');
+    expect(typeof aicraft.seamApronSourceFromSolidId).toBe('function');
+    expect(typeof aicraft.seamSpanFor).toBe('function');
+    expect(aicraft.DEFAULT_SEAM_APRON_DEPTH).toBe(64);
     expect(typeof aicraft.cameraApertureLetterbox).toBe('function');
     expect(typeof aicraft.applyCameraApertureLetterbox).toBe('function');
     // Compile-time type uses: the new exported types must be importable.
@@ -312,6 +319,10 @@ describe('root barrel re-exports every module', () => {
       entry: { x: 0, y: 0, dir: 'e', toLevelIid: 'room' },
       corrected: false,
     };
+    const _apronOpts: aicraft.SeamApronOptions = {};
+    const _apronSource = aicraft.seamApronSourceFromSolidId('apron:L1:tile-0-160-32-8');
+    expect(_apronSource?.levelIid).toBe('L1');
+    void _apronOpts;
   const _slideOpts: aicraft.RoomEntrySlideViewOptions = {};
   void _slideOpts;
     void _detection; void _opts; void _entryOpts; void _entryResult;

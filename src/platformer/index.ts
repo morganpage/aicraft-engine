@@ -140,6 +140,7 @@ export {
   DEFAULT_EXIT_DEADBAND,
   createRoomExitDetectorState,
   detectLdtkRoomExit,
+  seamSpanFor,
   type Cardinal,
   type LdtkRoomExit,
   type LdtkRoomEntry,
@@ -152,10 +153,21 @@ export {
   type RoomExitDetection,
 } from './room-transitions';
 
+// Seam apron (0.18.0) — the neighbour room's near-seam solids, rebased into
+// the active room's local coordinates, so a linked seam's floor exists in the
+// per-tick collision set BEFORE the room switch. This is the structural fix
+// that retires the 0.17.4 post-hoc guards (`protectGroundedRoomSlide` and its
+// module are removed; the 1px `stabilizePlatformerRoomEntry` float-noise guard
+// remains in ./room-transitions above).
 export {
-  protectGroundedRoomSlide,
-  ROOM_SLIDE_SUPPORT_EPSILON,
-} from './room-slide-safety';
+  compileRoomSeamApron,
+  createSeamApronCache,
+  seamApronSourceFromSolidId,
+  DEFAULT_SEAM_APRON_DEPTH,
+  type SeamApronCache,
+  type SeamApronOptions,
+  type SeamApronRoom,
+} from './room-seam-apron';
 
 // Phase E3 — slide presentation orchestrator. Composes the existing camera
 // brain (no new solver) via a transient high-priority fixed vcam in a
