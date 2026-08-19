@@ -5,7 +5,7 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.19.0] - 2026-08-19
 
 ### Added
 - **The entity-art side channel — the engine supplies the entity↔art join it
@@ -360,7 +360,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Humanoid motion poses (H3/H4) deferred to a future release. See `docs/design/0.5.0-scope-decision.md`.
 
-[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.17.5...HEAD
+[Unreleased]: https://github.com/morganpage/aicraft-engine/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/morganpage/aicraft-engine/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/morganpage/aicraft-engine/compare/v0.17.5...v0.18.0
 [0.17.5]: https://github.com/morganpage/aicraft-engine/compare/v0.17.4...v0.17.5
 [0.17.4]: https://github.com/morganpage/aicraft-engine/compare/v0.17.3...v0.17.4
 [0.17.3]: https://github.com/morganpage/aicraft-engine/compare/v0.17.2...v0.17.3
