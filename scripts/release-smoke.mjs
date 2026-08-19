@@ -245,7 +245,12 @@ import {
   advanceSessionRoomSlide,
   endRoomTransitionSession,
   stabilizePlatformerRoomEntry,
-  protectGroundedRoomSlide,
+  // Seam apron (0.18.0): the structural replacement for the removed
+  // protectGroundedRoomSlide guard.
+  compileRoomSeamApron,
+  createSeamApronCache,
+  seamApronSourceFromSolidId,
+  seamSpanFor,
   cameraApertureLetterbox,
   applyCameraApertureLetterbox,
   applyCanvasDprTransform,
@@ -345,8 +350,26 @@ const entrySafety = stabilizePlatformerRoomEntry(
   980,
 );
 assert.equal(entrySafety.corrected, true);
-assert.equal(typeof protectGroundedRoomSlide, 'function');
-console.log('ROOM-SLIDE SAFETY: exports OK');
+// Seam apron (0.18.0): the neighbour's floor exists in the collision set —
+// L1's seam-adjacent run rebases into L0-local at x >= 160, namespaced.
+const apronRooms = new Map([
+  ['L0', { ldtkLevel: project.levels[0], solids: [{ id: 'src-run', x: 136, y: 104, width: 24, height: 8 }] }],
+  ['L1', { ldtkLevel: project.levels[1], solids: [{ id: 'dest-run', x: 0, y: 104, width: 32, height: 8 }] }],
+]);
+const apron = compileRoomSeamApron(apronRooms.get('L0'), (iid) => apronRooms.get(iid));
+assert.equal(apron.length, 1);
+assert.deepEqual(
+  { x: apron[0].x, y: apron[0].y, width: apron[0].width, height: apron[0].height },
+  { x: 160, y: 104, width: 32, height: 8 },
+);
+assert.deepEqual(seamApronSourceFromSolidId(apron[0].id), { levelIid: 'L1', solidId: 'dest-run' });
+assert.equal(seamApronSourceFromSolidId('tile-0-104-32-8'), null);
+const apronCache = createSeamApronCache((iid) => apronRooms.get(iid));
+assert.equal(apronCache.apronFor('L0').length, 1);
+assert.equal(apronCache.apronFor('L0'), apronCache.apronFor('L0'));
+const seam = seamSpanFor('e', project.levels[0], project.levels[1]);
+assert.deepEqual(seam, { min: 0, max: 112 });
+console.log('SEAM APRON: exports OK');
 
 // Room-transition session (0.15.0): every new public name exercised against
 // the same two-room fixture so a broken/missing export fails the gate loudly.
@@ -470,7 +493,12 @@ function doTypecheckConsumer(tmp, tgz) {
   advanceSessionRoomSlide,
   endRoomTransitionSession,
   stabilizePlatformerRoomEntry,
-  protectGroundedRoomSlide,
+  // Seam apron (0.18.0): value imports — the replacement for the removed
+  // protectGroundedRoomSlide guard.
+  compileRoomSeamApron,
+  createSeamApronCache,
+  seamApronSourceFromSolidId,
+  seamSpanFor,
   cameraApertureLetterbox,
   applyCameraApertureLetterbox,
   applyCanvasDprTransform,
@@ -496,6 +524,10 @@ import type {
   SessionSlideBeginInput,
   RoomEntrySupportOptions,
   PlatformerRoomEntryStabilization,
+  // Seam apron (0.18.0): room shape + options (surfaces any .d.ts specifier bug).
+  SeamApronRoom,
+  SeamApronOptions,
+  SeamApronCache,
 } from 'aicraft-engine';
 
 const loop: GameLoop = createGameLoop({
@@ -548,7 +580,23 @@ const _destView = roomEntrySlideView(
 );
 void _destView;
 void stabilizePlatformerRoomEntry;
-void protectGroundedRoomSlide;
+// Seam apron (0.18.0): typed uses prove the new names ship in the .d.ts and
+// typecheck under NodeNext with skipLibCheck:false.
+const _apronOpts: SeamApronOptions = {};
+const _apronRoom: SeamApronRoom = {
+  ldtkLevel: { iid: 'L0', worldX: 0, worldY: 0, pxWid: 160, pxHei: 112, __neighbours: [{ dir: 'e', levelIid: 'L1' }] } as never,
+  solids: [],
+};
+const _apron = compileRoomSeamApron(_apronRoom, () => undefined, _apronOpts);
+const _apronCache: SeamApronCache = createSeamApronCache(() => undefined);
+const _apronSolids = _apronCache.apronFor('L0');
+const _apronSource = seamApronSourceFromSolidId('apron:L1:tile-0-104-32-8');
+const _seamSpan = seamSpanFor(
+  'e',
+  _apronRoom.ldtkLevel,
+  { iid: 'L1', worldX: 160, worldY: 0, pxWid: 144, pxHei: 128 } as never,
+);
+void _apron; void _apronSolids; void _apronSource; void _seamSpan;
 void cameraApertureLetterbox;
 void applyCameraApertureLetterbox;
 void applyCanvasDprTransform;
