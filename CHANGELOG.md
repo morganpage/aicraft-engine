@@ -5,6 +5,89 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **The entity-art side channel — the engine supplies the entity↔art join it
+  used to make consumers reconstruct.** `ldtkLevelToLevelData` now returns
+  `entityArt: ReadonlyMap<EntityId, LdtkEntityArt>` next to `tileSemantics`,
+  and `compileLdtkRoom` carries it onto `CompiledLdtkRoom.entityArt`. The map
+  is built inside the translate loop that assigns the engine entity ids, so
+  `room.entityArt.get(entity.id)` in a `drawLevelEntity` override resolves the
+  instance's authored `__tile` plus its def's `tileRenderMode` and
+  `nineSliceBorders` in one lookup — keyed by the id the engine itself
+  assigned, which a consumer re-walking the raw layer cannot reproduce (one
+  unrecognized entity silently shifts any reconstructed mapping). This retires
+  the consumer-side rect-key index and both of its shipped failure modes: a
+  room slide draws TWO rooms in one frame, so a single active-room index left
+  the outgoing room's entities falling through to `DEFAULT_ENTITY_PALETTE`
+  (hazards flashing red for the length of every transition), and because rect
+  keys are room-LOCAL, two rooms sharing a local rect silently resolved each
+  other's tiles rather than missing. The art travels with the room, so both are
+  structurally impossible. An entry exists iff the entity translated AND has an
+  authored `__tile` — a missing key means the engine shape (return `false`);
+  `tileRenderMode` is `undefined` when the def cannot be resolved, which
+  `drawLdtkEntityTile` treats as its geometry heuristic. New exported type
+  `LdtkEntityArt` (`src/ldtk/translate.ts`).
+- **`cameraRebaseDelta` on the room-transition session results — parallax
+  backdrops stop teleporting at seams.** `beginSessionRoomSlide`,
+  `advanceSessionRoomSlide`, and `endRoomTransitionSession` each report the
+  camera-SPACE rebase they applied to the returned brain (the enter-rebase at
+  begin, the finish-rebase on exactly the completing advance, the cancel-rebase
+  at end; zero on refusal, active ticks, and idle calls). The world render
+  compensates for space changes by construction, but any consumer of the RAW
+  `brain.camera` — a parallax backdrop is the canonical one — teleports by the
+  rebase distance at the seam while the world holds still. Accumulate the
+  deltas and feed such consumers `brain.camera − accumulated`; in-room camera
+  motion (including the eased slide pan) passes through untouched. Mirrors the
+  existing `particleRebaseDelta`, which exists for the same class of problem
+  on the particle side. A real build hand-diffed the brain before and after
+  both calls to derive these numbers; the reported delta is that diff, owned
+  where the rebase is.
+- **The Celeste camera preset — the decompile-verified constants, shipped.**
+  New `src/camera/celeste.ts`: `CELESTE_CAMERA_WINDOW` (the one-screen room,
+  320×184 — the rectangle the lens fits), `CELESTE_FOLLOW_CENTERED` (the
+  decompile's unconditional recenter; no deadzone) and `CELESTE_FOLLOW_AHEAD`
+  (the authored-cameraOffset 1/3-pin framing), `celesteCameraZoom(viewport)`
+  (the campaign-constant window fit — takes no room, so zoom cannot track room
+  size), `celesteFollowMotion(zoom, dpr)` (half-life 0.15 s, the conservative
+  1600 px/s cap, device-pixel snap), `celesteFollowVcam(id, options)` (the
+  complete per-room follow vcam), and `CELESTE_ROOM_SLIDE_OPTIONS` (0.65 s
+  under easeOutCubic, spreading into `beginSessionRoomSlide`). The module docs
+  carry the full decompile reference table (file + line per constant) so the
+  next build does not re-derive it. Alongside: **`devicePixelSnapThreshold(zoom,
+  dpr)`** in `src/camera/motion.ts` — one device pixel in world units, the
+  largest snap threshold a display cannot see; the fixed 0.5 world-px default
+  lurches `zoom·0.5` device pixels at the terminal snap, visibly at zoom 3+
+  (settles to near-stillness, then clicks into place — shipped by a real
+  build). **Docs corrected:** `fit.ts` marketed `'cover'` as "the
+  Celeste-compact-room policy" for the camera fit, and
+  `DEFAULT_FOLLOW_BODY`'s deadzone as "Celeste-style" — neither is true
+  (Celeste's lens never fits anything and its follow has no deadzone), and the
+  mislabeling is what steered a real build into per-room fits it then had to
+  undo. No behavior change in `fitCameraZoom` or the defaults.
+- **Sustained-voice modulation — a noise loop's spectrum can finally move.**
+  `NoiseLoopHandle` gains `setFrequency(freq)` and `setQ(q)`: anchor-then-
+  `setTargetAtTime` with a ~50 ms time constant (the standard dezippering
+  idiom — frequency steps zipper where gain steps hide behind the attack ramp,
+  and the exponential approach makes the host's update rate irrelevant).
+  Clamped to [10, 20000] Hz and [0.1, 20]; non-finite input ignored; no-ops
+  after `stop()` and on inert handles, like every adapter method.
+  `startNoiseLoop` gains an optional `NoiseLoopOptions` — `q` (biquad Q at
+  voice start; Q > 1 narrows a bandpass into a resonant peak, which whistles
+  and hums need and the WebAudio default of 1 cannot do) and `noise: 'pink'`
+  (a −3 dB/octave buffer via the Paul Kellet economy filter, built lazily once
+  per adapter — natural beds for wind/rain/surf, where white reads as hiss).
+  Omitting the options reproduces prior behavior exactly. Why: every
+  authoritative source on procedural wind says the perceptual core is a moving
+  SPECTRUM — gusts brighten before they louden — and amplitude-only modulation
+  (all the old API could do) reads as a volume knob. **One benign behavior
+  change:** sustained voices now start at a random offset inside the looping
+  buffer instead of sample zero — a rotation (a single voice is audibly
+  identical; its spectrum is unchanged), but two concurrently running voices
+  become time-shifted rather than the same correlated signal in parallel
+  filters. Same rationale `playNoise` has had since 0.13.0.
+
 ## [0.18.0] - 2026-08-19
 
 ### Added

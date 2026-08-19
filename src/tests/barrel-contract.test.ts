@@ -46,6 +46,14 @@ describe('root barrel re-exports every module', () => {
     // Compile-time type use: the mode union must be importable.
     const _mode: aicraft.LdtkTileRenderMode = 'FitInside';
     void _mode;
+    // The entity-art side channel record must be importable (its map rides
+    // CompiledLdtkRoom.entityArt and the translate result).
+    const _art: aicraft.LdtkEntityArt = {
+      tile: { tilesetUid: 1, x: 0, y: 0, w: 8, h: 8 },
+      tileRenderMode: undefined,
+      nineSliceBorders: null,
+    };
+    void _art;
   });
 
   it('primitives: outlineRect is a function, DEFAULT_OUTLINE_COLOR is a string', () => {
@@ -127,6 +135,15 @@ describe('root barrel re-exports every module', () => {
     expect(aicraft.fitCameraZoom({ width: 160, height: 120 }, { width: 160, height: 120 })).toBe(1);
   });
 
+  it('camera celeste: the preset constants + assemblies are public, window 320×184', () => {
+    expect(typeof aicraft.celesteCameraZoom).toBe('function');
+    expect(typeof aicraft.celesteFollowMotion).toBe('function');
+    expect(typeof aicraft.celesteFollowVcam).toBe('function');
+    expect(typeof aicraft.devicePixelSnapThreshold).toBe('function');
+    expect(aicraft.CELESTE_CAMERA_WINDOW).toEqual({ width: 320, height: 184 });
+    expect(aicraft.CELESTE_ROOM_SLIDE_DURATION).toBe(0.65);
+  });
+
   it('camera transform: the pixel-snap policy is public', () => {
     expect(typeof aicraft.cameraTransform).toBe('function');
     expect(typeof aicraft.applyCameraTransform).toBe('function');
@@ -161,6 +178,10 @@ describe('root barrel re-exports every module', () => {
 
   it('audio: createAudioAdapter is a function', () => {
     expect(typeof aicraft.createAudioAdapter).toBe('function');
+    // Compile-time type use: the sustained-voice options record must be
+    // importable (startNoiseLoop's 4th parameter).
+    const _opts: aicraft.NoiseLoopOptions = { q: 10, noise: 'pink' };
+    void _opts;
   });
 
   it('save: createMemorySaveStorage is a function', () => {

@@ -855,6 +855,7 @@ Analytic motion primitives. `converge` is public; `followPosition` and the clamp
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `converge(current, desired, dt, config?)` | function | Pure: one analytic capped-exponential convergence step. Never overshoots, snaps exactly within `snapThreshold`, partition-invariant in exact arithmetic. Omitted/invalid config falls back to `DEFAULT_CAMERA_MOTION` | `src/camera/motion.ts` |
+| `devicePixelSnapThreshold(zoom, dpr)` | function | The largest world-unit snap threshold a display cannot see: one device pixel, `1/(zoom·dpr)`. A fixed world-px threshold (the `0.5` default) lurches `zoom·threshold` device pixels at the terminal snap — visible at zoom 3+. Invalid inputs degrade to `0.5` | `src/camera/motion.ts` |
 
 #### `src/camera/brain.ts`
 
@@ -864,6 +865,20 @@ The stateful-but-pure selector/blender. Pure: immutable in/new-out, no `Math.ran
 |---|---|---|---|
 | `createCameraBrain(initial?)` | function | Factory: fresh inactive brain. Position defaults to `(0, 0)`, zoom to `1`; `bodyCamera`/`lensZoom` start equal to the rendered values | `src/camera/brain.ts` |
 | `updateCameraBrain(state, options)` | function | Pure: advance selection (override → priority → keep-current-on-ties), the live lens/body, and the rendered centre-based blend one step. Returns a fresh `CameraBrain`, never mutates input | `src/camera/brain.ts` |
+
+#### `src/camera/celeste.ts`
+
+The Celeste camera as a preset: the decompile-verified constants (fixed 320×184 window, no-deadzone recenter bands, half-life 0.15 s, 0.65 s easeOutCubic transitions) plus the assemblies that tie them together. The core insight it encodes: Celeste's lens fits a CONSTANT WINDOW, never the room — `fitCameraZoom(room, …)` in either mode makes zoom track room size, the opposite of the fixed lens a real build shipped by mistake.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `CELESTE_CAMERA_WINDOW` | const | The one-screen room (40×23 tiles × 8px = 320×184) — the rectangle the lens fits, not the 320×180 viewport | `src/camera/celeste.ts` |
+| `CELESTE_FOLLOW_CENTERED` | const | `{ trail: 0.5, lead: 0.5 }` — the decompile's unconditional recenter (no deadzone; measure-zero hold) | `src/camera/celeste.ts` |
+| `CELESTE_FOLLOW_AHEAD` | const | `{ trail: 1/3, lead: 1/3 }` — the authored-cameraOffset framing (player at 1/3 from the left); the playtested variant, also for `roomEntrySlideView` | `src/camera/celeste.ts` |
+| `CELESTE_ROOM_SLIDE_DURATION` / `CELESTE_ROOM_SLIDE_OPTIONS` | const | `0.65` s under CubeOut (= `easeOutCubic`); the options object drops structurally into `beginSessionRoomSlide`'s options | `src/camera/celeste.ts` |
+| `celesteCameraZoom(viewport)` | function | The campaign-constant zoom: window contain-fit, integer scale. Takes NO room — zoom depends on the viewport only | `src/camera/celeste.ts` |
+| `celesteFollowMotion(zoom, dpr)` | function | `{ halfLife: 0.15, maxSpeed: 1600, snapThreshold: devicePixelSnapThreshold(zoom, dpr) }` — the decompile ease, display-invisibly terminated | `src/camera/celeste.ts` |
+| `celesteFollowVcam(id, options)` | function | Assemble the complete per-room follow `VirtualCamera` (cut blend, bands, window-fit lens); works with `snapCameraBrain` at boot/respawn and `updateCameraBrain` per tick | `src/camera/celeste.ts` |
 
 ### `src/input/`
 
@@ -1304,9 +1319,9 @@ The seam-traversal layer: pure exit detection (`room-transitions.ts`), the slide
 | `RoomTransitionPollResult` | type | Poll outcome: `'idle'` (no exit), `'suppressed-slide-active'` (a slide is in flight — exits held), or `'exit'` (carries the `LdtkRoomExit`) | `src/platformer/room-transition-session.ts` |
 | `pollRoomTransition(session, body, level, project, options?)` | function | Per-tick simulation entry: while a slide is active returns `'suppressed-slide-active'` with the session unchanged (no second transition mid-slide); otherwise delegates to `detectLdtkRoomExit` and AUTO-ADOPTS the returned detector state — storing the returned session is the whole obligation | `src/platformer/room-transition-session.ts` |
 | `SessionSlideBeginInput` | interface | Inputs for `beginSessionRoomSlide`: source/destination compiled rooms, physical viewport (finite, positive), current brain, destination view, actor mapping | `src/platformer/room-transition-session.ts` |
-| `beginSessionRoomSlide(session, input, options?)` | function | Begin the presentation slide for an accepted exit. Returns `{ session, brain, ok }` and applies the slide-space enter rebase internally on success (composes `beginRoomSlideFromBrain` + `enterRoomSlideCameraSpace`). Refuses (`ok: false`, unchanged) while a slide is active or inputs are unusable; never throws | `src/platformer/room-transition-session.ts` |
-| `advanceSessionRoomSlide(session, dt, brain)` | function | Advance the slide clock one presentation tick; applies the finish-rebase exactly once when — and only when — the slide completes. While active the brain is returned unchanged: the consumer still drives the per-tick slide camera (`presentationForRoomSlide` + their own `updateCameraBrain`). Idle sessions are inert (`done: true`, brain byte-identical). Returns `{ session, brain, done }` | `src/platformer/room-transition-session.ts` |
-| `endRoomTransitionSession(session, brain, rebaseTo)` | function | The single abnormal-exit path (death/retry/teleport/reset): if a slide is active, cancels with rebase via `cancelRoomSlideCameraSpace` BEFORE clearing; always returns a fresh idle session with a fresh detector. Never throws | `src/platformer/room-transition-session.ts` |
+| `beginSessionRoomSlide(session, input, options?)` | function | Begin the presentation slide for an accepted exit. Returns `{ session, brain, cameraRebaseDelta, ok }` and applies the slide-space enter rebase internally on success (composes `beginRoomSlideFromBrain` + `enterRoomSlideCameraSpace`). `cameraRebaseDelta` is the enter-rebase's camera-space jump — accumulate it (with the other two session calls' deltas) and subtract from `brain.camera` for screen-continuous raw-camera consumers such as parallax backdrops; zero on refusal. Refuses (`ok: false`, unchanged) while a slide is active or inputs are unusable; never throws | `src/platformer/room-transition-session.ts` |
+| `advanceSessionRoomSlide(session, dt, brain)` | function | Advance the slide clock one presentation tick; applies the finish-rebase exactly once when — and only when — the slide completes. While active the brain is returned unchanged: the consumer still drives the per-tick slide camera (`presentationForRoomSlide` + their own `updateCameraBrain`). Idle sessions are inert (`done: true`, brain byte-identical). Returns `{ session, brain, cameraRebaseDelta, done }` — the delta is the finish-rebase, nonzero on exactly the completing tick, zero otherwise | `src/platformer/room-transition-session.ts` |
+| `endRoomTransitionSession(session, brain, rebaseTo)` | function | The single abnormal-exit path (death/retry/teleport/reset): if a slide is active, cancels with rebase via `cancelRoomSlideCameraSpace` BEFORE clearing; always returns a fresh idle session with a fresh detector plus the cancel-rebase's `cameraRebaseDelta` (zero when no slide was active — a death mid-slide still changes camera space, so parallax compensates here too). Never throws | `src/platformer/room-transition-session.ts` |
 
 - _Backfill pending: ~81 further platformer exports (enemies, squash/stretch, config scaler, feel moments, LDtk room cache) — tracked as a follow-up._
 
@@ -1332,9 +1347,10 @@ WebAudio synthesized SFX defensive adapter. Zero audio assets — every sound is
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `AudioAdapter` | interface | `{unlock(), isUnlocked(), playTone(...), playNoise(...), startNoiseLoop(...), setMuted(...), isMuted(), setVolume(...), getVolume(), dispose()}` — WebAudio SFX adapter contract. All playback methods are no-op when muted, pre-unlock, or without WebAudio | `src/audio/types.ts` |
-| `NoiseLoopHandle` | interface | `{stop(), setPeak(peak), isPlaying()}` — control handle for a sustained noise loop. `stop()` fades + releases (~0.1 s natural tail) and is idempotent; inert (never-throw) in every adapter state | `src/audio/types.ts` |
+| `NoiseLoopHandle` | interface | `{stop(), setPeak(peak), setFrequency(freq), setQ(q), isPlaying()}` — control handle for a sustained noise loop. `stop()` fades + releases (~0.1 s natural tail) and is idempotent; `setPeak` live-adjusts loudness; `setFrequency`/`setQ` retarget the biquad de-zippered (cutoff follows a gust/speed control signal — gusts BRIGHTEN before they louden). Inert (never-throw) in every adapter state | `src/audio/types.ts` |
+| `NoiseLoopOptions` | interface | `{q?, noise?}` — `startNoiseLoop` options: biquad Q at voice start (default 1; Q > 1 narrows a bandpass into a resonant peak — whistles) and buffer color (`'white'` default, `'pink'` −3 dB/octave for natural beds). Omitting everything reproduces prior behavior exactly | `src/audio/types.ts` |
 | `DEFAULT_AUDIO_VOLUME` | const | `0.7` — default SFX volume | `src/audio/constants.ts` |
-| `createAudioAdapter()` | function | Defensive factory: independent adapter with private `AudioContext`, master gain, and noise buffer. Lazily resolves `AudioContext`/`webkitAudioContext` on first `unlock()`. Never throws. `startNoiseLoop` returns a `NoiseLoopHandle` (an inert handle when no voice can be created, so callers never null-check) | `src/audio/factory.ts` |
+| `createAudioAdapter()` | function | Defensive factory: independent adapter with private `AudioContext`, master gain, and noise buffer. Lazily resolves `AudioContext`/`webkitAudioContext` on first `unlock()`. Never throws. `startNoiseLoop` returns a `NoiseLoopHandle` (an inert handle when no voice can be created, so callers never null-check). Sustained voices start at a random offset inside the looping buffer — a rotation (a single voice audibly identical; concurrent voices time-shifted, not correlated) | `src/audio/factory.ts` |
 
 ### `src/music/` (shipped)
 
@@ -1904,7 +1920,8 @@ LDtk resolves auto-tiling at save time, which is enough to *play* a level but no
 |---|---|---|---|
 | `parseLdtkProject(json)` | function | Parse a `.ldtk` JSON string → `LdtkProject`. Defensive, never throws; returns `{ ok, project?, errors }` | `src/ldtk/parse.ts` |
 | `parseLdtkLevelFile(json)` | function | Parse a standalone `.ldtkl` level file (for `externalLevels: true` projects) | `src/ldtk/parse.ts` |
-| `ldtkLevelToLevelData(level, opts?)` | function | Translate an LDtk level → `LevelData` + `GeneratedTileSemantics`. IntGrid copies 1:1 into `TileGrid.data`; entities map via `LDTK_DEFAULT_ENTITY_MAP` with a `'trigger'` escape hatch for unknown identifiers | `src/ldtk/translate.ts` |
+| `ldtkLevelToLevelData(level, opts?)` | function | Translate an LDtk level → `LevelData` + `GeneratedTileSemantics` + `entityArt`. IntGrid copies 1:1 into `TileGrid.data`; entities map via `LDTK_DEFAULT_ENTITY_MAP` with a `'trigger'` escape hatch for unknown identifiers. `entityArt` is the authored display art keyed by the engine entity id — the join a consumer cannot reconstruct (ids are assigned over recognized entities only, and a slide draws two rooms) — carried onto `CompiledLdtkRoom.entityArt` by the compile path | `src/ldtk/translate.ts` |
+| `LdtkEntityArt` | interface | `{ tile, tileRenderMode, nineSliceBorders }` — one translated entity's authored display art, the exact arguments `drawLdtkEntityTile` takes. `tileRenderMode` is `undefined` when the def cannot be resolved (the blit's geometry heuristic) | `src/ldtk/translate.ts` |
 | `translateLdtkEntity(entity, id, map, diag)` | function | Translate a single LDtk entity → `LevelEntity` | `src/ldtk/translate.ts` |
 | `LDTK_DEFAULT_ENTITY_MAP` | const | Default LDtk identifier → engine kind resolver (Player→spawn, Coin/Gem/Key→collectible, Exit/Door→exit, Spike→hazard, etc.) | `src/ldtk/translate.ts` |
 | `drawLdtkLayer(ctx, layer, opts)` | function | Draw one tile-bearing layer — blit each tile with flip/alpha, viewport-culled. Rule-driven `IntGrid` layers draw too; only `Entities` layers never do | `src/ldtk/render.ts` |

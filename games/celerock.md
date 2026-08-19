@@ -563,6 +563,7 @@ Each `CompiledLdtkRoom` already buckets entities by kind — read them off the r
 |---|---|
 | `solids` | `compiled.staticSolids` — tile geometry + `platform`/`passthrough` entity solids + the NON-BLOCKING `spring`/`dashRefill` trigger volumes. Moving platforms are NOT here (they stay in `compiled.movingPlatforms`). |
 | `hazards` `collectibles` `springs` `dashRefills` `exits` `enemies` | the entity arrays, bucketed by resolved kind (`collectibles` is typed `CollectibleEntity[]` — it feeds `derivePickups` directly, no cast) |
+| `entityArt` | the authored display art per entity, **keyed by the entity's engine id** — the §7.1 join, supplied by the engine (translate-time side channel). `room.entityArt.get(entity.id)` in a draw override; a missing key means the engine shape. |
 | `ladders` | always empty today (reserved); ladder CLIMB is driven by `tileSemantics.ladder` — overlay per-cell `ladder: true` solids each tick so the kernel's climb ability reads them |
 | `spawn` | the resolved spawn (`source` is forced to `'fallback'` when the level has no `Player`/`Spawn` entity) |
 | `compiled` `levelData` `tileSemantics` `ldtkLevel` `diagnostics` | the underlying compile artifacts + merged translate/compile diagnostics |
@@ -708,6 +709,8 @@ box.frame     // the room's screen rect — the anchor for a frame line or vigne
 
 `fitCameraZoom(level, viewport, options?)` is the **engine-owned** fit helper (a `{ width, height }` or a `CompiledLdtkRoom` + a viewport → zoom). Celerock's required policy is **`mode: 'contain'`** (`Math.min`): the complete authored room remains visible at every aspect ratio, centred in the available viewport. Any unused side or top/bottom area is intentional letterbox space, and it is **masked** — bars over the backdrop plus a clip to the room frame, per the letterbox rule above; atmosphere/parallax animates behind the room, never as a stand-in for level in the margin. Never stretch the room and never expose a different amount of gameplay because the device is wider or taller. `mode: 'cover'` (the engine default) fills both axes by cropping the overflow axis and is **not** the Celerock policy; `mode: 'native'` is `1`. Optional `integerScale: true` is a separate crispness choice (down, minimum 1, for contain; sub-unit fits stay fractional), and `minZoom`/`maxZoom` clamp last. Do **not** hand-roll a `fitZoom`: call `fitCameraZoom(room, viewport, { mode: 'contain' })` and keep `imageSmoothingEnabled = false`.
 
+> **True Celeste framing (post-0.18.0 main):** if a build wants the ORIGINAL's camera rather than whole-room containment, the engine now ships the decompile-verified preset — `celesteCameraZoom(viewport)` fits a CONSTANT 320×184 window (`CELESTE_CAMERA_WINDOW`), never the room, so zoom is campaign-constant and a multi-screen room scrolls under the window via the ordinary bounds clamp; `celesteFollowVcam(id, { viewport, dpr, followX: CELESTE_FOLLOW_AHEAD })` assembles the no-deadzone follow vcam (half-life 0.15 s, device-pixel snap via `devicePixelSnapThreshold`), and `CELESTE_ROOM_SLIDE_OPTIONS` (0.65 s easeOutCubic) drops into `beginSessionRoomSlide`. Pass the same bands to `roomEntrySlideView`. The engine's fit docs previously marketed `'cover'` as "the Celeste policy" — it is not: Celeste's lens never fits anything (this mislabeling is what the preset exists to prevent).
+
 ```ts
 const zoom = fitCameraZoom(room, viewport, { mode: 'contain' });     // CELEROCK POLICY — full room + letterbox
 const cover = fitCameraZoom(room, viewport);                         // engine default; crops gameplay (do not use here)
@@ -758,6 +761,8 @@ if (poll.result.type === 'exit') {
   if (begun.ok) {
     session = begun.session;                  // slide now active — session owns detector + slide together
     brain = begun.brain;                      // ALREADY rebased INTO slide space (the enter-rebase is applied here)
+    camShift.x += begun.cameraRebaseDelta.x;  // the rebase the WORLD render compensates for — a raw-camera
+    camShift.y += begun.cameraRebaseDelta.y;  // consumer (parallax) subtracts it instead (rule below)
     active = target;
   }
   // A refused begin (ok: false — slide already active, missing rooms, or a
@@ -773,6 +778,8 @@ if (poll.result.type === 'exit') {
 const advanced = advanceSessionRoomSlide(session, dt, brain);
 session = advanced.session;
 brain = advanced.brain;
+camShift.x += advanced.cameraRebaseDelta.x;   // nonzero ONLY on the completing tick (the finish-rebase)
+camShift.y += advanced.cameraRebaseDelta.y;
 if (session.slide !== null) {
   const p = presentationForRoomSlide(session.slide);
   brain = updateCameraBrain(brain, { vcams: [p.vcam!], targets: { player: state.core }, bounds: p.bounds,
@@ -800,7 +807,11 @@ if (session.slide !== null) {
 const ended = endRoomTransitionSession(session, brain, 'destination');
 session = ended.session;                      // FRESH idle session — the "reset the detector on respawn" discipline is owned here
 brain = ended.brain;                          // cancel-with-rebase applied first if a slide was active (no slide-space leak)
+camShift.x += ended.cameraRebaseDelta.x;      // a death MID-SLIDE still changes camera space — compensate it too
+camShift.y += ended.cameraRebaseDelta.y;
 ```
+
+**Screen-continuous consumers subtract the accumulated rebase (the parallax rule).** Every session boundary changes the brain camera's COORDINATE SPACE by an instant offset — enter at begin, finish on the completing advance, cancel at `endRoomTransitionSession`. The world render compensates by construction (each room is drawn at its slide-space offset), so nothing in-world pops; but anything fed the RAW `brain.camera` — a parallax backdrop is the canonical one — teleports by the rebase distance at the seam while the world holds still. Those three functions each report exactly what they applied as `cameraRebaseDelta` (zero when no rebase happened — refusal, active ticks, idle calls), so the fix is one accumulator: add every delta to `camShift` (as the loop above does) and feed raw-camera consumers `brain.camera − camShift`. A real build hand-diffed the brain before and after both calls to derive the same numbers; the reported delta is that diff, owned where the rebase is. In-room camera motion passes through untouched — only the space jumps are removed, the eased slide pan included.
 
 **Per-axis containment (0.15.0 `detectLdtkRoomExit` behavior — intrinsic to the session):** an exit additionally requires the body to have been fully contained ONCE on that exit's **crossing axis** in the current room (`e`/`w` → X, `n`/`s` → Y). The orthogonal axis is NOT gated — a diagonal exit taken straight off an arrival still fires, so the actor never has to settle inside a room before it can leave. Straddle suppression is intrinsic and reset-immune: the latch re-derives from body geometry on every poll, so even a discarded or freshly created detector state cannot tick-tock (the Celerock-1 death loop is structurally impossible). A body that never becomes contained on an axis (larger than the room on that axis) has that axis's exits suppressed only until it fully departs the room; a body that no longer overlaps the room at all skips the axis gate, so genuine reverse crossings and void departures stay reportable.
 
@@ -829,7 +840,7 @@ A level with no hazards cannot kill; a project with no goal has no win state. Th
 
 ### 5.7 LDtk hot reload (dev-time — STANDARD scope, not a stretch goal)
 
-Editing the level while playing it is the primary level-design loop for this brief, so it ships in every build. Under `npm run dev`, saving `public/celerock.ldtk` (any `public/*.ldtk`) swaps the edited world into the LIVE game within ~1 s — active room recompiled **by LDtk `iid`**, surface-cache bake invalidated, hazards/collectibles/entity-tile index rebuilt — while the live player state, the save, the death counter, and the FSM are preserved verbatim. No page reload, no respawn, no menu bounce. An invalid edit, a truncated file, or a deleted active room leaves the playable world **100% untouched** with a surfaced error. Every symbol here is already in the §1 import block.
+Editing the level while playing it is the primary level-design loop for this brief, so it ships in every build. Under `npm run dev`, saving `public/celerock.ldtk` (any `public/*.ldtk`) swaps the edited world into the LIVE game within ~1 s — active room recompiled **by LDtk `iid`**, surface-cache bake invalidated, hazards/collectibles refreshed (entity art rides the recompiled room's own `entityArt` — nothing to rebuild, §7.1) — while the live player state, the save, the death counter, and the FSM are preserved verbatim. No page reload, no respawn, no menu bounce. An invalid edit, a truncated file, or a deleted active room leaves the playable world **100% untouched** with a surfaced error. Every symbol here is already in the §1 import block.
 
 **1. `vite.config.ts` — the watcher plugin.** Vite does not put `public/` assets through HMR (they sit outside the module graph), so notify the game yourself over the dev-server websocket. Extend the template's `vite.config.ts`:
 
@@ -903,8 +914,9 @@ async function hotReloadLdtk(generation: number): Promise<void> {
   surfaceCache.clear();                              // ANY room may have changed — rebake lazily per room
   terminalRoomIid = deriveTerminalRoomIid(project);  // §1.1/§8 — re-derive, never hardcode
   rebuildRoomVcam(active);                           // new fitCameraZoom + bounds (a resized room; a zoom snap is fine in dev)
-  entityTileIndex = buildEntityTileIndex(active.ldtkLevel, project);   // §7.1 index is per-room
   hazardRects = active.hazards.map(h => h.rect);     // §6
+  // §7.1 needs NO rebuild line: entity art rides the recompiled room
+  // (`nextActive.entityArt`), so the reference swap above is the whole story.
   console.log('[ldtk] hot reload applied', inspectLdtkPlatformerProject(nextProject).capabilities);
   // Player `state`/`save`/`gameState`/menu/audio/particles: UNTOUCHED. New
   // springs/dash-refills light up free (buckets come off the room, §5.2); save
@@ -996,44 +1008,28 @@ In the shipped pack: **`Gem` and `Spike` have tiles** (both from `celerock.png`,
 | `Spike` | `{ x:992, y:688, w:8, h:8 }` | `Repeat` | the authored tile, **tiled** across each resized instance |
 | `Player` / `Spring` / `DashRefill` | `null` | — | the engine's `DEFAULT_ENTITY_PALETTE` shape |
 
-**The join key is the rect.** `ldtkLevelToLevelData` does not carry `__tile` onto `LevelEntity`, but the translated `rect` is exactly the instance's `px`/`width`/`height` — lossless. Index it **once per room, KEYED BY LEVEL IID** (memoize alongside the `CompiledLdtkRoom`; never rebuild per frame) — one index per room, not one index for whichever room is active. A §5.5 slide draws TWO rooms in the same frame, so resolve each room's art from its OWN index; the active room's will not serve the other. A real build kept a single index and rebuilt it on transition, so every crossing rendered the outgoing room's spikes as `DEFAULT_ENTITY_PALETTE` red boxes for the length of the slide — and because these rect keys are room-LOCAL, two rooms with an entity at the same local rect resolve each other's tiles rather than missing, which is far harder to spot than a red box. **Do NOT join by `LevelEntity.id`** — ids are assigned over *recognized* entities only, so one unrecognized entity in the layer silently shifts the whole mapping.
+**The engine supplies the join (post-0.18.0 main — the `entityArt` side channel).** `ldtkLevelToLevelData` returns the authored art next to `tileSemantics`, and `compileLdtkRoom` carries it onto the room as **`room.entityArt: ReadonlyMap<EntityId, LdtkEntityArt>`**, keyed by the entity's ENGINE id and holding `{ tile, tileRenderMode, nineSliceBorders }` — everything `drawLdtkEntityTile` takes. The map is built INSIDE the translate loop that assigns those ids, so the association cannot mis-align: every key IS one of that room's translated entity ids, an entity without an authored `__tile` simply has no key, and the art travels WITH the room — a §5.5 slide draws two rooms and each resolves from its own map by construction. This retires the consumer-side rect-key index entirely, and with it both of its shipped failure modes: a single active-room index left the outgoing room's spikes flashing `DEFAULT_ENTITY_PALETTE` red for the length of every slide, and because rect keys are room-LOCAL, two rooms with an entity at the same local rect silently resolved each other's tiles rather than missing. (The old recipe also warned against joining by `LevelEntity.id` because a consumer re-walking the raw layer cannot reproduce the engine's id assignment — the side channel is exactly that warning, resolved by making the engine, which holds both sides at translate time, do the join.)
 
 **The render mode is authoritative (0.16.0).** The parser preserves the def's `tileRenderMode` (`Gem` = `FitInside`, `Spike` = `Repeat`), and the engine's `drawLdtkEntityTile` implements it. **Never derive fit-vs-repeat from rect geometry** — a `Stretch` or `Cover` def exists in the wild, and geometry-derived tiling renders the author's intent wrong.
 
 ```ts
-type EntityTile = NonNullable<LdtkEntityInstance['__tile']>;
-interface EntityArt { readonly tile: EntityTile; readonly mode: LdtkTileRenderMode }
-
-const rectKey = (r: { x: number; y: number; width: number; height: number }) =>
-  `${r.x}|${r.y}|${r.width}|${r.height}`;
-
-/** Rect → authored art, for every instance in the room that has a display tile. */
-function buildEntityTileIndex(level: LdtkLevel, project: LdtkProject): ReadonlyMap<string, EntityArt> {
-  const index = new Map<string, EntityArt>();
-  for (const layer of level.layerInstances ?? []) {
-    for (const e of layer.entityInstances ?? []) {
-      if (!e.__tile) continue;                 // no art assigned → engine fallback
-      const def = project.defs.entities.find((d) => d.uid === e.defUid);
-      if (!def) continue;                      // def not in the project → engine fallback
-      index.set(`${e.px[0]}|${e.px[1]}|${e.width}|${e.height}`,
-                { tile: e.__tile, mode: def.tileRenderMode });
-    }
-  }
-  return index;
-}
-
+// The join is ENGINE-OWNED: room.entityArt, keyed by the entity's engine id.
+// No index to build, memoize, rebuild on transition, or clear on hot reload —
+// a recompiled room arrives with its own fresh map.
 function entityTileOverride(
-  index: ReadonlyMap<string, EntityArt>,
+  room: CompiledLdtkRoom,
   tilesets: LdtkTilesetBundle,
 ): DrawLevelEntityOverrideMap {
   const draw = (ctx: CanvasRenderingContext2D, entity: LevelEntity): boolean => {
-    const art = index.get(rectKey(entity.rect));
+    const art = room.entityArt.get(entity.id);
     if (!art) return false;                   // ← engine's DEFAULT_ENTITY_PALETTE draws it
     // The engine helper owns the blit: `Repeat` tiles a resized strip (a 40×8
     // Spike is five 8×8 tiles, never a smear), `FitInside` letterboxes — the
     // def's authored mode decides. `false` (unknown tileset, throwing draw)
-    // hands the draw back to the engine shape.
-    return drawLdtkEntityTile(ctx, art.tile, entity.rect, tilesets, art.mode);
+    // hands the draw back to the engine shape. `tileRenderMode` is `undefined`
+    // when the def could not be resolved — passing it through selects
+    // drawLdtkEntityTile's geometry heuristic, the intended fallback.
+    return drawLdtkEntityTile(ctx, art.tile, entity.rect, tilesets, art.tileRenderMode, art.nineSliceBorders);
   };
   // Every drawn kind routes through the same rule.
   return { hazard: draw, collectible: draw, spring: draw, dashRefill: draw,
@@ -1166,6 +1162,8 @@ Then the full cue list:
 
 > **Sustained-sound rule:** one-shot cues (`playTone`/`playNoise`) fire on EVENT EDGES only — event pulses, foot-plant events, feel moments — never once per tick. A sound that lasts exactly as long as a state (the wall-slide scrape) is a sustained loop: start ONE `startNoiseLoop(...)` on the state's onset edge, keep the handle, and call `handle.stop()` on the first tick the state ends. NEVER re-fire a one-shot per tick to fake sustain — every burst restarts the same noise buffer, and 60 identical restarts/s phase-lock into a 60 Hz buzz.
 
+> **Sustained-voice modulation (post-0.18.0 main):** the handle can also move its SPECTRUM per tick — `handle.setFrequency(hz)` / `handle.setQ(q)` (de-zippered ~50 ms approaches; clamped [10, 20000] Hz / [0.1, 20]; no-ops after `stop()`), and `startNoiseLoop` takes `{ q, noise: 'pink' }` options (a resonant Q at voice start; a −3 dB/octave bed buffer that reads as weather where white reads as hiss). This is what procedural wind needs — gusts BRIGHTEN before they louden, and amplitude-only modulation reads as a volume knob — and what ambient weather (a four-voice rumble/body/whistle/hiss bank driven by one gust level) is built from. Concurrent sustained voices now start at different offsets in the shared loop (a rotation — decorrelation, not a tone change). The gust curve, thresholds, and exponents stay game-side: the engine ships the movable voice, not the weather.
+
 - **Walk tap:** `playNoise(40, 'lowpass', 200, 0.12)` per `advanceFootPlant` event.
 - **Jump:** `playTone('sine', 200, 400, 80, 0.2)`.
 - **Wall-jump:** `playTone('triangle', 300, 500, 60, 0.18)`. **Away grab+jump** (climb-hop) reports through the SAME `wallJumpLaunched` pulse (a deliberate widening since physics v12) — one mapping covers both.
@@ -1199,7 +1197,7 @@ src/
     state.ts           # CelerockSave (collectibles: Record<levelIid, CollectibleSave>, deaths), World/Room runtime
     step.ts            # fixed-step: input → stepPlatformer → pickups → audio → brain
     render.ts          # surface-cache draw (createLdtkLevelSurfaceCache) + player art + entities + particles + UI
-    entity-art.ts      # §7.1: per-room rect→{__tile, mode} index + the drawLevelEntity drawOverride (drawLdtkEntityTile — LDtk tile first, engine shape otherwise)
+    entity-art.ts      # §7.1: the drawLevelEntity drawOverride resolving room.entityArt by entity id (drawLdtkEntityTile — LDtk tile first, engine shape otherwise)
     player.ts          # sprite renderer (drawSprite) primary — load+compile Player.png, deriveSpriteAnimKind per tick; procedural face/hair/feet fallback (kernel does physics)
     hazards.ts         # hazard AABB check (static + moving-platform-child) + respawn flash
     collectibles.ts    # strawberry wiring: derivePickups → collect → writeSave (keyed by level.iid)
