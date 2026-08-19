@@ -456,6 +456,150 @@ describe('room transition session — endRoomTransitionSession', () => {
   });
 });
 
+// --- cameraRebaseDelta (screen-continuous raw-camera consumers) --------------
+
+describe('room transition session — cameraRebaseDelta (parallax continuity)', () => {
+  it('begin reports the enter-rebase: the delta equals both the slide’s sourceOffset and the brain-camera jump it caused', () => {
+    const begun = beginSessionRoomSlide(createRoomTransitionSession(), slideInput(LETTERBOX_BRAIN));
+    expect(begun.ok).toBe(true);
+    // The fixture geometry: sourceOffset (30, 24), so the enter-rebase moved the
+    // camera from (-30,-24) to (0,0).
+    expect(begun.cameraRebaseDelta).toEqual({ x: 30, y: 24 });
+    expect(begun.cameraRebaseDelta).toEqual(begun.session.slide!.space.sourceOffset);
+    expect(begun.cameraRebaseDelta).toEqual({
+      x: begun.brain.camera.x - LETTERBOX_BRAIN.camera.x,
+      y: begun.brain.camera.y - LETTERBOX_BRAIN.camera.y,
+    });
+  });
+
+  it('a refused begin reports zero — no rebase happened, so nothing to compensate', () => {
+    const begun = beginSessionRoomSlide(createRoomTransitionSession(), slideInput(LETTERBOX_BRAIN));
+    const second = beginSessionRoomSlide(begun.session, slideInput(brainAt(5, 5)));
+    expect(second.ok).toBe(false);
+    expect(second.cameraRebaseDelta).toEqual({ x: 0, y: 0 });
+  });
+
+  it('the completing advance reports the finish-rebase (negated destinationOffset); active and idle advances report zero', () => {
+    const begun = beginSessionRoomSlide(
+      createRoomTransitionSession(),
+      slideInput(LETTERBOX_BRAIN),
+      { duration: 0.3 },
+    );
+    expect(begun.ok).toBe(true);
+
+    let session = begun.session;
+    let brain = begun.brain;
+    let sawActiveZero = false;
+    let completing: ReturnType<typeof advanceSessionRoomSlide> | null = null;
+    for (let i = 0; i < 30; i++) {
+      const next = advanceSessionRoomSlide(session, DT, brain);
+      session = next.session;
+      brain = next.brain;
+      if (next.done) {
+        completing = next;
+        break;
+      }
+      expect(next.cameraRebaseDelta).toEqual({ x: 0, y: 0 });
+      sawActiveZero = true;
+    }
+    expect(sawActiveZero).toBe(true);
+    expect(completing).not.toBeNull();
+    // destinationOffset is (190, 24); the finish-rebase subtracts it.
+    expect(completing!.cameraRebaseDelta).toEqual({ x: -190, y: -24 });
+    // An advance after completion stays inert.
+    const idle = advanceSessionRoomSlide(completing!.session, DT, completing!.brain);
+    expect(idle.cameraRebaseDelta).toEqual({ x: 0, y: 0 });
+  });
+
+  it('end reports the cancel-rebase (negated offset of the room cancelled INTO); zero with no active slide', () => {
+    const begun = beginSessionRoomSlide(createRoomTransitionSession(), slideInput(LETTERBOX_BRAIN));
+    const fed: CameraBrain = {
+      ...begun.brain,
+      camera: { x: 200, y: 100 },
+      bodyCamera: { x: 200, y: 100 },
+    };
+    const toDest = endRoomTransitionSession(begun.session, fed, 'destination');
+    expect(toDest.cameraRebaseDelta).toEqual({ x: -190, y: -24 });
+    const toSource = endRoomTransitionSession(begun.session, fed, 'source');
+    expect(toSource.cameraRebaseDelta).toEqual({ x: -30, y: -24 });
+    const noSlide = endRoomTransitionSession(createRoomTransitionSession(), fed, 'destination');
+    expect(noSlide.cameraRebaseDelta).toEqual({ x: 0, y: 0 });
+  });
+
+  it('the compensated camera is continuous: subtracting the accumulated deltas, a rebase never moves it', () => {
+    // The screen-continuity contract a parallax backdrop relies on: for the
+    // brain itself, `camera - Σ cameraRebaseDelta` is INVARIANT across every
+    // space change (enter, finish, cancel). With the consumer's own camera
+    // drive frozen, the compensated value is identical before the slide and
+    // after completion — the raw camera teleported by the rebases, the
+    // compensated one did not move at all.
+    const begun = beginSessionRoomSlide(
+      createRoomTransitionSession(),
+      slideInput(LETTERBOX_BRAIN),
+      { duration: 0.3 },
+    );
+    expect(begun.ok).toBe(true);
+    const before = { x: LETTERBOX_BRAIN.camera.x, y: LETTERBOX_BRAIN.camera.y };
+
+    let shift = { x: 0, y: 0 };
+    let session = begun.session;
+    let brain = begun.brain;
+    shift = {
+      x: shift.x + begun.cameraRebaseDelta.x,
+      y: shift.y + begun.cameraRebaseDelta.y,
+    };
+    expect(brain.camera.x - shift.x).toBe(before.x);
+    expect(brain.camera.y - shift.y).toBe(before.y);
+
+    for (let i = 0; i < 30; i++) {
+      const next = advanceSessionRoomSlide(session, DT, brain);
+      session = next.session;
+      brain = next.brain;
+      shift = {
+        x: shift.x + next.cameraRebaseDelta.x,
+        y: shift.y + next.cameraRebaseDelta.y,
+      };
+      expect(brain.camera.x - shift.x).toBe(before.x);
+      expect(brain.camera.y - shift.y).toBe(before.y);
+      if (next.done) break;
+    }
+    expect(session.slide).toBeNull();
+    // The raw camera DID teleport (destination-local after the finish-rebase —
+    // (-30,-24) + (30,24) + (-190,-24)); only the compensated one held still.
+    expect(brain.camera).toEqual({ x: -190, y: -24 });
+
+    // Death-mid-slide continuity: cancel out of an active slide and the same
+    // invariant holds for the cancel-rebase too.
+    const begun2 = beginSessionRoomSlide(createRoomTransitionSession(), slideInput(LETTERBOX_BRAIN));
+    const ended = endRoomTransitionSession(begun2.session, begun2.brain, 'destination');
+    expect(
+      ended.brain.camera.x - (begun2.cameraRebaseDelta.x + ended.cameraRebaseDelta.x),
+    ).toBe(before.x);
+    expect(
+      ended.brain.camera.y - (begun2.cameraRebaseDelta.y + ended.cameraRebaseDelta.y),
+    ).toBe(before.y);
+  });
+
+  it('reduced-motion cut: enter and finish deltas both land, and their sum compensates the double rebase in one frame', () => {
+    const begun = beginSessionRoomSlide(
+      createRoomTransitionSession(),
+      slideInput(LETTERBOX_BRAIN),
+      { reducedMotion: true },
+    );
+    expect(begun.ok).toBe(true);
+    expect(begun.cameraRebaseDelta).toEqual({ x: 30, y: 24 });
+    const first = advanceSessionRoomSlide(begun.session, DT, begun.brain);
+    expect(first.done).toBe(true);
+    expect(first.cameraRebaseDelta).toEqual({ x: -190, y: -24 });
+    // Camera: (-30,-24) + (30,24) [enter] + (-190,-24) [finish] = (-190,-24);
+    // Σ deltas = (-160, 0); compensated = (-190,-24) − (-160,0) = (-30,-24).
+    expect(first.brain.camera.x - (begun.cameraRebaseDelta.x + first.cameraRebaseDelta.x))
+      .toBe(LETTERBOX_BRAIN.camera.x);
+    expect(first.brain.camera.y - (begun.cameraRebaseDelta.y + first.cameraRebaseDelta.y))
+      .toBe(LETTERBOX_BRAIN.camera.y);
+  });
+});
+
 // --- purity / immutability ---------------------------------------------------
 
 describe('room transition session — purity', () => {

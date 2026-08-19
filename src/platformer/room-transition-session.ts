@@ -30,14 +30,22 @@
  *     { source, destination, viewport, brain, destinationView, actor },
  *     { reducedMotion },
  *   );
- *   if (begun.ok) { session = begun.session; brain = begun.brain; }
+ *   if (begun.ok) {
+ *     session = begun.session; brain = begun.brain;
+ *     camShift.x += begun.cameraRebaseDelta.x; camShift.y += begun.cameraRebaseDelta.y;
+ *   }
  * }
  * // per presentation tick:
  * const advanced = advanceSessionRoomSlide(session, dt, brain);
  * session = advanced.session; brain = advanced.brain;
+ * camShift.x += advanced.cameraRebaseDelta.x; camShift.y += advanced.cameraRebaseDelta.y;
  * // on death / retry / teleport / reset:
  * const ended = endRoomTransitionSession(session, brain, 'destination');
  * session = ended.session; brain = ended.brain;
+ * camShift.x += ended.cameraRebaseDelta.x; camShift.y += ended.cameraRebaseDelta.y;
+ * // anything consuming the RAW brain camera (a parallax backdrop) is fed
+ * // { x: brain.camera.x - camShift.x, y: brain.camera.y - camShift.y }
+ * // so it never teleports at a rebase the world render already compensated.
  * ```
  *
  * @module
@@ -66,6 +74,12 @@ import {
   enterRoomSlideCameraSpace,
   finishRoomSlideCameraSpace,
 } from './room-slide';
+
+/**
+ * The camera-space rebase a call did NOT apply. Shared frozen instance — every
+ * result field of this shape is treated as immutable.
+ */
+const NO_CAMERA_REBASE: Readonly<{ x: number; y: number }> = Object.freeze({ x: 0, y: 0 });
 
 /**
  * One actor's room-transition state machine: the seam-exit detector plus the
@@ -217,13 +231,24 @@ function hasCompiledRoom(v: unknown): v is CompiledLdtkRoom {
  * source/destination rooms (or other nullish fields), or a viewport dimension
  * that is not finite and positive. Refusal never throws.
  *
+ * The success result also reports `cameraRebaseDelta` — the camera-SPACE jump
+ * the enter-rebase applied to the returned brain (`slide.space.sourceOffset`).
+ * The world render compensates for space changes by construction (each room is
+ * drawn at its slide-space offset), but any consumer of the RAW `brain.camera`
+ * — a parallax backdrop is the canonical one — teleports by exactly this delta
+ * at the seam unless it compensates. Accumulate the deltas from this call, from
+ * {@link advanceSessionRoomSlide}, and from {@link endRoomTransitionSession},
+ * and feed such consumers `brain.camera − accumulated` (see the module note on
+ * the golden consumer loop). Zero on refusal, when no rebase happened.
+ *
  * @param session The current session.
  * @param input Rooms, viewport, brain, destination view, actor mapping.
  * @param options Slide options (duration / easing / freezeSimulation /
  *   reducedMotion — the reduced-motion decision stays an explicit input; the
  *   pure core never reads host state).
- * @returns `{ session, brain, ok }`. Check `ok` before using `session.slide`
- *   or `brain`; a refusal passes the input brain through unchanged.
+ * @returns `{ session, brain, cameraRebaseDelta, ok }`. Check `ok` before
+ *   using `session.slide` or `brain`; a refusal passes the input brain through
+ *   unchanged with a zero `cameraRebaseDelta`.
  */
 export function beginSessionRoomSlide(
   session: Readonly<RoomTransitionSessionState>,
@@ -232,6 +257,7 @@ export function beginSessionRoomSlide(
 ): {
   readonly session: RoomTransitionSessionState;
   readonly brain: CameraBrain;
+  readonly cameraRebaseDelta: Readonly<{ x: number; y: number }>;
   readonly ok: boolean;
 } {
   const viewport = input.viewport;
@@ -250,7 +276,7 @@ export function beginSessionRoomSlide(
     !isFinitePositive(viewport.width) ||
     !isFinitePositive(viewport.height);
   if (refuse) {
-    return { session, brain: input.brain, ok: false };
+    return { session, brain: input.brain, cameraRebaseDelta: NO_CAMERA_REBASE, ok: false };
   }
 
   const slide = beginRoomSlideFromBrain(
@@ -265,6 +291,9 @@ export function beginSessionRoomSlide(
   return {
     session: { detector: session.detector, slide },
     brain: enterRoomSlideCameraSpace(slide, input.brain),
+    // The enter-rebase's own delta (added to camera AND bodyCamera). Exposed so
+    // raw-camera consumers can subtract it — see the function note.
+    cameraRebaseDelta: slide.space.sourceOffset,
     ok: true,
   };
 }
@@ -305,6 +334,12 @@ export function beginSessionRoomSlide(
  * begin) complete on the FIRST advance — enter was already applied at begin,
  * so enter + finish land in one presentation frame.
  *
+ * The completing call also reports `cameraRebaseDelta` — the finish-rebase's
+ * camera-SPACE jump (the negated `slide.space.destinationOffset`), nonzero on
+ * exactly the completing tick and zero on every active-tick and idle call.
+ * Accumulate it alongside {@link beginSessionRoomSlide}'s for screen-continuous
+ * raw-camera consumers (parallax backdrops); see that function's note.
+ *
  * An idle session (`slide: null`) is inert: the same session reference, the
  * brain byte-identical, `done: true` — the finish-rebase can never be applied
  * twice (a double rebase would silently offset the camera by one room).
@@ -317,8 +352,9 @@ export function beginSessionRoomSlide(
  * @param dt Presentation delta in seconds.
  * @param brain The consumer's current camera brain (slide-space while the
  *   slide is active; the consumer-driven value at completion).
- * @returns `{ session, brain, done }` — `done` is true iff the returned
- *   session has `slide === null` (finished on this call, or already idle).
+ * @returns `{ session, brain, cameraRebaseDelta, done }` — `done` is true iff
+ *   the returned session has `slide === null` (finished on this call, or
+ *   already idle).
  */
 export function advanceSessionRoomSlide(
   session: Readonly<RoomTransitionSessionState>,
@@ -327,19 +363,27 @@ export function advanceSessionRoomSlide(
 ): {
   readonly session: RoomTransitionSessionState;
   readonly brain: CameraBrain;
+  readonly cameraRebaseDelta: Readonly<{ x: number; y: number }>;
   readonly done: boolean;
 } {
   const slide = session.slide;
   if (slide === null) {
-    return { session, brain, done: true };
+    return { session, brain, cameraRebaseDelta: NO_CAMERA_REBASE, done: true };
   }
   const next = advanceRoomSlide(slide, dt);
   if (next.active) {
-    return { session: { detector: session.detector, slide: next }, brain, done: false };
+    return {
+      session: { detector: session.detector, slide: next },
+      brain,
+      cameraRebaseDelta: NO_CAMERA_REBASE,
+      done: false,
+    };
   }
+  const offset = next.space.destinationOffset;
   return {
     session: { detector: session.detector, slide: null },
     brain: finishRoomSlideCameraSpace(next, brain),
+    cameraRebaseDelta: { x: -offset.x, y: -offset.y },
     done: true,
   };
 }
@@ -359,12 +403,19 @@ export function advanceSessionRoomSlide(
  * detector's unlatched axes cost nothing (see
  * {@link createRoomTransitionSession}).
  *
+ * The result also reports `cameraRebaseDelta` — the cancel-rebase's
+ * camera-SPACE jump (zero when no slide was active). A death mid-slide still
+ * changes camera space, so a parallax backdrop compensates here exactly as it
+ * does at {@link beginSessionRoomSlide} / {@link advanceSessionRoomSlide};
+ * see that function's note for the accumulation pattern.
+ *
  * Pure: never mutates `session` or `brain`; never throws.
  *
  * @param session The current session.
  * @param brain The consumer's current camera brain.
  * @param rebaseTo Which room's local space an active slide cancels into.
- * @returns `{ session, brain }` — a fresh idle session and the rebased brain.
+ * @returns `{ session, brain, cameraRebaseDelta }` — a fresh idle session and
+ *   the rebased brain.
  */
 export function endRoomTransitionSession(
   session: Readonly<RoomTransitionSessionState>,
@@ -373,10 +424,20 @@ export function endRoomTransitionSession(
 ): {
   readonly session: RoomTransitionSessionState;
   readonly brain: CameraBrain;
+  readonly cameraRebaseDelta: Readonly<{ x: number; y: number }>;
 } {
-  const nextBrain =
-    session.slide === null
-      ? brain
-      : cancelRoomSlideCameraSpace(session.slide, brain, rebaseTo);
-  return { session: createRoomTransitionSession(), brain: nextBrain };
+  const slide = session.slide;
+  if (slide === null) {
+    return {
+      session: createRoomTransitionSession(),
+      brain,
+      cameraRebaseDelta: NO_CAMERA_REBASE,
+    };
+  }
+  const offset = rebaseTo === 'source' ? slide.space.sourceOffset : slide.space.destinationOffset;
+  return {
+    session: createRoomTransitionSession(),
+    brain: cancelRoomSlideCameraSpace(slide, brain, rebaseTo),
+    cameraRebaseDelta: { x: -offset.x, y: -offset.y },
+  };
 }
