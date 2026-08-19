@@ -5,6 +5,52 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-08-19
+
+### Added
+- **The seam apron — the floor across a linked seam exists in the collision
+  set.** New `src/platformer/room-seam-apron.ts`: `compileRoomSeamApron(active,
+  resolveNeighbour, { depth? })` rebases every neighbour-room static solid
+  within `depth` px (default `DEFAULT_SEAM_APRON_DEPTH = 64`) of a FLUSH
+  shared seam into the active room's local coordinates — flags preserved
+  verbatim, ids namespaced `apron:<levelIid>:<originalId>` and reversible via
+  `seamApronSourceFromSolidId`. `createSeamApronCache(resolveRoom)` memoizes
+  per room (plus `drop`/`clear`), cycle-free by construction. The shared seam
+  comes from `seamSpanFor`, now exported from `room-transitions.ts` (and the
+  barrel): the exit poll and the apron use the ONE definition of "linked
+  seam", so a partial seam's void band grows no phantom floor and an authored
+  drop stays a drop. Why: a body leaving a seam ledge while falling stepped
+  past the source floor's reach in the same tick it crossed, and the
+  world-exact entry mapping preserved the overshoot as an embed that grows
+  with fall speed (up to +2.34px at vy 300 — pinned by the new
+  `room-seam-characterization.test.ts`). With the apron in the tick set, the
+  kernel's own resolution lands every crossing flush at every speed: no
+  tolerance, no correction. The new `room-seam-apron.test.ts` proves it over
+  the real `games/celerock.ldtk` seam — the vy table reproduced flush, the
+  hazard decision pinned (hazards deliberately do NOT ride the apron; at a
+  seam, failing to kill is the safe direction), the adversarial authored
+  drop, the guard-retirement scenarios, and a committed **1,548-crossing
+  sweep** (43 offsets × 6 speeds × 2 directions × 3 poll orderings), all
+  landing flush. The showcase ldtk-editor play loop now carries the apron.
+  Design record: `docs/design/room-seam-apron-plan.md`.
+
+### Removed
+- **`protectGroundedRoomSlide` and `ROOM_SLIDE_SUPPORT_EPSILON`
+  (`src/platformer/room-slide-safety.ts`) — removed; the seam apron replaces
+  them.** The guard clamped a grounded actor to its support span and zeroed
+  `vx`/`vy`, compensating for exactly the floor the apron now supplies; with
+  the seam continuous, a grounded walk across keeps support AND momentum —
+  strictly better than the clamp. `stabilizePlatformerRoomEntry` remains, at
+  its 1px default: the float-noise guard at the mapping boundary, now rarely
+  exercised. **Migration, both halves:** (1) add the apron to the per-tick
+  set — `const apronFor = createSeamApronCache((iid) => rooms.get(iid)).apronFor;`
+  then `[...active.solids, ...apronFor(active.ldtkLevel.iid), ...platforms]`,
+  and pass `[...target.solids, ...apronFor(target.ldtkLevel.iid)]` as
+  `destinationSolids`; (2) **delete any local fallback copy of the guard** —
+  a shim of the form `engine.protectGroundedRoomSlide?.(…) ?? localFallback(…)`
+  silently keeps clamping after the export disappears, invisible to the
+  upgrade.
+
 ## [0.17.5] - 2026-08-18
 
 ### Added
