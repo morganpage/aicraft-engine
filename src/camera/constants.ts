@@ -33,6 +33,13 @@ export const DEFAULT_CAMERA: Required<CameraConfig> = {
  * px/s caps catch-up so a far jump glides rather than teleports; `halfLife:
  * 0.12s` eases the final approach; `snapThreshold: 0.5px` terminates the
  * asymptote on the pixel grid.
+ *
+ * The `0.5` is WORLD pixels: under a zoomed lens the terminal snap jumps
+ * `zoom · 0.5` device pixels in one tick, which reads as a visible lurch at
+ * zoom 3+ (settles to near-stillness, then clicks into place). A build that
+ * renders zoomed should pass `snapThreshold: devicePixelSnapThreshold(zoom,
+ * dpr)` instead — the largest threshold the display cannot see. The Celeste
+ * preset (`./celeste.ts`) does.
  */
 export const DEFAULT_CAMERA_MOTION: Required<DampedMotionConfig> = {
   halfLife: 0.12,
@@ -53,9 +60,13 @@ export const DEFAULT_LENS_MOTION: Required<DampedMotionConfig> = {
 
 /**
  * Default follow-body tuning. `followX: { trail: 0.25, lead: 0.5 }` keeps the
- * player in the left half of the screen at rest — the Celeste-style "start at
- * the left, camera only moves once the player crosses the centre" feel. The
+ * player in the left half of the screen at rest — a deadzone feel ("start at
+ * the left, camera only moves once the player crosses the centre"). The
  * vertical band `[0.35, 0.65]` is symmetric so vertical drift is balanced.
+ *
+ * Note this is NOT Celeste's follow: the original has no deadzone at all — it
+ * recenters on the player every frame. `./celeste.ts` ships the decompile's
+ * bands (`CELESTE_FOLLOW_CENTERED`/`_AHEAD`) for that feel.
  */
 export const DEFAULT_FOLLOW_BODY = {
   targetKey: 'player',

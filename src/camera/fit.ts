@@ -2,16 +2,34 @@
  * Phase E4 — explicit camera-fit policy.
  *
  * Replaces the repeated consumer `Math.min`/`Math.max` `fitZoom` guess with a
- * tested helper. The Celeste-compact-room policy is `'cover'` (the one-line flip
- * from `min` → `max` documented in BUILD_NOTES §8): a `cover` fit fills the
- * viewport on BOTH axes so the level owns the screen, scrolling the overflow
- * axis, with no empty side/bottom letterbox gaps. `'contain'` is the inverse
- * (`min`) for when letterboxing is desired; `'native'` is a passthrough zoom of
- * 1.
+ * tested helper. `'cover'` fills the viewport on BOTH axes so the level owns
+ * the screen, scrolling the overflow axis, with no empty side/bottom letterbox
+ * gaps — the right policy when every room is compact and must own the whole
+ * display. `'contain'` is the inverse (`min`) for when letterboxing is desired;
+ * `'native'` is a passthrough zoom of 1.
+ *
+ * **Neither mode is "the Celeste camera", and this module was long documented
+ * as if `cover` were.** Celeste's lens never fits anything: it is a fixed
+ * 320×180 window, rooms are at least one screen, and the camera clamps inside
+ * the room it is in — so zoom is constant for the whole campaign no matter how
+ * rooms vary. Fitting the ROOM, in either mode, makes zoom track room size and
+ * shows every room whole at its own scale, which reads as "shows the whole
+ * level" where Celeste reads as "shows one screen"; a real build shipped
+ * exactly that and re-derived the reference to fix it. The faithful
+ * translation fits a CONSTANT WINDOW, not the room:
+ *
+ * ```ts
+ * fitCameraZoom(CELESTE_CAMERA_WINDOW, viewport, { mode: 'contain', integerScale: true });
+ * ```
+ *
+ * (see `./celeste.ts`, which ships the constants and the follow vcam around
+ * them). `bounds` clamping scrolls any room larger than the window under it —
+ * that is the brain's job, not the fit's.
  *
  * Pure, canvas-free, and unit-testable. Reads level dimensions either from a
  * bare `{ width, height }` or from a compiled LDtk room (whose pixel dimensions
- * live on `levelData` / `ldtkLevel`).
+ * live on `levelData` / `ldtkLevel`) — and "level" here is loose on purpose:
+ * any rectangle works, a camera window included.
  */
 
 import type { CompiledLdtkRoom } from '../platformer/ldtk-room';
@@ -19,7 +37,8 @@ import type { CompiledLdtkRoom } from '../platformer/ldtk-room';
 /**
  * How a level rectangle is fitted into the viewport.
  *  - `'cover'`   — fill both axes (`max`); the overflow axis scrolls. No side
- *    gaps. The Celeste-compact-room policy.
+ *    gaps. For compact rooms that must own the whole display. NOT the Celeste
+ *    camera — see the module note, and `./celeste.ts` for that.
  *  - `'contain'` — fit entirely inside (`min`); the slack axis letterboxes.
  *  - `'native'`  — zoom of 1 (no scaling); the level renders 1:1.
  */
@@ -27,7 +46,7 @@ export type CameraFitMode = 'contain' | 'cover' | 'native';
 
 /** Options for {@link fitCameraZoom}. */
 export interface FitCameraZoomOptions {
-  /** Fit policy. Defaults to `'cover'` (Celeste compact rooms — no side gaps). */
+  /** Fit policy. Defaults to `'cover'` (fills both axes — no side gaps). */
   readonly mode?: CameraFitMode;
   /** Lower zoom clamp applied last (after the fit + integer quantisation). */
   readonly minZoom?: number;

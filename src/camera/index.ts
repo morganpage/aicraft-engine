@@ -47,9 +47,20 @@ export {
   DEFAULT_BRAIN_BLEND_DURATION,
 } from './constants';
 export { createCamera, updateCamera } from './follow';
-export { converge } from './motion';
+export { converge, devicePixelSnapThreshold } from './motion';
 export { createCameraBrain, updateCameraBrain, snapCameraBrain } from './brain';
 export { fitCameraZoom, type CameraFitMode, type FitCameraZoomOptions } from './fit';
+export {
+  CELESTE_CAMERA_WINDOW,
+  CELESTE_FOLLOW_CENTERED,
+  CELESTE_FOLLOW_AHEAD,
+  CELESTE_ROOM_SLIDE_DURATION,
+  CELESTE_ROOM_SLIDE_OPTIONS,
+  celesteCameraZoom,
+  celesteFollowMotion,
+  celesteFollowVcam,
+  type CelesteFollowVcamOptions,
+} from './celeste';
 export {
   cameraTransform,
   applyCameraTransform,

@@ -108,6 +108,36 @@ export function clampTopLeft(
   return r === 0 ? 0 : r; // canonicalize -0 → +0 (avoids surprising sign in serialized state)
 }
 
+// --- device-pixel snap threshold -------------------------------------------
+
+/**
+ * The largest world-unit snap threshold that is invisible on screen: ONE
+ * device pixel, expressed in world units (`1 / (zoom · dpr)`).
+ *
+ * A follow solver's snap threshold exists to terminate the exponential's
+ * asymptote — without it, catch-up decays through ever-smaller increments and
+ * stalls a fraction short of the clamp bound. But the threshold is in WORLD
+ * units while its effect is on SCREEN: the terminal snap jumps
+ * `zoom · threshold` device pixels in ONE tick. The old fixed
+ * `0.5`-world-pixel default is therefore display-invisible at zoom 1 and a
+ * MULTI-PIXEL lurch at zoom 3+ — the camera settles to near-stillness and
+ * then clicks into place, a defect a real build shipped and hunted. Below one
+ * device pixel the renderer's own quantization absorbs the jump, so this is
+ * exactly the boundary: the largest threshold that cannot be seen, and the
+ * natural companion to `cameraTransform`'s device-pixel render snapping.
+ *
+ * Non-finite or non-positive `zoom`/`dpr` resolve to
+ * {@link DEFAULT_CAMERA_MOTION.snapThreshold} (`0.5`) — the shipped default,
+ * so garbage inputs degrade to prior behavior rather than a zero threshold
+ * that would never snap. Pure; never throws.
+ */
+export function devicePixelSnapThreshold(zoom: number, dpr: number): number {
+  if (!isFinitePositive(zoom) || !isFinitePositive(dpr)) {
+    return DEFAULT_CAMERA_MOTION.snapThreshold;
+  }
+  return 1 / (zoom * dpr);
+}
+
 // --- converge -------------------------------------------------------------
 
 /**
