@@ -85,7 +85,7 @@ function createFakeAudio(): FakeAudio {
     },
     startNoiseLoop() {
       // intentionally inert — not used by the sequencer
-      return { stop() {}, setPeak() {}, isPlaying: () => false };
+      return { stop() {}, setPeak() {}, setFrequency() {}, setQ() {}, isPlaying: () => false };
     },
     setMuted(v) {
       muted = !!v;

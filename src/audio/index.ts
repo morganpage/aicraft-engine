@@ -19,6 +19,6 @@
  * @module
  */
 
-export type { AudioAdapter, NoiseLoopHandle } from './types';
+export type { AudioAdapter, NoiseLoopHandle, NoiseLoopOptions } from './types';
 export { DEFAULT_AUDIO_VOLUME } from './constants';
 export { createAudioAdapter } from './factory';

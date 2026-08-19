@@ -9,7 +9,7 @@ function fakeAudio(calls: unknown[][]): AudioAdapter {
     isUnlocked: () => true,
     playTone: (...args) => { calls.push(args); },
     playNoise() {},
-    startNoiseLoop: () => ({ stop() {}, setPeak() {}, isPlaying: () => false }),
+    startNoiseLoop: () => ({ stop() {}, setPeak() {}, setFrequency() {}, setQ() {}, isPlaying: () => false }),
     setMuted() {},
     isMuted: () => false,
     setVolume() {},

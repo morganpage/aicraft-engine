@@ -5,6 +5,25 @@
  */
 
 /**
+ * Options for {@link AudioAdapter.startNoiseLoop}. All optional; omitting
+ * everything reproduces the pre-options behavior exactly (white noise, Q 1).
+ */
+export interface NoiseLoopOptions {
+  /**
+   * Biquad Q at voice start. Default 1 (the WebAudio default). Q > 1 narrows
+   * a bandpass into a resonant peak — whistles, hums, anything that sings
+   * rather than hisses. Clamped to [0.1, 20].
+   */
+  readonly q?: number;
+  /**
+   * Buffer color. Default `'white'`. `'pink'` is −3 dB/octave — natural beds
+   * (wind, rain, surf) without low-pass crutching; white noise reads as
+   * hissy/piercing for those. Built once per adapter, lazily.
+   */
+  readonly noise?: 'white' | 'pink';
+}
+
+/**
  * WebAudio synthesized SFX adapter. Zero audio assets — every sound is
  * generated on the fly from oscillators + a reused white-noise buffer.
  *
@@ -76,17 +95,24 @@ export interface AudioAdapter {
    * call `stop()` on it when the sustained state ends. Start it on the state's
    * onset edge, NEVER once per tick.
    *
+   * The voice begins at a RANDOM offset inside the (looping) buffer — a
+   * rotation, so a single voice is audibly identical, but two simultaneously
+   * running voices are time-shifted rather than the same signal in parallel
+   * filters, which is what independent texture (and later stereo width) needs.
+   *
    * Always returns a usable handle — an inert no-op handle when muted,
    * pre-unlock, disposed, or without WebAudio — so callers never null-check.
    *
    * @param filterType - biquad filter type: 'lowpass' | 'highpass' | 'bandpass'
    * @param freq       - filter cutoff frequency (Hz)
    * @param peak       - sustained gain [0, 1]
+   * @param options    - {@link NoiseLoopOptions}: Q at voice start, noise color
    */
   startNoiseLoop(
     filterType: BiquadFilterType,
     freq: number,
     peak: number,
+    options?: NoiseLoopOptions,
   ): NoiseLoopHandle;
 
   /** Set the global mute flag. Applied to master gain with a short ramp (no clicks). */
@@ -123,6 +149,23 @@ export interface NoiseLoopHandle {
    * scrape volume following slide speed. No-op after `stop()`.
    */
   setPeak(peak: number): void;
+
+  /**
+   * Retarget the filter frequency (Hz), ramped — the cutoff follows a host-side
+   * control signal (a gust level, slide speed) without zipper noise. The
+   * perceptual core of procedural weather: gusts brighten a voice before they
+   * louden it, and only a moving cutoff does that. Clamped to [10, 20000];
+   * non-finite input is ignored. No-op after `stop()` and on inert handles.
+   */
+  setFrequency(freq: number): void;
+
+  /**
+   * Retarget the filter Q, ramped. Same contract as
+   * {@link NoiseLoopHandle.setFrequency}: clamped to [0.1, 20] (below 0.1 is
+   * inaudibly broad; above 20 rings like a resonator, not a wind), non-finite
+   * input ignored, no-op after `stop()` and on inert handles.
+   */
+  setQ(q: number): void;
 
   /** Whether the loop is still sounding (false after `stop()`). */
   isPlaying(): boolean;

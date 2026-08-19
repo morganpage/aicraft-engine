@@ -62,6 +62,7 @@ function createMockBiquadFilterNode() {
   return {
     type: 'lowpass' as BiquadFilterType,
     frequency: createMockAudioParam(),
+    Q: createMockAudioParam(),
     connect: vi.fn().mockReturnThis(),
     disconnect: vi.fn(),
   };
@@ -155,6 +156,8 @@ describe('createAudioAdapter — no host (Node / SSR)', () => {
     expect(handle.isPlaying()).toBe(false);
     expect(() => handle.stop()).not.toThrow();
     expect(() => handle.setPeak(0.5)).not.toThrow();
+    expect(() => handle.setFrequency(NaN)).not.toThrow();
+    expect(() => handle.setQ(Infinity)).not.toThrow();
     expect(handle.isPlaying()).toBe(false);
   });
 
@@ -366,6 +369,9 @@ describe('createAudioAdapter — with mock WebAudio', () => {
 
     it('creates a looping buffer source after unlock', () => {
       adapter.unlock();
+      // Spy AFTER unlock — the noise-buffer fill during unlock also consumes
+      // Math.random draws.
+      const rand = vi.spyOn(Math, 'random').mockReturnValue(0.25);
       const ctx = getCtx();
       const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
 
@@ -376,8 +382,11 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       expect(src.loop).toBe(true);
       expect(filter.type).toBe('lowpass');
       expect(filter.frequency.value).toBe(600);
-      expect(src.start).toHaveBeenCalledWith(10);
+      // Start at a random offset inside the LOOPING buffer — a rotation, so
+      // concurrent voices de-correlate (0.25 × 1 s buffer = 0.25 s).
+      expect(src.start).toHaveBeenCalledWith(10, 0.25);
       expect(handle.isPlaying()).toBe(true);
+      rand.mockRestore();
     });
 
     it('attack-ramps the loop gain to the clamped peak', () => {
@@ -441,6 +450,140 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
       expect(ctx.createBufferSource).not.toHaveBeenCalled();
       expect(handle.isPlaying()).toBe(false);
+    });
+  });
+
+  // --- startNoiseLoop — filter modulation + options --------------------------
+
+  describe('startNoiseLoop — filter modulation (setFrequency / setQ)', () => {
+    /** Unlock + start one voice; return the handle AND its own filter node. */
+    function startedVoice(filterType: BiquadFilterType = 'lowpass') {
+      adapter.unlock();
+      const ctx = getCtx();
+      const handle = adapter.startNoiseLoop(filterType, 600, 0.06);
+      const filter = ctx.createBiquadFilter.mock.results[0].value;
+      return { filter, handle };
+    }
+
+    it('setFrequency retargets the cutoff de-zippered: anchor, then setTargetAtTime (~50 ms)', () => {
+      const { filter, handle } = startedVoice();
+      handle.setFrequency(800);
+
+      expect(filter.frequency.cancelScheduledValues).toHaveBeenCalledWith(10);
+      expect(filter.frequency.setValueAtTime).toHaveBeenCalledWith(filter.frequency.value, 10);
+      expect(filter.frequency.setTargetAtTime).toHaveBeenCalledWith(800, 10, 0.05);
+    });
+
+    it('setFrequency clamps into [10, 20000] Hz — never a meaningless/negative cutoff', () => {
+      const { filter, handle } = startedVoice();
+      handle.setFrequency(-5);
+      expect(filter.frequency.setTargetAtTime).toHaveBeenLastCalledWith(10, 10, 0.05);
+      handle.setFrequency(1e9);
+      expect(filter.frequency.setTargetAtTime).toHaveBeenLastCalledWith(20000, 10, 0.05);
+    });
+
+    it('setFrequency ignores non-finite input without touching the graph', () => {
+      const { filter, handle } = startedVoice();
+      handle.setFrequency(NaN);
+      handle.setFrequency(Infinity);
+      handle.setFrequency(-Infinity);
+      expect(filter.frequency.cancelScheduledValues).not.toHaveBeenCalled();
+    });
+
+    it('setQ retargets Q with the same anchor-then-approach contract', () => {
+      const { filter, handle } = startedVoice('bandpass');
+      handle.setQ(4);
+
+      expect(filter.Q.cancelScheduledValues).toHaveBeenCalledWith(10);
+      expect(filter.Q.setValueAtTime).toHaveBeenCalledWith(filter.Q.value, 10);
+      expect(filter.Q.setTargetAtTime).toHaveBeenCalledWith(4, 10, 0.05);
+    });
+
+    it('setQ clamps into [0.1, 20]', () => {
+      const { filter, handle } = startedVoice('bandpass');
+      handle.setQ(0.01);
+      expect(filter.Q.setTargetAtTime).toHaveBeenLastCalledWith(0.1, 10, 0.05);
+      handle.setQ(100);
+      expect(filter.Q.setTargetAtTime).toHaveBeenLastCalledWith(20, 10, 0.05);
+    });
+
+    it('setFrequency and setQ are no-ops after stop()', () => {
+      const { filter, handle } = startedVoice();
+      handle.stop();
+      handle.setFrequency(800);
+      handle.setQ(4);
+      expect(filter.frequency.cancelScheduledValues).not.toHaveBeenCalled();
+      expect(filter.Q.cancelScheduledValues).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('startNoiseLoop — options (q, noise color)', () => {
+    it('defaults reproduce the pre-options voice exactly: white buffer, Q 1', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      adapter.startNoiseLoop('lowpass', 600, 0.06);
+      const src = ctx.createBufferSource.mock.results[0].value;
+      const filter = ctx.createBiquadFilter.mock.results[0].value;
+      expect(src.buffer).toBe(ctx.createBuffer.mock.results[0].value); // the white buffer
+      expect(filter.Q.value).toBe(1); // the WebAudio default
+    });
+
+    it('q sets the biquad Q at voice start — a resonant peak, clamped', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      adapter.startNoiseLoop('bandpass', 900, 0.05, { q: 10 });
+      let filter = ctx.createBiquadFilter.mock.results[0].value;
+      expect(filter.Q.value).toBe(10);
+
+      adapter.startNoiseLoop('bandpass', 900, 0.05, { q: 99 });
+      filter = ctx.createBiquadFilter.mock.results[1].value;
+      expect(filter.Q.value).toBe(20); // clamped high
+
+      adapter.startNoiseLoop('bandpass', 900, 0.05, { q: Number.NaN });
+      filter = ctx.createBiquadFilter.mock.results[2].value;
+      expect(filter.Q.value).toBe(1); // non-finite resolves to the default
+    });
+
+    it('pink noise builds ONE second buffer lazily, shared by every pink voice', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(1); // white, at unlock
+
+      adapter.startNoiseLoop('lowpass', 300, 0.1, { noise: 'pink' });
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(2); // pink, lazily
+      const pinkBuffer = ctx.createBuffer.mock.results[1].value;
+      const pinkSrc = ctx.createBufferSource.mock.results[0].value;
+      expect(pinkSrc.buffer).toBe(pinkBuffer);
+
+      adapter.startNoiseLoop('bandpass', 1200, 0.08, { noise: 'pink' });
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(2); // shared, not rebuilt
+      const secondPinkSrc = ctx.createBufferSource.mock.results[1].value;
+      expect(secondPinkSrc.buffer).toBe(pinkBuffer);
+
+      // A white voice still routes to the white buffer.
+      adapter.startNoiseLoop('lowpass', 500, 0.1);
+      const whiteSrc = ctx.createBufferSource.mock.results[2].value;
+      expect(whiteSrc.buffer).toBe(ctx.createBuffer.mock.results[0].value);
+    });
+
+    it('concurrent voices start at different random offsets (decorrelation)', () => {
+      adapter.unlock();
+      const rand = vi.spyOn(Math, 'random')
+        .mockReturnValueOnce(0.2)
+        .mockReturnValueOnce(0.8);
+      const ctx = getCtx();
+      adapter.startNoiseLoop('lowpass', 500, 0.1);
+      adapter.startNoiseLoop('bandpass', 1600, 0.08);
+      const first = ctx.createBufferSource.mock.results[0].value;
+      const second = ctx.createBufferSource.mock.results[1].value;
+      const [, firstOffset] = first.start.mock.calls[0];
+      const [, secondOffset] = second.start.mock.calls[0];
+      // Offsets 0.2 s / 0.8 s into the one-second loop: same buffer, different
+      // rotation — time-shifted, not the identical correlated signal.
+      expect(firstOffset).toBeCloseTo(0.2, 5);
+      expect(secondOffset).toBeCloseTo(0.8, 5);
+      expect(firstOffset).not.toBe(secondOffset);
+      rand.mockRestore();
     });
   });
 
@@ -579,23 +722,25 @@ describe('createAudioAdapter — defensive error handling', () => {
     expect(() => adapter.playNoise(100, 'highpass', 2200, 0.22)).not.toThrow();
   });
 
-  it('startNoiseLoop returns an inert handle when createBufferSource throws', () => {
-    const ctx = createMockAudioContext();
-    ctx.createBufferSource.mockImplementation(() => {
-      throw new Error('boom');
+    it('startNoiseLoop returns an inert handle when createBufferSource throws', () => {
+      const ctx = createMockAudioContext();
+      ctx.createBufferSource.mockImplementation(() => {
+        throw new Error('boom');
+      });
+      vi.stubGlobal('window', {
+        AudioContext: vi.fn(function () {
+          return ctx;
+        }),
+      });
+      const adapter = createAudioAdapter();
+      adapter.unlock();
+      const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
+      expect(() => handle.stop()).not.toThrow();
+      expect(() => handle.setPeak(0.5)).not.toThrow();
+      expect(() => handle.setFrequency(800)).not.toThrow();
+      expect(() => handle.setQ(4)).not.toThrow();
+      expect(handle.isPlaying()).toBe(false);
     });
-    vi.stubGlobal('window', {
-      AudioContext: vi.fn(function () {
-        return ctx;
-      }),
-    });
-    const adapter = createAudioAdapter();
-    adapter.unlock();
-    const handle = adapter.startNoiseLoop('lowpass', 600, 0.06);
-    expect(() => handle.stop()).not.toThrow();
-    expect(() => handle.setPeak(0.5)).not.toThrow();
-    expect(handle.isPlaying()).toBe(false);
-  });
 
   it('falls back to webkitAudioContext when AudioContext is missing', () => {
     const ctx = createMockAudioContext();
