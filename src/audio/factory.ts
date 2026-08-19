@@ -60,6 +60,32 @@ const LOOP_FREQ_MAX_HZ = 20000;
 const LOOP_Q_MIN = 0.1;
 /** Sustained-voice Q clamp: above this rings like a resonator, not a wind. */
 const LOOP_Q_MAX = 20;
+/**
+ * Noise buffer length (seconds) per color. A one-second loop made every
+ * sustained voice exactly 1 Hz-periodic, which the ear tracks as an
+ * industrial texture through any filter (a real build's wind read as
+ * machinery; the random start-offset added in 0.19.0 only ROTATES the loop
+ * and cannot change its period). 2 s is the validated acceptability floor
+ * (the scinotes generator ships exactly that); 10 s puts the loop period
+ * past auditory memory for noise texture, where the host's slow gust
+ * modulation buries what remains. ≈ 1.9 MB mono at 48 kHz per color, built
+ * lazily once per adapter — noise next to a tileset PNG.
+ */
+const NOISE_BUFFER_S = 10;
+/**
+ * Loop-seam crossfade (seconds). The buffer is generated L + F samples long
+ * and the tail is folded into the head with EQUAL-POWER weights — head and
+ * tail are uncorrelated noise whose POWERS add, so linear weights would dip
+ * the RMS −3 dB at mid-crossfade. The result loops with no click even under
+ * resonant filtering (a Q-10 bandpass rings on a plain butt joint).
+ */
+const CROSSFADE_S = 0.5;
+/**
+ * Pink warm-up (seconds) discarded before the loop body is recorded: the
+ * Kellet filter starts from zero state, so the loop body carries a settled
+ * −3 dB/octave spectrum and the seam crossfades two settled segments.
+ */
+const PINK_WARMUP_S = 0.25;
 
 /**
  * Clamp a number into [0, 1]; non-finite input collapses to 0.
@@ -79,6 +105,45 @@ function clampLoopFreq(hz: number): number {
   if (hz < LOOP_FREQ_MIN_HZ) return LOOP_FREQ_MIN_HZ;
   if (hz > LOOP_FREQ_MAX_HZ) return LOOP_FREQ_MAX_HZ;
   return hz;
+}
+
+/**
+ * Build a seamless looping noise buffer: fill `L + F` raw samples (the loop
+ * body plus a crossfade tail beyond it), then fold the tail into the head —
+ * `final[i] = raw[i]·√(1 − i/F) + raw[L+i]·√(i/F)` for `i < F` — so at the
+ * loop wrap the continuation that "would have played" is already mixed in.
+ *
+ * Equal-power weights, not linear: the two folded samples are L SECONDS APART
+ * in the stream and therefore uncorrelated — for WHITE by independence, for
+ * PINK because the Kellet filter's correlation dies well under a second — so
+ * their POWERS add; linear weights would dip the RMS −3 dB at mid-crossfade.
+ * (This is why the tail must come from the end of an L+F generation, NOT from
+ * adjacent draws: adjacent PINK samples are strongly correlated — that is
+ * what pink is — and folding correlated samples under √ weights boosts the
+ * low-frequency content up to +3 dB instead of holding the level.)
+ *
+ * Every sample is clamped to ±1 (rare crossfade sums and pink spikes can
+ * exceed it; clipping is inaudible and keeps the sample range clean).
+ */
+function createSeamlessNoiseBuffer(
+  audio: AudioContext,
+  fillRaw: (raw: Float32Array) => void,
+): AudioBuffer {
+  const rate = audio.sampleRate;
+  const length = Math.max(1, Math.floor(NOISE_BUFFER_S * rate));
+  const fade = Math.min(length, Math.max(0, Math.floor(CROSSFADE_S * rate)));
+  const raw = new Float32Array(length + fade);
+  fillRaw(raw);
+  const buf = audio.createBuffer(1, length, rate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < length; i++) {
+    const v =
+      i < fade
+        ? raw[i] * Math.sqrt(1 - i / fade) + raw[length + i] * Math.sqrt(i / fade)
+        : raw[i];
+    data[i] = v < -1 ? -1 : v > 1 ? 1 : v;
+  }
+  return buf;
 }
 
 /**
@@ -186,44 +251,40 @@ export function createAudioAdapter(): AudioAdapter {
   }
 
   /**
-   * Create a one-second mono white-noise buffer. Reused by every noise-based
-   * sound so we don't allocate per shot.
+   * Create the mono white-noise loop buffer (`NOISE_BUFFER_S` long, seamless
+   * crossfaded seam). Reused by every noise-based sound so we don't allocate
+   * per shot.
    *
    * Uses `Math.random()` — this is a decorative audio side-effect, NOT
    * deterministic game logic. The noise cannot leak back into the simulation.
    */
   function createNoiseBuffer(audio: AudioContext): AudioBuffer {
-    const length = Math.max(1, Math.floor(audio.sampleRate));
-    const buf = audio.createBuffer(1, length, audio.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < length; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
-    return buf;
+    return createSeamlessNoiseBuffer(audio, (raw) => {
+      for (let i = 0; i < raw.length; i++) raw[i] = Math.random() * 2 - 1;
+    });
   }
 
   /**
-   * Create a one-second pink-noise buffer (−3 dB/octave) via the Paul Kellet
+   * Create the pink-noise loop buffer (−3 dB/octave) via the Paul Kellet
    * economy filter — the standard public-domain approximation, six poles over
    * white input. Natural beds (wind, rain, surf) read as weather on pink and
-   * as hiss on white. The loop-start energy dip from cold filter state
-   * (`b0..b5` starting at 0) is sub-second and inaudible on a sustained bed.
+   * as hiss on white.
    *
-   * Built lazily on the first `noise: 'pink'` voice and reused by every
-   * subsequent one, mirroring the white buffer's allocate-once policy. Uses
-   * `Math.random()` for the white input — same sanctioned decorative use.
+   * The filter runs `PINK_WARMUP_S` before the loop body is recorded so the
+   * body carries a settled spectrum from sample zero (and the seam crossfades
+   * two settled segments). Built lazily on the first `noise: 'pink'` voice
+   * and reused by every subsequent one, mirroring the white buffer's
+   * allocate-once policy. Uses `Math.random()` for the white input — same
+   * sanctioned decorative use.
    */
   function createPinkNoiseBuffer(audio: AudioContext): AudioBuffer {
-    const length = Math.max(1, Math.floor(audio.sampleRate));
-    const buf = audio.createBuffer(1, length, audio.sampleRate);
-    const data = buf.getChannelData(0);
     let b0 = 0;
     let b1 = 0;
     let b2 = 0;
     let b3 = 0;
     let b4 = 0;
     let b5 = 0;
-    for (let i = 0; i < length; i++) {
+    const pink = (): number => {
       const w = Math.random() * 2 - 1;
       b0 = 0.99886 * b0 + w * 0.0555179;
       b1 = 0.99332 * b1 + w * 0.0750759;
@@ -231,12 +292,14 @@ export function createAudioAdapter(): AudioAdapter {
       b3 = 0.86650 * b3 + w * 0.3104856;
       b4 = 0.55000 * b4 + w * 0.5329522;
       b5 = -0.7616 * b5 - w * 0.0168980;
-      const out = (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.11;
-      // The filter can spike past ±1 on rare white draws; clipping at buffer
-      // fill is inaudible and keeps the sample range clean.
-      data[i] = out < -1 ? -1 : out > 1 ? 1 : out;
-    }
-    return buf;
+      return (b0 + b1 + b2 + b3 + b4 + b5 + w * 0.5362) * 0.11;
+    };
+    // Warm-up first (settle the filter), then the L + F stream for the fold.
+    const warmup = Math.max(1, Math.floor(PINK_WARMUP_S * audio.sampleRate));
+    for (let i = 0; i < warmup; i++) pink();
+    return createSeamlessNoiseBuffer(audio, (raw) => {
+      for (let i = 0; i < raw.length; i++) raw[i] = pink();
+    });
   }
 
   /**
@@ -332,7 +395,7 @@ export function createAudioAdapter(): AudioAdapter {
         // Random start offset inside the shared buffer so overlapping bursts
         // de-correlate: identical sample-0 restarts phase-lock into a retrigger
         // buzz (60 identical restarts/s ≈ a 60 Hz tone + comb filtering). Falls
-        // back to offset 0 when the burst outlasts the one-second buffer.
+        // back to offset 0 when the burst outlasts the noise buffer.
         const usable = noiseBuffer.duration - (dur + STOP_TAIL_S);
         const offset = usable > 0 ? Math.random() * usable : 0;
         src.start(t0, offset, dur + STOP_TAIL_S);
@@ -360,7 +423,7 @@ export function createAudioAdapter(): AudioAdapter {
             : noiseBuffer;
         const src = audio.createBufferSource();
         src.buffer = buffer;
-        src.loop = true; // the one-second buffer loops seamlessly
+        src.loop = true; // the crossfaded buffer loops seamlessly at any Q
         const filter = audio.createBiquadFilter();
         filter.type = filterType;
         filter.frequency.value = freq;

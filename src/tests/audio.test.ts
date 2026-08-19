@@ -69,12 +69,16 @@ function createMockBiquadFilterNode() {
 }
 
 function createMockAudioBuffer(length: number, sampleRate: number) {
+  // Expose the backing array so tests can inspect what the adapter FILLED
+  // (seam crossfade, RMS continuity) — getChannelData returns the same array.
+  const data = new Float32Array(length);
   return {
     length,
     sampleRate,
     duration: length / sampleRate,
     numberOfChannels: 1,
-    getChannelData: vi.fn().mockReturnValue(new Float32Array(length)),
+    data,
+    getChannelData: vi.fn(() => data),
   };
 }
 
@@ -105,7 +109,9 @@ function createMockAudioContext(): MockAudioContext {
     createOscillator: vi.fn(() => createMockOscillatorNode()),
     createBufferSource: vi.fn(() => createMockBufferSourceNode()),
     createBiquadFilter: vi.fn(() => createMockBiquadFilterNode()),
-    createBuffer: vi.fn(() => createMockAudioBuffer(sampleRate, sampleRate)),
+    createBuffer: vi.fn((_channels: number, length: number, rate: number) =>
+      createMockAudioBuffer(length, rate),
+    ),
   };
 }
 
@@ -305,11 +311,11 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       const filter = ctx.createBiquadFilter.mock.results[0].value;
       expect(filter.type).toBe('highpass');
       expect(filter.frequency.value).toBe(2200);
-      // Random playback offset (0.5 × (1 s buffer − 0.12 s burst+tail) ≈ 0.44)
+      // Random playback offset (0.5 × (10 s buffer − 0.12 s burst+tail) = 4.94)
       // so overlapping bursts de-correlate; duration limited to burst + tail.
       const [when, offset, duration] = src.start.mock.calls[0];
       expect(when).toBe(10);
-      expect(offset).toBeCloseTo(0.44, 5);
+      expect(offset).toBeCloseTo(4.94, 5);
       expect(duration).toBeCloseTo(0.12, 5);
       expect(src.stop).toHaveBeenCalledWith(10.12);
       rand.mockRestore();
@@ -328,10 +334,10 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       const second = ctx.createBufferSource.mock.results[1].value;
       const [, firstOffset] = first.start.mock.calls[0];
       const [, secondOffset] = second.start.mock.calls[0];
-      // usable ≈ 0.88 s → offsets ≈ 0.22 / 0.66 — NOT both sample 0,
-      // so rapid retriggers can never phase-lock into a buzz.
-      expect(firstOffset).toBeCloseTo(0.22, 5);
-      expect(secondOffset).toBeCloseTo(0.66, 5);
+      // usable = 10 s − 0.12 s = 9.88 → offsets ≈ 2.47 / 7.41 — NOT both
+      // sample 0, so rapid retriggers can never phase-lock into a buzz.
+      expect(firstOffset).toBeCloseTo(2.47, 5);
+      expect(secondOffset).toBeCloseTo(7.41, 5);
       rand.mockRestore();
     });
 
@@ -339,7 +345,7 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       adapter.unlock();
       const rand = vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const ctx = getCtx();
-      adapter.playNoise(2000, 'lowpass', 400, 0.3);
+      adapter.playNoise(10500, 'lowpass', 400, 0.3);
 
       const src = ctx.createBufferSource.mock.results[0].value;
       const [when, offset] = src.start.mock.calls[0];
@@ -383,8 +389,8 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       expect(filter.type).toBe('lowpass');
       expect(filter.frequency.value).toBe(600);
       // Start at a random offset inside the LOOPING buffer — a rotation, so
-      // concurrent voices de-correlate (0.25 × 1 s buffer = 0.25 s).
-      expect(src.start).toHaveBeenCalledWith(10, 0.25);
+      // concurrent voices de-correlate (0.25 × 10 s buffer = 2.5 s).
+      expect(src.start).toHaveBeenCalledWith(10, 2.5);
       expect(handle.isPlaying()).toBe(true);
       rand.mockRestore();
     });
@@ -544,7 +550,7 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       expect(filter.Q.value).toBe(1); // non-finite resolves to the default
     });
 
-    it('pink noise builds ONE second buffer lazily, shared by every pink voice', () => {
+    it('pink noise builds ONE long buffer lazily, shared by every pink voice', () => {
       adapter.unlock();
       const ctx = getCtx();
       expect(ctx.createBuffer).toHaveBeenCalledTimes(1); // white, at unlock
@@ -578,12 +584,117 @@ describe('createAudioAdapter — with mock WebAudio', () => {
       const second = ctx.createBufferSource.mock.results[1].value;
       const [, firstOffset] = first.start.mock.calls[0];
       const [, secondOffset] = second.start.mock.calls[0];
-      // Offsets 0.2 s / 0.8 s into the one-second loop: same buffer, different
+      // Offsets 2.0 s / 8.0 s into the ten-second loop: same buffer, different
       // rotation — time-shifted, not the identical correlated signal.
-      expect(firstOffset).toBeCloseTo(0.2, 5);
-      expect(secondOffset).toBeCloseTo(0.8, 5);
+      expect(firstOffset).toBeCloseTo(2.0, 5);
+      expect(secondOffset).toBeCloseTo(8.0, 5);
       expect(firstOffset).not.toBe(secondOffset);
       rand.mockRestore();
+    });
+  });
+
+  // --- noise buffers — length + seamless seam (§3.9, 0.19.1) -----------------
+
+  describe('noise buffers — 10 s length, equal-power seam, laziness', () => {
+    const RATE = 44100;
+
+    it('the white buffer is 10 s and is built exactly once, at unlock', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(1);
+      const [channels, length, rate] = ctx.createBuffer.mock.calls[0];
+      expect(channels).toBe(1);
+      expect(length).toBeGreaterThanOrEqual(10 * RATE);
+      expect(rate).toBe(RATE);
+      const white = ctx.createBuffer.mock.results[0].value;
+      expect(white.duration).toBeGreaterThanOrEqual(10);
+
+      // No further allocation however many sounds fire — every noise voice
+      // reuses the one buffer.
+      adapter.playNoise(50, 'lowpass', 400, 0.2);
+      adapter.startNoiseLoop('lowpass', 500, 0.1);
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    it('the pink buffer is 10 s, built lazily on the first pink voice, at most once', () => {
+      adapter.unlock();
+      const ctx = getCtx();
+      adapter.startNoiseLoop('lowpass', 300, 0.1, { noise: 'pink' });
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(2);
+      const [channels, length] = ctx.createBuffer.mock.calls[1];
+      expect(channels).toBe(1);
+      expect(length).toBeGreaterThanOrEqual(10 * RATE);
+      adapter.startNoiseLoop('bandpass', 800, 0.05, { noise: 'pink', q: 4 });
+      expect(ctx.createBuffer).toHaveBeenCalledTimes(2); // shared
+    });
+
+    /** Deterministic Math.random replacement (LCG) — pins the fill for seam tests. */
+    function seededRandom(seed: number): () => number {
+      let s = seed;
+      return () => {
+        // Numerical-Recipes-style LCG; deterministic and adequate for a fill.
+        s = (1664525 * s + 1013904223) % 4294967296;
+        return s / 4294967296;
+      };
+    }
+
+    /** RMS helper over [from, to). */
+    function rmsOf(data: Float32Array, from: number, to: number): number {
+      let acc = 0;
+      for (let i = from; i < to; i++) acc += data[i] * data[i];
+      return Math.sqrt(acc / (to - from));
+    }
+
+    it('the WHITE seam is continuous: no wrap step, RMS at the seam within ±0.5 dB of the body', () => {
+      const rand = vi.spyOn(Math, 'random').mockImplementation(seededRandom(1234));
+      try {
+        adapter.unlock();
+        const ctx = getCtx();
+        const data: Float32Array = ctx.createBuffer.mock.results[0].value.data;
+        const n = data.length;
+        const fade = Math.floor(0.5 * RATE);
+
+        // No step: the wrap difference sits within the buffer's own adjacent-
+        // sample difference distribution (compare against the body max).
+        let maxStep = 0;
+        for (let i = 1; i < n; i++) {
+          const d = Math.abs(data[i] - data[i - 1]);
+          if (d > maxStep) maxStep = d;
+        }
+        const wrapStep = Math.abs(data[0] - data[n - 1]);
+        expect(wrapStep).toBeLessThanOrEqual(maxStep);
+
+        // Level: the crossfaded head region vs the FULL untouched body
+        // (~9 s — a stable reference). Equal-power weights hold the level;
+        // linear weights would dip −3 dB at mid-crossfade.
+        const seamDb = 20 * Math.log10(rmsOf(data, 0, fade) / rmsOf(data, fade, n - fade));
+        expect(Math.abs(seamDb)).toBeLessThan(0.5);
+      } finally {
+        rand.mockRestore();
+      }
+    });
+
+    it('the PINK seam holds the level (settled warm-up, no seam dip)', () => {
+      const rand = vi.spyOn(Math, 'random').mockImplementation(seededRandom(4321));
+      try {
+        adapter.unlock();
+        const ctx = getCtx();
+        adapter.startNoiseLoop('lowpass', 300, 0.1, { noise: 'pink' });
+        const data: Float32Array = ctx.createBuffer.mock.results[1].value.data;
+        const n = data.length;
+        const fade = Math.floor(0.5 * RATE);
+        // Pink's low-frequency content makes any short window's RMS wander;
+        // the body reference is the full untouched body and the tolerance
+        // admits that wander while still catching a −3 dB crossfade dip.
+        const seamDb = 20 * Math.log10(rmsOf(data, 0, fade) / rmsOf(data, fade, n - fade));
+        expect(Math.abs(seamDb)).toBeLessThan(1.5);
+        // And every sample is in range (the fill clamps crossfade sums).
+        for (let i = 0; i < n; i += 997) {
+          expect(Math.abs(data[i])).toBeLessThanOrEqual(1);
+        }
+      } finally {
+        rand.mockRestore();
+      }
     });
   });
 

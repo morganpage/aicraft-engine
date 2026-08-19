@@ -5,6 +5,32 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Seamless long noise buffers — sustained voices stop sounding 1 Hz-periodic.**
+  Both shared noise buffers (white and pink) were exactly one second, so every
+  `startNoiseLoop` voice repeated its waveform every second — audible through
+  any filter as a regular, industrial texture (a real build's wind read as
+  machinery; the 0.19.0 random start-offset only ROTATES the loop and cannot
+  change its period). Both buffers are now 10 s (~1.9 MB mono at 48 kHz per
+  color, still built lazily once per adapter), with a seamless loop seam by
+  equal-power crossfade: the fill generates L + F samples (F = 0.5 s) and folds
+  the tail into the head with `√` weights, so the loop wrap continues the
+  texture with no click (safe even under resonant Q filtering, where a butt
+  joint rings) and no RMS dip. Equal-power, not linear, because the two folded
+  samples are L seconds apart in the stream and therefore UNCORRELATED — whose
+  powers add (linear weights dip −3 dB at mid-crossfade); for pink the tail
+  must come from the end of the L+F generation, since ADJACENT pink samples
+  are strongly correlated and folding those boosts the low-frequency content
+  up to +3 dB instead of holding the level. The pink fill also warms the
+  Kellet filter ~0.25 s before recording, so the loop body carries a settled
+  −3 dB/octave spectrum from sample zero. Downstream effects at no extra API:
+  the loop start-offset rotation now spans the full 10 s, and `playNoise`'s
+  random-offset decorrelation range grows with the buffer — multi-second
+  bursts de-correlate instead of falling back to phase-locked offset 0. No
+  public API change; internal buffers only (a patch bump).
+
 ## [0.19.0] - 2026-08-19
 
 ### Added
