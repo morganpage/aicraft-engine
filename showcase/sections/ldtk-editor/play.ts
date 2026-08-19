@@ -24,6 +24,7 @@
 import {
   compileGeneratedLevel,
   createPlatformerState,
+  createSeamApronCache,
   EMPTY_CONTACTS,
   stepPlatformer,
   PRECISION_PLATFORMER,
@@ -495,6 +496,22 @@ export function createPlaySession(
     return runtime;
   }
 
+  // Seam apron (0.18.0): each room's tick set also carries the linked
+  // neighbour's near-seam solids, rebased into THIS room's local coordinates,
+  // so the floor across a seam exists before the room switch — a fast fall
+  // across the edge lands flush on the kernel's own resolution instead of
+  // embedding into the destination floor. Memoized per room alongside the
+  // compile cache: computed once, no per-tick allocation.
+  const seamApron = createSeamApronCache((iid) => getLevel(iid));
+  const collisionSolids = new Map<string, readonly Solid[]>();
+  function collisionSolidsFor(rt: LevelRuntime): readonly Solid[] {
+    const cached = collisionSolids.get(rt.ldtkLevel.iid);
+    if (cached !== undefined) return cached;
+    const combined = [...rt.solids, ...seamApron.apronFor(rt.ldtkLevel.iid)];
+    collisionSolids.set(rt.ldtkLevel.iid, combined);
+    return combined;
+  }
+
   // Native-resolution level surfaces. Each room's tiles are baked ONCE into an
   // offscreen canvas at pxWid×pxHei, then the completed surface is scaled as a
   // single blit under the camera transform. Scaling hundreds of tiles
@@ -642,7 +659,7 @@ export function createPlaySession(
         // the correct "mapped but not pressed" default rather than `null`.
         grab: edges['grab'] ?? IDLE_EDGE,
       };
-      state = stepPlatformer(state, input, active.solids, dt, config).state;
+      state = stepPlatformer(state, input, collisionSolidsFor(active), dt, config).state;
 
       // Phase 8c — advance the render-only squash from this tick's emitted
       // events + the resolved core velocity. `moveY === 1 && vy > 0` is the
