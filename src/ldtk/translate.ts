@@ -24,12 +24,14 @@ import type {
 import { LEVEL_VERSION } from '../level/constants';
 import type { GeneratedTileSemantics } from '../level/tile-semantics';
 import type {
+  LdtkEntityDef,
   LdtkEntityInstance,
   LdtkFieldInstance,
   LdtkLayerDef,
   LdtkLayerInstance,
   LdtkLevel,
   LdtkProject,
+  LdtkTileRenderMode,
 } from './types';
 
 /**
@@ -57,12 +59,54 @@ export interface LdtkTranslateDiagnostic {
   readonly severity: 'error' | 'warning';
 }
 
+/**
+ * The authored display art for one translated entity — its LDtk `__tile`
+ * together with everything {@link drawLdtkEntityTile} needs to blit it.
+ *
+ * This is the association a consumer CANNOT reconstruct after the fact. The
+ * translated {@link LevelEntity} and the authored art live on opposite sides of
+ * translation (engine ids vs LDtk instances), so a build that wants authored
+ * entity art next to engine entities has to re-walk the raw level and re-match
+ * instances to translated entities by rect — a fragile key with two shipped
+ * failure modes: a room slide draws TWO rooms in one frame, so an index built
+ * for the active room misses the outgoing room's entities (they fall back to
+ * `DEFAULT_ENTITY_PALETTE` and flash the fallback shape for the length of the
+ * transition), and rects are room-LOCAL, so two rooms sharing a local rect
+ * silently resolve EACH OTHER's tiles instead of missing. Keyed by the engine
+ * {@link EntityId} instead, both are structurally impossible: the id is unique
+ * per translated entity and the lookup cannot cross rooms.
+ *
+ * Produced by {@link ldtkLevelToLevelData} as the `entityArt` side channel,
+ * carried onto {@link CompiledLdtkRoom} as `room.entityArt`, and consumed as
+ * `room.entityArt.get(entity.id)` inside a `drawLevelEntity` override.
+ */
+export interface LdtkEntityArt {
+  /** The instance's authored display tile, copied (never aliased) from `__tile`. */
+  readonly tile: NonNullable<LdtkEntityInstance['__tile']>;
+  /**
+   * The def's authored render mode for resized instances. `undefined` when the
+   * def could not be resolved (no project, or an instance whose `defUid` has no
+   * matching def) — pass it through to {@link drawLdtkEntityTile}, whose
+   * omitted-mode geometry heuristic is exactly the right fallback.
+   */
+  readonly tileRenderMode: LdtkTileRenderMode | undefined;
+  /** The def's nine-slice borders, or `null` (only meaningful for `NineSlice`). */
+  readonly nineSliceBorders: readonly [number, number, number, number] | null;
+}
+
 /** Outcome of translating an LDtk level into the engine schema. */
 export interface LdtkTranslateResult {
   /** The translated level, or `undefined` on hard failure. */
   readonly level?: LevelData;
   /** Tile semantics derived from the IntGrid layer. */
   readonly tileSemantics: GeneratedTileSemantics;
+  /**
+   * Authored display art per translated entity, keyed by the entity's ENGINE
+   * {@link EntityId} — see {@link LdtkEntityArt}. An entry exists iff the
+   * entity translated AND has an authored `__tile`; a missing key means "the
+   * entity renders as its engine shape" (the override returns `false`).
+   */
+  readonly entityArt: ReadonlyMap<EntityId, LdtkEntityArt>;
   /** Diagnostics (errors and warnings). */
   readonly diagnostics: readonly LdtkTranslateDiagnostic[];
 }
@@ -457,6 +501,13 @@ export function ldtkLevelToLevelData(
   // Entities — collect from every Entities layer.
   const entityMap = options.entityMap ?? LDTK_DEFAULT_ENTITY_MAP;
   const entities: LevelEntity[] = [];
+  const entityArt = new Map<EntityId, LdtkEntityArt>();
+  // Def lookup for authored display art (mode + nine-slice borders live on the
+  // DEF, the tile on the instance — the side channel needs both at once).
+  const entityDefs = new Map<number, LdtkEntityDef>();
+  for (const def of project?.defs.entities ?? []) {
+    if (def && typeof def.uid === 'number') entityDefs.set(def.uid, def);
+  }
   let nextId: EntityId = 1;
   let spawnX = 0;
   let spawnY = 0;
@@ -474,6 +525,22 @@ export function ldtkLevelToLevelData(
         spawnFound = true;
       }
       entities.push(translated);
+      if (e.__tile != null) {
+        const def = entityDefs.get(e.defUid);
+        entityArt.set(translated.id, {
+          // Copied, not aliased: the map must not share structure with the
+          // input level (a consumer mutating an entry cannot corrupt the source).
+          tile: {
+            tilesetUid: e.__tile.tilesetUid,
+            x: e.__tile.x,
+            y: e.__tile.y,
+            w: e.__tile.w,
+            h: e.__tile.h,
+          },
+          tileRenderMode: def?.tileRenderMode,
+          nineSliceBorders: def?.nineSliceBorders ?? null,
+        });
+      }
       nextId++;
     }
   }
@@ -500,5 +567,5 @@ export function ldtkLevelToLevelData(
   };
 
   const ok = diagnostics.every((d) => d.severity !== 'error');
-  return { level: ok ? result : undefined, tileSemantics, diagnostics };
+  return { level: ok ? result : undefined, tileSemantics, entityArt, diagnostics };
 }

@@ -87,6 +87,7 @@ export { formatLdtkJson } from './format';
 
 export type {
   LdtkEntityMap,
+  LdtkEntityArt,
   LdtkTranslateDiagnostic,
   LdtkTranslateResult,
   LdtkTranslateOptions,

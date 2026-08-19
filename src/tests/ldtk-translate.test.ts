@@ -3,9 +3,16 @@ import {
   LDTK_DEFAULT_ENTITY_MAP,
   ldtkLevelToLevelData,
   translateLdtkEntity,
+  type LdtkEntityMap,
 } from '../ldtk/translate';
 import { validateLevel } from '../level';
-import type { LdtkEntityInstance, LdtkLevel, LdtkProject } from '../ldtk/types';
+import type { LevelEntity } from '../level/types';
+import type {
+  LdtkEntityInstance,
+  LdtkLevel,
+  LdtkProject,
+  LdtkTileRenderMode,
+} from '../ldtk/types';
 
 /** Build a minimal LDtk level fixture with the given IntGrid + entities. */
 function makeLevel(opts: {
@@ -349,5 +356,149 @@ describe('translateLdtkEntity — unit cases', () => {
     );
     expect(e?.kind).toBe('exit');
     if (e?.kind === 'exit') expect(e.props).toMatchObject({ isTrap: true, locked: true });
+  });
+});
+
+describe('ldtkLevelToLevelData — entity art side channel', () => {
+  // A project carrying entity DEFS: the art side channel needs each def's
+  // tileRenderMode + nineSliceBorders, matched to instances by defUid.
+  function makeEntityProject(
+    defs: readonly { uid: number; tileRenderMode?: LdtkTileRenderMode; nineSliceBorders?: readonly [number, number, number, number] | null }[],
+  ): LdtkProject {
+    return {
+      defs: {
+        layers: [], // present (the tile-semantics path reads it) but empty
+        entities: defs.map((d) => ({ tileRenderMode: 'FitInside', nineSliceBorders: null, ...d })),
+      },
+    } as unknown as LdtkProject;
+  }
+  const TILE = (x: number, y: number) => ({ tilesetUid: 90, x, y, w: 16, h: 16 });
+
+  it('keys the art by the ENGINE entity id, carrying tile + def mode + borders', () => {
+    const level = makeLevel({
+      entities: [
+        ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, defUid: 10, __tile: TILE(0, 0) }),
+        ENT({ __identifier: 'Coin', px: [32, 16], width: 8, height: 8, defUid: 11, __tile: TILE(16, 0) }),
+      ],
+    });
+    const project = makeEntityProject([
+      { uid: 10, tileRenderMode: 'Repeat' },
+      { uid: 11, tileRenderMode: 'NineSlice', nineSliceBorders: [2, 2, 2, 2] },
+    ]);
+    const { level: out, entityArt } = ldtkLevelToLevelData(level, project);
+    expect(entityArt.size).toBe(2);
+    const [spike, coin] = out!.entities;
+    expect(entityArt.get(spike.id)).toEqual({
+      tile: TILE(0, 0),
+      tileRenderMode: 'Repeat',
+      nineSliceBorders: null,
+    });
+    expect(entityArt.get(coin.id)).toEqual({
+      tile: TILE(16, 0),
+      tileRenderMode: 'NineSlice',
+      nineSliceBorders: [2, 2, 2, 2],
+    });
+  });
+
+  it('the tile is copied, not aliased — the map shares no structure with the input level', () => {
+    const instance = ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, defUid: 10, __tile: TILE(0, 0) });
+    const level = makeLevel({ entities: [instance] });
+    const project = makeEntityProject([{ uid: 10, tileRenderMode: 'Repeat' }]);
+    const { level: out, entityArt } = ldtkLevelToLevelData(level, project);
+    const art = entityArt.get(out!.entities[0].id);
+    expect(art).toBeDefined();
+    expect(art!.tile).toEqual(instance.__tile);
+    expect(art!.tile).not.toBe(instance.__tile);
+  });
+
+  it('two entities at the SAME rect resolve their own art — the rect-key collision failure mode cannot exist', () => {
+    // A consumer indexing art by room-local rect (the pre-side-channel recipe)
+    // could not tell these apart; keyed by engine id, both are exact.
+    const level = makeLevel({
+      entities: [
+        ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, defUid: 10, __tile: TILE(0, 0) }),
+        ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, defUid: 11, __tile: TILE(32, 0) }),
+      ],
+    });
+    const project = makeEntityProject([
+      { uid: 10, tileRenderMode: 'Repeat' },
+      { uid: 11, tileRenderMode: 'Repeat' },
+    ]);
+    const { level: out, entityArt } = ldtkLevelToLevelData(level, project);
+    const [first, second] = out!.entities;
+    expect(first.rect).toEqual(second.rect);
+    expect(entityArt.get(first.id)!.tile).toEqual(TILE(0, 0));
+    expect(entityArt.get(second.id)!.tile).toEqual(TILE(32, 0));
+  });
+
+  it('an instance with no authored __tile gets NO entry — the engine shape is the authored intent', () => {
+    const level = makeLevel({
+      entities: [
+        ENT({ __identifier: 'Player', px: [16, 16], width: 16, height: 24, __tile: null }),
+        ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, __tile: TILE(0, 0) }),
+      ],
+    });
+    const { level: out, entityArt } = ldtkLevelToLevelData(level, makeEntityProject([{ uid: 1, tileRenderMode: 'Stretch' }]));
+    const player = out!.entities.find((e) => e.kind === 'spawn')!;
+    expect(entityArt.has(player.id)).toBe(false);
+    expect(entityArt.size).toBe(1);
+  });
+
+  it('without a project (or a missing def) the art still carries the tile; mode is undefined and borders null', () => {
+    // drawLdtkEntityTile treats an omitted mode as its geometry heuristic, so
+    // passing `art.tileRenderMode` straight through is the correct fallback.
+    const level = makeLevel({
+      entities: [
+        ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, defUid: 10, __tile: TILE(0, 0) }),
+        ENT({ __identifier: 'Coin', px: [32, 16], width: 8, height: 8, defUid: 999, __tile: TILE(16, 0) }),
+      ],
+    });
+    const withProject = ldtkLevelToLevelData(level, makeEntityProject([{ uid: 10, tileRenderMode: 'Cover' }]));
+    const [spike, coin] = withProject.level!.entities;
+    expect(withProject.entityArt.get(spike.id)).toEqual({
+      tile: TILE(0, 0),
+      tileRenderMode: 'Cover',
+      nineSliceBorders: null,
+    });
+    // defUid 999 has no def in the project.
+    expect(withProject.entityArt.get(coin.id)).toEqual({
+      tile: TILE(16, 0),
+      tileRenderMode: undefined,
+      nineSliceBorders: null,
+    });
+    // No project at all: same degraded-but-present shape for every entry.
+    const bare = ldtkLevelToLevelData(level);
+    expect(bare.entityArt.get(bare.level!.entities[0].id)).toEqual({
+      tile: TILE(0, 0),
+      tileRenderMode: undefined,
+      nineSliceBorders: null,
+    });
+  });
+
+  it('entities that fail translation leave no art entry and no id gap — the map aligns with level.entities', () => {
+    // A custom map that resolves one identifier to a kind the props builder
+    // cannot handle: that entity is dropped with a diagnostic; the rest map
+    // through the default resolver as usual.
+    const bogusMap: LdtkEntityMap = {
+      resolve: (identifier, tags) =>
+        identifier === 'Weird'
+          ? ('bogus' as LevelEntity['kind'])
+          : LDTK_DEFAULT_ENTITY_MAP.resolve(identifier, tags),
+    };
+    const level = makeLevel({
+      entities: [
+        ENT({ __identifier: 'Weird', px: [64, 16], width: 8, height: 8, __tile: TILE(48, 0) }),
+        ENT({ __identifier: 'Spike', px: [0, 16], width: 16, height: 8, __tile: TILE(0, 0) }),
+        ENT({ __identifier: 'Coin', px: [32, 16], width: 8, height: 8, __tile: TILE(16, 0) }),
+      ],
+    });
+    const { level: out, entityArt, diagnostics } = ldtkLevelToLevelData(level, undefined, { entityMap: bogusMap });
+    expect(out!.entities).toHaveLength(2);
+    expect(diagnostics.some((d) => /unhandled kind/.test(d.message))).toBe(true);
+    // Ids are gapless over the SURVIVING entities (1 and 2), and the art keys
+    // are exactly those ids — a consumer iterating entities never sees a key
+    // that does not belong to one.
+    expect(out!.entities.map((e) => e.id)).toEqual([1, 2]);
+    expect([...entityArt.keys()].sort((a, b) => a - b)).toEqual([1, 2]);
   });
 });

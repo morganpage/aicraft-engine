@@ -180,6 +180,77 @@ describe('C4 — compileLdtkRoom (hard translate failure never throws)', () => {
 });
 
 // ===========================================================================
+// C4 — entity art side channel (CompiledLdtkRoom.entityArt)
+// ===========================================================================
+describe('C4 — compileLdtkRoom entity art side channel', () => {
+  /**
+   * The LDtk platformer sample: real defs with authored display tiles and
+   * render modes (`Mob` renders Cover, `Door` is a real NineSlice), across
+   * MULTIPLE rooms — what the per-room alignment is for.
+   */
+  function loadSampleProject(): LdtkProject {
+    const url = new URL('../../assets/ldtk/samples/Typical_2D_platformer_example.ldtk', import.meta.url);
+    const text = readFileSync(url, 'utf8');
+    const { project } = parseLdtkProject(text);
+    if (project === undefined) throw new Error('sample failed to parse');
+    return project;
+  }
+
+  it('carries authored art onto the room, keyed by the translated entities’ engine ids', () => {
+    const project = loadSampleProject();
+    const level = project.levels.find((l) => l.identifier === 'Top')!;
+    const room = compileLdtkRoom(level, project);
+
+    // Alignment invariant: every art key is one of THIS room's entity ids —
+    // the consumer's `room.entityArt.get(entity.id)` can never miss its own
+    // room's art or hit another room's.
+    const ids = new Set(room.levelData.entities.map((e) => e.id));
+    expect(room.entityArt.size).toBeGreaterThan(0);
+    for (const key of room.entityArt.keys()) expect(ids.has(key)).toBe(true);
+
+    // The Mob def renders Cover; a trigger-hatched Mob still carries its art.
+    const mob = room.levelData.entities.find(
+      (e) => e.kind === 'trigger' && e.props.action === 'Mob',
+    )!;
+    expect(room.entityArt.get(mob.id)?.tileRenderMode).toBe('Cover');
+    expect(room.entityArt.get(mob.id)?.tile).toMatchObject({ tilesetUid: 104, x: 96, y: 0 });
+
+    // The Door def is a real NineSlice with parsed borders.
+    const door = room.levelData.entities.find((e) => e.kind === 'exit')!;
+    const doorArt = room.entityArt.get(door.id);
+    expect(doorArt?.tileRenderMode).toBe('NineSlice');
+    expect(doorArt?.nineSliceBorders).toEqual([5, 5, 5, 5]);
+  });
+
+  it('the art travels WITH the room: two rooms with overlapping entity ids each resolve their own map', () => {
+    // Engine ids restart at 1 per room, so id overlap across rooms is the
+    // NORMAL case — a slide drawing two rooms resolves each from its own map
+    // by construction, where a shared rect-keyed index mis-resolved both.
+    const project = loadSampleProject();
+    const top = compileLdtkRoom(project.levels.find((l) => l.identifier === 'Top')!, project);
+    const bottom = compileLdtkRoom(project.levels.find((l) => l.identifier === 'Bottom')!, project);
+    expect(top.entityArt).not.toBe(bottom.entityArt);
+
+    const topMob = top.levelData.entities.find(
+      (e) => e.kind === 'trigger' && e.props.action === 'Mob',
+    )!;
+    const bottomMob = bottom.levelData.entities.find(
+      (e) => e.kind === 'trigger' && e.props.action === 'Mob',
+    )!;
+    for (const [room, entity] of [[top, topMob], [bottom, bottomMob]] as const) {
+      const ids = new Set(room.levelData.entities.map((e) => e.id));
+      expect(ids.has(entity.id)).toBe(true);
+      expect(room.entityArt.get(entity.id)?.tile).toMatchObject({ x: 96, y: 0 });
+    }
+    // Top has Doors (NineSlice); Bottom has none — its map holds no Door art.
+    const topDoor = top.levelData.entities.find((e) => e.kind === 'exit');
+    expect(topDoor).toBeDefined();
+    expect(bottom.levelData.entities.some((e) => e.kind === 'exit')).toBe(false);
+    expect(bottom.entityArt.get(topDoor!.id)?.tileRenderMode).not.toBe('NineSlice');
+  });
+});
+
+// ===========================================================================
 // C5 — createLdtkRoomCache
 // ===========================================================================
 describe('C5 — createLdtkRoomCache (lazy compile + identity)', () => {

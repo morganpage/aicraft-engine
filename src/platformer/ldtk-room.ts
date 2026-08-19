@@ -26,11 +26,12 @@
  * @module
  */
 
-import type { LevelData, LevelEntity } from '../level/types';
+import type { EntityId, LevelData, LevelEntity } from '../level/types';
 import type { CollectibleEntity } from '../collectibles/types';
 import { LEVEL_VERSION } from '../level/constants';
 import type { GeneratedTileSemantics } from '../level/tile-semantics';
 import { ldtkLevelToLevelData } from '../ldtk/translate';
+import type { LdtkEntityArt } from '../ldtk/translate';
 import type { LdtkLevel, LdtkProject } from '../ldtk/types';
 import type { Solid } from '../collision/types';
 import type { PlatformerConfig } from './types';
@@ -82,6 +83,18 @@ export interface CompiledLdtkRoom {
   readonly compiled: CompiledLevel;
   /** Tile semantics derived from the LDtk IntGrid value names. */
   readonly tileSemantics: GeneratedTileSemantics;
+  /**
+   * Authored display art per translated entity, keyed by the entity's ENGINE
+   * {@link EntityId} — the translate-time side channel (see
+   * {@link LdtkEntityArt}). In a `drawLevelEntity` override:
+   * `room.entityArt.get(entity.id)` resolves the instance's authored `__tile`
+   * plus its def's render mode and nine-slice borders in one lookup, with no
+   * consumer-side index to key, rebuild, or invalidate — the art travels WITH
+   * the room, so a slide drawing two rooms resolves each from its own map by
+   * construction. A missing key means the entity has no authored tile; return
+   * `false` and take the engine palette shape. Empty when translate failed.
+   */
+  readonly entityArt: ReadonlyMap<EntityId, LdtkEntityArt>;
   /**
    * The static collision set (`compiled.staticSolids`): tile geometry plus
    * `platform`/`passthrough` entity solids, plus the NON-BLOCKING trigger
@@ -282,6 +295,7 @@ export function compileLdtkRoom(
       levelData,
       compiled,
       tileSemantics,
+      entityArt: translate.entityArt,
       solids: compiled.staticSolids,
       hazards: filterKind('hazard'),
       collectibles,
@@ -311,6 +325,7 @@ export function compileLdtkRoom(
       levelData,
       compiled,
       tileSemantics,
+      entityArt: new Map(),
       solids: [],
       hazards: [],
       collectibles: [],
