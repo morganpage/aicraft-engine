@@ -48,7 +48,7 @@ describe('themed semantic entities', () => {
   it('hides spawn and trigger markers in play and shows them in edit', () => {
     const markers: LevelEntity[] = [
       { id: 1, kind: 'spawn', rect: { x: 4, y: 4, width: 20, height: 20 }, props: {} },
-      { id: 2, kind: 'trigger', rect: { x: 3, y: 3, width: 24, height: 24 }, props: { action: 'test', params: {} } },
+      { id: 2, kind: 'trigger', rect: { x: 3, y: 3, width: 24, height: 24 }, props: { action: 'test', fields: {}, params: {} } },
     ];
     for (const entity of markers) {
       const blank = createCanvas(32, 32).toBuffer('image/png');

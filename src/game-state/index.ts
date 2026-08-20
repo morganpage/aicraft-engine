@@ -16,6 +16,18 @@ export {
   isLegalTransition,
 } from './game-state';
 
+export {
+  createMenuNav,
+  openMenuNav,
+  advanceMenuNav,
+  clampMenuNavIndex,
+  IDLE_MENU_INPUT,
+  type MenuNavState,
+  type MenuNavOptions,
+  type MenuNavInput,
+  type MenuNavResult,
+} from './menu-nav';
+
 export type {
   GameMode,
   GameEvent,

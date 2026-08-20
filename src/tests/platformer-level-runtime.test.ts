@@ -338,7 +338,7 @@ describe('compileLevel', () => {
           id: 6,
           kind: 'trigger',
           rect: { x: 0, y: 0, width: 16, height: 16 },
-          props: { action: 'x', params: {} },
+          props: { action: 'x', fields: {}, params: {} },
         },
       ],
     });

@@ -112,6 +112,28 @@ export interface SpriteFrameTagJSON {
   readonly direction: SpriteTagDirection;
   /** Aseprite-only display hint; ignored at runtime. */
   readonly color?: string;
+  /**
+   * Play the clip once and CLAMP on its last frame instead of looping.
+   * Engine extension (Aseprite never emits it): `false` is how a jump arc —
+   * launch → apex → fall — holds its fall frame until landing rather than
+   * rewinding mid-air. Default `true` (Aseprite behavior).
+   */
+  readonly loop?: boolean;
+  /**
+   * Uniform per-frame duration for THIS clip, in ms. Engine extension: a
+   * grid sheet has no per-frame timings (every cell compiles at the sheet
+   * default, 100 ms — which reads as vibration on a 2-frame clip), so the
+   * tag is the natural place to author a per-clip pace. Ignored when `0` or
+   * non-finite; `durations` (per-frame) wins when both are present.
+   */
+  readonly duration?: number;
+  /**
+   * Per-frame durations for THIS clip, in ms, parallel to the tag's frame
+   * range (`to - from + 1` entries). Engine extension. A length mismatch is
+   * a compile diagnostic (the tag falls back to `duration`/per-frame
+   * timings), never a throw.
+   */
+  readonly durations?: readonly number[];
 }
 
 // ---------------------------------------------------------------------------

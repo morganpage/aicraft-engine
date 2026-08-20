@@ -159,12 +159,28 @@ function parseTag(raw: unknown, path: string, errors: SpriteDiagnostic[]): Sprit
     return undefined;
   }
   const color = str(raw.color);
+  // Engine extensions (Aseprite never emits these): one-shot clips + per-tag
+  // pacing. Parsed defensively — invalid values are dropped, never errors,
+  // so a strict Aseprite file and a hand-authored extension file take the
+  // same never-throws path.
+  const loop = raw.loop;
+  const duration = int(raw.duration);
+  // Positional semantics: if ANY entry is invalid the whole array is dropped
+  // (filtering would shift positions and silently re-pair frames with the
+  // wrong timings).
+  const rawDurations = Array.isArray(raw.durations) ? raw.durations.map((d) => int(d)) : undefined;
+  const allPositive = (values: readonly (number | undefined)[]): values is number[] =>
+    values.length > 0 && values.every((d) => d !== undefined && d > 0 && Number.isFinite(d));
+  const durations = rawDurations !== undefined && allPositive(rawDurations) ? rawDurations : undefined;
   return {
     name,
     from,
     to,
     direction: parseDirection(raw.direction),
     ...(color ? { color } : {}),
+    ...(typeof loop === 'boolean' ? { loop } : {}),
+    ...(duration !== undefined && duration > 0 ? { duration } : {}),
+    ...(durations !== undefined ? { durations } : {}),
   };
 }
 

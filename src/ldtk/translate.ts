@@ -277,6 +277,10 @@ function buildEntityProps(
     case 'trigger':
       return {
         action: entity.__identifier,
+        // The authored field values as a clean top-level record — the
+        // supported read surface for custom-entity recipes (`props.fields.tiletype`),
+        // so no consumer reaches into `params.fieldInstances` again.
+        fields: fieldsToParams(fields),
         params: { identifier: entity.__identifier, tags: [...entity.__tags], fieldInstances: fieldsToParams(fields) },
       };
     case 'movingPlatform': {

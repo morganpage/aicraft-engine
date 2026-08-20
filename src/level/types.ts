@@ -100,6 +100,15 @@ export interface DecorationProps {
 export interface TriggerProps {
   /** Action identifier (e.g. `'showHint'`, `'spawnEnemy'`). Dispatch key. */
   readonly action: string;
+  /**
+   * The entity's AUTHORED LDtk field values, keyed by field identifier with
+   * each `__value` unwrapped (e.g. `{ tiletype: 1, count: 3 }`). This is the
+   * supported read surface for custom-entity recipes — a `FallingBlock`
+   * trigger's `tiletype`, a hint trigger's `text` — no reaching through
+   * `params.fieldInstances` for what is structurally first-class authored
+   * data. An entity with no authored fields translates with an empty record.
+   */
+  readonly fields: Readonly<Record<string, unknown>>;
   /** Untyped parameter bag — shape depends on `action`. */
   readonly params: Record<string, unknown>;
 }

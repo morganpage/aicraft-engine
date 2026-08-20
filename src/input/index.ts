@@ -33,7 +33,7 @@ export {
   pollEdge,
 } from './edges';
 
-export { orEdges } from './merge';
+export { orEdges, mergeEdges, mergePolledEdgeMaps, extendKeyboardMap, extendGamepadMap } from './merge';
 
 export { createKeyboardAdapter } from './keyboard';
 

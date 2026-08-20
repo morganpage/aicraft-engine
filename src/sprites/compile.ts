@@ -229,12 +229,42 @@ export function compileSpriteSheet(sheet: SpriteSheetJSON): CompileResult {
       );
       continue;
     }
+    // Per-tag pacing. A grid sheet has no per-frame timings (every cell lands
+    // on the 100 ms default), so a clip's pace is authored ON the tag:
+    // `durations` (per-frame, must be parallel to the range) wins over
+    // `duration` (uniform), which wins over the per-frame table. Length
+    // mismatches and non-positive entries are diagnostics, never throws.
+    let clipDurations: number[] | undefined;
+    if (tag.durations !== undefined) {
+      if (tag.durations.length === indices.length && tag.durations.every((d) => d > 0 && Number.isFinite(d))) {
+        clipDurations = [...tag.durations];
+      } else {
+        diagnostics.push(
+          diag(
+            `meta.frameTags[${i}].durations`,
+            `tag "${tag.name}" durations must be ${indices.length} positive entries; ignored`,
+          ),
+        );
+      }
+    }
+    if (clipDurations === undefined && tag.duration !== undefined) {
+      if (tag.duration > 0 && Number.isFinite(tag.duration)) {
+        clipDurations = indices.map(() => tag.duration!);
+      } else {
+        diagnostics.push(
+          diag(
+            `meta.frameTags[${i}].duration`,
+            `tag "${tag.name}" duration must be positive; ignored`,
+          ),
+        );
+      }
+    }
     anims.set(tag.name, {
       name: tag.name,
       frameIndices: indices,
-      durations: indices.map(usedDurationFor),
+      durations: clipDurations ?? indices.map(usedDurationFor),
       direction: tag.direction,
-      loop: true,
+      loop: tag.loop ?? true,
     });
   }
 

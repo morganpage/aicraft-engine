@@ -2,8 +2,8 @@
  * Character-agnostic animation-state deriver.
  *
  * Maps a minimal physics surface (`supported`, `speedX`, `velocityY`, …) onto
- * a semantic animation kind (`'idle'` / `'walk'` / `'ascent'` / `'apex'` /
- * `'descent'`). The branching mirrors `../character/humanoid/state.ts`'
+ * a semantic animation kind (`'idle'` / `'walk'` / `'climb'` / `'ascent'` /
+ * `'apex'` / `'descent'`). The branching mirrors `../character/humanoid/state.ts`'
  * `airPose` derivation so sprite characters animate with the same intent as
  * the procedural humanoid. Crucially, the SAME primitive drives both the
  * player (built from `PlatformerState.core`) and enemies (built from
@@ -28,7 +28,7 @@ import {
 } from './resolve';
 
 /** Semantic animation key. Maps 1:1 to a character's `animations` entry. */
-export type SpriteAnimKind = 'idle' | 'walk' | 'ascent' | 'apex' | 'descent';
+export type SpriteAnimKind = 'idle' | 'walk' | 'climb' | 'ascent' | 'apex' | 'descent';
 
 /**
  * Minimal physics surface any animated body can supply. Deliberately tiny so
@@ -47,6 +47,13 @@ export interface SpriteAnimInputs {
   readonly gravityDir?: 1 | -1;
   /** Absolute horizontal speed above which the body is "walking" vs "idle". */
   readonly walkThreshold?: number;
+  /**
+   * True while the body is gripping a wall (wall-grab / wall-climb — for the
+   * platformer kernel, `state.abilities.wallGrab?.kind === 'wallGrab'`).
+   * Takes priority over the grounded/airborne branches so a cling reads as
+   * `'climb'` even while sliding slowly down the wall. Default `false`.
+   */
+  readonly climbing?: boolean;
 }
 
 /** Defaults if the caller omits optional fields. */
@@ -55,6 +62,8 @@ const DEFAULT_WALK_THRESHOLD = 12; // px/s — below this the body reads as idle
 /**
  * Derive the semantic animation kind from physics. Pure.
  *
+ * Climbing (`climbing: true`) → `'climb'`, priority over everything — a cling
+ * is a cling whether the body is grounded, sliding, or hopping up the wall.
  * Grounded: `|speedX| > threshold` → `'walk'`, else `'idle'`.
  * Airborne: `velocityY * gravityDir < 0` → `'ascent'`, `> 0` → `'descent'`,
  * else `'apex'`.
@@ -65,6 +74,7 @@ const DEFAULT_WALK_THRESHOLD = 12; // px/s — below this the body reads as idle
 export function deriveSpriteAnimKind(inputs: SpriteAnimInputs): SpriteAnimKind {
   const gravityDir = inputs.gravityDir ?? 1;
   const threshold = inputs.walkThreshold ?? DEFAULT_WALK_THRESHOLD;
+  if (inputs.climbing === true) return 'climb';
   if (inputs.supported) {
     return Math.abs(inputs.speedX) > threshold ? 'walk' : 'idle';
   }
@@ -81,12 +91,14 @@ export function deriveSpriteAnimKind(inputs: SpriteAnimInputs): SpriteAnimKind {
 /**
  * The animation CLIP a {@link SpriteAnimKind} plays on.
  *
- * Five kinds collapse onto three clips because the three airborne phases are
+ * Six kinds collapse onto four clips because the three airborne phases are
  * phases of ONE arc, not three animations: a sheet's jump clip is authored as
  * launch → apex → fall and is meant to play once, straight through, across all
- * three. `'idle'` and `'walk'` map 1:1.
+ * three. `'idle'`, `'walk'`, and `'climb'` map 1:1. A sheet without a climb
+ * clip degrades per {@link spriteAnimClipFor} — the consumer's clip table
+ * simply omits the key.
  */
-export type SpriteAnimClip = 'idle' | 'walk' | 'jump';
+export type SpriteAnimClip = 'idle' | 'walk' | 'climb' | 'jump';
 
 /**
  * Map a semantic kind onto the clip that plays it. Pure and total: any value
@@ -96,11 +108,13 @@ export type SpriteAnimClip = 'idle' | 'walk' | 'jump';
  * ```
  * idle                      → 'idle'
  * walk                      → 'walk'
+ * climb                     → 'climb'
  * ascent | apex | descent   → 'jump'
  * ```
  */
 export function spriteAnimClipFor(kind: SpriteAnimKind): SpriteAnimClip {
   if (kind === 'walk') return 'walk';
+  if (kind === 'climb') return 'climb';
   if (kind === 'ascent' || kind === 'apex' || kind === 'descent') return 'jump';
   return 'idle';
 }

@@ -52,7 +52,7 @@ const DEFAULT_PROPS_BY_KIND: Readonly<Record<EntityKind, Record<string, unknown>
   trap: { type: 'spikes', params: {} },
   hazard: {},
   decoration: { sprite: 'default' },
-  trigger: { action: 'showHint', params: {} },
+  trigger: { action: 'showHint', fields: {}, params: {} },
   movingPlatform: { speed: 60, path: [{ x: 0, y: 0 }, { x: 48, y: 0 }], loopMode: 'loop' },
   enemy: { archetype: 'spinny', params: {} },
   collectible: { kind: 'coin', value: 1 },

@@ -387,7 +387,7 @@ function topologyRoomEntities(tileSize: number): readonly LevelEntity[] {
       kind: 'trigger',
       // A large, unmistakable editor-only region inside the enclosed room.
       rect: { x: 45 * t, y: 23 * t, width: 8 * t, height: 5 * t },
-      props: { action: 'topology-marker-demo', params: {} },
+      props: { action: 'topology-marker-demo', fields: {}, params: {} },
     },
   ];
 }

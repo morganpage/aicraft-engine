@@ -288,6 +288,27 @@ export {
   STANDARD_GAMEPAD_PLATFORMER_MAP,
 } from './input-edges';
 
+// FallingBlock (0.20.0) — the Celeste prologue-style ceiling block as a pure
+// state machine: collect from LDtk trigger entities (authored fields ride
+// `props.fields`), arm/shake/fall/land across ticks, project into the per-tick
+// solids list. The consumer owns the tick and the consequences.
+export {
+  FALLING_BLOCK_TRIGGER_ACTION,
+  FALLING_BLOCK_TUNING,
+  scaleFallingBlockTuning,
+  collectFallingBlocks,
+  fallingBlockSolids,
+  fallingBlockArmed,
+  advanceFallingBlocks,
+  type FallingBlockTuning,
+  type FallingBlock,
+  type FallingBlockPhase,
+  type FallingBlockPlayer,
+  type FallingBlockEvents,
+  type FallingBlockStep,
+  type CollectFallingBlocksOptions,
+} from './falling-block';
+
 export {
   createEnemyBehaviorRegistry,
   spinnyBehavior,

@@ -158,6 +158,13 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.orEdges).toBe('function');
   });
 
+  it('input: the 0.20.0 multi-device merge + frozen-map extenders are public', () => {
+    expect(typeof aicraft.mergeEdges).toBe('function');
+    expect(typeof aicraft.mergePolledEdgeMaps).toBe('function');
+    expect(typeof aicraft.extendKeyboardMap).toBe('function');
+    expect(typeof aicraft.extendGamepadMap).toBe('function');
+  });
+
   it('input: createGamepadAdapter is a function, DEFAULT_GAMEPAD_DEADZONE is a number', () => {
     expect(typeof aicraft.createGamepadAdapter).toBe('function');
     expect(typeof aicraft.DEFAULT_GAMEPAD_DEADZONE).toBe('number');
@@ -174,6 +181,24 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.isLegalTransition).toBe('function');
     expect(typeof aicraft.DEFAULT_GAME_STATE_ADJACENCY).toBe('object');
     expect(aicraft.DEFAULT_GAME_STATE_ADJACENCY).not.toBeNull();
+  });
+
+  it('game-state: the 0.20.0 menu navigation layer is public', () => {
+    expect(typeof aicraft.createMenuNav).toBe('function');
+    expect(typeof aicraft.advanceMenuNav).toBe('function');
+    expect(typeof aicraft.openMenuNav).toBe('function');
+    expect(typeof aicraft.clampMenuNavIndex).toBe('function');
+    expect(typeof aicraft.IDLE_MENU_INPUT).toBe('object');
+  });
+
+  it('platformer: the 0.20.0 FallingBlock recipe is public', () => {
+    expect(typeof aicraft.collectFallingBlocks).toBe('function');
+    expect(typeof aicraft.advanceFallingBlocks).toBe('function');
+    expect(typeof aicraft.fallingBlockSolids).toBe('function');
+    expect(typeof aicraft.fallingBlockArmed).toBe('function');
+    expect(typeof aicraft.scaleFallingBlockTuning).toBe('function');
+    expect(aicraft.FALLING_BLOCK_TRIGGER_ACTION).toBe('FallingBlock');
+    expect(typeof aicraft.FALLING_BLOCK_TUNING).toBe('object');
   });
 
   it('audio: createAudioAdapter is a function', () => {
