@@ -20,3 +20,6 @@ benchmarks/visual/reference/*
 .env
 .env.*
 !.env.example
+
+# Local agent/IDE tool config — machine-specific, never part of the engine.
+.claude/launch.json
