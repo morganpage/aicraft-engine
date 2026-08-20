@@ -5,6 +5,84 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-08-20
+
+Sourced from a line-by-line review of the reference Celerock build (the
+"Celerock TAL") against `games/celerock.md`: every addition below deletes a
+system that build had to hand-roll, and the brief is repinned to match.
+
+### Added
+- **Authored one-shot clips + per-clip pacing — `meta.frameTags` grows `loop`,
+  `duration`, and `durations` (engine extensions; a strict Aseprite file is
+  unchanged).** `compileSpriteSheet` hardcoded `loop = true` for every tag, so
+  the verified jump feel — play 60→64 once, then CLAMP on the fall frame until
+  landing — required hand-building the `CompiledAnim`, and a grid sheet played
+  every clip at the 100 ms compile default, which reads as vibration on a
+  two-frame clip (a real build did copy-on-write surgery on the compiled
+  sheet's frozen `anims` map to re-pace idle). `loop: false` now compiles
+  verbatim (the frame player already clamped); `duration` authors a uniform
+  per-clip pace; `durations` authors per-frame pacing (parallel to the tag's
+  range — a length mismatch or non-positive entry is a compile diagnostic,
+  never a throw; the parse drops an invalid array whole rather than shifting
+  positions). Precedence: `durations` over `duration` over the per-frame table.
+- **The `climb` sprite kind — `SpriteAnimKind`/`SpriteAnimClip` gain `'climb'`,
+  and `SpriteAnimInputs` gains `climbing`.** The kind system covered exactly
+  idle/walk/jump, so a Celeste wall-climb clip needed a parallel hand-rolled
+  animation clock (the reference build shipped a whole `climb-anim.ts` for it).
+  `deriveSpriteAnimKind({ climbing: true, … })` returns `'climb'` with priority
+  over the grounded/airborne branches (a cling is a cling while sliding), and
+  `spriteAnimClipFor('climb')` maps it onto its own clip so the clock restarts
+  entering and leaving the wall, never mid-arc. The parked-cling touch needs
+  no API: advance with `dtMs = 0` while stationary. Widening the kind union is
+  the only breaking edge (exhaustive switches on `SpriteAnimKind`).
+- **`TriggerProps.fields` — authored LDtk field values as a first-class
+  record.** Custom-entity recipes had to reach through
+  `props.params.fieldInstances` for data the author placed in the file (the
+  reference build read `(props.params.fieldInstances as …)?.tiletype` for its
+  falling blocks). Every `trigger` translation now carries
+  `fields: Record<string, unknown>` — the field values keyed by identifier,
+  `__value` unwrapped — alongside the unchanged `params` (back-compat).
+- **The FallingBlock recipe — `collectFallingBlocks` / `advanceFallingBlocks`
+  / `fallingBlockSolids` / `fallingBlockArmed` / `FALLING_BLOCK_TUNING` /
+  `scaleFallingBlockTuning` (`platformer/falling-block.ts`).** The Celeste
+  prologue ceiling block as a pure state machine, ported from the reference
+  build's game-side module: arms on X-only footprint overlap (wider than
+  `IntroCrusher`'s centre band), shakes 0.2 s, a 0.4 s grace window that keeps
+  extending while the player stays under (the fall is committed either way —
+  `FallingBlock.cs Sequence()` semantics), falls at accel 500 px/s² to a
+  160 px/s cap, lands FLUSH on statics and on landed blocks, and reports
+  `armed`/`released`/`landed`/`crushed` events for the game to score.
+  `collectFallingBlocks` consumes LDtk `FallingBlock` trigger entities through
+  the new `props.fields` (`tiletype` material); `scaleFallingBlockTuning`
+  rescales the distances/velocities for non-8px rooms (times never scale).
+- **The multi-device input merge — `mergeEdges` / `mergePolledEdgeMaps`
+  (`input/merge.ts`).** Every multi-device build hand-rolls the
+  keyboard+gamepad+touch cascade. `mergeEdges(...edges)` is the variadic
+  `orEdges` (zero sources → the idle edge); `mergePolledEdgeMaps(...maps)`
+  merges the `poll()` records of every adapter into one record over the union
+  of actions — the documented `PlatformerInput` recipe becomes three lines.
+- **Frozen-map extension — `extendKeyboardMap` / `extendGamepadMap`.** The
+  standard maps ship deeply frozen (deliberately), so a build adding one key
+  (gamepad Start → pause) hand-rolled a shallow copy. Both extenders return a
+  NEW frozen map with the additions winning on collision; the base is never
+  mutated.
+- **Menu navigation — `createMenuNav` / `advanceMenuNav` / `openMenuNav` /
+  `clampMenuNavIndex` + `IDLE_MENU_INPUT` (`game-state/menu-nav.ts`).** The
+  selection state machine every start menu and pause menu hand-rolls: a
+  wrapped index, a confirm edge, an open-grace window (default 8 ticks) so the
+  key that opened the menu cannot also confirm inside it, same-frame nav +
+  confirm resolved as the DESTINATION entry, and opposing simultaneous presses
+  cancelled. Presentation-free: rendering, muting, and FSM dispatch stay with
+  the game (a pause menu is `menu-nav` + the `paused` FSM state driven by its
+  outputs).
+
+### Changed
+- `docs/api-surface.md`: rows added for everything above, plus the 0.18.0
+  seam-apron exports (`compileRoomSeamApron`, `createSeamApronCache`,
+  `seamApronSourceFromSolidId`, `seamSpanFor`, `DEFAULT_SEAM_APRON_DEPTH`) and
+  the `dash-tech-ability`, `climb-ability`, `wall-grab-ability`, and `mantle`
+  modules, which the catalog had drifted past.
+
 ## [0.19.1] - 2026-08-19
 
 ### Fixed

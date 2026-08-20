@@ -6,16 +6,17 @@ file is a self-contained prompt — paste it to a coding agent (Claude / Cursor 
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
 
-All seven prompts pin `aicraft-engine@0.17.4` exactly — a version, not a range.
-Six of them were written against `0.4.0` and repinned; every import each one
-claims was typechecked against the `0.15.0` surface at repin time, so they
+[celerock.md](./celerock.md) pins `aicraft-engine@0.20.0` — a version, not a
+range — and is the reference for the modern golden path (LDtk levels, the
+Celeste camera preset, the room-transition session, the falling-block recipe,
+menu navigation, the multi-device input merge). The other six pin `0.17.4`
+exactly; they were written against `0.4.0` and repinned, and every import each
+one claims was typechecked against the `0.15.0` surface at repin time, so they
 compile as written. They differ in *how much* of the engine they reach:
-[celerock.md](./celerock.md) was authored against the modern golden path
-(LDtk levels, the camera brain, the room-transition session) and is the
-reference for it, while the other six teach the pillars that predate those
-waves — the hand-authored `LevelData` path, the legacy follow camera — which
-remain fully supported. Each of the six carries a version note listing the
-behavioral changes since `0.4.0` that touch it.
+celerock was authored against the modern golden path, while the other six
+teach the pillars that predate those waves — the hand-authored `LevelData`
+path, the legacy follow camera — which remain fully supported. Each of the six
+carries a version note listing the behavioral changes since `0.4.0` that touch it.
 
 Celerock is also the only prompt that ships **assets** — a CC0 level, tileset,
 and sprite sheet linked from its §1.1 and downloaded at scaffold time (see
@@ -42,7 +43,7 @@ The common contract every prompt here enforces:
 | Game | File | Genre | Engine pillars exercised |
 |---|---|---|---|
 | **Embertomb** | [simple-platformer.md](./simple-platformer.md) | Side-view platformer | loop, input, tile/AABB collision, camera, hit-stop, squash, locomotion, foot-plant audio, jump, **spring rods**, particles, emitters (lava/water presets), wave-lines (water+lava), parallax, glow, palettes, RNG level-gen |
-| **Celerock** | [celerock.md](./celerock.md) | Multi-room Celeste-like precision platformer (LDtk-driven) | The whole modern golden path: **LDtk as the level source** (`loadLdtkProjectAssets` + `inspectLdtkPlatformerProject` preflight + `createLdtkRoomCache` + `drawLdtkLevel`), the **camera brain** (per-room vcams, `fitCameraZoom`), the **full Celeste movement kernel** (8-dir dash, wall-grab/stamina, wall-slide, direction-aware wall-jump, mantle, dash-tech), the **room-transition session orchestrator** (`createRoomTransitionSession` → `pollRoomTransition` → `beginSessionRoomSlide`) across `__neighbours` seams, `state.moments` feel channel, the **sprite pipeline** (`parseSpriteSheet` → `drawSprite`), collectibles + `save`, hit-stop + shake, sustained-noise audio, **dev-time LDtk hot reload** (live room swap with player state preserved, §5.7). **Ships its own CC0 asset pack.** |
+| **Celerock** | [celerock.md](./celerock.md) | Multi-room Celeste-like precision platformer (LDtk-driven) | The whole modern golden path: **LDtk as the level source** (`loadLdtkProjectAssets` + `inspectLdtkPlatformerProject` preflight + `createLdtkRoomCache` + `drawLdtkLevel`), the **camera brain** (per-room vcams, the Celeste preset `celesteFollowVcam`/`celesteCameraZoom`), the **full Celeste movement kernel** (8-dir dash, wall-grab/stamina, wall-slide, direction-aware wall-jump, mantle, dash-tech), the **room-transition session orchestrator** (`createRoomTransitionSession` → `pollRoomTransition` → `beginSessionRoomSlide`) across `__neighbours` seams, `state.moments` feel channel, the **sprite pipeline** (`parseSpriteSheet` → `drawSprite`), collectibles + `save`, hit-stop + shake, sustained-noise audio, **dev-time LDtk hot reload** (live room swap with player state preserved, §5.7), the 0.20.0 TAL-sourced additions (authored one-shot/-paced sprite clips + the `climb` kind, trigger `fields`, the FallingBlock recipe, `mergePolledEdgeMaps` + map extenders, `createMenuNav` menus + pause). **Ships its own CC0 asset pack.** |
 | **World 1-1** | [world-1-1.md](./world-1-1.md) | Horizontal-scrolling classic platformer | **platformer kernel** (`CLASSIC_PLATFORMER`: jump, no double-jump), hand-authored `LevelData` + `validateLevel`, unified `compileLevel`, moving platforms, parallax, collectibles + save |
 | **Flipside** | [flipside.md](./flipside.md) | No-jump gravity-flip explorer | Signed-gravity controllers with empty ability pipelines, unified tile compilation, and fixed-step `advanceSequencer` events rendered by `createNoteFirePlayer` |
 | **Spin Loop** | [spin-loop.md](./spin-loop.md) | Momentum-speed horizontal act | **Signed-gravity two-controller pattern** for the loop-de-loop (`PRECISION_PLATFORMER` + `gravity: ±magnitude`), `sampleConeVelocity` for the **lost-rings burst**, speed-scaled camera + `sineShake`, `compileLevel` + `tileTypeMap`, 3-layer `drawTiledParallax`, `collectibles` + `save`, `replay` stretch |

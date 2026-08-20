@@ -721,13 +721,14 @@ Aseprite-JSON-superset sprite animation pipeline: one authored `.json` + one `.p
 |---|---|---|---|
 | `SpriteSheetJSON`, `SpriteFrameJSON`, `SpriteMetaJSON`, `SpriteGridJSON`, `SpriteFrameTagJSON`, `SpriteCharacterJSON`, `SpriteFramesJSON`, `SpriteRectJSON`, `SpriteSizeJSON`, `SpriteTagDirection`, `SpriteDiagnostic`, `SpriteParseResult` | types | Readonly Aseprite-JSON-superset wire schema. Field names follow Aseprite verbatim so real exports drop in; additive `meta.grid` (uniform grid) and top-level `characters[]` (semantic anim keys per character) extensions | `src/sprites/types.ts` |
 | `parseSpriteSheet(json)` | function | Defensive never-throws parse → `{ ok, sheet?, errors }` with path-addressed diagnostics. Accepts Aseprite `frames` hash or array form; grid-only sheets allowed | `src/sprites/parse.ts` |
-| `compileSpriteSheet(sheet)` | function | Compile to `CompiledSpriteSheet`: synthesize grid frame rects, expand `frameTags` into ordered clips (forward/reverse/pingpong), group by `characters[]`. Never throws; malformed references warn and drop | `src/sprites/compile.ts` |
+| `compileSpriteSheet(sheet)` | function | Compile to `CompiledSpriteSheet`: synthesize grid frame rects, expand `frameTags` into ordered clips (forward/reverse/pingpong), group by `characters[]`. Honors the 0.20.0 tag extensions — `loop` (one-shot clips clamp on their last frame; default `true` = Aseprite), `duration` (uniform per-clip pace), `durations` (per-frame, parallel to the range; mismatches are diagnostics). Never throws; malformed references warn and drop | `src/sprites/compile.ts` |
 | `CompiledSpriteSheet`, `CompiledAnim`, `CompiledCharacter`, `FrameRect`, `CompileResult` | types | Runtime model: resolved frame rects, per-frame durations, ordered frame-index clips, per-character animation tables | `src/sprites/compile.ts` |
 | `resolveAnim(compiled, characterName, animKey)` | function | Resolve a semantic anim key → `CompiledAnim`; falls back to the character's `defaultAnim`, then any animation | `src/sprites/compile.ts` |
 | `DEFAULT_FRAME_DURATION_MS` | const | `100` — per-frame duration used when a frame's `duration` is 0/missing or the sheet is grid-based | `src/sprites/compile.ts` |
 | `SpriteAnimState`, `createSpriteAnimState()`, `advanceSpriteAnim(state, dtMs)`, `currentFrameIndex(state, anim)`, `currentFrameIndexAt(elapsedMs, anim)`, `animTotalDuration(anim)` | types/functions | Pure deterministic frame-player: accumulated-time clock mapped onto per-frame durations; loop / reverse (pre-reversed at compile) / pingpong (reflected doubled cycle) | `src/sprites/resolve.ts` |
-| `deriveSpriteAnimKind(inputs)` | function | Character-agnostic physics→anim-kind deriver (`idle`/`walk`/`ascent`/`apex`/`descent`); shared by player and enemies; branching parity with `src/character/humanoid/state.ts` | `src/sprites/anim-state.ts` |
-| `SpriteAnimKind`, `SpriteAnimInputs` | types | Semantic anim keys + minimal physics surface (`supported`, `speedX`, `velocityY`, `gravityDir?`, `walkThreshold?`) | `src/sprites/anim-state.ts` |
+| `deriveSpriteAnimKind(inputs)` | function | Character-agnostic physics→anim-kind deriver (`idle`/`walk`/`climb`/`ascent`/`apex`/`descent`); `climbing: true` reads as `'climb'` with priority over the grounded/airborne branches; shared by player and enemies; branching parity with `src/character/humanoid/state.ts` | `src/sprites/anim-state.ts` |
+| `SpriteAnimKind`, `SpriteAnimInputs` | types | Semantic anim keys (`'climb'` since 0.20.0) + minimal physics surface (`supported`, `speedX`, `velocityY`, `gravityDir?`, `walkThreshold?`, `climbing?`) | `src/sprites/anim-state.ts` |
+| `spriteAnimClipFor(kind)`, `SpriteAnimClip` | function/type | Kind→clip grouping: `idle`/`walk`/`climb` map 1:1, the three airborne phases share one `jump` clip; total (unknown kinds degrade to `'idle'`) | `src/sprites/anim-state.ts` |
 | `drawSprite(ctx, image, sheet, frameIndex, destX, destY, options?)` | function | Pure 9-arg `drawImage` blit; facing mirror via `SpriteFacing`, silhouette tint via offscreen `source-in` composite, alpha; never throws (returns `false` on bad index/draw error) | `src/sprites/render.ts` |
 | `resolveDrawSource(image, sheet, frameIndex, options)` | function | Resolve the source rect + optional pre-tinted image for consumers composing their own draw call | `src/sprites/render.ts` |
 | `createSpriteTintCache(createCanvas?)` | function | Long-lived offscreen-canvas cache keyed by `frameIndex|color` for tinted frames; host canvas factory optional | `src/sprites/render.ts` |
@@ -918,6 +919,10 @@ Pure edge accumulator core. DOM-free, deterministic, fully unit-testable under N
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `orEdges(a, b)` | function | Pure OR-merge of two `PolledEdge` snapshots (e.g. keyboard + touch for same action). Returns fresh object | `src/input/merge.ts` |
+| `mergeEdges(...edges)` | function | Variadic OR-merge of any number of `PolledEdge`s for the same action — the keyboard+gamepad+touch cascade. Zero sources → idle edge; single source passes through. Fresh object | `src/input/merge.ts` |
+| `mergePolledEdgeMaps(...maps)` | function | Merge per-action edge RECORDS (the shape every adapter's `poll()` returns) over the union of actions, OR-ing shared ones — the documented multi-device `PlatformerInput` recipe in three lines | `src/input/merge.ts` |
+| `extendKeyboardMap(base, additions)` | function | Extend a (possibly deeply frozen) `KeyboardConfig` with new `code → action` entries, returning a NEW frozen map; additions win on collision, base never mutated | `src/input/merge.ts` |
+| `extendGamepadMap(base, additions)` | function | Same contract for `GamepadConfig`: button/axis tables merged, `deadzone` override wins, result newly frozen; the gamepad-Start-pauses recipe | `src/input/merge.ts` |
 
 #### `src/input/keyboard.ts`
 
@@ -1017,6 +1022,17 @@ Top-level game-mode FSM — declarative mode orchestration (menu / playing / pau
 | `createGameState(config?)` | function | Factory: fresh `'menu'` state with all accumulators zeroed (`timeInState: 0`, `level: config?.startingLevel ?? 0`, `score: 0`, `finalScore: 0`). Matches `createJumpState` / `createTweenState` / `createEmitter` pattern | `src/game-state/game-state.ts` |
 | `reduceGameState(state, event, dt, table?)` | function | Pure: advance FSM one fixed timestep. Per-tick order: (1) clamp `dt` to `>= 0` (non-finite/≤0 → 0), (2) always advance `timeInState` by clamped `dt`, (3) if `event` is `null`/`undefined` return time-advanced state, (4) look up `(state.current, event.type)` in table, (5) if legal: spread advanced state, write event payload, set `current` to next mode, reset `timeInState` to `0`, (6) if illegal: return time-advanced state unchanged. Payload mapping: `start` → `level` (defaults to `0`); `die`/`win` → `finalScore` (defaults to `0`) AND `score` (frozen to match). `event` parameter accepts `null`/`undefined` to just advance time. Never throws | `src/game-state/game-state.ts` |
 | `isLegalTransition(from, event, table?)` | function | Pure reader: check whether a transition is legal without advancing state. Returns `true` iff `event.type` resolves to a defined next mode for `from` in `table`. Mirrors the reducer's transition decision exactly. No `dt`, no mutation | `src/game-state/game-state.ts` |
+
+#### `src/game-state/menu-nav.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `MenuNavState`, `MenuNavOptions`, `MenuNavInput`, `MenuNavResult` | types | The selection state machine's surface: `{ index, openGrace }` state, `{ openGraceTicks? }` options (default 8), the up/down/confirm edges one tick consumes, and the `{ state, confirmed, moved, direction }` result | `src/game-state/menu-nav.ts` |
+| `createMenuNav(options?)` | function | Factory: entry 0 with the open-grace window armed | `src/game-state/menu-nav.ts` |
+| `openMenuNav(state, options?)` | function | Re-arm the grace window on (re)open without moving the selection | `src/game-state/menu-nav.ts` |
+| `advanceMenuNav(state, input, count)` | function | Pure one-tick advance over `count` visible entries: wrapped index, held-not-pressed nav (once per press), opposing simultaneous presses cancel, confirm swallowed while grace > 0, same-frame nav+confirm resolves as the DESTINATION entry | `src/game-state/menu-nav.ts` |
+| `clampMenuNavIndex(state, count)` | function | Pull the selection back when entries disappear (RESUME hidden, a submenu shrinking) | `src/game-state/menu-nav.ts` |
+| `IDLE_MENU_INPUT` | const | Frozen all-idle edges — pass to idle the menu a tick | `src/game-state/menu-nav.ts` |
 
 **Note on `retry` vs `restart`:** the event that restarts from `gameover` back into `playing` is named `retry` (not `restart`). The event that advances from `levelComplete` back into `playing` is named `next`. These are the actual `GameEvent` variant names in source.
 
@@ -1218,6 +1234,21 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 | `movingPlatformToSolid(platform)` | function | Convert the current moving-platform descriptor to a kernel `Solid` | `src/platformer/level-runtime.ts` |
 | `createMovingPlatformDisplacementProvider(current, previous)` | function | Build the per-tick carry displacement lookup used by the kernel | `src/platformer/level-runtime.ts` |
 
+#### `src/platformer/falling-block.ts`
+
+The Celeste prologue-style ceiling block as a pure state machine (0.20.0), ported from the reference Celerock build's game-side module. The consumer owns the tick and the consequences (death, shake, sound, dust); this module owns the phases and the tuning.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `FALLING_BLOCK_TRIGGER_ACTION` | const | `'FallingBlock'` — the LDtk entity identifier (and trigger `action`) the recipe consumes | `src/platformer/falling-block.ts` |
+| `FallingBlockTuning`, `FALLING_BLOCK_TUNING` | type/const | Celeste-derived tuning at the 8px reference: shake 0.2 s, extending grace 0.4 s, accel 500 px/s², cap 160 px/s, escape margin 32 px | `src/platformer/falling-block.ts` |
+| `scaleFallingBlockTuning(tuning, tileSize, referenceTileSize?)` | function | Unit-aware scaling — distances/velocities/accelerations scale with the tile, times never | `src/platformer/falling-block.ts` |
+| `FallingBlock`, `FallingBlockPhase`, `FallingBlockPlayer`, `FallingBlockEvents`, `FallingBlockStep` | types | Block state (`idle`/`shaking`/`falling`/`landed`/`gone`, with `originY` kept for render-from-authored-row), the player AABB, and the per-step `armed`/`released`/`landed`/`crushed` events | `src/platformer/falling-block.ts` |
+| `collectFallingBlocks(levelData, options?)` | function | Collect a room's blocks from LDtk trigger entities via `props.fields` (the `tiletype` material, default 1); `action` override consumes differently named entities | `src/platformer/falling-block.ts` |
+| `fallingBlockSolids(blocks)` | function | The rects to append to the per-tick solids — every phase but `gone`, at the CURRENT rect | `src/platformer/falling-block.ts` |
+| `fallingBlockArmed(block, player)` | function | X-only footprint overlap — under the block OR standing on its back arms it (deliberately wider than `IntroCrusher`'s centre band) | `src/platformer/falling-block.ts` |
+| `advanceFallingBlocks(blocks, player, solids, roomHeight, dt, tuning?)` | function | Pure one-tick advance: shake + extending grace (`FallingBlock.cs Sequence()` semantics — the fall is committed once the shake starts), accel-to-cap fall, FLUSH landing on statics and landed blocks (pre-step snapshots), room escape → `gone`. Returns `{ blocks, events }`; unchanged blocks keep their reference | `src/platformer/falling-block.ts` |
+
 #### `src/platformer/renderer.ts`
 
 | Export | Kind | Summary | Source |
@@ -1268,6 +1299,29 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 | Export | Kind | Summary | Source |
 |---|---|---|---|
 | `doubleJumpAbility` | const | Double-jump processor (`kind: 'doubleJump'`). Second airborne impulse using jump launch velocity; budget refills on land. Emits `doubleJumped` | `src/platformer/abilities/double-jump-ability.ts` |
+#### `src/platformer/abilities/dash-tech-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `dashTechAbility` | const | Celeste dash-tech processor (**internal** — rides inside `defaultPrecisionPipeline`, not in the root barrel): super jump / super wall jump, hyper (dodge-slide carry), wavedash (grounded dash + jump), duck super jump. Launch-intent priority arbitration sits in the kernel (`spring > superWallJump > superJump > wallJump = climbHop > doubleJump > jump`) | `src/platformer/abilities/dash-tech-ability.ts` |
+
+#### `src/platformer/abilities/climb-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `climbAbility` | const | Ladder-climb processor (`kind: 'climb'`): reads `moveY` against per-cell ladder solids, climbs at `climbSpeed`, hops off on jump; `climbEnabled` gates it | `src/platformer/abilities/climb-ability.ts` |
+
+#### `src/platformer/abilities/wall-grab-ability.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `wallGrabAbility` | const | Celeste wall-grab processor (`kind: 'wallGrab'`): cling with stamina (`ClimbMaxStamina 110`), climb up/down, direction-aware grab+jump (away climb-hop vs straight-up climb-jump), emits `grabLatch`/`staminaExhausted` moments and the `wallJumpLaunched`/`climbJumpLaunched` pulses | `src/platformer/abilities/wall-grab-ability.ts` |
+
+#### `src/platformer/mantle.ts`
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `findMantleRoute(params)` | function | Pure ledge-mantle feasibility + launch (**internal** — composed by `wallGrabAbility`, not in the root barrel): hold grab + Up near a clear ledge rises beside the wall, crosses the lip, and lands through the normal resolver — NEVER a position snap. A conservative preflight declines under ceilings/overhangs or onto occupied footholds | `src/platformer/mantle.ts` |
 
 - _decision: `docs/design/platformer-kernel-decision.md`_
 - _proposal: `docs/design/platformer-kernel-proposal.md`_
@@ -1322,6 +1376,19 @@ The seam-traversal layer: pure exit detection (`room-transitions.ts`), the slide
 | `beginSessionRoomSlide(session, input, options?)` | function | Begin the presentation slide for an accepted exit. Returns `{ session, brain, cameraRebaseDelta, ok }` and applies the slide-space enter rebase internally on success (composes `beginRoomSlideFromBrain` + `enterRoomSlideCameraSpace`). `cameraRebaseDelta` is the enter-rebase's camera-space jump — accumulate it (with the other two session calls' deltas) and subtract from `brain.camera` for screen-continuous raw-camera consumers such as parallax backdrops; zero on refusal. Refuses (`ok: false`, unchanged) while a slide is active or inputs are unusable; never throws | `src/platformer/room-transition-session.ts` |
 | `advanceSessionRoomSlide(session, dt, brain)` | function | Advance the slide clock one presentation tick; applies the finish-rebase exactly once when — and only when — the slide completes. While active the brain is returned unchanged: the consumer still drives the per-tick slide camera (`presentationForRoomSlide` + their own `updateCameraBrain`). Idle sessions are inert (`done: true`, brain byte-identical). Returns `{ session, brain, cameraRebaseDelta, done }` — the delta is the finish-rebase, nonzero on exactly the completing tick, zero otherwise | `src/platformer/room-transition-session.ts` |
 | `endRoomTransitionSession(session, brain, rebaseTo)` | function | The single abnormal-exit path (death/retry/teleport/reset): if a slide is active, cancels with rebase via `cancelRoomSlideCameraSpace` BEFORE clearing; always returns a fresh idle session with a fresh detector plus the cancel-rebase's `cameraRebaseDelta` (zero when no slide was active — a death mid-slide still changes camera space, so parallax compensates here too). Never throws | `src/platformer/room-transition-session.ts` |
+
+#### `src/platformer/room-seam-apron.ts`
+
+The seam apron (0.18.0): the linked neighbour's near-seam solids, rebased world-exactly into the active room's local coordinates, so the floor across a seam exists in the per-tick collision set BEFORE the room switch — every crossing lands flush at any fall speed.
+
+| Export | Kind | Summary | Source |
+|---|---|---|---|
+| `SeamApronOptions`, `SeamApronRoom`, `SeamApronCache` | types | Options (`depth`, default `DEFAULT_SEAM_APRON_DEPTH`), the room surface the cache reads, and the `{ apronFor(iid), drop(iid), clear() }` cache handle | `src/platformer/room-seam-apron.ts` |
+| `DEFAULT_SEAM_APRON_DEPTH` | const | Default apron depth in tiles | `src/platformer/room-seam-apron.ts` |
+| `compileRoomSeamApron(active, neighbour, side, options?)` | function | Pure compile: the neighbour's near-seam solids rebased into the active room's coordinates — flush linked seams only (`seamSpanFor` applies the exit poll's own void rule, so a partial seam's void band grows no phantom floor), flags preserved, ids namespaced `apron:<levelIid>:<originalId>` | `src/platformer/room-seam-apron.ts` |
+| `createSeamApronCache(getRoom)` | function | Memoized per-room apron builder over a room cache; hazards, moving platforms, and per-cell ladders deliberately do NOT ride the apron | `src/platformer/room-seam-apron.ts` |
+| `seamApronSourceFromSolidId(solidId)` | function | Reverse the `apron:` namespacing before any entity-id lookup (springs, dash-refills) | `src/platformer/room-seam-apron.ts` |
+| `seamSpanFor(...)` | function | The shared span of a linked seam — the exit poll's own void rule, reused by the apron so both agree on where a seam ends | `src/platformer/room-transitions.ts` |
 
 - _Backfill pending: ~81 further platformer exports (enemies, squash/stretch, config scaler, feel moments, LDtk room cache) — tracked as a follow-up._
 
@@ -1851,7 +1918,7 @@ Versioned, serializable 2D platformer level schema with forward-ladder migration
 | `PlatformProps` | type | `{visual?: 'normal' \| 'cracked' \| 'dark'}` — platform visual variant hint | `src/level/types.ts` |
 | `TrapProps` | type | `{type: string, params: Record<string, unknown>}` — trap dispatch key + untyped params bag | `src/level/types.ts` |
 | `DecorationProps` | type | `{sprite: string, flipX?: boolean}` — decoration sprite key + flip | `src/level/types.ts` |
-| `TriggerProps` | type | `{action: string, params: Record<string, unknown>}` — rectangular event zone | `src/level/types.ts` |
+| `TriggerProps` | type | `{action, fields, params}` — rectangular event zone. `fields` (0.20.0) is the authored LDtk field values as a clean `Record<string, unknown>` (`__value` unwrapped) — the supported read surface for custom-entity recipes; `params` unchanged for back-compat | `src/level/types.ts` |
 | `MovingPlatformProps` | type | `{speed, path, loopMode?}` — kinematic platform motion (path is `readonly {x, y}[]`) | `src/level/types.ts` |
 | `EnemyProps` | type | `{archetype: string, params: Record<string, unknown>}` — archetyped dispatch key + untyped params bag. Canonical definition lives here; re-exported from `src/platformer/enemy/types.ts` | `src/level/types.ts` |
 | `LevelEntity` | type | Discriminated union on `kind` with kind-specific `props` — 11 variants (`'enemy'` kind carries `EnemyProps`, `'collectible'` kind carries `CollectibleProps`) | `src/level/types.ts` |
