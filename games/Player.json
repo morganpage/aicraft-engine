@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "image": "Player.png",
+    "format": "RGBA8888",
+    "size": { "w": 160, "h": 128 },
+    "scale": "1",
+    "grid": { "tileWidth": 16, "tileHeight": 16, "columns": 10 },
+    "frameTags": [
+      { "name": "idle",  "from": 25, "to": 26, "direction": "forward", "color": "#59c98d", "duration": 400 },
+      { "name": "walk",  "from": 0,  "to": 7,  "direction": "forward", "color": "#3aa4e0" },
+      { "name": "climb", "from": 35, "to": 36, "direction": "forward", "color": "#f5a623", "duration": 160 },
+      { "name": "jump",  "from": 60, "to": 64, "direction": "forward", "color": "#e0566a", "duration": 70, "loop": false }
+    ]
+  },
+  "characters": [
+    {
+      "name": "player",
+      "animations": { "idle": "idle", "walk": "walk", "climb": "climb", "jump": "jump" },
+      "defaultAnim": "idle"
+    }
+  ]
+}

@@ -160,7 +160,7 @@ npm install aicraft-engine@0.20.0
 
 ### 1.1 The bundled assets — download these first
 
-Three files. Fetch them **at scaffold time** into `public/`, all three flat in the same directory — the LDtk project references its tileset as the bare sibling name `celerock.png`, so nesting the PNG anywhere else breaks the load. Do **not** fetch these from GitHub at runtime (CORS + offline); they are project assets, served by Vite from `public/`.
+Four files. Fetch them **at scaffold time** into `public/`, all four flat in the same directory — the LDtk project references its tileset as the bare sibling name `celerock.png`, and `Player.json` names its sheet as the bare `Player.png`, so nesting either anywhere else breaks the load. Do **not** fetch these from GitHub at runtime (CORS + offline); they are project assets, served by Vite from `public/`.
 
 ```bash
 BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/main/games
@@ -168,6 +168,7 @@ mkdir -p public   # --output-dir does not create missing directories (curl ≥ 7
 curl -fsSLO --output-dir public "$BASE/celerock.ldtk"
 curl -fsSLO --output-dir public "$BASE/celerock.png"
 curl -fsSLO --output-dir public "$BASE/Player.png"
+curl -fsSLO --output-dir public "$BASE/Player.json"
 ```
 
 | File | What it is |
@@ -175,6 +176,7 @@ curl -fsSLO --output-dir public "$BASE/Player.png"
 | `celerock.ldtk` | The level — 5 rooms, single file (`externalLevels: false`), LDtk `jsonVersion` 1.5.3 |
 | `celerock.png` | The tileset — 1024×1024, 8px tiles, referenced by the `.ldtk` as `celerock.png` |
 | `Player.png` | The player sheet — 160×128, the 10×8 grid of 16×16 frames §4.4 specifies |
+| `Player.json` | The sheet's Aseprite-JSON companion — the §4.4 animation **source of truth** (the 10×8 `meta.grid`, the four clip tags with their `duration`/`loop` extensions, the `characters[]` mapping). Edit clips here, never in game code |
 
 **Verify the download before building anything.** These values are what the shipped pack actually contains — a mismatch means a truncated or substituted file, not a bug to code around:
 
@@ -202,7 +204,7 @@ Wire the capability-gated systems anyway (they cost nothing when the buckets are
 
 **World contract (CORE SCOPE, not emergent).** The supplied LDtk is a **six-room chained mountain** — `Level_0` … `Level_5`, each linked to its cardinal neighbours via `__neighbours` (the verify block above: one west→east chain with vertical offsets). Traversal from the start room to the **final room's summit** is the win condition and is **core scope**: a build that renders one room is a failure regardless of what `capabilities.exits` reports (`exits` counts Exit ENTITIES, not `__neighbours` seam traversal — it is `false` for this pack even though the full chain exists). The §12.1 load smoke test and §12.3 transition smoke test exist to prove traversal; §14 Stage 3 is not skippable, and a single-room build cannot pass its gate. **Completion is structural, not authored:** the **terminal room** is the level with NO `e` neighbour in `__neighbours` — derived from the project at boot (`Level_5` in the shipped pack; never hardcode the identifier). On seam-entry into the terminal room, fire the chapter-complete card via the existing tween path (`createTweenState` + `easeOutBack`) and transition the FSM however the game already handles completion. No `Goal` entity is created, the `.ldtk` is never edited, and the FSM `win` event stays unused (§8, §12.7 criterion 15).
 
-> **Licensing.** All three files are **CC0 1.0 Universal** (public domain dedication — no attribution required, commercial use fine). `celerock.png` is from [Tranquil Tunnels](https://octoshrimpy.itch.io/tranquil-tunnels) by octoshrimpy; `Player.png` is from [Deep Night](https://v3x3d.itch.io/deep-night) by VEXED. Credit them anyway if you ship this — CC0 does not require it, but it is the decent thing to do.
+> **Licensing.** All three art files are **CC0 1.0 Universal** (public domain dedication — no attribution required, commercial use fine). `celerock.png` is from [Tranquil Tunnels](https://octoshrimpy.itch.io/tranquil-tunnels) by octoshrimpy; `Player.png` is from [Deep Night](https://v3x3d.itch.io/deep-night) by VEXED. Credit them anyway if you ship this — CC0 does not require it, but it is the decent thing to do. (`Player.json` is authored alongside this brief — the §4.4 sheet definition, not third-party art — and carries the same CC0 dedication so the pack stays uniform.)
 
 ---
 
@@ -417,34 +419,28 @@ The player is rendered with the **supplied `Player.png` sprite sheet from the ve
 
 Art faces right; left is produced by the facing mirror. Transparency is verified (empty/corner pixels are alpha 0). The idle pair at 25–26 and the climb pair at 35–36 are in the shipped sheet — the 0.20.0 tag extensions (`duration`, `loop`, §1) are what make their PACING and one-shot semantics authorable at compile instead of hand-patched after it.
 
-**Boot: load + compile (defensive — mirror the tileset loader).** Load `Player.png` with the **same defensive, error-swallowing image loader you use for tileset PNGs** (bounded decode, never crash boot). A missing/failed sprite is **NOT fatal** — set the sheet to `null` and the render path falls back to the procedural body. `parseSpriteSheet` never throws, so wrap the whole thing and degrade quietly:
+**Boot: load + compile (defensive — mirror the tileset loader).** Load `Player.png` with the **same defensive, error-swallowing image loader you use for tileset PNGs** (bounded decode, never crash boot), and load the animation definition the same way: the sheet JSON lives in **`Player.json`, the animation SOURCE OF TRUTH** (§1.1) — do **not** fork its contents into game code. To change the clip set, edit `Player.json` (any editor that speaks this Aseprite-JSON superset — Animaitor imports and re-exports it losslessly, tag extensions included) rather than forking the JSON in game code. A missing/failed sprite is **NOT fatal** — set the sheet to `null` and the render path falls back to the procedural body. `parseSpriteSheet` never throws, so wrap the whole thing and degrade quietly:
 
 ```ts
 // decodeImageBounded is YOUR defensive loader (the same one you pass to
 // buildLdtkTilesetBundle / loadLdtkProjectAssets). Returns CanvasImageSource | undefined.
 const spriteImage = await decodeImageBounded('./Player.png');   // undefined on failure
 
-// The sheet: a 10×8 grid → 80 frames (cells 0–79); walk 0–7, jump 60–64.
-// meta.grid makes the compiler synthesize frames row-major; meta.frameTags
-// `from`/`to` are TILE INDICES (cells) under meta.grid.
-const spriteText = JSON.stringify({
-  meta: {
-    image: 'Player.png',
-    size: { w: 160, h: 128 },
-    grid: { tileWidth: 16, tileHeight: 16, columns: 10 },
-    frameTags: [
-      // 0.20.0 tag extensions: `duration` authors a per-clip pace (a grid sheet
-      // otherwise compiles every clip at the 100 ms default — vibration on a
-      // 2-frame clip), `loop: false` makes a ONE-SHOT clip that clamps on its
-      // last frame. No hand-built CompiledAnim, no copy-on-write re-pacing.
-      { name: 'idle',  from: 25, to: 26, direction: 'forward', duration: 400 },  // breathing pair, slow
-      { name: 'walk',  from: 0,  to: 7,  direction: 'forward' },                 // compiler default pace, loops
-      { name: 'climb', from: 35, to: 36, direction: 'forward', duration: 160 },  // the wall-climb pair
-      { name: 'jump',  from: 60, to: 64, direction: 'forward', duration: 70, loop: false },  // one-shot → CLAMP on the fall frame
-    ],
-  },
-});
-const parsed = parseSpriteSheet(spriteText);          // { ok, sheet?, errors } — never throws (errors, not diagnostics)
+// Player.json authors: a 10×8 `meta.grid` → 80 synthesized cells (row-major;
+// frameTags `from`/`to` are TILE INDICES under meta.grid) and the four clips
+// of the table above with their 0.20.0 tag extensions — `duration` per-clip
+// pace (idle 400, climb 160, jump 70; walk rides the 100 ms compiler default)
+// and `loop: false` on jump (the one-shot that clamps on the fall frame).
+// Fetch it with the same discipline as the PNG: a failed fetch is NOT fatal —
+// the sheet stays null and the procedural body takes over.
+let spriteText: string | null = null;
+try {
+  const response = await fetch(`${import.meta.env.BASE_URL}Player.json`);
+  spriteText = response.ok ? await response.text() : null;
+} catch {
+  spriteText = null;
+}
+const parsed = spriteText !== null ? parseSpriteSheet(spriteText) : { ok: false, errors: [] };
 const compiled: CompiledSpriteSheet | null =
   parsed.ok && parsed.sheet && spriteImage ? compileSpriteSheet(parsed.sheet).sheet : null;
 
@@ -883,6 +879,7 @@ Because Celerock trusts the LDtk, the file is the design. **`celerock.ldtk` (§1
 - **Entity layers**: at least one `Player`/`Spawn`; `Coin`/`Gem`/`Diamond` strawberries; `Spike`/`Hazard` hazards; optionally `MovingPlatform`, `Spring`, `DashRefill`, `Enemy`, and custom triggers such as `FallingBlock` (§6.1 — unknown identifiers ride the trigger fallback with their fields as `props.fields`). *Shipped: 1 `Player`, 5 `Gem`, 9 `Spike` (Level_1 is dressed too). Defs exist for `Spring`/`DashRefill` with no instances.*
 - **`__neighbours`** links between levels you intend to flow between. *Shipped: every room links to its cardinal neighbours; no room is orphaned.*
 - **`Player.png`** — the 160×128 (10×8 grid of 16×16) player sprite sheet the runtime loads at boot (§4.4). A missing/failed load degrades gracefully to the procedural body, but the canonical build ships it.
+- **`Player.json`** — the sheet's animation definition, the §4.4 **source of truth** (grid, clip tags, pacing, one-shots, `characters[]`), fetched at boot alongside the PNG with the same graceful-degrade rule.
 
 **Only `Level_0` has an authored spawn** — the other five are entered across a seam, and the preflight warns about them (`spawnLessRoomIids`, 5 entries). That warning is expected and correct here, not a fault to repair: a spawn-less room is reachable by traversal and its death-respawn anchor is its seam-entry point (§8). Treat only a project with *zero* spawns as a hard block.
 
@@ -986,7 +983,7 @@ async function hotReloadLdtk(generation: number): Promise<void> {
 - **Swap-atomic + fully transactional.** All live references reassign in ONE synchronous block; rejection at ANY stage commits nothing — same `project`, `rooms`, `active`, and surface-cache bakes (reference identity). The playable world is the error boundary; surface the reason; never `location.reload()` (§12.8). The pending flag polls in the fixed step, so a mid-slide save defers to the slide's completion.
 - **Fresh cache per reload.** `createLdtkRoomCache` is identity-stable over ONE project — never splice rooms across projects/caches; rebuild with the identical `ROOM_CACHE_OPTIONS` (§5.2).
 - **Player state preserved verbatim — that preservation is the point.** `x`/`y`/`vx`/`vy`/`facing`/stamina/dashes survive mid-jump; a swap never writes the save, increments deaths, or touches the FSM. LDtk iids are stable across edits of the same room — that is what makes recompile-by-iid possible.
-- **Scope: `.ldtk` only.** `celerock.png`/`Player.png` are not hot-swapped (decoded images live outside this path) — manual refresh; say so in the report rather than half-supporting it.
+- **Scope: `.ldtk` only.** `celerock.png`/`Player.png`/`Player.json` are not hot-swapped (decoded images and the compiled sheet live outside this path) — manual refresh; say so in the report rather than half-supporting it.
 
 ---
 
@@ -1277,6 +1274,7 @@ public/                # the §1.1 assets, FLAT — the .ldtk names its tileset 
   celerock.ldtk        #   fetched via base-URL-aware projectUrl (§5.1)
   celerock.png         #   resolved from the project's relPath, NOT fetched directly
   Player.png           #   fetched as './Player.png' (§4.4)
+  Player.json          #   fetched as './Player.json' (§4.4) — the animation source of truth
 src/
   main.ts              # boot: load LDtk + tilesets, canvas, store, audio.unlock, loop.start()
   ldtk.ts              # loadLdtkProjectAssets (or parseLdtkProject+buildLdtkTilesetBundle), inspectLdtkPlatformerProject, createLdtkRoomCache
