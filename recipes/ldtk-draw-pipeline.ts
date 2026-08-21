@@ -24,7 +24,13 @@ export interface LdtkRoomDrawOptions {
    * culling) — pass it anyway so fallback frames cull identically.
    */
   readonly view?: LdtkDrawView;
-  /** Camera world translate for this frame (feed your camera transform's x/y). */
+  /**
+   * A room's own origin WITHIN the current world space — e.g. a slide's
+   * `sourceOffset` / `destinationOffset`. NOT the camera: compose the camera
+   * once per frame (`composeCameraTransform`) and draw rooms in raw world
+   * coordinates. Feeding a camera offset here double-counts it — the layer
+   * renders at 2× the camera offset, the exact anti-pattern briefs forbid.
+   */
   readonly worldOffset?: Readonly<{ x: number; y: number }>;
 }
 
@@ -63,8 +69,11 @@ export interface LdtkRoomPainter {
  * @example
  * ```ts
  * const painter = createLdtkRoomPainter(tilesets);
- * // per frame, inside your camera transform:
- * painter.draw(ctx, level, { view, worldOffset: { x: cam.x, y: cam.y } });
+ * // per frame — compose the camera ONCE, then draw in raw world coords:
+ * composeCameraTransform(ctx, cameraTransform(camera, viewport, { zoom }));
+ * painter.draw(ctx, level, { view });
+ * // during a room slide, each room's own origin in slide space:
+ * painter.draw(ctx, destinationLevel, { worldOffset: p.destinationOffset });
  * // after a live edit of Level_1:
  * painter.invalidate('Level_1-iid');
  * ```

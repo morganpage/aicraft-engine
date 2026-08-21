@@ -12,8 +12,13 @@ import { IDLE_EDGE, type PlatformerInput, type PolledEdge } from 'aicraft-engine
  *
  * @example
  * ```ts
- * // per fixed tick — poll each device exactly once, then merge, then derive:
- * const edges = mergePolledEdgeMaps(keyboard.poll(), gamepad.poll(), touch.poll());
+ * // per fixed tick — poll each device exactly once, then merge, then derive.
+ * // touch.poll() returns a POSITIONAL PolledEdge[] (slot order = button
+ * // order), NOT a record — map the slots to action names yourself before the
+ * // merge (merging the raw array would use array indices as action names):
+ * const [left, right, up, down, jump, dash, grab, pause] = touch.poll();
+ * const edges = mergePolledEdgeMaps(keyboard.poll(), gamepad.poll(),
+ *   { left, right, up, down, jump, dash, grab, pause });
  * const input = derivePlatformerInput(edges);
  * // edges['pause'] (etc.) is NOT consumed here — read it directly for your FSM.
  * ```

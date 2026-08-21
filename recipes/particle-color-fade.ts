@@ -21,13 +21,18 @@ export interface ColorFadeParticle extends Particle {
  * every advance. This recipe performs the advance, then re-stamps `colorEnd`
  * from the pre-advance particle by index — `advance()` is order-preserving,
  * so the zip is exact. Physics output is byte-identical to `advance()`.
+ *
+ * `dtTicks` is TICKS — the engine's `advance` unit since the 0.21.0 parameter
+ * rename (passing a fixed step's SECONDS here burns life 60× too slow). For a
+ * seconds-based step, advance via the engine's `advanceSeconds` and re-stamp
+ * `colorEnd` over its output the same way.
  */
 export function advanceWithColorFade(
   particles: readonly ColorFadeParticle[],
-  dt: number,
+  dtTicks: number,
   opts: AdvanceOptions = {},
 ): ColorFadeParticle[] {
-  const stepped = advance(particles, dt, opts);
+  const stepped = advance(particles, dtTicks, opts);
   return stepped.map((p, i) => {
     const colorEnd = particles[i].colorEnd;
     return colorEnd === undefined ? p : { ...p, colorEnd };

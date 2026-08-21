@@ -56,10 +56,11 @@ The promotion path for reusable game code:
 |---|---|---|
 | [`audio-unlock.ts`](./audio-unlock.ts) | One-shot `keydown`/`pointerdown` → `adapter.unlock()` listener (+ `onUnlock` gate hook) | every brief's audio section |
 | [`fixed-tick-game.ts`](./fixed-tick-game.ts) | `createGameLoop` + reduced-motion static-frame gate | every brief's loop/boot section |
+| [`image-decoder.ts`](./image-decoder.ts) | The bounded, never-throwing image decoder — `decodeImageBounded` (URL-facing, for sprite boot) + `decodeImageBytesBounded` (bytes core, for the LDtk loader's injectable) | sprite-sheet games (celerock) |
 | [`platformer-input.ts`](./platformer-input.ts) | `PlatformerInput` derivation from the merged per-tick edge map | every kernel game (celerock) |
 | [`sprite-sheet-boot.ts`](./sprite-sheet-boot.ts) | Defensive PNG + Aseprite-JSON boot: fetch → parse → compile → clip lookup, `null` on any failure | sprite-sheet games (celerock) |
 | [`sheet-frame-index.ts`](./sheet-frame-index.ts) | The `clip.frameIndices[currentFrameIndex(...)]` double indirection | sprite-sheet games (celerock) |
-| [`particle-color-fade.ts`](./particle-color-fade.ts) | Re-stamping `colorEnd` after every particle `advance()` | particle-juiced games (celerock) |
+| [`particle-color-fade.ts`](./particle-color-fade.ts) | Re-stamping `colorEnd` after every particle `advance()` | particle-juiced games |
 | [`ldtk-draw-pipeline.ts`](./ldtk-draw-pipeline.ts) | Surface-cache + `worldOffset` + `view` + invalidate wiring | LDtk games (celerock) |
 | [`ldtk-entity-art.ts`](./ldtk-entity-art.ts) | The `drawLevelEntity` override map rendering entities with their authored LDtk tiles via the `entityArt` side channel | LDtk games (celerock) |
 | [`ldtk-hot-reload-plugin.ts`](./ldtk-hot-reload-plugin.ts) | Vite dev-server watcher forwarding `.ldtk` saves as the `ldtk:update` websocket event | LDtk games with live level editing (celerock) |

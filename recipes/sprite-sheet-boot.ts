@@ -20,6 +20,9 @@ export interface LoadSpriteSheetOptions {
   /**
    * YOUR defensive image loader — the same one the tileset path uses. Resolves
    * a URL to a decoded `CanvasImageSource`, `undefined` on failure.
+   * `recipes/image-decoder.ts`'s `decodeImageBounded` is the intended
+   * implementation (copy that recipe in too — the shared bounded decoder:
+   * host-defensive, timeout-guarded, never throws).
    */
   readonly decodeImage: (url: string) => Promise<CanvasImageSource | undefined>;
   /** Text fetcher (tests inject a stub). Defaults to the global `fetch`. */
