@@ -6,7 +6,7 @@ file is a self-contained prompt — paste it to a coding agent (Claude / Cursor 
 etc.) and it produces a runnable game that imports everything from the engine
 and writes no re-implementations of what the engine already provides.
 
-[celerock.md](./celerock.md) pins `aicraft-engine@0.20.0` — a version, not a
+[celerock.md](./celerock.md) pins `aicraft-engine@0.21.0` — a version, not a
 range — and is the reference for the modern golden path (LDtk levels, the
 Celeste camera preset, the room-transition session, the falling-block recipe,
 menu navigation, the multi-device input merge). The other six pin `0.17.4`
