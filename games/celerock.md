@@ -1189,7 +1189,7 @@ if (dash?.kind === 'dash' && dash.timer > 0) {
     }),
   ];
 }
-trail = cull(advanceParticles(trail, dt));
+trail = cull(advanceParticles(trail, dt / DEFAULT_FIXED_DT)); // SECONDS → TICKS — see the units contract below
 
 // Per render — AFTER §5.4's composeCameraTransform, in the same world space as
 // the tiles, in RAW world coordinates. Particles are spawned in world space and
@@ -1204,6 +1204,9 @@ for (const particle of trail) {
 }
 ctx.globalAlpha = 1;
 ```
+
+> **Units contract (the rule a real build got wrong here):** the particle pillar is **tick-unit throughout** — `advance`'s `dt` is TICKS, speeds are px/tick, `life` is ticks — while the fixed step hands you SECONDS. Passing `dt` straight through burns life 60× too slow: nothing ever dies, effects accumulate, and every sparkle drifts for most of a minute reading as "particles shooting off across the screen" (spawn speeds authored in px/s are the same 60× trap in the other direction). Either convert inline as above (`dt / DEFAULT_FIXED_DT`, with spawn speeds in px/tick and a shared air `{ gravity, drag }` passed as the advance options), or copy **`recipes/particle-system.ts`** from the engine repo — `createParticleSystem({ fixedDt: DEFAULT_FIXED_DT }).step(trail, dt)` owns the conversion once, applies a shared air profile, and warns if handed a dt that looks like ticks.
+
 - [ ] Landing dust (`spawn` upward cone on landing); respawn flash.
 - [ ] **Wall-grab feel**: latch snap, stamina drain (optionally a stamina bar UI), climb, away climb-hop launch (one `wallJumpLaunched` cue covers wall-jumps AND away climb-hops), straight-up climb-jump (`climbJumpLaunched`) + mantle scramble (`mantled`): grab + Up visibly rises beside the wall, arcs across the lip, and lands — there is NO single-frame snap to the ledge; overhangs fail safely without embedding.
 - [ ] **Spring** boing + `springBounceVy`; **dash-refill** sparkle when `maxDashes` refills on a refill entity — **only when the LDtk actually provides springs / dash-refills** (check `report.capabilities.springs` / `.dashRefills` from the preflight; absent content is not a failure). **The shipped pack has neither** (§1.1), so wire the paths and mark this item *not exercised* — do not claim it verified, and do not edit the `.ldtk` to make it fire.

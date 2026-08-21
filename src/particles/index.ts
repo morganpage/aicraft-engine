@@ -4,6 +4,13 @@ export { spawn, type SpawnOptions } from './spawn';
 export { advance, type AdvanceOptions } from './advance';
 export { cull } from './cull';
 export { step } from './step';
+export {
+  DEFAULT_PARTICLE_AIR,
+  secondsToTicks,
+  advanceSeconds,
+  stepSeconds,
+  type AdvanceSecondsOptions,
+} from './seconds';
 export { sampleRegion, type SpawnRegion } from './regions';
 export { sampleConeVelocity, type ConeConfig } from './cone';
 export {

@@ -87,6 +87,13 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.step).toBe('function');
   });
 
+  it('particles: seconds-facing entry points and the shared air medium ship', () => {
+    expect(typeof aicraft.advanceSeconds).toBe('function');
+    expect(typeof aicraft.stepSeconds).toBe('function');
+    expect(typeof aicraft.secondsToTicks).toBe('function');
+    expect(aicraft.DEFAULT_PARTICLE_AIR).toEqual({ gravity: 0.1, drag: 0.9 });
+  });
+
   it('animation: createSkeleton is a function, DEFAULT_GAIT is an object', () => {
     expect(typeof aicraft.createSkeleton).toBe('function');
     expect(typeof aicraft.DEFAULT_GAIT).toBe('object');

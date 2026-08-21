@@ -114,8 +114,8 @@ Hit-stop (freeze-frame) game-feel helper. Pure and deterministic: no `Math.rando
 | `HitStopState` | type | `{ remaining: number }` — remaining freeze ticks; 0 = inactive | `src/primitives/hit-stop.ts` |
 | `DEFAULT_HIT_STOP_DURATION` | const | `6` — default freeze in ticks (~100ms at 60fps) | `src/primitives/hit-stop.ts` |
 | `createHitStop()` | function | Factory: fresh inactive state (`remaining: 0`) | `src/primitives/hit-stop.ts` |
-| `triggerHitStop(state, duration?)` | function | Pure: start or extend a freeze; `remaining = max(current, duration)`. Duration defaults to `DEFAULT_HIT_STOP_DURATION` | `src/primitives/hit-stop.ts` |
-| `stepHitStop(state, dt)` | function | Pure: decrement `remaining` by `dt`, clamped at 0 | `src/primitives/hit-stop.ts` |
+| `triggerHitStop(state, duration?)` | function | Pure: start or extend a freeze; `remaining = max(current, duration)`. Duration defaults to `DEFAULT_HIT_STOP_DURATION`. **Throws on a positive non-integer duration** — durations are WHOLE ticks, and a fractional one is the seconds/ticks mixup (a self-healing error, same discipline as `spawn`'s jitter-without-rng throw) | `src/primitives/hit-stop.ts` |
+| `stepHitStop(state, dtTicks)` | function | Pure: decrement `remaining` by `dtTicks` (typically 1 — one fixed step per call, NOT the loop's seconds dt), clamped at 0 | `src/primitives/hit-stop.ts` |
 | `isHitStopActive(state)` | function | Pure reader: `true` if `remaining > 0` | `src/primitives/hit-stop.ts` |
 
 - _research note: See `docs/research/minimalist-death-feedback.md` for satisfying player-death feedback (hit-stop, screen shake, palette swap, particle bursts)._
@@ -218,10 +218,15 @@ Deterministic particle system. Pure spawn/advance/cull, extended with heterogene
 | `Particle` | type | `{x, y, vx, vy, life, maxLife, size, color?, gravityScale?, dragScale?}` — optional `gravityScale`/`dragScale` default to 1.0 via `??` in `advance` | `src/particles/types.ts` |
 | `spawn(x, y, opts)` | function | Evenly-distributed particles around a circle; deterministic by default | `src/particles/spawn.ts` |
 | `SpawnOptions` | type | Options for `spawn` (count, speed, jitter, life, size, color, angleOffset, rng) | `src/particles/spawn.ts` |
-| `advance(particles, dt, opts?)` | function | Pure: returns new array, applies gravity×`gravityScale` + drag×`dragScale`, decrements life. Byte-identical for particles without scale fields | `src/particles/advance.ts` |
+| `advance(particles, dtTicks, opts?)` | function | Pure: returns new array, applies gravity×`gravityScale` + drag×`dragScale`, decrements life. `dtTicks` is in TICKS (velocities px/tick, life ticks) — for a seconds fixed step use `advanceSeconds`. Byte-identical for particles without scale fields | `src/particles/advance.ts` |
 | `AdvanceOptions` | type | Options for `advance` (gravity, drag) | `src/particles/advance.ts` |
+| `advanceSeconds(particles, dtSeconds, opts?)` | function | The seconds-facing `advance`: converts `dtSeconds / opts.fixedDt` to ticks internally (default `1/60`) so the 60× seconds/ticks mismatch cannot happen at the call site. One 60 Hz step ≡ one engine tick, byte-identical | `src/particles/seconds.ts` |
+| `stepSeconds(particles, dtSeconds, opts?)` | function | Convenience: `cull(advanceSeconds(...))` — the standard per-step pipeline for a seconds fixed step | `src/particles/seconds.ts` |
+| `secondsToTicks(dtSeconds, fixedDt?)` | function | Pure seconds→ticks conversion (the promoted recipe math); non-finite/negative input clamps to `0`, a bad `fixedDt` falls back to `DEFAULT_FIXED_DT` | `src/particles/seconds.ts` |
+| `AdvanceSecondsOptions` | type | `AdvanceOptions` + `fixedDt?` — the seconds conversion anchor | `src/particles/seconds.ts` |
+| `DEFAULT_PARTICLE_AIR` | const | `{gravity: 0.1, drag: 0.9}` — the shared air medium in TICK units, tuned by a real build's particle pass; every effect scales it via per-particle `gravityScale`/`dragScale` | `src/particles/seconds.ts` |
 | `cull(particles)` | function | Pure: returns new array filtering dead particles | `src/particles/cull.ts` |
-| `step(particles, dt, opts?)` | function | Convenience: `cull(advance(...))` | `src/particles/step.ts` |
+| `step(particles, dtTicks, opts?)` | function | Convenience: `cull(advance(...))` — `dtTicks` is in TICKS; see `stepSeconds` for a seconds dt | `src/particles/step.ts` |
 | `DEFAULT_GRAVITY_SCALE` | const | `1.0` — neutral per-particle gravity multiplier | `src/particles/constants.ts` |
 | `DEFAULT_DRAG_SCALE` | const | `1.0` — neutral per-particle drag multiplier | `src/particles/constants.ts` |
 | `DEFAULT_RATE_SCALE` | const | `1.0` — neutral per-call emission-rate multiplier | `src/particles/constants.ts` |
@@ -232,12 +237,12 @@ Deterministic particle system. Pure spawn/advance/cull, extended with heterogene
 | `sampleConeVelocity(config, rng)` | function | Deterministic velocity sample inside an angular cone; exactly 2 RNG draws | `src/particles/cone.ts` |
 | `EmissionState` | type | Rate accumulator: `{accumulator}` in [0, 1) | `src/particles/emitter.ts` |
 | `EmissionRateConfig` | type | Rate config: `rate`, `rateScale?` | `src/particles/emitter.ts` |
-| `advanceEmission(state, dt, config)` | function | Pure rate-accumulator progression; returns `{next, spawnCount}` (input never mutated) | `src/particles/emitter.ts` |
+| `advanceEmission(state, dtTicks, config)` | function | Pure rate-accumulator progression; returns `{next, spawnCount}` (input never mutated). `dtTicks` is in TICKS — the emitter presets are tuned at `dtTicks = 1` | `src/particles/emitter.ts` |
 | `EmitterConfig` | type | Declarative emitter: `rate`, `region`, `cone`, `gravityScale?`, `dragScale?`, `life`, `size`, `color?`, `rng` | `src/particles/emitter.ts` |
 | `Emitter` | type | Bundled state: `config` (readonly ref), `accumulator`, `particles[]` | `src/particles/emitter.ts` |
 | `StepEmittersOptions` | type | Per-call world options: `gravity?`, `drag?`, `rateScale?` | `src/particles/emitter.ts` |
 | `createEmitter(config)` | function | Factory: zero accumulator, empty particles array | `src/particles/emitter.ts` |
-| `stepEmitters(emitters, dt, opts?)` | function | Advance all emitters: integrate rates, spawn via region+cone, advance with heterogeneous physics, cull dead. Pure: returns new `Emitter[]` | `src/particles/emitter.ts` |
+| `stepEmitters(emitters, dtTicks, opts?)` | function | Advance all emitters: integrate rates, spawn via region+cone, advance with heterogeneous physics, cull dead. `dtTicks` is in TICKS (the presets' units). Pure: returns new `Emitter[]` | `src/particles/emitter.ts` |
 | `particleAge(p)` | function | Normalized age `[0, 1]` from `life`/`maxLife`; 0 at spawn, 1 at death | `src/particles/lifetime.ts` |
 | `particleSizeCurve(p, startSize, endSize)` | function | Linear size interpolation over lifetime; pure reader | `src/particles/lifetime.ts` |
 | `particleAlphaCurve(p, startAlpha, endAlpha)` | function | Linear alpha interpolation over lifetime; clamped to `[0, 1]` | `src/particles/lifetime.ts` |

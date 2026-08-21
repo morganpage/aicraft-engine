@@ -12,8 +12,12 @@ export interface AdvanceOptions {
 }
 
 /**
- * Advance all particles by `dt` ticks. Pure: returns a new array of new
+ * Advance all particles by `dtTicks` ticks. Pure: returns a new array of new
  * particle objects; the input array and its particles are not mutated.
+ *
+ * ⚠ `dtTicks` is in TICKS (velocities are px/tick, `life` is ticks). For a
+ * fixed step held in SECONDS use {@link advanceSeconds}, which converts —
+ * passing a seconds dt here is a silent 60× unit error.
  *
  * Dead particles (`life <= 0` after advance) are NOT culled here — use
  * `cull()` or the convenience `step()` to remove them.
@@ -36,22 +40,22 @@ export interface AdvanceOptions {
  */
 export function advance(
   particles: readonly Particle[],
-  dt: number,
+  dtTicks: number,
   opts: AdvanceOptions = {},
 ): Particle[] {
   const { gravity = 0, drag = 1 } = opts;
   return particles.map((p) => {
     const pGravity = gravity * (p.gravityScale ?? DEFAULT_GRAVITY_SCALE);
     const pDrag = drag * (p.dragScale ?? DEFAULT_DRAG_SCALE);
-    const dragFactor = Math.pow(pDrag, dt);
+    const dragFactor = Math.pow(pDrag, dtTicks);
     const vx = p.vx * dragFactor;
-    const vy = (p.vy + pGravity * dt) * dragFactor;
+    const vy = (p.vy + pGravity * dtTicks) * dragFactor;
     return {
-      x: p.x + vx * dt,
-      y: p.y + vy * dt,
+      x: p.x + vx * dtTicks,
+      y: p.y + vy * dtTicks,
       vx,
       vy,
-      life: p.life - dt,
+      life: p.life - dtTicks,
       maxLife: p.maxLife,
       size: p.size,
       color: p.color,

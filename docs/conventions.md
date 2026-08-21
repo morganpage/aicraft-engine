@@ -64,6 +64,20 @@ This library follows a strict set of conventions. New code must follow these rul
 - **Types:** PascalCase noun (`IAPBridge`, `CosmeticManifest`).
 - **Constants:** UPPER_SNAKE (`DEFAULT_OUTLINE_COLOR`).
 
+## Reusable game code (recipes)
+
+- **Standing rule:** if a code sketch written for a brief, doc, or issue would
+  be reusable by more than one game, it must not stay inline — add it to
+  `recipes/` as a compiled, tested module and reference it by name from
+  wherever it was needed. Inline sketches drift from the shipped API; recipes
+  are typechecked against `src/` on every commit, so they cannot.
+- **Promotion ladder:** brief sketch (one game) → recipe (two-or-more games,
+  copy-in) → first-class engine export (two or more *shipped* games import the
+  recipe verbatim — promote into `src/` with real API design and delete the
+  recipe).
+- Recipes import from the `aicraft-engine` root barrel only, never relative
+  paths into `src/`. See `recipes/README.md`.
+
 ## Module structure
 
 Every module follows the same shape:

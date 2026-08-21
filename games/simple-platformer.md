@@ -60,6 +60,8 @@ npm install aicraft-engine@0.17.4
   ```
   (The published package only exposes the root `"."` entry — never deep-import subpaths like `aicraft-engine/animation`; use the root barrel. Tree-shaking works because each module has its own barrel.)
 
+- **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/main/recipes) — compiled, unit-tested wiring modules for the glue every brief used to re-sketch inline (audio unlock-on-first-gesture, the reduced-motion-gated fixed-tick boot, particle color fades, the sprite slot→cell mapping, the LDtk draw pipeline, the room-slide letterbox aperture). Copy the files you need into `src/recipes/` verbatim and import them locally; because CI typechecks them against the engine source, they cannot drift the way this brief's inline sketches once did. **Embertomb needs `audio-unlock.ts`, `fixed-tick-game.ts`, and `particle-color-fade.ts`** (the last for `colorEnd` fades on dust/splash/ember particles — the engine's `advance()` drops unknown fields, so use `advanceWithColorFade` instead of re-stamping by hand).
+
 > This brief targets the published `0.17.4` API exactly. It was originally written against `0.4.0` and repinned; **every API it names still exists and compiles at `0.17.0`** — the export surface has been additive, so the per-axis collision resolver path this brief teaches (`resolveAxisX`/`resolveAxisY` + `resolveTileX`/`resolveTileY`, driven by hand instead of through the platformer kernel) gained one deliberate semantic change in `0.17.0` — the multi-overlap snap is now the nearest wall / highest floor computed order-independently over the ORIGINAL move's overlaps (the old iterative re-snap was array-order-dependent), which matters if you stack overlapping solids. Embertomb is the one prompt in the catalog that deliberately does **not** use the kernel, so the kernel-side changes across `0.5.0`–`0.15.0` (wall-jump, mantle, dash-tech, the room-transition layer) do not touch it at all. What is worth adopting: `0.13.0`'s **sustained audio** — `startNoiseLoop(filterType, freq, peak)` returns a handle you `stop()` when a state ends, which is the correct shape for continuous sounds like lava hiss or water, replacing per-tick `playNoise` retriggering (that pattern phase-locks into an audible buzz, and `0.13.0` also de-correlates burst starts to fix it). Note also the replay physics version is now **14**, and a manually-constructed `PlatformerState` needs `moments: []`.
 
 ---
@@ -70,7 +72,7 @@ npm install aicraft-engine@0.17.4
 - **No `Math.random()` in the simulation.** Use `mulberry32(seed)` → `nextInt` / `nextFloat` / `pick` for level generation, enemy spawns, loot, AI jitter, biome selection. `Math.random` is OK only for purely decorative audio/visual side-effects that never feed back into game state (e.g. blink timing).
 - **No `Date.now()` in the sim.** Time comes from `tick` or the loop's `dt`. (Daily-seed mode may use `Date.now` *outside* the sim — only to *select* a seed, never to drive physics.)
 - **Defensive host access.** Anything touching `window`/`AudioContext`/`matchMedia` goes through the engine's adapters (`createAudioAdapter`, `prefersReducedMotion`, `resizeCanvasToBackingStore`) — they're lazy, error-swallowing, and no-op in Node.
-- **Reduced motion.** Gate the loop: if `prefersReducedMotion()`, render one static frame and never call `loop.start()`.
+- **Reduced motion.** Gate the loop: if `prefersReducedMotion()`, render one static frame and never call `loop.start()`. Copy `recipes/fixed-tick-game.ts` from the engine repo — its `startFixedTickGame({ step, render })` implements exactly this gate.
 - **Pure progression ops.** State updates return new objects (the engine's collision/camera/locomotion functions already do this — follow their lead). The room generator is pure: same `levelSeed` → same tile grid, same enemy spawns, same hazards, byte-identical forever.
 - **Procedural determinism is the headline.** Embertomb is replay-perfect: the same `levelSeed` must produce the same descent through all five biomes on every run, every reload, every machine.
 
@@ -192,7 +194,7 @@ Each enemy: own hitbox (`aabbOverlap` vs player), own death = particle burst (`s
   [fire, smoke] = stepEmitters([fire, smoke], 1, { gravity, drag, rateScale: intensity });
   ```
   `WavePoint[]` is render geometry only; it is not a `SpawnRegion`.
-  ⚠ **Units contract:** the presets are TICK-based (the showcase uses `dt = 1`). If your game steps in seconds, either step emitters with `dt = 1` (tick units) or convert the preset values to seconds. Mixing units silently produces flat fire / off-screen sparks. Document your choice.
+  ⚠ **Units contract:** the presets are TICK-based (the showcase uses `dt = 1`). If your game steps in seconds, either step emitters with `dt = 1` (tick units) or convert the preset values to seconds. Mixing units silently produces flat fire / off-screen sparks. Document your choice. For burst particles, copy `recipes/particle-system.ts` from the engine repo — `createParticleSystem({ fixedDt: 1/60 }).step(particles, dt)` owns the seconds→ticks conversion once (its API takes seconds and converts internally, and it warns if handed a ticks-sized dt — a real build passed seconds straight into `advance` and every effect lived 60× too long).
 - **Ambient glow:** `drawGlow` at the surface center, low intensity, warm color — sells the light spill.
 - **Contact = damage + knockback + heavy hit-stop** (`triggerHitStop`) + a molten splash (`spawn` yellow embers upward) + `audio.playNoise` hiss.
 
@@ -460,7 +462,7 @@ Each biome is a generator module. The generator pulls from its biome's design co
 
 ## 10. Audio (all synthesized via `createAudioAdapter`)
 
-Unlock on first user gesture (one-shot `keydown`/`pointerdown` listener calling `audio.unlock()`). Then:
+Unlock on first user gesture — copy `recipes/audio-unlock.ts` from the engine repo and call `attachAudioUnlock(audio)` (a one-shot `keydown`/`pointerdown`/`touchstart`/`click` listener that calls `audio.unlock()` once, then removes itself). Then:
 - **Footsteps:** `playNoise(40, 'lowpass', 200, 0.12)` per `advanceFootPlant` event.
 - **Jump:** `playTone('sine', 200, 400, 80, 0.2)` (upward "boing").
 - **Land:** `playNoise(80, 'lowpass', 300, 0.3)` (hard) / `playNoise(50, 'lowpass', 250, 0.18)` (soft), scaled by impact.

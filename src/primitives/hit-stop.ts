@@ -20,13 +20,13 @@
  * // On impact (landing, hit, etc.):
  * hitStop = triggerHitStop(hitStop, 6);  // 6-tick freeze
  *
- * // In the game loop:
+ * // In the game loop (dt is the fixed step in SECONDS):
  * if (!isHitStopActive(hitStop)) {
- *   world = stepWorld(world, dt);        // sim frozen during hit-stop
+ *   world = stepWorld(world, dt);         // sim frozen during hit-stop
  * }
- * particles = step(particles, dt);       // FX continue during freeze
- * screenShake = stepShake(screenShake);  // shake continues during freeze
- * hitStop = stepHitStop(hitStop, dt);    // decrement the freeze timer
+ * particles = stepSeconds(particles, dt); // FX continue during the freeze (seconds dt)
+ * screenShake = stepShake(screenShake);   // shake continues during the freeze
+ * hitStop = stepHitStop(hitStop, 1);      // one TICK per fixed step — never the seconds dt
  * ```
  */
 
@@ -61,34 +61,51 @@ export function createHitStop(): HitStopState {
  * current `remaining` and the new `duration`) — so a rapid combo landing
  * during a heavy boss-hit freeze never cuts that freeze short.
  *
+ * Durations are WHOLE TICKS. A fractional positive duration is almost
+ * certainly a seconds/ticks mixup (`0.1` meaning 100 ms would freeze for a
+ * single tick, then vanish) — the same unit-error class that made a real
+ * build's particles live 60× too long — so it THROWS with a self-healing
+ * message rather than misbehaving silently.
+ *
  * Pure: returns a new `HitStopState`, never mutates the input.
  *
  * @param state    - current hit-stop state
- * @param duration - freeze duration in ticks (defaults to
+ * @param duration - freeze duration in WHOLE ticks (defaults to
  *                   {@link DEFAULT_HIT_STOP_DURATION}); `0` is a no-op
  * @returns a new `HitStopState` whose `remaining` is `max(state.remaining, duration)`
+ * @throws when `duration` is a positive non-integer (seconds/ticks mixup)
  */
 export function triggerHitStop(
   state: HitStopState,
   duration: number = DEFAULT_HIT_STOP_DURATION,
 ): HitStopState {
+  if (duration > 0 && !Number.isInteger(duration)) {
+    throw new Error(
+      `triggerHitStop: duration ${duration} is not a whole number of ticks — ` +
+        'hit-stop durations are TICKS, not seconds. A seconds value (e.g. 0.1 ' +
+        'meaning 100 ms) would freeze for a single tick and vanish. ' +
+        'For ~100 ms at 60 Hz pass 6 (see DEFAULT_HIT_STOP_DURATION).',
+    );
+  }
   const next = duration > state.remaining ? duration : state.remaining;
   return { remaining: next };
 }
 
 /**
- * Advance the hit-stop state by `dt` ticks. Decrements `remaining`. When it
- * reaches 0, the freeze ends. `remaining` is clamped at 0 — it never goes
- * negative, regardless of how large `dt` is.
+ * Advance the hit-stop state by `dtTicks` ticks. Decrements `remaining`. When
+ * it reaches 0, the freeze ends. `remaining` is clamped at 0 — it never goes
+ * negative, regardless of how large `dtTicks` is.
  *
  * Pure: returns a new `HitStopState`.
  *
- * @param state - current hit-stop state
- * @param dt    - tick delta to advance by (typically 1; pass the sim's fixed dt)
- * @returns a new `HitStopState` with `remaining: max(0, state.remaining - dt)`
+ * @param state    - current hit-stop state
+ * @param dtTicks  - tick delta to advance by (typically 1 — one fixed step
+ *                   per call; NOT the loop's seconds `dt`, which would
+ *                   stretch a 6-tick freeze into ~6 seconds)
+ * @returns a new `HitStopState` with `remaining: max(0, state.remaining - dtTicks)`
  */
-export function stepHitStop(state: HitStopState, dt: number): HitStopState {
-  const next = state.remaining - dt;
+export function stepHitStop(state: HitStopState, dtTicks: number): HitStopState {
+  const next = state.remaining - dtTicks;
   return { remaining: next < 0 ? 0 : next };
 }
 

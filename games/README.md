@@ -33,6 +33,16 @@ The common contract every prompt here enforces:
   manual AABB, and duplicate tile-grid traversal). Renderer callbacks required
   by APIs such as `drawTileGrid` and `drawTiledParallax` are explicitly allowed.
 
+> **Reusable wiring lives in [`../recipes/`](../recipes/README.md), not in
+> these briefs.** When a brief needs glue more than one game would want
+> (audio unlock, the reduced-motion-gated loop boot, particle color fades,
+> the sprite slot→cell mapping, the LDtk draw pipeline, the room-slide
+> letterbox aperture), it points at a recipe there instead of inlining a
+> sketch. Recipes are typechecked and unit-tested against the engine source
+> in CI, so they cannot drift from the shipped API the way inline sketches
+> in older briefs did. New prompts: reference recipes by name; do not paste
+> their code into the brief.
+
 > **New: [SHOWCASE.md](./SHOWCASE.md)** — a skim-friendly landing page with a
 > comparison table, four curated learning paths, a reverse-index of
 > "which prompt shows off which feature?", overlap warnings, and the Batch 4

@@ -107,6 +107,28 @@ describe('stepHitStop', () => {
   });
 });
 
+describe('units guard (durations are whole ticks)', () => {
+  it('throws on a fractional positive duration — the seconds/ticks mixup', () => {
+    expect(() => triggerHitStop(createHitStop(), 0.1)).toThrow(/TICKS, not seconds/);
+    expect(() => triggerHitStop(createHitStop(), 6.5)).toThrow(/whole number of ticks/);
+  });
+
+  it('the message names the correct ~100 ms value for 60 Hz', () => {
+    try {
+      triggerHitStop(createHitStop(), 0.1);
+      expect.unreachable('must throw');
+    } catch (error) {
+      expect(String(error)).toContain('pass 6');
+    }
+  });
+
+  it('whole ticks, zero, and negatives do not throw', () => {
+    expect(() => triggerHitStop(createHitStop(), 6)).not.toThrow();
+    expect(() => triggerHitStop(createHitStop(), 0)).not.toThrow();
+    expect(() => triggerHitStop(createHitStop(), -3)).not.toThrow();
+  });
+});
+
 describe('purity (inputs never mutated)', () => {
   it('triggerHitStop does not mutate its input', () => {
     const state: HitStopState = { remaining: 3 };

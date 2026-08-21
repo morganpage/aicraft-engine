@@ -38,7 +38,8 @@ export interface EmissionRateConfig {
  * silent no-op rather than a crash.
  *
  * @param state - current accumulator state
- * @param dt - timestep
+ * @param dt - timestep in TICKS (the presets are tuned at `dt = 1`; a seconds
+ *   dt is a 60× unit error)
  * @param config - rate config
  * @returns `{ next, spawnCount }` — `spawnCount` is a non-negative integer,
  *   `next` is a brand-new `EmissionState` (input never mutated)
@@ -55,11 +56,11 @@ export interface EmissionRateConfig {
  */
 export function advanceEmission(
   state: EmissionState,
-  dt: number,
+  dtTicks: number,
   config: EmissionRateConfig,
 ): { next: EmissionState; spawnCount: number } {
   const scale = config.rateScale ?? DEFAULT_RATE_SCALE;
-  const total = state.accumulator + config.rate * scale * dt;
+  const total = state.accumulator + config.rate * scale * dtTicks;
   const spawnCount = Math.max(0, Math.floor(total));
   return {
     next: { accumulator: Math.max(0, total - spawnCount) },
@@ -166,7 +167,8 @@ export function createEmitter(config: EmitterConfig): Emitter {
  * affect the RNG sequence of another.
  *
  * @param emitters - current emitter states
- * @param dt - timestep
+ * @param dtTicks - timestep in TICKS (the presets are tuned at `dtTicks = 1`;
+ *   a seconds dt is a 60× unit error)
  * @param opts - per-call world options (gravity, drag, rateScale)
  * @returns new `Emitter[]` with advanced state
  *
@@ -193,7 +195,7 @@ export function createEmitter(config: EmitterConfig): Emitter {
  */
 export function stepEmitters(
   emitters: readonly Emitter[],
-  dt: number,
+  dtTicks: number,
   opts: StepEmittersOptions = {},
 ): Emitter[] {
   const rateScale = opts.rateScale ?? DEFAULT_RATE_SCALE;
@@ -207,7 +209,7 @@ export function stepEmitters(
 
     const emit = advanceEmission(
       { accumulator: emitter.accumulator },
-      dt,
+      dtTicks,
       { rate: config.rate, rateScale },
     );
 
@@ -231,7 +233,7 @@ export function stepEmitters(
 
     const advanced = advance(
       [...emitter.particles, ...spawned],
-      dt,
+      dtTicks,
       { gravity, drag },
     );
     const nextParticles = advanced.filter((p) => p.life > 0);
