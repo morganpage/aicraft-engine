@@ -396,12 +396,22 @@ const gamepad  = createGamepadAdapter(
 
 ```ts
 // per fixed tick — poll each device exactly once, then merge, then derive.
+// touch.poll() returns a POSITIONAL PolledEdge[] (slot order = your button
+// order), NOT a record — mergePolledEdgeMaps consumes records keyed by
+// action name, so map the slots to names yourself (merging the raw array
+// would use array indices as action names). Eight buttons: the d-pad, the
+// three Celeste actions, and ⏸ (criterion 22's touch pause).
+const [tLeft, tRight, tUp, tDown, tJump, tDash, tGrab, tPause] = touch.poll();
+const edges = mergePolledEdgeMaps(keyboard.poll(), gamepad.poll(), {
+  left: tLeft, right: tRight, up: tUp, down: tDown,
+  jump: tJump, dash: tDash, grab: tGrab, pause: tPause,
+});
 // The PlatformerInput derivation (§4.3's shape, from the merged map) is
 // recipes/platformer-input.ts — copy it in, do not re-derive by hand:
-const edges = mergePolledEdgeMaps(keyboard.poll(), gamepad.poll(), /* touchMap */);
 const input = derivePlatformerInput(edges);
-// edges['pause'] feeds the §8.2 pause FSM (Escape on keyboard, Start on gamepad)
-// — it is an FSM action, not a kernel input, so read it off the map directly.
+// edges['pause'] feeds the §8.2 pause FSM (Escape on keyboard, Start on
+// gamepad, ⏸ on touch) — it is an FSM action, not a kernel input, so read
+// it off the map directly.
 ```
 
 **Bindings (authoritative for this brief):** Arrow keys move (←→ horizontal, ↑↓ for ladder climb / fast-fall / dash-aim), `C` jump, `X` dash, `Z` grab/clamber, `R` instant respawn (engine convenience), `Escape` pause (already in `CELESTE_KEYBOARD_MAP` above — the GAMEPAD standard map is the frozen one, hence `extendGamepadMap`). This matches Celeste's PC defaults verbatim; the engine's `STANDARD_KEYBOARD_PLATFORMER_MAP` (`Space`/`Shift`/`KeyK`) is deliberately **not** used so players get the real Celeste layout.
@@ -428,8 +438,11 @@ Art faces right; left is produced by the facing mirror. Transparency is verified
 // fetch/parse/compile boot for a PNG + its Aseprite-JSON definition, degraded
 // to null on ANY failure (bad fetch, hostile host, unparseable JSON, failed
 // decode): a missing sprite never blocks boot — the render path falls back to
-// the procedural body. decodeImageBounded is YOUR defensive loader (the same
-// one you pass to buildLdtkTilesetBundle / loadLdtkProjectAssets).
+// the procedural body. decodeImageBounded is recipes/image-decoder.ts's
+// URL-facing bounded decoder (copy that recipe in too) — the same
+// defensive-decode discipline loadLdtkProjectAssets applies internally; the
+// golden LDtk path never makes you write one, and the sprite path shouldn't
+// either.
 const sheet = await loadSpriteSheetAssets({
   imageUrl: `${import.meta.env.BASE_URL}Player.png`,
   jsonUrl:  `${import.meta.env.BASE_URL}Player.json`,
@@ -536,7 +549,8 @@ Celerock does **not** author rooms. It loads the supplied `.ldtk`, translates ea
 //    Base-URL-aware path (not route-relative): works at `/` and under a base path.
 const result = await loadLdtkProjectAssets({ projectUrl: `${import.meta.env.BASE_URL}celerock.ldtk` });
 if (!result.ok) { console.error('LDtk load failed', result.diagnostics); return; }
-const { project, tilesets, diagnostics } = result;   // log warnings from `diagnostics` as you like
+const { tilesets, diagnostics } = result;         // log warnings from `diagnostics` as you like
+let project = result.project;                     // MUTABLE top-level ref — §5.7's hot reload reassigns it
 ```
 
 **2. Asset preflight (G3 — run before any gameplay work).** Inspect the parsed project and report what was actually authored, so the build does not assume mechanics the LDtk lacks:
@@ -578,7 +592,7 @@ Each LDtk level becomes engine geometry. **Do NOT hand-roll the translate→comp
 
 ```ts
 const config = playConfigFor(report.tileSizes[0] ?? 16);   // from the preflight; see note below on mixed tile sizes
-const rooms: LdtkRoomCache = createLdtkRoomCache(project, {
+let rooms: LdtkRoomCache = createLdtkRoomCache(project, {   // let: §5.7 rebuilds the whole cache per swap
   config,
   playerWidthForTileSize:  (ts) => 0.5 * ts,   // half-tile body fits 1-wide ladder shafts
   playerHeightForTileSize: (ts) => 1.5 * ts,
@@ -588,7 +602,7 @@ const rooms: LdtkRoomCache = createLdtkRoomCache(project, {
 
 const start = rooms.getStartRoom();            // resolves the first level with an authored spawn
 if (!start.ok) { console.error(start.diagnostics); return; }   // never fabricates a (0,0) room
-const active: CompiledLdtkRoom = start.room;
+let active: CompiledLdtkRoom = start.room;    // let: §5.5 transitions + §5.7 swaps reassign it
 let state = active.compiled.initialState;      // rest-on-surface spawn (active.spawn.source === 'authored')
 ```
 
@@ -635,7 +649,8 @@ const displacement = createMovingPlatformDisplacementProvider(movingPlatforms, p
 // The seam apron line (0.18.0): the linked neighbour's near-seam solids, so
 // the floor across a seam exists BEFORE the room switch (§5.5). Create the
 // cache once at boot over the same room cache —
-//   const apronFor = createSeamApronCache((iid) => rooms.get(iid)).apronFor;
+//   const apronCache = createSeamApronCache((iid) => rooms.get(iid));
+//   const apronFor = apronCache.apronFor;    // keep the handle — §5.7 clears it
 // — it is memoized per room; no per-tick allocation.
 const solids = [...active.solids, ...apronFor(active.ldtkLevel.iid), ...movingPlatforms.map(movingPlatformToSolid)];
 state = stepPlatformer(state, input, solids, dt, config, displacement).state;   // 6th arg carries the player
@@ -727,15 +742,19 @@ ctx.restore();
 **The aperture is one room, never the slide's union (the rule this brief itself got wrong).** `presentationForRoomSlide(slide).bounds` is the camera's CLAMP SPACE while two rooms are on screen — roughly twice a room wide. Mask with it and the frame exceeds the viewport, so every bar vanishes for the length of the transition and the world spills across the entire window before snapping back; a real build shipped exactly that, on this brief's instructions. **The window the player looks through does not change during a slide: the rooms move, the window stays put.** Mask with the ROOM (interpolating source→destination if their sizes differ), clamp the brain with the union. And note the frame's POSITION cannot come from the slide camera either — that camera is sweeping through union space, so a camera-derived frame slides across the screen with it. During a slide, derive the frame from the room size and the viewport directly:
 
 ```ts
-// Aperture: one room, centred, capped at the viewport. recipes/room-slide-aperture.ts
-// (engine repo) + the engine's cameraApertureLetterbox own this math — do not
-// hand-derive the frame. Steady state: the ACTIVE room. During a slide: the
-// engine's interpolated source→destination room (presentationForRoomSlide's
-// aperture) — never the slide camera (it sweeps union space), never p.bounds.
-const aperture = session.slide !== null
-  ? roomSlideAperture(session.slide)
-  : { width: active.levelData.width, height: active.levelData.height };
-const frame = cameraApertureLetterbox(aperture, viewport, t.zoom).frame;
+// The mask-selection rule — ONE branch covering both states, owned by
+// recipes/room-slide-aperture.ts (copy it in): steady state masks with the
+// ACTIVE room via applyCameraLetterbox; a slide masks with the engine's
+// interpolated source→destination ONE-ROOM aperture via the recipe's
+// applyRoomSlideApertureLetterbox — never the slide camera (it sweeps union
+// space), never p.bounds (clamp space). The game never calls
+// cameraApertureLetterbox itself; the recipe owns that math, so the symbol
+// does not belong in the §1 import block either.
+if (session.slide !== null) {
+  applyRoomSlideApertureLetterbox(ctx, session.slide, viewport, t.zoom, { fill: '#070b18' });
+} else {
+  applyCameraLetterbox(ctx, active, viewport, t, { fill: '#070b18' });
+}
 ```
 
 Atmosphere/parallax may still animate *behind* the room — what it must not do is fill the margin with something that reads as level. (`applyCameraLetterbox` returns the resolved box when you want it: `box.covered` is true when the room fills the viewport — nothing letterboxed this frame — and `box.frame` is the room's screen rect, the anchor for a frame line or vignette.)
@@ -767,8 +786,12 @@ Celerock renders one room at a time in **room-local coordinates**, so a room cha
 ```ts
 // One session per traversing actor — create once at boot:
 let session = createRoomTransitionSession();
-// Seam apron — once at boot, over the same room cache (§5.2):
-const apronFor = createSeamApronCache((iid) => rooms.get(iid)).apronFor;
+// Seam apron — once at boot, over the same room cache (§5.2). KEEP the cache
+// handle: destructuring `.apronFor` alone discards drop()/clear(), and §5.7's
+// hot reload MUST clear() it (memoized aprons are old-project geometry). The
+// resolver reads `rooms` lazily at call time — which is why `rooms` is a `let`.
+const apronCache = createSeamApronCache((iid) => rooms.get(iid));
+const apronFor = apronCache.apronFor;
 
 // per simulation tick — the ONLY transition poll:
 const poll = pollRoomTransition(session, state.core, active.ldtkLevel, project);
@@ -777,16 +800,22 @@ if (poll.result.type === 'exit') {
   const exit = poll.result.exit;
   const target = rooms.get(exit.neighbourLevelIid);      // cached CompiledLdtkRoom (createLdtkRoomCache)
   const prevCore = state.core;   // source-local body — captured BEFORE the transition;
-                                 // state.core is destination-local once transitionPlatformerToRoom runs below
+                                 // the candidate state below is destination-local
+  // TRANSACTIONAL: compute every artifact first, commit NOTHING until the
+  // slide begins. A refused begin (ok: false — slide already active, missing
+  // rooms, or a non-finite viewport) must leave state/active/session/brain
+  // exactly as they were — a state already jumped to destination-local
+  // coordinates while the world is still the source room is precisely the
+  // half-applied transition this pattern makes impossible.
   const entry = mapLdtkRoomEntry(state.core, active.ldtkLevel, target.ldtkLevel, exit);
-  ({ state } = transitionPlatformerToRoom(state, entry, {
+  const candidateState = transitionPlatformerToRoom(state, entry, {
     destinationSolids: [...target.solids, ...apronFor(target.ldtkLevel.iid)], config,
-  }));
+  }).state;
   // 0.11.0: roomEntrySlideView computes the follow-compatible destination
   // framing (room-local room-px) — do NOT hardcode { x: 0, y: 0 }. Pass the
   // same follow bands/padding as the destination follow vcam (§5.4's preset).
   const destinationZoom = celesteCameraZoom(viewport);   // campaign-constant — never re-fit the room
-  const destinationView = roomEntrySlideView(target, state.core, viewport, destinationZoom,
+  const destinationView = roomEntrySlideView(target, candidateState.core, viewport, destinationZoom,
     { followX: CELESTE_FOLLOW_AHEAD, followY: CELESTE_FOLLOW_CENTERED, padding: 0 });
   // Particle continuity: add slide.particleRebaseDelta ONCE to source-local particles.
   const begun = beginSessionRoomSlide(session, {
@@ -798,15 +827,24 @@ if (poll.result.type === 'exit') {
     actor: { sourceLocal: { x: prevCore.x, y: prevCore.y }, destinationLocal: { x: entry.x, y: entry.y } },
   }, { ...CELESTE_ROOM_SLIDE_OPTIONS, reducedMotion: prefersReducedMotion() });   // 0.65 s easeOutCubic — the Celeste transition
   if (begun.ok) {
+    // COMMIT — one synchronous block, only on success:
+    state = candidateState;                   // destination-local, same tick as the room swap
     session = begun.session;                  // slide now active — session owns detector + slide together
     brain = begun.brain;                      // ALREADY rebased INTO slide space (the enter-rebase is applied here)
     camShift.x += begun.cameraRebaseDelta.x;  // the rebase the WORLD render compensates for — a raw-camera
     camShift.y += begun.cameraRebaseDelta.y;  // consumer (parallax) subtracts it instead (rule below)
+    // Particle continuity: apply the slide's particleRebaseDelta ONCE, HERE,
+    // to the still-source-local particles (your §9 arrays — trail, dust).
+    // The render below reads them as already rebased; this line is what
+    // makes that true.
+    const rebase = begun.session.slide?.particleRebaseDelta ?? { x: 0, y: 0 };
+    particles = particles.map((p) => ({ ...p, x: p.x + rebase.x, y: p.y + rebase.y }));
     active = target;
   }
   // A refused begin (ok: false — slide already active, missing rooms, or a
-  // non-finite viewport) returns session + brain unchanged: drop the poll
-  // result and stay in the source room.
+  // non-finite viewport) returns session + brain unchanged — and, because
+  // nothing outside the ok-branch was assigned, state/active too: drop the
+  // poll result and stay in the source room. For real.
 }
 // While a slide is active the poll returns 'suppressed-slide-active' — no
 // `if (!slide)` guard needed (a second transition mid-slide is impossible).
@@ -823,9 +861,12 @@ if (session.slide !== null) {
   const p = presentationForRoomSlide(session.slide);
   brain = updateCameraBrain(brain, { vcams: [p.vcam!], targets: { player: state.core }, bounds: p.bounds,
                                     viewport, activeId: ROOM_SLIDE_VCAM_ID, dt });
-  // RENDER, all of it INSIDE the §5.4 composeCameraTransform (the slide camera is
-  // in SLIDE space, so the mask bounds are p.bounds and the world transform is the
-  // same one call). worldOffset then carries ONLY each room's origin in slide space:
+  // RENDER, all of it INSIDE the §5.4 composeCameraTransform (the slide camera
+  // is in SLIDE space and the world transform is the same one call). The MASK
+  // is the one-room aperture for this tick — applyRoomSlideApertureLetterbox
+  // from recipes/room-slide-aperture.ts, per §5.4's mask-selection rule —
+  // NEVER p.bounds (that union is clamp space). worldOffset then carries ONLY
+  // each room's origin in slide space:
   //   cache.draw(ctx, src.ldtkLevel,  { tilesets, worldOffset: p.sourceOffset });
   //   cache.draw(ctx, dest.ldtkLevel, { tilesets, worldOffset: p.destinationOffset });
   // Adding the camera offset here as well is double-counting; OMITTING the camera
@@ -936,6 +977,23 @@ async function hotReloadLdtk(generation: number): Promise<void> {
   if (!result.ok) return reject('load/parse failed — see diagnostics');
   const nextProject = result.project;
   const nextRooms = createLdtkRoomCache(nextProject, ROOM_CACHE_OPTIONS);   // §5.2's one-const options
+  // Validate the WHOLE replacement world, severity-aware. Force-compile every
+  // room (the cache is lazy — get() compiles on first touch) and reject on
+  // any severity === 'error' diagnostic ('error' is reserved for future hard
+  // failures, so this is future-proof); WARNINGS are surfaced, never rejected
+  // — a warning-level note must not cost the designer their live edit loop.
+  // Zero spawns anywhere is the same hard block boot applies.
+  const nextReport = inspectLdtkPlatformerProject(nextProject);
+  if (nextReport.totalSpawns < 1) return reject('project has no Player/Spawn entity anywhere');
+  for (const level of nextProject.levels) {
+    const room = nextRooms.get(level.iid);                    // every level of THIS project — never throws
+    const errors = room.diagnostics.filter((d) => d.severity === 'error');
+    if (errors.length > 0) {
+      return reject(`room '${level.identifier}' has ${errors.length} error diagnostic(s): ${errors[0].message}`);
+    }
+    const warnings = room.diagnostics.filter((d) => d.severity !== 'error');
+    if (warnings.length > 0) console.warn(`[ldtk] '${level.identifier}': ${warnings.length} warning(s)`, warnings);
+  }
   if (!nextRooms.has(active.ldtkLevel.iid)) {                                 // has(), not get() — get() throws
     return reject(`active room '${active.ldtkLevel.identifier}' no longer exists (iid ${active.ldtkLevel.iid})`);
   }
@@ -945,6 +1003,8 @@ async function hotReloadLdtk(generation: number): Promise<void> {
   //     no step or render can observe a half-swapped world:
   project = nextProject; rooms = nextRooms; active = nextActive;
   surfaceCache.clear();                              // ANY room may have changed — rebake lazily per room
+  apronCache.clear();                                // memoized aprons are OLD-project geometry — stale floors in
+                                                     // the tick set until cleared (the resolver reads the NEW rooms lazily)
   terminalRoomIid = deriveTerminalRoomIid(project);  // §1.1/§8 — re-derive, never hardcode
   rebuildRoomVcam(active);                           // new bounds (the zoom is campaign-constant; a zoom snap is fine in dev)
   hazardRects = active.hazards.map(h => h.rect);     // §6
@@ -1047,10 +1107,18 @@ const solids = [...active.solids, ...apronFor(active.ldtkLevel.iid), ...fallingB
   const roomId = active.ldtkLevel.iid;
   const roomSave: CollectibleSave = save.collectibles[roomId] ?? { collected: [] };
   const { collected, remaining } = derivePickups(playerRect, collectibleEntities, roomSave);
-  for (const id of collected) {
-    save = { ...save, collectibles: { ...save.collectibles, [roomId]: collect(roomSave, String(id)) } };
+  if (collected.length > 0) {
+    // ACCUMULATE first, persist ONCE. collect() clones the save you HAND it —
+    // re-passing the original roomSave snapshot every iteration drops every
+    // gem but the last on a same-tick double pickup, and a writeSave inside
+    // the loop persists the loser.
+    let nextRoomSave = roomSave;
+    for (const id of collected) {
+      nextRoomSave = collect(nextRoomSave, String(id));
+      // ping + sparkle particles
+    }
+    save = { ...save, collectibles: { ...save.collectibles, [roomId]: nextRoomSave } };
     writeSave(storage, save);
-    // ping + sparkle particles
   }
   ```
 
@@ -1299,6 +1367,7 @@ Assert against the shipped pack's known shape (§1.1) — these are exact, not l
 - Save a syntactically invalid `.ldtk` (truncated JSON). Assert: the swap is rejected — `project`, `rooms`, `active`, and the surface-cache bakes are the SAME objects (reference identity), and the error is surfaced (console + dev toast). The game remains fully playable.
 - Delete the active room from the `.ldtk` and save. Assert: same rejection path (the active room's iid is gone — `rooms.has(active.ldtkLevel.iid)` is `false`, probed with `has` so `get` never throws), playable world untouched.
 - Save while a §5.5 slide is active. Assert: the swap defers until `session.slide === null`, then applies exactly once (not mid-slide, not twice).
+- Assert the seam-apron cache is invalidated on every applied swap: after an edit that changes a neighbour's near-seam geometry, the next `apronFor(activeIid)` serves the NEW solids (a memo that survived the swap serves the old project's floors — invisible until a crossing misbehaves; §5.3/§5.5).
 - Save while the player stands where a new wall is drawn. Assert: the embedded body recovers through `settlePlatformerState` (or, when fully enclosed, respawns at the §8 anchor) — the kernel never phases into geometry.
 
 ### 12.2 Dash-into-Wall Hit-Stop Timing
