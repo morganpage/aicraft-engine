@@ -5,7 +5,7 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.21.0] - 2026-08-21
 
 ### Added
 - **`recipes/` — the structured home for reusable game wiring (compiled + tested, shipped in the npm tarball).** Build briefs used to inline the same TypeScript wiring sketches by hand (audio unlock-on-first-gesture, the reduced-motion-gated fixed-tick boot, the sprite slot→cell mapping, re-stamping particle `colorEnd` after every `advance()`, the LDtk surface-cache draw pipeline, the room-slide one-room letterbox aperture); eight briefs carried eight independently-drifting copies, and a real build (Celerock, 0.20.0) hit ~14 brief-vs-API drifts before writing any game code. Recipes are copy-in consumer modules (they `import` from the `aicraft-engine` root barrel exactly as a game does), typechecked against live `src/` on every commit (`npm run typecheck:recipes`, chained into `npm run build` via a `paths` alias) and unit-tested in the root Vitest run (`recipes/tests/`). Governance: a sketch reusable by more than one game becomes a recipe; a recipe two shipped games import verbatim is promoted to a first-class export (`docs/conventions.md`, `recipes/README.md`). `games/simple-platformer.md` migrated as the first consumer — its loop gate, audio unlock, and particle-fade guidance now reference recipes by name instead of inlining sketches.

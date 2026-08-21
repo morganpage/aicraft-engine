@@ -120,6 +120,18 @@ let particles = spawn(player.x, player.y, {
 particles = step(particles, 1);  // advance + cull
 ```
 
+## Recipes
+
+The package ships a [`recipes/`](./recipes/README.md) directory — compiled,
+unit-tested **copy-in wiring modules** for the glue every game rebuilds by
+hand (audio unlock, the reduced-motion-gated loop boot, particle systems,
+LDtk draw/entity-art/hot-reload wiring, sprite-sheet boot, room-slide
+letterboxing). Copy the files you need into `src/recipes/` and import them
+locally; they are typechecked against this package's source on every commit,
+so they cannot drift from the shipped API. See
+[`recipes/README.md`](./recipes/README.md) for the full catalog and the
+governance ladder (brief sketch → recipe → first-class export).
+
 ---
 
 ## Showcase
