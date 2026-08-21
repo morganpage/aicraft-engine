@@ -13,6 +13,12 @@ export interface AttachAudioUnlockOptions {
    * Pass any `EventTarget` to make the wiring testable.
    */
   readonly target?: EventTarget;
+  /**
+   * Runs once, on the first gesture, right after `adapter.unlock()` — the
+   * natural place to flip a game's "audio armed" flag that gates cue firing.
+   * Never runs if no gesture arrives. Failures are swallowed.
+   */
+  readonly onUnlock?: () => void;
 }
 
 /**
@@ -52,6 +58,13 @@ export function attachAudioUnlock(
     fired = true;
     for (const name of events) target.removeEventListener(name, onFirstGesture);
     adapter.unlock();
+    if (options.onUnlock) {
+      try {
+        options.onUnlock();
+      } catch {
+        // Swallow — a broken hook must not break the unlock wiring.
+      }
+    }
   };
 
   for (const name of events) target.addEventListener(name, onFirstGesture);

@@ -54,11 +54,15 @@ The promotion path for reusable game code:
 
 | Recipe | Replaces | Used by |
 |---|---|---|
-| [`audio-unlock.ts`](./audio-unlock.ts) | One-shot `keydown`/`pointerdown` → `adapter.unlock()` listener | every brief's audio section |
+| [`audio-unlock.ts`](./audio-unlock.ts) | One-shot `keydown`/`pointerdown` → `adapter.unlock()` listener (+ `onUnlock` gate hook) | every brief's audio section |
 | [`fixed-tick-game.ts`](./fixed-tick-game.ts) | `createGameLoop` + reduced-motion static-frame gate | every brief's loop/boot section |
+| [`platformer-input.ts`](./platformer-input.ts) | `PlatformerInput` derivation from the merged per-tick edge map | every kernel game (celerock) |
+| [`sprite-sheet-boot.ts`](./sprite-sheet-boot.ts) | Defensive PNG + Aseprite-JSON boot: fetch → parse → compile → clip lookup, `null` on any failure | sprite-sheet games (celerock) |
 | [`sheet-frame-index.ts`](./sheet-frame-index.ts) | The `clip.frameIndices[currentFrameIndex(...)]` double indirection | sprite-sheet games (celerock) |
 | [`particle-color-fade.ts`](./particle-color-fade.ts) | Re-stamping `colorEnd` after every particle `advance()` | particle-juiced games (celerock) |
 | [`ldtk-draw-pipeline.ts`](./ldtk-draw-pipeline.ts) | Surface-cache + `worldOffset` + `view` + invalidate wiring | LDtk games (celerock) |
+| [`ldtk-entity-art.ts`](./ldtk-entity-art.ts) | The `drawLevelEntity` override map rendering entities with their authored LDtk tiles via the `entityArt` side channel | LDtk games (celerock) |
+| [`ldtk-hot-reload-plugin.ts`](./ldtk-hot-reload-plugin.ts) | Vite dev-server watcher forwarding `.ldtk` saves as the `ldtk:update` websocket event | LDtk games with live level editing (celerock) |
 | [`ldtk-entity-tile-art.ts`](./ldtk-entity-tile-art.ts) | Baking a terrain-like LDtk ENTITY's art with the project's own auto-rules, stamped in-context | LDtk games with falling/push/crumble blocks (celerock) |
 | [`particle-system.ts`](./particle-system.ts) | Owning the seconds→ticks conversion + shared air medium for the tick-unit particle pillar (**promoted into the engine** as `advanceSeconds`/`stepSeconds`/`DEFAULT_PARTICLE_AIR`; this file is the back-port for pre-promotion pins) | every particle-juiced game (celerock, embertomb) |
 | [`room-slide-aperture.ts`](./room-slide-aperture.ts) | `presentationForRoomSlide` → aperture → letterbox (never union `bounds`) | room-transition games (celerock) |

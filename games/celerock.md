@@ -158,6 +158,8 @@ npm install aicraft-engine@0.20.0
 
 > **Do not import** the legacy single follow-camera (`createCamera` / `updateCamera`) — it is superseded by the camera brain. **Do not import** `doubleJumpAbility` / `doubleJumpEnabled` — Celeste has no double jump. **Do not import** `compileLevel`, `canonicalize`, `fnv1a`, or `LEVEL_VERSION` — those serve hand-authored `LevelData`; geometry here comes from LDtk via `ldtkLevelToLevelData` + `compileGeneratedLevel`.
 
+> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/main/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `sheet-frame-index` (§4.4), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), and `particle-system` (§9). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
+
 ### 1.1 The bundled assets — download these first
 
 Four files. Fetch them **at scaffold time** into `public/`, all four flat in the same directory — the LDtk project references its tileset as the bare sibling name `celerock.png`, and `Player.json` names its sheet as the bare `Player.png`, so nesting either anywhere else breaks the load. Do **not** fetch these from GitHub at runtime (CORS + offline); they are project assets, served by Vite from `public/`.
@@ -390,16 +392,13 @@ const gamepad  = createGamepadAdapter(
 **Merge the devices with the engine's merge layer — do not hand-roll the cascade.** Every adapter's `poll()` returns `Record<action, PolledEdge>`; `mergePolledEdgeMaps(...)` OR-merges any number of them over the union of their actions (a disconnected gamepad contributes nothing and costs nothing), and `IDLE_EDGE` covers unmapped actions. Touch buttons (criterion 1) join the same merge — one `poll()` per adapter, once per fixed tick:
 
 ```ts
-// per fixed tick — poll each device exactly once, then merge:
+// per fixed tick — poll each device exactly once, then merge, then derive.
+// The PlatformerInput derivation (§4.3's shape, from the merged map) is
+// recipes/platformer-input.ts — copy it in, do not re-derive by hand:
 const edges = mergePolledEdgeMaps(keyboard.poll(), gamepad.poll(), /* touchMap */);
-const input: PlatformerInput = {
-  moveX: (edges['right']?.held ? 1 : 0) - (edges['left']?.held ? 1 : 0),
-  moveY: (edges['down']?.held  ? 1 : 0) - (edges['up']?.held   ? 1 : 0),
-  jump:  edges['jump']  ?? IDLE_EDGE,   // C (keyboard) / A (gamepad) / touch
-  dash:  edges['dash']  ?? IDLE_EDGE,   // X / B / touch
-  grab:  edges['grab']  ?? IDLE_EDGE,   // Z / X-button / touch
-};
-// edges['pause'] feeds the §8.2 pause FSM (Escape on keyboard, Start on gamepad).
+const input = derivePlatformerInput(edges);
+// edges['pause'] feeds the §8.2 pause FSM (Escape on keyboard, Start on gamepad)
+// — it is an FSM action, not a kernel input, so read it off the map directly.
 ```
 
 **Bindings (authoritative for this brief):** Arrow keys move (←→ horizontal, ↑↓ for ladder climb / fast-fall / dash-aim), `C` jump, `X` dash, `Z` grab/clamber, `R` instant respawn (engine convenience), `Escape` pause (add it to `CELESTE_KEYBOARD_MAP` — it is your own map, so no extender is needed; the GAMEPAD standard map is the frozen one, hence `extendGamepadMap` above). This matches Celeste's PC defaults verbatim; the engine's `STANDARD_KEYBOARD_PLATFORMER_MAP` (`Space`/`Shift`/`KeyK`) is deliberately **not** used so players get the real Celeste layout.
@@ -422,37 +421,30 @@ Art faces right; left is produced by the facing mirror. Transparency is verified
 **Boot: load + compile (defensive — mirror the tileset loader).** Load `Player.png` with the **same defensive, error-swallowing image loader you use for tileset PNGs** (bounded decode, never crash boot), and load the animation definition the same way: the sheet JSON lives in **`Player.json`, the animation SOURCE OF TRUTH** (§1.1) — do **not** fork its contents into game code. To change the clip set, edit `Player.json` (any editor that speaks this Aseprite-JSON superset — Animaitor imports and re-exports it losslessly, tag extensions included) rather than forking the JSON in game code. A missing/failed sprite is **NOT fatal** — set the sheet to `null` and the render path falls back to the procedural body. `parseSpriteSheet` never throws, so wrap the whole thing and degrade quietly:
 
 ```ts
-// decodeImageBounded is YOUR defensive loader (the same one you pass to
-// buildLdtkTilesetBundle / loadLdtkProjectAssets). Returns CanvasImageSource | undefined.
-const spriteImage = await decodeImageBounded('./Player.png');   // undefined on failure
+// recipes/sprite-sheet-boot.ts (engine repo) — copy it in. The defensive
+// fetch/parse/compile boot for a PNG + its Aseprite-JSON definition, degraded
+// to null on ANY failure (bad fetch, hostile host, unparseable JSON, failed
+// decode): a missing sprite never blocks boot — the render path falls back to
+// the procedural body. decodeImageBounded is YOUR defensive loader (the same
+// one you pass to buildLdtkTilesetBundle / loadLdtkProjectAssets).
+const sheet = await loadSpriteSheetAssets({
+  imageUrl: `${import.meta.env.BASE_URL}Player.png`,
+  jsonUrl:  `${import.meta.env.BASE_URL}Player.json`,
+  decodeImage: decodeImageBounded,       // (url) => Promise<CanvasImageSource | undefined>
+});
 
 // Player.json authors: a 10×8 `meta.grid` → 80 synthesized cells (row-major;
 // frameTags `from`/`to` are TILE INDICES under meta.grid) and the four clips
 // of the table above with their 0.20.0 tag extensions — `duration` per-clip
 // pace (idle 400, climb 160, jump 70; walk rides the 100 ms compiler default)
 // and `loop: false` on jump (the one-shot that clamps on the fall frame).
-// Fetch it with the same discipline as the PNG: a failed fetch is NOT fatal —
-// the sheet stays null and the procedural body takes over.
-let spriteText: string | null = null;
-try {
-  const response = await fetch(`${import.meta.env.BASE_URL}Player.json`);
-  spriteText = response.ok ? await response.text() : null;
-} catch {
-  spriteText = null;
-}
-const parsed = spriteText !== null ? parseSpriteSheet(spriteText) : { ok: false, errors: [] };
-const compiled: CompiledSpriteSheet | null =
-  parsed.ok && parsed.sheet && spriteImage ? compileSpriteSheet(parsed.sheet).sheet : null;
-
-// EVERY clip resolves the same way — the tag extensions carry pacing and
-// one-shot semantics, so there is no hand-built anim and no post-compile
-// surgery on the compiled sheet (it is frozen).
-const clips = {
-  idle:  compiled?.anims.get('idle')  ?? null,
-  walk:  compiled?.anims.get('walk')  ?? null,
-  climb: compiled?.anims.get('climb') ?? null,
-  jump:  compiled?.anims.get('jump')  ?? null,
-} as const;
+// Every clip resolves the same way through the sheet's lookup — there is no
+// hand-built anim and no post-compile surgery on the compiled sheet (it is
+// frozen). A sheet without a clip key falls back to idle, never to walk.
+const clips = sheet
+  ? { idle:  sheet.clip('idle'),  walk: sheet.clip('walk'),
+      climb: sheet.clip('climb'), jump: sheet.clip('jump') }
+  : { idle: null, walk: null, climb: null, jump: null };
 
 // ONE clip player for the whole runtime (created once at boot; the per-tick
 // block below advances it). `createSpriteAnimPlayer()` is also the respawn
@@ -462,7 +454,7 @@ let anim = createSpriteAnimPlayer();
 
 > **One-shot clips are engine-owned since 0.20.0.** The compiler used to hardcode `loop = true` for every `meta.frameTags` entry, which forced consumers to hand-build the jump `CompiledAnim` (and, for per-clip pacing, to copy-on-write surgery on the frozen compiled sheet). The tag extensions close both: `loop: false` compiles verbatim and the frame player CLAMPS at `n-1` (the fall frame) once the clock passes the clip total; `duration`/`durations` author the pace. **The verified feel — play 60→64 once at 70 ms/frame, then clamp on the fall frame until landing — is now entirely in the sheet JSON above.**
 
-> **slot ≠ cell.** `currentFrameIndex` returns the index into `anim.frameIndices` (0..n−1) — a SLOT, not a sheet cell. `drawSprite` expects a sheet cell (`sheet.frames[frameIndex]`), so always map through `anim.frameIndices[currentFrameIndex(...) ?? 0]` before drawing — the per-tick block above does exactly that. (The walk clip works only by coincidence: its `frameIndices` `[0..7]` are the identity; the jump clip would otherwise render walk cells 0–4 while animating at the correct rate.)
+> **slot ≠ cell.** `currentFrameIndex` returns the index into `anim.frameIndices` (0..n−1) — a SLOT, not a sheet cell. `drawSprite` expects a sheet cell (`sheet.frames[frameIndex]`), so always map through `anim.frameIndices[currentFrameIndex(...) ?? 0]` before drawing — **`recipes/sheet-frame-index.ts` is that mapping, named: copy it in and call `currentSheetFrameIndex(anim.state, clip)`.** (The walk clip works only by coincidence: its `frameIndices` `[0..7]` are the identity; the jump clip would otherwise render walk cells 0–4 while animating at the correct rate.)
 
 **Per fixed tick: derive kind → advance the clip player → draw.** Drive the anim clock from the **same `dt` as the sim**. The clip player owns the reset discipline: it restarts the clock **only when the CLIP changes** — the three airborne kinds (`ascent`/`apex`/`descent`) are phases of ONE arc and share the jump clip uninterrupted (a per-kind reset replays the launch frames at every phase boundary — the "jump animation replays" defect from a real build). Reset on respawn via `anim = createSpriteAnimPlayer()` so the next jump starts on frame 0 instead of inheriting the clamped fall frame.
 
@@ -498,7 +490,7 @@ anim = advanceSpriteAnimPlayer(anim, kind, clingParked ? 0 : dt * 1000);
 // climb clip simply has no 'climb' key — fall back to idle, never to walk.)
 const clip = clips[anim.clip] ?? clips.idle;
 const frameIndex: number = clip
-  ? clip.frameIndices[currentFrameIndex(anim.state, clip) ?? 0]   // slot → sheet cell
+  ? currentSheetFrameIndex(anim.state, clip) ?? 0   // slot → sheet cell — recipes/sheet-frame-index.ts
   : 0;
 
 // Draw 1:1, bottom-centered on the FEET, facing mirror inside drawSprite.
@@ -506,7 +498,7 @@ const frameIndex: number = clip
 // engine): for a 16×16 frame on feet (feetX, feetY) → destX=feetX-8, destY=feetY-16.
 const feetX = state.core.x + state.core.width / 2;
 const feetY = state.core.y + state.core.height;       // bottom of the 0.5×1.5-tile box
-drawSprite(ctx, spriteImage!, compiled!, frameIndex, feetX - 8, feetY - 16, {
+drawSprite(ctx, sheet!.image, sheet!.compiled, frameIndex, feetX - 8, feetY - 16, {
   facing: state.core.facing,                          // 1 | -1; drawSprite mirrors about the frame's horizontal center
   snap: true,                                         // 0.17.1: round the dest — raw physics floats under zoom land on fractional device pixels (the mid-jump shimmer; cameraTransform fixed the LEVEL's seam, this fixes the sprite's)
 });
@@ -521,7 +513,7 @@ drawSprite(ctx, spriteImage!, compiled!, frameIndex, feetX - 8, feetY - 16, {
 - **`image-rendering: pixelated` + `imageSmoothingEnabled = false`** for crisp nearest-neighbor (`drawSprite` forces the latter itself). **No shimmer while idle.**
 - **Contact shadow:** do NOT draw one — omit the contact shadow entirely (it reads as a muddy drop shadow under the crisp pixel sprite).
 
-**Fallback.** If `compiled` (or `spriteImage`) is `null` after boot, draw the procedural body instead: face + `advanceSpringRod` hair + `drawSimpleFeet` + the `advanceLocomotionByDisplacement` walk cycle + `advanceSquash` squash (pivot at the feet), wrapped in `ctx.scale(facing, 1)`. The procedural path is the **only** place breathe/squash scaling is applied.
+**Fallback.** If `sheet` is `null` after boot, draw the procedural body instead: face + `advanceSpringRod` hair + `drawSimpleFeet` + the `advanceLocomotionByDisplacement` walk cycle + `advanceSquash` squash (pivot at the feet), wrapped in `ctx.scale(facing, 1)`. The procedural path is the **only** place breathe/squash scaling is applied.
 
 > **Simpler alternative (still policy-compliant).** For ONE character with a couple of fixed clips, a direct `ctx.drawImage` keyed off `anim.clip` is acceptable — but the engine pipeline is **preferred** (it owns the facing mirror, the clip player, and the grid math). Either way §4.4's policy above holds.
 
@@ -732,13 +724,15 @@ ctx.restore();
 **The aperture is one room, never the slide's union (the rule this brief itself got wrong).** `presentationForRoomSlide(slide).bounds` is the camera's CLAMP SPACE while two rooms are on screen — roughly twice a room wide. Mask with it and the frame exceeds the viewport, so every bar vanishes for the length of the transition and the world spills across the entire window before snapping back; a real build shipped exactly that, on this brief's instructions. **The window the player looks through does not change during a slide: the rooms move, the window stays put.** Mask with the ROOM (interpolating source→destination if their sizes differ), clamp the brain with the union. And note the frame's POSITION cannot come from the slide camera either — that camera is sweeping through union space, so a camera-derived frame slides across the screen with it. During a slide, derive the frame from the room size and the viewport directly:
 
 ```ts
-// Aperture: one room, centred, capped at the viewport. In the steady state this
-// is identical to the camera-derived frame (the clamp centres a room smaller
-// than the view); during a slide it is the only version that holds still.
-const room = slideRoomSize(session.slide, active);      // interpolated src→dst, else active
-const fw = Math.min(viewport.width, room.width * t.zoom);
-const fh = Math.min(viewport.height, room.height * t.zoom);
-const frame = { x: (viewport.width - fw) / 2, y: (viewport.height - fh) / 2, width: fw, height: fh };
+// Aperture: one room, centred, capped at the viewport. recipes/room-slide-aperture.ts
+// (engine repo) + the engine's cameraApertureLetterbox own this math — do not
+// hand-derive the frame. Steady state: the ACTIVE room. During a slide: the
+// engine's interpolated source→destination room (presentationForRoomSlide's
+// aperture) — never the slide camera (it sweeps union space), never p.bounds.
+const aperture = session.slide !== null
+  ? roomSlideAperture(session.slide)
+  : { width: active.levelData.width, height: active.levelData.height };
+const frame = cameraApertureLetterbox(aperture, viewport, t.zoom).frame;
 ``` Atmosphere/parallax may still animate *behind* the room — what it must not do is fill the margin with something that reads as level.
 
 ```ts
@@ -893,21 +887,14 @@ Editing the level while playing it is the primary level-design loop for this bri
 
 ```ts
 import { defineConfig } from 'vite';
-import { resolve } from 'node:path';
+import { createLdtkHotReloadPlugin } from './src/recipes/ldtk-hot-reload-plugin'; // engine repo recipes/
 
 export default defineConfig({
-  plugins: [{
-    name: 'ldtk-hot-reload',
-    apply: 'serve',                                  // dev server only — never in `vite build` / `preview`
-    configureServer(server) {
-      server.watcher.add(resolve('public'));         // public/ is not watched by default — add it
-      server.watcher.on('change', (file) => {
-        if (file.endsWith('.ldtk')) {
-          server.ws.send('ldtk:update', { file });   // custom HMR event (colon namespaced)
-        }
-      });
-    },
-  }],
+  // The watcher plugin is recipes/ldtk-hot-reload-plugin.ts — copy it in, do not
+  // re-type it: it adds public/ to the dev-server watcher and forwards every
+  // saved .ldtk to the client as the 'ldtk:update' websocket event
+  // (LDTK_HOT_RELOAD_EVENT). apply: 'serve' keeps it out of build/preview.
+  plugins: [createLdtkHotReloadPlugin()],
 });
 ```
 
@@ -1089,27 +1076,11 @@ In the shipped pack: **`Gem` and `Spike` have tiles** (both from `celerock.png`,
 
 ```ts
 // The join is ENGINE-OWNED: room.entityArt, keyed by the entity's engine id.
-// No index to build, memoize, rebuild on transition, or clear on hot reload —
-// a recompiled room arrives with its own fresh map.
-function entityTileOverride(
-  room: CompiledLdtkRoom,
-  tilesets: LdtkTilesetBundle,
-): DrawLevelEntityOverrideMap {
-  const draw = (ctx: CanvasRenderingContext2D, entity: LevelEntity): boolean => {
-    const art = room.entityArt.get(entity.id);
-    if (!art) return false;                   // ← engine's DEFAULT_ENTITY_PALETTE draws it
-    // The engine helper owns the blit: `Repeat` tiles a resized strip (a 40×8
-    // Spike is five 8×8 tiles, never a smear), `FitInside` letterboxes — the
-    // def's authored mode decides. `false` (unknown tileset, throwing draw)
-    // hands the draw back to the engine shape. `tileRenderMode` is `undefined`
-    // when the def could not be resolved — passing it through selects
-    // drawLdtkEntityTile's geometry heuristic, the intended fallback.
-    return drawLdtkEntityTile(ctx, art.tile, entity.rect, tilesets, art.tileRenderMode, art.nineSliceBorders);
-  };
-  // Every drawn kind routes through the same rule.
-  return { hazard: draw, collectible: draw, spring: draw, dashRefill: draw,
-           enemy: draw, trap: draw, exit: draw, platform: draw, movingPlatform: draw };
-}
+// The override map that routes every drawn kind through it is
+// recipes/ldtk-entity-art.ts (engine repo) — copy it in; no index to build,
+// memoize, rebuild on transition, or clear on hot reload. Rebuild the map per
+// active room (a recompiled room arrives with its own fresh entityArt):
+const overrides: DrawLevelEntityOverrideMap = ldtkEntityTileOverride(active, tilesets);
 ```
 
 Per frame — hazards from `active.hazards`, strawberries from `derivePickups`'s `remaining` (already excludes collected ones):
@@ -1229,12 +1200,11 @@ ctx.globalAlpha = 1;
 
 ```ts
 const audio = createAudioAdapter();
-let audioReady = false;
-const unlockAudio = (): void => { audioReady = true; audio.unlock(); };
-try {
-  window.addEventListener('keydown', unlockAudio, { once: true });      // the lazy, error-swallowing host
-  window.addEventListener('pointerdown', unlockAudio, { once: true }); // access §2 permits
-} catch { /* no host — audio stays off; the game still runs */ }
+let audioReady = false;   // gates cue firing until the first real user gesture
+// The unlock wiring is recipes/audio-unlock.ts (engine repo) — copy it in:
+// a one-shot keydown/pointerdown listener that calls audio.unlock() once and
+// removes itself; its onUnlock hook flips the gate. Silent no-op in Node.
+attachAudioUnlock(audio, { onUnlock: () => { audioReady = true; } });
 
 // Per fixed tick — cues fire on EVENT EDGES / feel moments only (the
 // sustained-sound rule below). These three make the game audible:
