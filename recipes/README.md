@@ -82,6 +82,12 @@ Then import locally (`./recipes/audio-unlock`). Recipes import only from the
 `aicraft-engine` root barrel, so they compile unchanged in any Vite/TS
 consumer scaffold the briefs create.
 
+> **Releases are tagged at publish time** (`vX.Y.Z` at the release commit).
+> Brief pins and asset download URLs reference tags, never `main` — a brief
+> pinned to `aicraft-engine@X` must copy recipes and fetch assets as of X,
+> which is only possible against an immutable ref. A release that ships a new
+> or changed recipe without its tag breaks every brief pinned to it.
+
 ## Adding a recipe
 
 - One wiring concern per file, lowercase-kebab, JSDoc on every export

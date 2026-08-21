@@ -5,6 +5,19 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.1] - 2026-08-21
+
+A docs + recipes maintenance release — **no engine API change** — sourced from a multi-review audit of `games/celerock.md` (the reference brief for the modern golden path) cross-verified against `src/`, `recipes/`, and the shipped asset pack.
+
+### Added
+- **`recipes/image-decoder.ts` — the shared, bounded, never-throwing image decoder** (11 unit tests). Two exports because the two call sites differ: `decodeImageBounded(url, opts?)` is the URL-facing loader `recipes/sprite-sheet-boot.ts` takes as its `decodeImage` option, and `decodeImageBytesBounded(bytes, opts?)` is the bytes core `loadLdtkProjectAssets({ decodeImage })` adopts with a one-line wrap. The celerock brief's §4.4 referenced a `decodeImageBounded` nothing supplied — the golden LDtk path applies bounded decode internally and never makes a game write one, and the sprite path shouldn't either. Host-defensive (bitmap path → `<img>` + object-URL fallback → `undefined`), timeout-guarded so a hung decode can never hang boot.
+
+### Fixed
+- **`recipes/ldtk-draw-pipeline.ts` no longer teaches a forbidden pattern.** Its `worldOffset` doc and example said "feed your camera transform's x/y" — exactly the camera-offset-as-`worldOffset` double-count the celerock brief's §12.8 forbids. `worldOffset` is now documented as a room's own origin WITHIN world/slide space (a §5.5 slide's `sourceOffset`/`destinationOffset`), with the camera composed once via `composeCameraTransform`.
+- **`recipes/platformer-input.ts` JSDoc** now maps the touch set's POSITIONAL `PolledEdge[]` to action names before `mergePolledEdgeMaps` (merging the raw array would use array indices as action names — the adapter's `poll()` returns an array, not a record).
+- **`recipes/particle-color-fade.ts`** parameter renamed `dt` → `dtTicks`, matching the 0.21.0 `advance` rename; JSDoc notes the seconds-facing `advanceSeconds` pairing.
+- **`games/celerock.md` — the audit pass itself (~50 corrections in four commits):** snippet bugs a builder would copy verbatim are fixed structurally (the room transition is now transactional — candidate state committed only inside `begun.ok`, with `slide.particleRebaseDelta` actually applied; multi-gem pickup accumulates and persists once; the touch merge is an eight-button positional map including pause; §5.7 hot reload validates the whole replacement world severity-aware and clears the seam-apron cache, whose handle the old snippet destructured away; `project`/`rooms`/`active` are `let` — the consts were a strict-TS compile break). Stale instructions are gone (the `fitCameraZoom` slide-lens regressions, the retired rect-key entity-art index, `settlePlatformerToRoom`, the false Enter/Space confirm claim, the three-way reduced-motion audio conflict — now uniformly "no adapter, no ambience"). And the **living-file restructure**: room counts, sizes, identifiers, and entity tallies are the `.ldtk`'s state, not the brief's facts — the verify block and §12.1 assert structure (≥1 level, ≥1 spawn, uniform tile size, one connected chain with a UNIQUE east-terminal reachable from the start) and log the rest; `spawnLessRoomIids` is asserted as a set, never `levels.length − 1` arithmetic. The §1 import block gains the five symbols its own snippets call (`createSeamApronCache`, `seamApronSourceFromSolidId`, `DEFAULT_PARTICLE_AIR`, `spriteAnimClipFor`, `createSpriteTintCache`), and the recipe catalog gains `fixed-tick-game`, `image-decoder`, `ldtk-draw-pipeline` (full painter migration — no raw-cache hybrid), and `ldtk-entity-tile-art` (falling blocks bake terrain-like art with the project's own auto-rules instead of a placeholder rectangle).
+
 ## [0.21.0] - 2026-08-21
 
 ### Added
