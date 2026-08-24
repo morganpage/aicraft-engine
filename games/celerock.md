@@ -257,7 +257,7 @@ Wire the capability-gated systems anyway (they cost nothing when the buckets are
 | Legs | `drawSimpleFeet`, `DEFAULT_SIMPLE_FEET` |
 | Foot-tap audio | `createFootPlantState`, `advanceFootPlant` |
 | Hair (1 damped spring strand) | `createSpringRod`, `advanceSpringRod`, `DEFAULT_SPRING_ROD` — **never** raw `advanceSpringChain` |
-| **Player sprite (supplied `Player.png`)** | `parseSpriteSheet`, `compileSpriteSheet` (`meta.grid` synthesizes the 10×8 grid of 16×16 cells; tag extensions `loop`/`duration`/`durations` author one-shot clips + per-clip pacing), `deriveSpriteAnimKind` (`climbing` → `'climb'`) → `createSpriteAnimPlayer`/`advanceSpriteAnimPlayer` + `currentFrameIndex`, `drawSprite` (stable 1:1, facing mirror, feet anchor — §4.4) |
+| **Player sprite (supplied `Player.png`)** | `parseSpriteSheet`, `compileSpriteSheet` (`meta.grid` synthesizes the 10×8 grid of 16×16 cells; tag extensions `loop`/`duration`/`durations` author one-shot clips + per-clip pacing), `deriveSpriteAnimKind` (`climbing` → `'climb'`; the `climbing` input is the ACTIVE grip flags, never the ability slices' permanent `kind` literals — §4.4) → `createSpriteAnimPlayer`/`advanceSpriteAnimPlayer` + `currentFrameIndex`, `drawSprite` (stable 1:1, facing mirror, feet anchor — §4.4) |
 | Dash trail, landing dust, respawn flash | `spawn`, `stepSeconds`, `sampleConeVelocity` |
 | Parallax background (far/mid/near) | `drawTiledParallax`, `parallaxOffset`, `PARALLAX_FAR/MID/NEAR` |
 | Vector look + glow (player, pickups, UI) | `outlineRect`, `drawGlow` |
@@ -481,13 +481,21 @@ let anim = createSpriteAnimPlayer();
 
 ```ts
 // Map the kernel's physics surface onto a semantic anim kind. `climbing` is
-// 0.20.0: true while EITHER grip owns the body — wall-grab
-// (state.abilities.wallGrab?.kind === 'wallGrab') or a ladder
-// (state.abilities.climb?.kind === 'climb') — and reads as 'climb' with
-// priority over the grounded/airborne branches (a cling is a cling while
-// sliding).
-const grabbing = state.abilities.wallGrab?.kind === 'wallGrab';
-const onLadder = state.abilities.climb?.kind === 'climb';
+// true while EITHER grip ACTIVELY owns the body — a wall-grab
+// (grabbing === true) or a ladder (climbing === true) — and reads as 'climb'
+// with priority over the grounded/airborne branches.
+//
+// ⚠ THE ABILITY SLICES' `kind` LITERALS ARE PERMANENT. `abilities.wallGrab`
+// exists from boot and its `kind` is ALWAYS 'wallGrab'; the activity is the
+// `grabbing` FLAG (same shape for `climb`/`climbing`). A kind-only predicate
+// (`?.kind === 'wallGrab'`) is therefore true EVERY tick — and since
+// `deriveSpriteAnimKind` checks `climbing` first, a real build copied that
+// predicate from an earlier revision of this very snippet and shipped a player
+// stuck on the CLIMB clip for idle, walking, and jumping. Gate on the flags:
+const grab = state.abilities.wallGrab;
+const grabbing = grab?.kind === 'wallGrab' && grab.grabbing === true;
+const ladder = state.abilities.climb;
+const onLadder = ladder?.kind === 'climb' && ladder.climbing === true;
 const kind: SpriteAnimKind = deriveSpriteAnimKind({
   supported: state.core.onGround,   // grounded?
   speedX:    state.core.vx,         // |speedX| > 12 px/s (default) ⇒ 'walk', else 'idle'
@@ -501,8 +509,7 @@ const kind: SpriteAnimKind = deriveSpriteAnimKind({
 // The parked-cling touch (Celeste: holding a cling without climbing HOLDS the
 // frame — a frozen mid-reach pose reads as a cling, not a vibration): while
 // kind === 'climb' and |vy| is at the cling epsilon, advance with dtMs 0.
-const clingParked = (grabbing || onLadder) && Math.abs(state.core.vy) < 1;
-anim = advanceSpriteAnimPlayer(anim, kind, clingParked ? 0 : dt * 1000);
+const clingParked = (grabbing || onLadder) && Math.abs(state.core.vy) < 1;anim = advanceSpriteAnimPlayer(anim, kind, clingParked ? 0 : dt * 1000);
 
 // ONE lookup — every clip (idle included) resolves the same way, so there is
 // no special-case branch to drop in translation. (A real build collapsed the
@@ -1370,7 +1377,7 @@ Assert STRUCTURE, not snapshots (§1.1's living-file doctrine) — the `.ldtk` i
 - The start room compiles via `createLdtkRoomCache(project, {...}).getStartRoom()` → `{ ok: true, room }` with `room.spawn.source === 'authored'` and `room.diagnostics` empty (log the identifier — it is whatever the file's first spawned level is); LOG the bucket sizes — hazard/collectible counts are living data, not asserts. (Low-level: `ldtkLevelToLevelData(startLevel, project).level` is defined and passes through `compileGeneratedLevel` with the player config.)
 - LOG the capability matrix and diff it against §1.1's time-of-writing snapshot in the test OUTPUT — a change is information for the report, not a failure (G4); the game must boot on ANY matrix. `report.unknownTriggerIdentifiers` is logged the same way — a substituted `.ldtk` carrying a `FallingBlock` shows up HERE first (§6.1).
 - `Player.png` decodes at 160×128; a forced load failure leaves `sheet === null` (the whole boot result — §4.4's recipe degrades to null on ANY failure) and the game still steps (procedural fallback, §4.4).
-- **Sprite-clip contract (§4.4, 0.20.0 tag extensions).** The compiled sheet carries four clips with their authored semantics: `idle` cells 25–26 at 400 ms/frame looping; `walk` cells 0–7 at the compile default looping; `climb` cells 35–36 at 160 ms looping; `jump` cells 60–64 at 70 ms with **`loop === false`** (assert the flag — a regressed `loop: true` rewinds the jump arc mid-air). Past the jump total (350 ms), `currentFrameIndex` clamps to the LAST slot (cell 64). `deriveSpriteAnimKind({ climbing: true, … })` returns `'climb'` for grounded, airborne, and sliding inputs alike; `spriteAnimClipFor('climb') === 'climb'`.
+- **Sprite-clip contract (§4.4, 0.20.0 tag extensions).** The compiled sheet carries four clips with their authored semantics: `idle` cells 25–26 at 400 ms/frame looping; `walk` cells 0–7 at the compile default looping; `climb` cells 35–36 at 160 ms looping; `jump` cells 60–64 at 70 ms with **`loop === false`** (assert the flag — a regressed `loop: true` rewinds the jump arc mid-air). Past the jump total (350 ms), `currentFrameIndex` clamps to the LAST slot (cell 64). `deriveSpriteAnimKind({ climbing: true, … })` returns `'climb'` for grounded, airborne, and sliding inputs alike; `spriteAnimClipFor('climb') === 'climb'`. **And the game-side SELECTION is tested through the game's own anim step** (the §12 preamble harness): a grounded still player resolves `idle`, a running one `walk`, an airborne one `jump`, and `'climb'` only while a grip is ACTIVE — the ability slices' `kind` literals are permanent, and a kind-only predicate shipped a player stuck on the climb clip for every state, invisible to every engine-level test.
 - **Trigger `fields` contract (§5.2/§6.1).** A fixture LDtk with a `FallingBlock` entity carrying an integer `tiletype` field translates to a `trigger` with `props.action === 'FallingBlock'` and `props.fields.tiletype === <value>`; an entity with no fields translates with `props.fields` an empty record. `collectFallingBlocks` over that fixture returns one block with `material` = the field value (1 when absent/invalid), and `advanceFallingBlocks` drives the §6.1 sequence — arm on X-only overlap, shake 0.2 s + extending grace, flush landing at Celeste accel/cap, crush overlap, room escape → `gone`, and purity (inputs never mutated).
 - **Entity art contract (§7.1).** The `Gem` and `Spike` entity defs carry non-null `tileRect`s whose `tilesetUid` matches the `celerock.png` tileset def (log the values); the render-mode AUTHORITY (`Gem` → `'FitInside'`, `Spike` → `'Repeat'`, 0.16.0 — authoritative from the file, never derived from rect geometry) is fixture-tested, not pack-tested. The §7.1 join resolves art for **every hazard and collectible in every room** — count-independent: zero UNEXPECTED misses (a dressed entity must resolve; falling back is only correct for genuinely undressed ones). If the pack carries any `Spike` instance larger than its 8×8 tile, assert the `Repeat` path renders it tiled — otherwise cover `Repeat` via the fixture.
 
