@@ -117,12 +117,19 @@ export interface PlatformerController {
  * @param config - platformer tuning config (default `DEFAULT_PLATFORMER_CONFIG`)
  * @param width - body width (default `DEFAULT_PLAYER_WIDTH`)
  * @param height - body height (default `DEFAULT_PLAYER_HEIGHT`)
+ * @param facing - initial facing (`1` right, `-1` left; default `1`). The
+ *   respawn parameter: a death-and-respawn or room-anchor rebuild that knows
+ *   the body's facing (stored when the anchor was set) passes it here instead
+ *   of hand-spreading `{ ...state, core: { ...core, facing } }` — which a real
+ *   build shipped without, respawning every leftward entry facing right.
  * @returns a fresh, grounded, at-rest `PlatformerState`
  *
  * @example
  * ```ts
  * let state = createPlatformerState(100, 200);
  * state = stepPlatformer(state, input, solids, 1 / 60).state;
+ * // Respawn at the anchor, keeping the entry direction:
+ * state = createPlatformerState(anchor.x, anchor.y, config, w, h, anchor.facing);
  * ```
  */
 export function createPlatformerState(
@@ -131,6 +138,7 @@ export function createPlatformerState(
   config: Readonly<PlatformerConfig> = DEFAULT_PLATFORMER_CONFIG,
   width: number = DEFAULT_PLAYER_WIDTH,
   height: number = DEFAULT_PLAYER_HEIGHT,
+  facing: 1 | -1 = 1,
 ): PlatformerState {
   const core: ActorCore = {
     x,
@@ -139,7 +147,7 @@ export function createPlatformerState(
     height,
     vx: 0,
     vy: 0,
-    facing: 1,
+    facing,
     onGround: false,
     contacts: EMPTY_CONTACTS,
   };
