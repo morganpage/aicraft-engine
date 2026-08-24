@@ -215,9 +215,9 @@ Deterministic particle system. Pure spawn/advance/cull, extended with heterogene
 
 | Export | Kind | Summary | Source |
 |---|---|---|---|
-| `Particle` | type | `{x, y, vx, vy, life, maxLife, size, color?, gravityScale?, dragScale?}` — optional `gravityScale`/`dragScale` default to 1.0 via `??` in `advance` | `src/particles/types.ts` |
-| `spawn(x, y, opts)` | function | Evenly-distributed particles around a circle; deterministic by default | `src/particles/spawn.ts` |
-| `SpawnOptions` | type | Options for `spawn` (count, speed, jitter, life, size, color, angleOffset, rng) | `src/particles/spawn.ts` |
+| `Particle` | type | `{x, y, vx, vy, life, maxLife, size, color?, colorEnd?, gravityScale?, dragScale?}` — optional `gravityScale`/`dragScale` default to 1.0 via `??` in `advance`; `colorEnd` is the fade target read by `particleColorAt` | `src/particles/types.ts` |
+| `spawn(x, y, opts)` | function | Evenly-distributed particles around a circle; deterministic by default. Warns once at dev time on implausibly fast speeds / long lives (the px/s-vs-px/tick tripwire) | `src/particles/spawn.ts` |
+| `SpawnOptions` | type | Options for `spawn` (count, speed, jitter, life, size, color, colorEnd, gravityScale, dragScale, angleOffset, rng) — the scales stamp onto every emitted particle so a preset spreads whole | `src/particles/spawn.ts` |
 | `advance(particles, dtTicks, opts?)` | function | Pure: returns new array, applies gravity×`gravityScale` + drag×`dragScale`, decrements life. `dtTicks` is in TICKS (velocities px/tick, life ticks) — for a seconds fixed step use `advanceSeconds`. Byte-identical for particles without scale fields | `src/particles/advance.ts` |
 | `AdvanceOptions` | type | Options for `advance` (gravity, drag) | `src/particles/advance.ts` |
 | `advanceSeconds(particles, dtSeconds, opts?)` | function | The seconds-facing `advance`: converts `dtSeconds / opts.fixedDt` to ticks internally (default `1/60`) so the 60× seconds/ticks mismatch cannot happen at the call site. One 60 Hz step ≡ one engine tick, byte-identical | `src/particles/seconds.ts` |
@@ -246,6 +246,19 @@ Deterministic particle system. Pure spawn/advance/cull, extended with heterogene
 | `particleAge(p)` | function | Normalized age `[0, 1]` from `life`/`maxLife`; 0 at spawn, 1 at death | `src/particles/lifetime.ts` |
 | `particleSizeCurve(p, startSize, endSize)` | function | Linear size interpolation over lifetime; pure reader | `src/particles/lifetime.ts` |
 | `particleAlphaCurve(p, startAlpha, endAlpha)` | function | Linear alpha interpolation over lifetime; clamped to `[0, 1]` | `src/particles/lifetime.ts` |
+| `particleColorAt(p, fallback?)` | function | The particle's draw color: `color` lerping toward `colorEnd` as it dies (`mixHex` under the hood, endpoints pre-checked so it never throws); constant `color` when no `colorEnd` | `src/particles/lifetime.ts` |
+| `IMPLAUSIBLE_SPEED_PX_PER_TICK` | const | `12` — speeds above this (≈720 px/s at 60 Hz) warn once at dev time in `spawn`/`sampleConeVelocity`; exported so a large-scale game can document its own ceiling | `src/particles/plausibility.ts` |
+| `IMPLAUSIBLE_LIFE_TICKS` | const | `600` — lives above this (10 s at 60 Hz) warn once; the seconds-valued-life signature | `src/particles/plausibility.ts` |
+| `RadialBurstEffect` | type | Tuned one-shot radial burst spec (count, speed, speedJitter, life, size, color, colorEnd?, gravityScale?, dragScale?) — spreads into `spawn` | `src/particles/effects.ts` |
+| `ConeBurstEffect` | type | Tuned one-shot cone burst spec (count, cone, life, size, color, colorEnd?, gravityScale?, dragScale?) — sample velocities with `sampleConeVelocity` | `src/particles/effects.ts` |
+| `DASH_TRAIL_EFFECT` | const | Weightless near-still wake (`speed 0.25` px/tick, 30-tick life) — the trail marks the path while the body moves on | `src/particles/effects.ts` |
+| `LANDING_DUST_EFFECT` | const | Buoyant soft-landing puff (`gravityScale: -0.15`, 34-tick life, color-fades `#cfd8ea`→`#8a94ad`) that hangs at the feet | `src/particles/effects.ts` |
+| `LANDING_DUST_HARD_EFFECT` | const | The hard-landing variant: 16 motes, size 3, wider harder cone (0.35–0.95 px/tick) | `src/particles/effects.ts` |
+| `PICKUP_SPARKLE_EFFECT` | const | 8-mote pickup ring (`speed 1.0` px/tick, slight downward drift) that stays inside the collectible's silhouette | `src/particles/effects.ts` |
+| `GEM_AMBIENT_SPARKLE_EFFECT` | const | ONE weightless twinkle (speed 0.15 px/tick, `gravityScale: 0`) for the id-staggered ambient period — hangs on the gem | `src/particles/effects.ts` |
+| `DEATH_BURST_EFFECT` | const | 24-mote red shatter (peak ~2.6 px/tick) with slight upward bias | `src/particles/effects.ts` |
+| `RESPAWN_FLASH_EFFECT` | const | 16-mote buoyant cyan ring that blooms out and fades | `src/particles/effects.ts` |
+| `SWEAT_DROP_EFFECT` | const | One downward-cone drop (gravityScale 1.2 beats the air medium so it falls) | `src/particles/effects.ts` |
 
 #### `src/particles/presets.ts`
 
@@ -1228,7 +1241,7 @@ Deterministic 2D platformer simulation kernel. Composes existing primitives (`ad
 |---|---|---|---|
 | `PlatformerController` | type | Stateless step function bound to a pipeline + config: `step(state, input, solids, dt) → {state}` | `src/platformer/kernel.ts` |
 | `PlatformerControllerOptions` | type | `{getSolidDisplacement?}` — optional moving-platform carry provider | `src/platformer/kernel.ts` |
-| `createPlatformerState(x, y, config?, width?, height?)` | function | Factory: airborne at-rest `PlatformerState` with all ability initial states. Pure, never throws | `src/platformer/kernel.ts` |
+| `createPlatformerState(x, y, config?, width?, height?, facing?)` | function | Factory: airborne at-rest `PlatformerState` with all ability initial states; the optional `facing` (0.22.0) is the respawn contract — pass the anchor's stored facing instead of hand-spreading the core. Pure, never throws | `src/platformer/kernel.ts` |
 | `createPlatformerController(pipeline, config, options?)` | function | Stateless controller bound to a fixed ability pipeline + config. Multiple characters can share one controller | `src/platformer/kernel.ts` |
 | `stepPlatformer(state, input, solids, dt, config?, getSolidDisplacement?)` | function | Convenience: builds a default-precision controller and steps once. For hot loops, prefer `createPlatformerController` (avoids per-tick closure allocation) | `src/platformer/kernel.ts` |
 | `CompileLevelOptions` | type | Player overrides plus optional `tileTypeMap(value)`, captured once per in-bounds cell | `src/platformer/level-runtime.ts` |
