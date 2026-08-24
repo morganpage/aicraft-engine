@@ -4,6 +4,8 @@
  * Used by `EmitterConfig.cone` (Approach B) and standalone
  * `sampleConeVelocity` (Approach A).
  */
+import { warnImplausibleSpeed } from './plausibility';
+
 export interface ConeConfig {
   /**
    * Direction of cone center in radians. `-π/2` = straight up (Canvas2D, where
@@ -45,6 +47,8 @@ export function sampleConeVelocity(
   config: ConeConfig,
   rng: () => number,
 ): { vx: number; vy: number } {
+  // Dev-time units tripwire (warn once per process — see plausibility.ts).
+  warnImplausibleSpeed('sampleConeVelocity (speedMax)', config.speedMax);
   const halfSpread = config.spread / 2;
   const angle = config.baseAngle + (rng() * 2 - 1) * halfSpread;
   const speed = config.speedMin + rng() * (config.speedMax - config.speedMin);

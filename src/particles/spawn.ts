@@ -1,4 +1,5 @@
 import type { Particle } from './types';
+import { warnImplausibleLife, warnImplausibleSpeed } from './plausibility';
 
 export interface SpawnOptions {
   /** Number of particles to emit. */
@@ -16,6 +17,25 @@ export interface SpawnOptions {
   size: number;
   /** Optional color override. */
   color?: string;
+  /**
+   * Optional fade-out color. When set, a renderer can read
+   * `particleColorAt(p)` to lerp from `color` toward `colorEnd` as the
+   * particle dies. Carried on the particle and preserved by `advance`.
+   */
+  colorEnd?: string;
+  /**
+   * Per-particle gravity multiplier stamped onto every emitted particle
+   * (negative = buoyant; see `Particle.gravityScale`). Lets a tuned preset
+   * spread into `spawn` whole instead of `.map(p => ({ ...p, gravityScale }))`.
+   */
+  gravityScale?: number;
+  /**
+   * Per-particle drag multiplier stamped onto every emitted particle (see
+   * `Particle.dragScale`). NOTE: it multiplies the WORLD drag — with
+   * `DEFAULT_PARTICLE_AIR`'s `drag: 0.9`, values above ~1.11 AMPLIFY velocity
+   * per tick instead of dragging.
+   */
+  dragScale?: number;
   /** Starting angle in radians. Default `0`. */
   angleOffset?: number;
   /**
@@ -63,6 +83,9 @@ export function spawn(x: number, y: number, opts: SpawnOptions): Particle[] {
     life,
     size,
     color,
+    colorEnd,
+    gravityScale,
+    dragScale,
     angleOffset = 0,
     rng,
   } = opts;
@@ -75,6 +98,10 @@ export function spawn(x: number, y: number, opts: SpawnOptions): Particle[] {
   }
   if (count <= 0) return [];
   if (life <= 0) return [];
+
+  // Dev-time units tripwires (warn once per process — see plausibility.ts).
+  warnImplausibleSpeed('spawn', speed);
+  warnImplausibleLife('spawn', life);
 
   const result: Particle[] = [];
   for (let i = 0; i < count; i++) {
@@ -93,6 +120,9 @@ export function spawn(x: number, y: number, opts: SpawnOptions): Particle[] {
       maxLife: life,
       size,
       color,
+      colorEnd,
+      gravityScale,
+      dragScale,
     });
   }
   return result;

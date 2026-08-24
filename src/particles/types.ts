@@ -21,6 +21,14 @@ export interface Particle {
   /** Optional color override. When omitted, the renderer picks a default. */
   color?: string;
   /**
+   * Optional fade-out color. Read at draw time via `particleColorAt(p)`, which
+   * lerps from `color` toward `colorEnd` as the particle dies — dust that
+   * greys out, embers that cool. Preserved by `advance` (which enumerates
+   * fields); before this field existed, games re-stamped a side-channel tag
+   * onto every particle after every advance.
+   */
+  colorEnd?: string;
+  /**
    * Per-particle gravity multiplier applied to the world gravity in `advance`.
    * Missing/undefined → `DEFAULT_GRAVITY_SCALE` (1.0, no override). Negative
    * values invert gravity (smoke rising); `0` cancels it entirely. Enables

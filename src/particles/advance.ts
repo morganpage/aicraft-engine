@@ -34,9 +34,9 @@ export interface AdvanceOptions {
  * to the pre-extension math — the neutral scale is exactly `1.0`.
  *
  * ⚠ The return literal enumerates fields explicitly (it does NOT spread `...p`)
- * so that the optional `gravityScale`/`dragScale`/`color` fields are copied
- * through to the next tick. Dropping them here would silently flatten every
- * particle's physics profile back to neutral after one tick.
+ * so that the optional `gravityScale`/`dragScale`/`color`/`colorEnd` fields
+ * are copied through to the next tick. Dropping them here would silently
+ * flatten every particle's physics profile back to neutral after one tick.
  */
 export function advance(
   particles: readonly Particle[],
@@ -59,6 +59,7 @@ export function advance(
       maxLife: p.maxLife,
       size: p.size,
       color: p.color,
+      colorEnd: p.colorEnd,
       gravityScale: p.gravityScale,
       dragScale: p.dragScale,
     };

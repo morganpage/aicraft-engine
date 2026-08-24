@@ -1,4 +1,5 @@
 import type { Particle } from './types';
+import { isHexColor, mixHex } from '../primitives/color';
 
 /**
  * Normalized age of a particle in `[0, 1]`: `0` = just spawned, `1` = about
@@ -62,4 +63,34 @@ export function particleAlphaCurve(
   if (a < 0) return 0;
   if (a > 1) return 1;
   return a;
+}
+
+/**
+ * The particle's draw color: `color` at spawn, lerping toward `colorEnd` as it
+ * dies (dust greying out, embers cooling), via the engine's `mixHex`. The
+ * color-fade companion to {@link particleAlphaCurve} — this reader plus the
+ * `colorEnd` field retire the copy-in recipe that re-stamped a side-channel
+ * tag onto every particle after every `advance` (which drops unknown fields).
+ *
+ * Falls back gracefully, never throws (`mixHex` parses strictly, so both
+ * endpoints are pre-checked with the engine's `isHexColor` — `#rrggbb` only):
+ *  - no `colorEnd` → `color` unchanged (a plain one-color particle);
+ *  - a missing/unparseable endpoint → the other endpoint, constant;
+ *  - neither endpoint usable → `fallback` (`'#ffffff'` default — match your
+ *    renderer's default if it differs).
+ *
+ * Pure reader; evaluate at draw time.
+ *
+ * @param p - the particle to read
+ * @param fallback - color returned when neither endpoint is usable
+ * @returns a `#rrggbb` color string for the particle's current age
+ */
+export function particleColorAt(p: Particle, fallback = '#ffffff'): string {
+  const from = p.color !== undefined && isHexColor(p.color) ? p.color : null;
+  const to = p.colorEnd !== undefined && isHexColor(p.colorEnd) ? p.colorEnd : null;
+  if (from === null && to === null) return fallback;
+  if (to === null) return from as string;
+  if (from === null) return to;
+  if (from === to) return from;
+  return mixHex(from, to, particleAge(p));
 }

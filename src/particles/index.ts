@@ -23,7 +23,23 @@ export {
   type EmitterConfig,
   type StepEmittersOptions,
 } from './emitter';
-export { particleAge, particleSizeCurve, particleAlphaCurve } from './lifetime';
+export { particleAge, particleSizeCurve, particleAlphaCurve, particleColorAt } from './lifetime';
+export {
+  IMPLAUSIBLE_SPEED_PX_PER_TICK,
+  IMPLAUSIBLE_LIFE_TICKS,
+} from './plausibility';
+export {
+  DASH_TRAIL_EFFECT,
+  LANDING_DUST_EFFECT,
+  LANDING_DUST_HARD_EFFECT,
+  PICKUP_SPARKLE_EFFECT,
+  GEM_AMBIENT_SPARKLE_EFFECT,
+  DEATH_BURST_EFFECT,
+  RESPAWN_FLASH_EFFECT,
+  SWEAT_DROP_EFFECT,
+  type RadialBurstEffect,
+  type ConeBurstEffect,
+} from './effects';
 export {
   LAVA_FIRE_PARTICLES,
   LAVA_SMOKE_PARTICLES,
