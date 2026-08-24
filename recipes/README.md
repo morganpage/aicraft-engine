@@ -2,9 +2,10 @@
 
 A recipe is a **copy-in source module** for the wiring every game rebuilds by
 hand: audio unlock-on-first-gesture, the reduced-motion-gated fixed-tick boot,
-particle color fades, the sprite slot→cell mapping, the LDtk draw pipeline,
-the room-slide letterbox aperture. Games copy the file into `src/recipes/`
-and import it — they do **not** install or import it as a package path.
+the tuned feel-effect bursts, the sprite slot→cell mapping, the LDtk draw
+pipeline, the room-slide letterbox aperture. Games copy the file into
+`src/recipes/` and import it — they do **not** install or import it as a
+package path.
 
 ## Why this directory exists
 
@@ -60,7 +61,8 @@ The promotion path for reusable game code:
 | [`platformer-input.ts`](./platformer-input.ts) | `PlatformerInput` derivation from the merged per-tick edge map | every kernel game (celerock) |
 | [`sprite-sheet-boot.ts`](./sprite-sheet-boot.ts) | Defensive PNG + Aseprite-JSON boot: fetch → parse → compile → clip lookup, `null` on any failure | sprite-sheet games (celerock) |
 | [`sheet-frame-index.ts`](./sheet-frame-index.ts) | The `clip.frameIndices[currentFrameIndex(...)]` double indirection | sprite-sheet games (celerock) |
-| [`particle-color-fade.ts`](./particle-color-fade.ts) | Re-stamping `colorEnd` after every particle `advance()` | particle-juiced games |
+| [`feel-effects.ts`](./feel-effects.ts) | The one-shot feel kit over the engine's tuned `*_EFFECT` presets (spawn sites, gem-sparkle stagger, dash-afterimage ring, shared step/draw with `colorEnd` fade) | every feel-juiced game (celerock) |
+| [`game-test-harness.ts`](./game-test-harness.ts) | Testing GAME code under Node: recording 2D context + canvas stubs, the §12.8 forbidden-identifier scan, the fail-loud QA shot manifest | every game's `tests/` (celerock) |
 | [`ldtk-draw-pipeline.ts`](./ldtk-draw-pipeline.ts) | Surface-cache + `worldOffset` + `view` + invalidate wiring | LDtk games (celerock) |
 | [`ldtk-entity-art.ts`](./ldtk-entity-art.ts) | The `drawLevelEntity` override map rendering entities with their authored LDtk tiles via the `entityArt` side channel | LDtk games (celerock) |
 | [`ldtk-hot-reload-plugin.ts`](./ldtk-hot-reload-plugin.ts) | Vite dev-server watcher forwarding `.ldtk` saves as the `ldtk:update` websocket event | LDtk games with live level editing (celerock) |
@@ -70,6 +72,11 @@ The promotion path for reusable game code:
 
 Recipes are deliberately **not** in `docs/api-surface.md` — they are not
 runtime exports of the package. This README is their index.
+
+> **Promoted:** `particle-color-fade.ts` graduated into the engine in 0.22.0
+> (`Particle.colorEnd`, preserved by `advance`, + the `particleColorAt`
+> reader) and the recipe was deleted per the governance ladder. Builds on
+> older pins find it in their tag's tarball.
 
 ## Using a recipe in a game
 
