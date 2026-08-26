@@ -22,6 +22,9 @@ const REQUIRED = [
   'sheet-frame-index', 'ldtk-draw-pipeline', 'room-slide-aperture',
   'ldtk-entity-art', 'feel-effects', 'audio-unlock', 'game-test-harness',
   'ldtk-hot-reload-plugin',
+  // Capability-gated on the level (§6.1): the shipped pack defines a
+  // FallingBlock entity, so the starter carries the art recipe for it.
+  'ldtk-entity-tile-art',
 ];
 
 let bad = 0;

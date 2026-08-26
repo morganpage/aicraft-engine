@@ -40,8 +40,9 @@ say() { echo "  $*"; fail=$((fail + 1)); }
 
 # ---------------------------------------------------------------------------
 # The §14 stage tables. A stage requires everything from every earlier stage.
-# ldtk-entity-tile-art is capability-gated (§6.1 falling blocks) and
-# particle-system is the pre-0.21.0 back-port — neither is ever required.
+# particle-system is the pre-0.21.0 back-port and is never required.
+# ldtk-entity-tile-art is capability-gated on the LEVEL: required from stage 4
+# only when public/*.ldtk actually defines a FallingBlock entity (see below).
 # ---------------------------------------------------------------------------
 
 recipes_for_stage() {
@@ -102,6 +103,18 @@ echo "§12.9.3 — one grep per silently-failing system (stage $STAGE)"
 for s in $SYMBOLS; do
   grep -rq --exclude-dir=recipes "$s" src/ 2>/dev/null || say "NOT WIRED: $s"
 done
+
+# §6.1 falling blocks are CAPABILITY-GATED on the level, not on the stage. The
+# reference build's .ldtk defines none, so a flat requirement would fail the
+# build that passed; the shipped pack gained a FallingBlock entity later, and a
+# build using that pack must wire the machine rather than hand-roll it.
+# Ask the level, not the calendar.
+if [ "$STAGE" -ge 4 ] && grep -lq FallingBlock public/*.ldtk 2>/dev/null; then
+  grep -rqE "from [\"'][^\"']*recipes/ldtk-entity-tile-art[\"']" src/ tests/ 2>/dev/null \
+    || say "LEVEL DEFINES FallingBlock BUT ldtk-entity-tile-art IS NOT IMPORTED (§6.1 art)"
+  grep -rq --exclude-dir=recipes "advanceFallingBlocks" src/ 2>/dev/null \
+    || say "LEVEL DEFINES FallingBlock BUT advanceFallingBlocks IS NOT WIRED (§6.1 — the engine owns the machine)"
+fi
 
 if [ "$FINAL" -eq 1 ]; then
   echo "§12.10 — gate substance (Stage 7 ship gate)"
