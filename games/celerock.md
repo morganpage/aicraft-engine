@@ -161,14 +161,14 @@ npm install aicraft-engine@0.22.0
 
 > **Do not import** the legacy single follow-camera (`createCamera` / `updateCamera`) — it is superseded by the camera brain. **Do not import** `doubleJumpAbility` / `doubleJumpEnabled` — Celeste has no double jump. **Do not import** `compileLevel`, `canonicalize`, `fnv1a`, or `LEVEL_VERSION` — those serve hand-authored `LevelData`; geometry here comes from LDtk via `ldtkLevelToLevelData` + `compileGeneratedLevel`.
 
-> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.5/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
+> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.6/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
 
 ### 1.1 The bundled assets — download these first
 
 Four files. Fetch them **at scaffold time** into `public/`, all four flat in the same directory — the LDtk project references its tileset as the bare sibling name `celerock.png`, and `Player.json` names its sheet as the bare `Player.png`, so nesting either anywhere else breaks the load. Do **not** fetch these from GitHub at runtime (CORS + offline); they are project assets, served by Vite from `public/`.
 
 ```bash
-BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/v0.22.5/games
+BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/v0.22.6/games
 mkdir -p public   # --output-dir does not create missing directories (curl ≥ 7.73)
 curl -fsSLO --output-dir public "$BASE/celerock.ldtk"
 curl -fsSLO --output-dir public "$BASE/celerock.png"
@@ -205,7 +205,7 @@ curl -fsSLO --output-dir public "$BASE/Player.json"
 | `exits` | ❌ | no `Goal`/`Exit` ENTITIES — `capabilities.exits` counts Exit entities, NOT `__neighbours` seam traversal; the world is still a connected chain (see the world contract below) |
 | `ladders` | ❌ | the IntGrid has a single value, `1: walls` — no `passthrough` one-ways either |
 | `movingPlatforms` | ❌ | §5.3 is dead code for this pack |
-| falling blocks (`FallingBlock` triggers) | ❌ | no instances placed (defs do not exist either); §6.1's path is wired capability-gated — a substituted `.ldtk` carrying them shows up in `report.unknownTriggerIdentifiers` |
+| falling blocks (`FallingBlock` triggers) | ✅ | **one placed, and it is meant to be played.** `Level_0`, 48×24 (6×3 tiles), `tiletype: 2` — it wears the IntGrid `ice` material via §6.1's in-context bake. §6.1 is therefore NOT optional for this pack: `advanceFallingBlocks` must be wired and the block must be exercised (§13 gate 15) |
 
 Wire the capability-gated systems anyway (they cost nothing when the buckets are empty, and they light up if a user swaps in a richer `.ldtk`), but **do not treat their absence as a defect to fix, and do not author entities into the `.ldtk` to make them fire.** The §9 juice items for springs and dash-refills are unverifiable against this pack; say so in the report rather than faking them.
 
@@ -922,7 +922,7 @@ Falling out of the level with no cardinal neighbour (the void) is a respawn, not
 Because Celerock trusts the LDtk, the file is the design. **`celerock.ldtk` (§1.1) satisfies all of the below** — the structure is stated here so the code reads the file rather than assuming it, and so a user-substituted `.ldtk` has a target to hit:
 
 - **≥1 level** (more rooms = a longer climb). Multi-level projects are navigated via `__neighbours`. *At time of writing: one west→east chain — the count is living.*
-- An **IntGrid collision layer** with named values for `'solid'` (and optionally `'passthrough'`, `'ladder'`). *Shipped: `IntGrid_Layer`, one value — `1: walls` — so everything solid is full collision; no one-ways, no ladders.*
+- An **IntGrid collision layer** with named values for `'solid'` (and optionally `'passthrough'`, `'ladder'`). *Shipped: `IntGrid_Layer`, two values — `1: walls` and `2: ice`. `ice` is painted in no room; it exists as the material the §6.1 falling block wears (`tiletype: 2`), so the block bakes the level's own auto-rules instead of a placeholder slab. Everything solid is full collision; no one-ways, no ladders.*
 - **Tile / AutoLayer layers** referencing the tileset for the visual. *Shipped: the walls are `autoLayerTiles` baked onto the IntGrid layer, plus a `Tiles_Decoration` layer — the surface cache bakes both (via `drawLdtkLevel`); do not assume art lives only on the Tiles layer.*
 - **Entity layers**: at least one `Player`/`Spawn`; `Coin`/`Gem`/`Diamond` strawberries; `Spike`/`Hazard` hazards; optionally `MovingPlatform`, `Spring`, `DashRefill`, `Enemy`, and custom triggers such as `FallingBlock` (§6.1 — unknown identifiers ride the trigger fallback with their fields as `props.fields`). *At time of writing: 1 `Player` plus a handful of `Gem`/`Spike` instances — the live counts come from the preflight. Defs exist for `Spring`/`DashRefill` with no instances.*
 - **`__neighbours`** links between levels you intend to flow between. *Shipped: every room links to its cardinal neighbours; no room is orphaned.*
@@ -1078,7 +1078,7 @@ const dashing = dash?.kind === 'dash' && dash.timer > 0;
 
 The Celeste prologue-style ceiling block is **engine-owned since 0.20.0**: a pure state machine (`collectFallingBlocks` → `advanceFallingBlocks` → `fallingBlockSolids`) with the constants decompiled from Celeste — arms while the player is under ANY part of the footprint (X-only overlap, so walking the corridor beneath OR standing on the block's back arms it), shakes 0.2 s, then a grace window of up to 0.4 s that keeps extending while the player stays under (once the shake starts the fall is committed; the window only delays it), falls at accel 500 px/s² to a 160 px/s cap, and lands FLUSH on the first support below — statics AND landed blocks (they stack). The game owns the tick, the solids list, and the consequences.
 
-**Authoring:** a `FallingBlock` entity in the `.ldtk` (any casing — the trigger fallback preserves the identifier as `props.action`), sized like a block strip (e.g. 16×16 or 32×16), with an optional integer `tiletype` field naming the IntGrid material its art paints with (default 1 = walls). **The shipped pack has none placed** (like springs/dash-refills: wire the path, mark it not exercised, never edit the `.ldtk` to make it fire) — a substituted `.ldtk` that carries them lights the path up free. Discover them at boot via `report.unknownTriggerIdentifiers` containing `'FallingBlock'`, or simply wire unconditionally — `collectFallingBlocks` on a room with no blocks returns `[]` and costs nothing.
+**Authoring:** a `FallingBlock` entity in the `.ldtk` (any casing — the trigger fallback preserves the identifier as `props.action`), sized like a block strip, with an optional integer `tiletype` field naming the IntGrid material its art paints with (default `1 = walls`). **The shipped pack places exactly one, and it is meant to be played:** `Level_0`, 48×24 (6×3 tiles at the 8px pitch), `tiletype: 2` — the `ice` value, so the block bakes in the level's own ice auto-rules rather than a placeholder rectangle. It is in the FIRST room, so a build that wires the path but never exercises it ships a broken first screen. §13 gate 15 is its capture. Wire unconditionally — `collectFallingBlocks` on a room with no blocks returns `[]` and costs nothing — and note that `report.unknownTriggerIdentifiers` will contain `'FallingBlock'` at boot.
 
 ```ts
 // At room compile (boot + §5.7 hot reload + room transition IN) — the tuning
@@ -1520,7 +1520,7 @@ passed nearly all of §12.8 — **you cannot call `createCamera` if you never im
 the engine** — while looking, in a screenshot, like a platformer.
 
 §12.8 says what must be **absent**. §12.9 says what must be **present**. The whole
-section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.5/games/celerock-wiring-check.sh)
+section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.6/games/celerock-wiring-check.sh)
 in the engine repo. Copy it into the build root and run it at every §14 stage
 boundary, not once at the end (the script also carries §12.10 behind `--final`): a stage that fails these greps is a
 **failed stage**, not a TODO, however good the code looks and however well the
@@ -1688,8 +1688,8 @@ than no probe (§12.9).
 Count the captures instead. An empty manifest cannot produce fourteen PNGs:
 
 ```bash
-# §13 has 14 visual gates. The reference build ships 43 captures.
-find .qa -name '*.png' | wc -l          # must be >= 14
+# §13 has 15 visual gates. The reference build ships 43 captures.
+find .qa -name '*.png' | wc -l          # must be >= 15
 
 # §12.7 has 24 acceptance criteria. A suite below one test per criterion has
 # not tested the game, whatever its files are named. Reference build: 66.
@@ -1763,6 +1763,7 @@ Before the build is accepted:
 12. **Camera-tracking gate** — one capture mid-dash with the camera well away from the room origin (deep in a room, not at spawn): the trail particles sit on the player, and the same shot repeated a second later at a different scroll position still shows them on the player. A trail that drifts toward a fixed screen point across the pair is the missing world transform (§5.4), not a spawn-position bug. Repeat once mid-seam-slide, where the rooms, the player, and the rebased particles must all move together.
 13. **Pause gate** — pause mid-run (keyboard `Escape`, gamepad Start, touch ⏸): the world freezes under the dim, audio goes silent, and RESUME/RETRY/QUIT each do exactly their §8 thing (retry respawns at the anchor; quit lands on the menu with RESUME GAME now present). Pause mid-slide and let the slide finish under the freeze — no corrupted transition.
 14. **Ambience gate** — listen for 30 s of idle play: the wind bed swells and brightens with the gusts (no audible loop seam, no param churn glitches), the snow drifts with the same wind, and both are gone under reduced-motion freezes. The gust/snow timelines of two seeded runs are identical (§12.6).
+15. **Falling-block gate** — screenshot evidence that `Level_0`'s block actually runs: one capture mid-`shaking` (the ±1px warning offset, block still at its ceiling y) and one after `landed`, flush on the floor below. The block must wear the level's **ice** material from the in-context bake (§6.1), not a solid slab — the slab is the recipe's documented degrade path and is a legible failure, not a pass. Walk under it and confirm the arm fires on X-only overlap.
 
 ---
 

@@ -7,8 +7,8 @@
  * fill in. Emptying it is now an edit to a committed file, not a decision about
  * what to type — and `git diff gate/` finds it.
  *
- * These are the eighteen captures the REFERENCE build actually produced, not a
- * synthesized one-per-gate list. §13 has fourteen gates but they do not map 1:1
+ * The first eighteen are the captures the REFERENCE build actually produced, not a
+ * synthesized one-per-gate list. §13 has fifteen gates but they do not map 1:1
  * to captures (gate 4 is a manual playthrough, gate 6 is a stopwatch check), so
  * an invented manifest would be one that has never passed — and a probe that
  * has never passed is worse than no probe (§12.9).
@@ -34,6 +34,10 @@ export const GATE_SHOTS: readonly string[] = [
   '16-pause.png',
   '16b-pause-quit-selected.png',
   '17-hotreload.png',
+  // §13 gate 15 — the Level_0 falling block, which this pack places and means
+  // to be played. Two captures: the shake warning, and the flush landing.
+  '18-fallingblock-shaking.png',
+  '18b-fallingblock-landed.png',
 ];
 
 /** Where the QA harness writes captures. */

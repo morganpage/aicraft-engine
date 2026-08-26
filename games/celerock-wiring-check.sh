@@ -124,10 +124,10 @@ if [ "$FINAL" -eq 1 ]; then
   # correctly, with an empty required list against an empty directory. Grepping
   # the call site for "[]" cannot tell that apart from the assertion's own
   # .toEqual([]), so count the captures instead: an empty manifest cannot
-  # produce fourteen PNGs.
+  # produce fifteen PNGs.
   shots=$(find .qa -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
-  [ "${shots:-0}" -lt 14 ] \
-    && say "ONLY $shots GATE CAPTURE(S) IN .qa/ — §13 has 14 gates; an empty manifest asserts nothing"
+  [ "${shots:-0}" -lt 15 ] \
+    && say "ONLY $shots GATE CAPTURE(S) IN .qa/ — §13 has 15 gates; an empty manifest asserts nothing"
 
   # §12.7 has 24 acceptance criteria. A suite below one test per criterion has
   # not tested the game, whatever it is named.

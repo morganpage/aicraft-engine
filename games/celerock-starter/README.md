@@ -4,7 +4,7 @@ A Celeste-class precision platformer on `aicraft-engine@0.22.0`, scaffolded so
 the parts that four previous runs got silently wrong are already correct, and
 the gates that catch the rest are already wired.
 
-**Read the brief first:** [celerock.md](https://github.com/morganpage/aicraft-engine/blob/v0.22.5/games/celerock.md).
+**Read the brief first:** [celerock.md](https://github.com/morganpage/aicraft-engine/blob/v0.22.6/games/celerock.md).
 It is the specification. This README is only how to move through it.
 
 ## What is already done

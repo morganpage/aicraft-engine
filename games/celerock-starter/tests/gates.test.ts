@@ -20,7 +20,7 @@ const shotsDir = fileURLToPath(new URL(`../${SHOTS_DIR}`, import.meta.url));
 
 describe('§13 visual gates', () => {
   it('has a non-empty manifest (an empty one asserts nothing)', () => {
-    expect(GATE_SHOTS.length).toBeGreaterThanOrEqual(14);
+    expect(GATE_SHOTS.length).toBeGreaterThanOrEqual(15);
   });
 
   it('every gate capture exists on disk', () => {
