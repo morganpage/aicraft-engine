@@ -161,14 +161,14 @@ npm install aicraft-engine@0.22.0
 
 > **Do not import** the legacy single follow-camera (`createCamera` / `updateCamera`) — it is superseded by the camera brain. **Do not import** `doubleJumpAbility` / `doubleJumpEnabled` — Celeste has no double jump. **Do not import** `compileLevel`, `canonicalize`, `fnv1a`, or `LEVEL_VERSION` — those serve hand-authored `LevelData`; geometry here comes from LDtk via `ldtkLevelToLevelData` + `compileGeneratedLevel`.
 
-> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.7/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
+> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.8/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
 
 ### 1.1 The bundled assets — download these first
 
 Four files. Fetch them **at scaffold time** into `public/`, all four flat in the same directory — the LDtk project references its tileset as the bare sibling name `celerock.png`, and `Player.json` names its sheet as the bare `Player.png`, so nesting either anywhere else breaks the load. Do **not** fetch these from GitHub at runtime (CORS + offline); they are project assets, served by Vite from `public/`.
 
 ```bash
-BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/v0.22.7/games
+BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/v0.22.8/games
 mkdir -p public   # --output-dir does not create missing directories (curl ≥ 7.73)
 curl -fsSLO --output-dir public "$BASE/celerock.ldtk"
 curl -fsSLO --output-dir public "$BASE/celerock.png"
@@ -1272,13 +1272,230 @@ fx.draw(ctx, game.particles);   // 2px rects, colorEnd + alpha fading together
 - [ ] **Entity art from the LDtk (§7.1)** — the strawberry is the authored `Gem` tile (glow behind it, never instead of it) and spikes are the authored `Spike` tile repeat-tiled across each resized strip; entities the `.ldtk` left undressed keep the engine's `DEFAULT_ENTITY_PALETTE` shape. **The collectible idle animation is part of the contract:** a ±2px bob on a 90-tick period with the phase staggered per gem (`entity.id % 7` — a room's berries must never bob in lockstep; a uniform shared phase reads as one mechanical object, and it shipped), the glow pulsing ±10% on a 45-tick period (also per-gem phase). Both are draw-time only — the pickup AABB (`entity.rect`) never moves — and both PIN to fixed per-gem values under reduced motion (the ambient twinkle below spawns at the BOBBED center, so it rides the same wave).
 - [ ] **Spring-rod hair (`advanceSpringRod`)** — **OPTIONAL when using the supplied sprite**: the sprite art owns the silhouette, so hair is a cosmetic extra, **never an acceptance requirement** (per G5). Only add it for the wag-when-moving / lift-during-dash flourish; draw it OUTSIDE the sprite's facing mirror.
 - [ ] **Summit celebration (OPTIONAL polish, never an acceptance requirement).** `levelComplete` already leaves the camera and the sprite clock running (§8), so the hook is a one-line clip override at the anim-kind derivation — hold a pose, or drive a dedicated clip off a summit tick counter. Note the supplied `Player.png` has **no authored victory row**: its 8 rows are walk/run cycles, two 3-frame lean poses, and the 5-frame jump arc (60–64). A real celebration wants new art; until then the honest options are a held frame with the procedural-fallback `advanceSquash`/`breathe` (sprite-safe only if you do NOT scale the pixel art — §4.4) or a particle burst over a settled idle.
-- [ ] **Wind ambience (the reference build's signature atmosphere).** A deterministic gust envelope drives ONE sustained pink-noise wind bed + a snow-particle drift — all synthesized, zero assets: `audio.startNoiseLoop('bandpass', 400, 0.0, { q: 1.2, noise: 'pink' })` once (after audio unlock), then per tick map the gust level (0..1) to `handle.setFrequency(300 + gust * 900)` and `handle.setPeak(gust * 0.05)` — **gusts BRIGHTEN before they louden** (amplitude-only modulation reads as a volume knob). The gust curve is game-side and deterministic: a warped sine (`0.5 + 0.5 * sin(t * 0.3 + 2.7 * sin(t * 0.043))`) plus seeded `mulberry32` jitter, clamped 0..1. **Throttle the param pushes to every 8th tick** (~7.5 Hz) — a push per tick is ~360 AudioParam events/s of cancel/re-anchor churn and glitches. Reduced-motion: no wind bed at all — the reduced-motion path creates no audio adapter (Stage 6) and no ambience runs under the static frame (§13 gate 14).
-- [ ] **Snow drift (wind-coupled particles).** The same gust level drives a snow layer: ~150 deterministic flakes (`mulberry32`-seeded positions, wrapped), falling at `(20 + gust * 30)` px/s with `±(4 + gust * 10)` px/s horizontal sway, drawn as 1–2px rects in the SCREEN-space backdrop pass (§5.4, before the letterbox mask — weather is atmosphere, not level). **The draw call is the item** — a real build advected 150 flakes every tick behind a render frame that never drew them, with a code comment claiming it had; gate 14 looks for the snow IN the shot, and §12.1d's static contract greps the render module for the call.
+- [ ] **Wind ambience (the reference build's signature atmosphere).** A deterministic, seeded gust envelope drives ONE sustained pink-noise bandpass bed — all synthesized, zero assets. **Gusts BRIGHTEN before they louden** (amplitude-only modulation reads as a volume knob), the cycle LENGTH is jittered per cycle (a fixed period is a metronome the ear finds in thirty seconds), and param pushes are throttled to every 8th tick (~7.5 Hz — a push per tick is ~360 AudioParam events/s and glitches). Step it in EVERY game state; it is ambience, not a gameplay system. Reduced-motion creates no audio adapter at all, so no bed runs under the static frame (§13 gate 14). **§9.1 has the shipped tuning, the reasoning behind each constant, and the workflow that produced them — start there rather than inventing a curve.**
+- [ ] **Snow drift (wind-coupled).** The same gust drives the flakes through exactly two numbers — an integrated leftward `driftX` in viewport-widths and a `swayGain` — so the ear and the eye agree on the weather. Drawn as 1–3px rects in the SCREEN-space backdrop pass (§5.4, behind the level, masked by the letterbox — weather is atmosphere, not level). **The draw call is the item**: a real build advected its flakes every tick behind a render frame that never drew them, with a code comment claiming otherwise. Gate 14 looks for snow IN the shot and §12.1d greps the render module for the call. Counts, speeds, parallax bands and the cubed gust coupling are in §9.1.
 - [ ] **Diegetic stamina feedback (Celeste's read, not a bar).** While an active grip holds AND stamina is below the tired threshold (~20% of max), the player sprite flashes red at 10 Hz — a 10-tick cycle, `Math.floor(tick / 5) % 2` (a real build's `/ 6` cycle read 5 Hz) — via a tint pass with `createSpriteTintCache`, never a scale on the pixel art (§4.4), and emits sweat-drop particles (1 per 24 ticks, downward cone, short life). **The grip gate is load-bearing:** stamina alone must not flash a running body (a real build kept flashing mid-run after dropping off a wall drained the pool). Reads at a glance in the peripheral vision where a bar cannot.
 - [ ] Reduced-motion gate (`prefersReducedMotion`) renders room 1 and starts no loop.
 - [ ] Room title cards fade in over 0.6 s (`createTweenState` + `easeOutCubic`); transition/"Cleared" cards use `easeOutBack`.
 
 ---
+
+
+### 9.1 Wind, snow, and the backdrop — the reference atmosphere, extracted
+
+The two checklist items above are the contract. This section is the **shipped
+implementation**, lifted from the build that tuned it by ear against a live
+lab (`wind-lab.html` — a page that renders the sky and writes to the tuning
+object while you listen). Every constant here has a reason and most of them
+were wrong once. Treat them as the starting point, not as suggestions: a
+plausible-looking gust curve is the single easiest thing in this brief to get
+subtly, permanently wrong, because it sounds fine in isolation and dead in play.
+
+#### 9.1.1 The gust envelope — jittered period, warped shape
+
+One cycle is a sine, warped toward peaks, biased off a floor:
+
+```ts
+const GUST_PHASE = 1.7;   // so a fresh boot starts mid-swell, not at zero
+
+function gustEnvelope(phase: number): number {   // phase = fraction through the cycle, 0..1
+  const swell = 0.5 + 0.5 * Math.sin(phase * Math.PI * 2 + GUST_PHASE);
+  return GUST_FLOOR + (1 - GUST_FLOOR) * swell ** GUST_WARP;
+}
+```
+
+**The cycle LENGTH is a separate, seeded draw, and that is the whole trick.**
+A fixed period is a metronome and the ear finds it inside thirty seconds. Each
+time the phase wraps, draw the next period from the seeded stream:
+
+```ts
+period = Math.max(1, GUST_PERIOD_S * (1 + (rng() * 2 - 1) * GUST_JITTER * 0.5));
+```
+
+The shipped tuning, and what each knob is actually for:
+
+| Constant | Ship | What it does |
+| --- | --- | --- |
+| `GUST_PERIOD_S` | `9` | Centre of the period draw, in seconds |
+| `GUST_JITTER` | `1` | `0` = metronome; `1` draws each cycle in `[0.5×, 1.5×]` — spacing never settles into a rhythm |
+| `GUST_FLOOR` | `0.11` | The swell never falls below this fraction of peak — still air is dead air |
+| `GUST_WARP` | `3` | `>1` narrows peaks and deepens valleys, so gusts read as **events** rather than as a wobble |
+| `DYNAMICS_AMOUNT` | `0.2` | How much the weather moves. `0` freezes it at the hold point |
+| `DYNAMICS_HOLD` | `0.25` | The level it holds while frozen, and the point partial dynamics moves around |
+| `WIND_PEAK` | `0.3` | Voice peak at intensity 1, gust 1 |
+| `WIND_FILTER_HZ` | `[190, 1760]` | Bandpass centre at lull → at gust peak |
+| `WIND_Q` | `2.15` | Higher narrows the band; ~1 is broad and warm, the hollow character arrives past ~3 |
+| `MAX_DRIFT` | `1.8` | Snow push at gust 1, intensity 1, in **viewport-widths per second**, leftward |
+| `MAX_SWAY_GAIN` | `4` | Sway amplitude multiplier at gust 1 |
+
+`DYNAMICS_AMOUNT` / `DYNAMICS_HOLD` exist as a **tuning workflow**, not as an
+effect: set the amount to `0`, get a perfectly steady wind, tune the bed's
+timbre by ear with the weather out of the way, then raise the amount and shape
+the gusts around the sound you already like. The whole dynamics system is one
+line, and everything downstream reads the blended value:
+
+```ts
+wind.gust = clamp01(
+  DYNAMICS_HOLD + (gustEnvelope(wind.gustPhase / wind.gustPeriod) - DYNAMICS_HOLD) * DYNAMICS_AMOUNT,
+);
+wind.level = clamp01(wind.intensity * wind.gust);
+```
+
+Note the split: **the voice keys on `gust`, the snow keys on `gust`, and only
+the amounts scale with `intensity`.** Keying the voice on `level` instead
+flattens the gusting to nothing at low intensity — the weather stops moving
+exactly when you have turned it down to listen to it.
+
+#### 9.1.2 The voice — one pink-noise bed, brightened before loudened
+
+```ts
+function windVoices(wind) {
+  return {
+    peak: WIND_PEAK * wind.intensity * wind.gust ** 1.5,   // swells without pumping
+    hz:   WIND_FILTER_HZ[0] + (WIND_FILTER_HZ[1] - WIND_FILTER_HZ[0]) * wind.gust,
+  };
+}
+```
+
+`gust ** 1.5` on the peak is deliberate: linear amplitude reads as somebody
+turning a volume knob. The cutoff opens with the gust so it **brightens as it
+loudens** — that pairing is what makes it read as air rather than as gain.
+
+Start the voice lazily, on the first tick after the adapter unlocks, never at
+construction — pre-gesture the adapter is locked and an inert handle reports
+`isPlaying() === false` forever, so the same guard doubles as "not started yet":
+
+```ts
+if (!wind.audio.isUnlocked()) return;
+if (wind.bed?.isPlaying()) return;
+wind.bed = wind.audio.startNoiseLoop('bandpass', hz, peak, { noise: 'pink', q: WIND_Q });
+```
+
+Then throttle the param pushes to **every 8th tick** (~7.5 Hz at the fixed
+step): `setPeak`/`setFrequency` ramp internally, and a sub-hertz gust needs no
+60 Hz retargets. A push per tick is ~360 AudioParam cancel/re-anchor events per
+second and it glitches audibly.
+
+**Step the wind in every game state** — menu, hit-stop, pause-frozen, summit.
+It is the mountain's ambience, not a gameplay system, and a bed that stutters
+when the sim pauses is worse than no bed.
+
+#### 9.1.3 The snow coupling — one handoff, cubed
+
+The wind hands the sky exactly two numbers, and nothing else crosses:
+
+```ts
+function snowWind(wind) {
+  return {
+    driftX:   wind.driftX,                        // integrated, viewport-widths, NEGATIVE = leftward
+    swayGain: 1 + wind.gust * MAX_SWAY_GAIN,      // gusts deepen the wobble
+  };
+}
+// integrated once per tick:
+wind.driftX -= MAX_DRIFT * wind.intensity * wind.gust ** 3 * dt;
+```
+
+The **cube** is the readability fix and it is worth understanding before you
+retune it. Drift in viewport-widths/second means the number that matters is
+tiny: at the shipped weather (intensity `0.35`, gust topping out near `0.4`),
+`1.8 × 0.35 × 0.4³ ≈ 0.04` vw/s — which lands at the near flakes' own fall
+speed, so a gust produces a clearly readable slant. An earlier `MAX_DRIFT` of
+`0.25` gave ~`0.006` vw/s ≈ 7 px/s: **gusts the ear heard and the eye never
+saw.** A full storm (intensity 1, gust 1) scuds at the whole 1.8 vw/s.
+
+`driftX` is integrated and deliberately **never wrapped** — the backdrop wraps
+positions anyway, so leaving it monotone keeps it inspectable in a test.
+
+#### 9.1.4 The backdrop — five layers, and only the air moves
+
+Drawn in SCREEN space across the whole canvas before the camera transform; the
+level composites on top and the letterbox masks the margins (§5.4). Keep it
+engine-agnostic — take a plain `{ x, y, zoom }` camera, not a `CameraBrain` —
+and the whole file stays testable and previewable outside the game.
+
+Four rules, each one earned by a version that got it wrong:
+
+1. **Everything scales from viewport height.** A backdrop that mixes absolute
+   pixel sizes with viewport-relative horizons only composes at the window it
+   was tuned for; on a portrait window its range collapses into slivers. Keep
+   terrain in normalized units and a resize never rebakes.
+2. **Terrain changes character with distance.** The DISTANCE is rugged (ridged
+   multifractal — jagged, high-frequency, gamma'd toward the peaks so valleys
+   stay flat and summits stay pointed). The NEAR GROUND is rolling (smooth
+   value noise, rounded crowns, long saddles) with conifer treelines on its
+   crests. **That split IS the depth cue** — sharp silhouettes belong to things
+   too far to walk on. One shape for both reads flat at any tuning.
+3. **Depth is a value ladder.** Five layers stepping DOWN in brightness as they
+   come forward, sky lightest at the horizon. That ordering is the only reason
+   overlapping flat shapes read as distance.
+4. **Only the air moves.** Ridges, stars and the moon are welded to the world —
+   they shift with the camera and nothing else. An earlier version drifted every
+   layer on a timer to make the parallax visible (rooms are contain-fit, so the
+   camera barely moves within one) and **terrain that slides while the player
+   stands still reads as broken, not alive.** Ship `AMBIENT_DRIFT = 0`. Only
+   the flakes move on a clock, because airborne snow is the one thing in frame
+   that should.
+
+```ts
+const BACKDROP_PALETTE = {
+  skyTop: '#070b24', skyMid: '#151c44',
+  skyHorizon: '#39406f',        // lightest band — atmosphere piles up at the horizon
+  skyFloor: '#2c3160',
+  ridges: ['#333a6b', '#2a3059', '#212648', '#181d3b', '#10142e'],  // far → near
+  rim: '#98a3dd', star: '#e9eeff', snow: '#ffffff', moon: '#dfe6ff',
+} as const;
+
+// depth drives parallax AND the value step. horizon/amplitude are fractions of viewport height.
+const LAYERS = [
+  { kind: 'rugged',  depth: 0.00, horizon: 0.585, amplitude: 0.300, period: 3.40, detail: 9, roughness: 1.00, trees: 0,  treeSize: 0     },
+  { kind: 'rugged',  depth: 0.28, horizon: 0.680, amplitude: 0.245, period: 2.60, detail: 7, roughness: 0.85, trees: 0,  treeSize: 0     },
+  { kind: 'rugged',  depth: 0.52, horizon: 0.762, amplitude: 0.175, period: 2.00, detail: 5, roughness: 0.60, trees: 16, treeSize: 0.017 },
+  { kind: 'rolling', depth: 0.78, horizon: 0.848, amplitude: 0.105, period: 1.60, detail: 4, roughness: 0,    trees: 34, treeSize: 0.026 },
+  { kind: 'rolling', depth: 1.00, horizon: 0.945, amplitude: 0.085, period: 1.15, detail: 3, roughness: 0,    trees: 46, treeSize: 0.038 },
+] as const;
+```
+
+#### 9.1.5 The flakes
+
+190 of them — they read as weather rather than dust past roughly 120, and the
+level hides most of them, so the count is deliberately higher than it needs to
+be in isolation. Each is a `fillRect`, drawn taller than wide; ~200 rects a
+frame is noise next to the terrain paths.
+
+```ts
+const SKY_SNOW = {
+  parallax: [0.25, 1.1],    // at depth 0 → 1. NEAR SNOW EXCEEDS 1: it is closer than the world
+  alpha:    [0.18, 0.80],
+  fall:     [0.012, 0.067], // screens per second
+  swayAmp:  [0.004, 0.016],
+  wind:     [0.3, 1.0],     // near flakes scud harder than far ones
+  size:     [1, 3],
+} as const;
+
+// per flake, all four terms in normalized screen space, then wrapped:
+const drift = (-camX * parallax * zoom) / w;
+const sway  = Math.sin(t * flake.swaySpeed + flake.sway) * flake.swayAmp * wind.swayGain;
+const push  = wind.driftX * band(SKY_SNOW.wind, flake.depth);
+const x = ((((flake.u + drift + sway + push) % 1) + 1) % 1) * w;
+const y = ((((flake.v + t * flake.fall) % 1) + 1) % 1) * h;
+```
+
+Fade flakes in over the top ~30% of the screen so they enter rather than pop.
+
+**A foreground snow pass was built and cut.** Anything moving over the play area
+of a precision platformer competes with spike and gem silhouettes, and no
+tuning of speed, size, or blur made it earn that cost. Do not re-add it because
+it sounds atmospheric; it costs readability on exactly the frames that matter.
+
+#### 9.1.6 What to test
+
+The reference build carries **15 tests** for this, and they are worth copying
+because every one of them covers something invisible in a screenshot: the
+envelope's range and floor, that jittered periods stay positive and seeded runs
+are identical, that the voice brightens before it loudens, that param pushes are
+throttled, that `driftX` integrates monotonically leftward, and that the whole
+thing is byte-identical across two seeded runs (§12.6). Keep `windVoices` and
+`gustEnvelope` **pure** — that is what makes them testable without a browser.
 
 ## 10. Audio (all synthesized via `createAudioAdapter`)
 
@@ -1520,7 +1737,7 @@ passed nearly all of §12.8 — **you cannot call `createCamera` if you never im
 the engine** — while looking, in a screenshot, like a platformer.
 
 §12.8 says what must be **absent**. §12.9 says what must be **present**. The whole
-section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.7/games/celerock-wiring-check.sh)
+section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.8/games/celerock-wiring-check.sh)
 in the engine repo. Copy it into the build root and run it at every §14 stage
 boundary, not once at the end (the script also carries §12.10 behind `--final`): a stage that fails these greps is a
 **failed stage**, not a TODO, however good the code looks and however well the
@@ -1770,7 +1987,7 @@ Before the build is accepted:
 11. **Summit gate** — reach the terminal room, then hold every control at once for several seconds: the player must not move, jump, dash, grab, or die, and the card must be legible over a body that has landed and settled (not one hanging in the air). Then confirm and land back on the menu. This is a 20-second check and it is the last thing a player sees.
 12. **Camera-tracking gate** — one capture mid-dash with the camera well away from the room origin (deep in a room, not at spawn): the trail particles sit on the player, and the same shot repeated a second later at a different scroll position still shows them on the player. A trail that drifts toward a fixed screen point across the pair is the missing world transform (§5.4), not a spawn-position bug. Repeat once mid-seam-slide, where the rooms, the player, and the rebased particles must all move together.
 13. **Pause gate** — pause mid-run (keyboard `Escape`, gamepad Start, touch ⏸): the world freezes under the dim, audio goes silent, and RESUME/RETRY/QUIT each do exactly their §8 thing (retry respawns at the anchor; quit lands on the menu with RESUME GAME now present). Pause mid-slide and let the slide finish under the freeze — no corrupted transition.
-14. **Ambience gate** — listen for 30 s of idle play: the wind bed swells and brightens with the gusts (no audible loop seam, no param churn glitches), the snow drifts with the same wind, and both are gone under reduced-motion freezes. The gust/snow timelines of two seeded runs are identical (§12.6).
+14. **Ambience gate** — listen for 30 s of idle play: the wind bed swells and brightens with the gusts (no audible loop seam, no param churn glitches), the snow drifts with the same wind, and both are gone under reduced-motion freezes. The gust/snow timelines of two seeded runs are identical (§12.6). Tune against §9.1's shipped constants before judging by ear — the reference build reached them with a live lab, and a curve that merely sounds plausible in isolation is the easiest thing in this brief to get permanently wrong.
 15. **Falling-block gate** — screenshot evidence that `Level_0`'s block actually runs: one capture mid-`shaking` (the ±1px warning offset, block still at its ceiling y) and one after `landed`, flush on the floor below. The block must wear the level's **ice** material from the in-context bake (§6.1), not a solid slab — the slab is the recipe's documented degrade path and is a legible failure, not a pass. Walk under it and confirm the arm fires on X-only overlap.
 
 ---

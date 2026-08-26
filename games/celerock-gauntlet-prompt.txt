@@ -1,6 +1,6 @@
 I want you to build a Celeste-class precision platformer that plays the supplied LDtk level, following the directions in the file:
 
-https://github.com/morganpage/aicraft-engine/blob/v0.22.7/games/celerock.md
+https://github.com/morganpage/aicraft-engine/blob/v0.22.8/games/celerock.md
 
 Done is defined by the brief's §12.7 acceptance criteria, §12.8 forbidden patterns, §12.9 required wiring, and §12.10 gate substance — not by a critic's enthusiasm. The sequencing is fixed and non-negotiable: **wire the engine first, get it correct and complete, then one bounded polish pass.** Two runs of this prompt have proven what happens otherwise. One shipped 5,300 lines of TypeScript across twenty files with all fourteen recipes copied and twelve wired, twelve test files, a Playwright pixel-probe harness, and every §13 gate captured. The other shipped **420 lines in a single `src/main.js` whose only import was `./style.css`** — `aicraft-engine` in `package.json` at `^0.17.2`, never imported once, gravity hand-integrated, tiles hand-blitted from `gridTiles`/`autoLayerTiles`, `Player.json` never compiled. Its platforms did not autotile, its animations were wrong, and it looked like a platformer in a screenshot. **A screenshot critic cannot tell those two builds apart. That is why the critic is not the gate.**
 
