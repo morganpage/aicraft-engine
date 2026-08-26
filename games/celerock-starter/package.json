@@ -1,0 +1,30 @@
+{
+  "name": "celerock",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "gate": "bash gate/check.sh --stage $npm_package_config_stage",
+    "gate:final": "bash gate/check.sh --final",
+    "prebuild": "npm run gate",
+    "build": "tsc --noEmit && vite build",
+    "pretest": "npm run gate",
+    "test": "vitest run",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "config": {
+    "stage": "1"
+  },
+  "dependencies": {
+    "aicraft-engine": "0.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "playwright": "^1.49.0",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}

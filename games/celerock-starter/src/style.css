@@ -1,0 +1,5 @@
+/* The game is the canvas. No DOM chrome — no HUD divs, no glass panels, no
+   vignette overlays. Everything the player sees is drawn by src/render. */
+html, body { margin: 0; height: 100%; background: #05070a; }
+body { display: grid; place-items: center; overflow: hidden; }
+canvas { display: block; max-width: 100vw; max-height: 100vh; }

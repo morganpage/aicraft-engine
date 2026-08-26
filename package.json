@@ -82,7 +82,8 @@
     "check:level-visual-size": "node scripts/check-level-visual-size.mjs",
     "benchmark:terrain-art": "npx --yes tsx benchmarks/_scripts/terrain-art-baseline.ts",
     "check:terrain-art-runtime-size": "node scripts/check-terrain-art-runtime-size.mjs",
-    "check:ldtk-runtime-size": "node scripts/check-ldtk-runtime-size.mjs"
+    "check:ldtk-runtime-size": "node scripts/check-ldtk-runtime-size.mjs",
+    "check:starter-recipes": "node scripts/check-starter-recipes.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
