@@ -1507,6 +1507,129 @@ Assert STRUCTURE, not snapshots (§1.1's living-file doctrine) — the `.ldtk` i
 
 ---
 
+### 12.9 Required Wiring — the greps that must come back NON-EMPTY
+
+**§12.8 is all negative space, and negative space passes vacuously.** A real run
+of this brief shipped **420 lines in a single `src/main.js` whose only import was
+`./style.css`**. `aicraft-engine` sat in its `package.json` — at `^0.17.2`, five
+minors below this brief's pin — and was never imported once. It hand-iterated
+`gridTiles` / `autoLayerTiles` instead of the painter, so nothing autotiled. It
+integrated its own gravity instead of `stepPlatformer`, so nothing felt like
+Celeste. It never compiled `Player.json`, so every animation was wrong. And it
+passed nearly all of §12.8 — **you cannot call `createCamera` if you never import
+the engine** — while looking, in a screenshot, like a platformer.
+
+§12.8 says what must be **absent**. §12.9 says what must be **present**. The whole
+section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/main/games/celerock-wiring-check.sh)
+in the engine repo. Copy it into the build root and run it at every §14 stage
+boundary, not once at the end: a stage that fails these greps is a
+**failed stage**, not a TODO, however good the code looks and however well the
+screenshot reads.
+
+#### 12.9.1 The recipes must be copied in AND imported
+
+```bash
+# Present and non-empty — the §1.1 copy-in set. Prints nothing when clean.
+for r in fixed-tick-game platformer-input sprite-sheet-boot image-decoder \
+         sheet-frame-index ldtk-draw-pipeline room-slide-aperture \
+         ldtk-entity-art feel-effects audio-unlock game-test-harness \
+         ldtk-hot-reload-plugin; do
+  test -s "src/recipes/$r.ts" || echo "MISSING OR EMPTY: $r"
+done
+
+# Imported, not merely carried. Match EVERY depth form with one permissive
+# pattern: game code lives in src/ AND src/game/, tests reach in as
+# '../src/recipes/', and vite.config.ts as './src/recipes/'. A tidier-looking
+# anchored regex is how you lose half the call sites without noticing — the
+# first draft of this very check matched '../recipes/' and missed './recipes/',
+# reporting 9 imports on a build that had 18.
+for r in fixed-tick-game platformer-input sprite-sheet-boot image-decoder \
+         sheet-frame-index ldtk-draw-pipeline room-slide-aperture \
+         ldtk-entity-art feel-effects audio-unlock game-test-harness \
+         ldtk-hot-reload-plugin; do
+  grep -rq "from '[^']*recipes/$r'" src/ tests/ vite.config.ts \
+    || echo "CARRIED BUT NEVER IMPORTED: $r"
+done
+```
+
+Both loops print nothing when clean. Two of the fourteen
+§1.1 recipes are conditionally imported and are **not** part of this check:
+`ldtk-entity-tile-art` (only when the LDtk defines falling blocks, §6.1) and
+`particle-system` (the pre-0.21.0 back-port — at this brief's pin you call
+`stepSeconds` directly, so a build that imports it is behind, not ahead).
+
+A from-scratch reimplementation of something a recipe already does is a failed
+stage, not a stylistic choice. If a recipe genuinely does not fit, say so in a
+comment naming what it could not do — do not silently re-sketch it.
+
+The structural rules that follow, each independently sufficient to fail a run:
+
+- **The build is TypeScript.** A `src/main.js` voids `tsc --noEmit` as a stage
+  gate, which is how a run ships 420 unchecked lines against an API it never
+  read. `npx tsc --noEmit` must be clean at every stage boundary.
+- **`src/` is multi-file** (§11's layout, or a defensible variant). If the whole
+  game is one file, the recipes are not in it and neither is the engine.
+- **The pin is exact.** `"aicraft-engine": "0.22.0"` — no caret. A caret range
+  resolved a real build to `0.17.2`, where half of §12.9.3 does not exist.
+
+#### 12.9.2 The engine must be reachable from GAME code
+
+```bash
+grep -E '"aicraft-engine": *"0\.22\.0"' package.json
+grep -rn --exclude-dir=recipes "from 'aicraft-engine'" src/
+```
+
+`--exclude-dir=recipes` is the whole point of the second grep. The copied recipes
+import the engine themselves, so a grep over all of `src/` comes back green for a
+build that carries all fourteen recipes and wires none of them. **Every grep in
+§12.9.3 excludes `recipes/` for the same reason** — the question is never "is the
+symbol in the tree", it is "does the game call it".
+
+#### 12.9.3 One grep per system that fails silently
+
+Each row is a defect a screenshot critic cannot see, paired with the symbol whose
+absence causes it. The right column must hit **game code**:
+
+| Ships as | Must appear outside `src/recipes/` |
+| --- | --- |
+| "the platforms aren't autotiled" | `createLdtkRoomPainter` (§5.4) |
+| "it doesn't feel like Celeste" | `stepPlatformer` / `createPlatformerController` (§4.2) |
+| "the animations are wrong" | `drawSprite` **and** `deriveSpriteAnimKind` (§4.4) |
+| "the camera pops between rooms" | `beginSessionRoomSlide` **and** `advanceSessionRoomSlide` (§5.5) |
+| "you can see past the level" | `applyCameraLetterbox` (§5.4) |
+| "the trail drifts off the player" | `composeCameraTransform` (§5.4) |
+| "the strawberry is a drawn diamond" | `ldtkEntityTileOverride` **and** `drawLevelEntity` (§7.1) |
+| "the menus feel sticky" | `createMenuNav` (§8) |
+| "dash-into-wall is silent" | `triggerHitStop` **and** `sineShake` (§9, §12.2) |
+| "the build is mute" | `createAudioAdapter` (§10) |
+| "the hair blows out" | `advanceSpringRod` (§4.4) |
+| "progress doesn't persist" | `createLocalStorageSaveStorage` (§12.4) |
+| "reduced motion still animates" | `prefersReducedMotion` (§2) |
+
+```bash
+for s in createLdtkRoomPainter stepPlatformer drawSprite deriveSpriteAnimKind \
+         beginSessionRoomSlide advanceSessionRoomSlide applyCameraLetterbox \
+         composeCameraTransform ldtkEntityTileOverride drawLevelEntity \
+         createMenuNav triggerHitStop sineShake createAudioAdapter \
+         advanceSpringRod createLocalStorageSaveStorage prefersReducedMotion; do
+  grep -rq --exclude-dir=recipes "$s" src/ || echo "NOT WIRED: $s"
+done
+```
+
+Every line of that loop is verified to come back clean on the build that passed
+§12.7 — these are probes with a known passing state, not aspirations. A probe
+that has never passed is worse than no probe.
+
+One deliberate exception: **the exact-pin rule in §12.9.1 is the one check the
+passing build does not meet.** It shipped `"^0.22.0"` and was correct only by
+luck — `0.22.0` happened to be the newest release the day it installed. The
+build that shipped `"^0.17.2"` ran the same caret against an older floor and
+resolved five minors below the API this brief describes. The caret is a latent
+version of that failure in every build that carries it, so it is a requirement
+here rather than a regression check.
+
+---
+
 ## 13. Visual & Play Gates
 
 Before the build is accepted:
@@ -1531,6 +1654,14 @@ Before the build is accepted:
 ## 14. Implementation Workflow
 
 Build in this order. Each stage must pass its gate before the next begins.
+
+**Every stage boundary also runs §12.9 and `npx tsc --noEmit`, in addition to the
+stage's own gate.** Not once at the end — at every boundary. The failure §12.9
+exists to catch (an engine installed and never imported, recipes carried and never
+wired) is invisible in a screenshot and compounds silently: by the time a Stage 5
+critic is judging particle colour, a build that skipped the engine at Stage 1 has
+hand-rolled four more systems on top of the miss. A stage whose §12.9 greps do not
+come back clean is a **failed stage** — reopen it before starting the next one.
 
 ### Stage 1: LDtk Load + Preflight + Tileset + Camera Brain Graybox
 1. Vite + TypeScript + `aicraft-engine@0.22.0`. Wire the loop via `recipes/fixed-tick-game.ts`'s `startFixedTickGame` — `createGameLoop` with the §2 `onError` handler and the reduced-motion gate in one call — so a throw can't silently freeze the loop.
@@ -1578,6 +1709,7 @@ Build in this order. Each stage must pass its gate before the next begins.
 ### Stage 7: Verification
 1. **Enumerate §12's artifacts file by file and confirm each exists and passes** — the build is incomplete while any is missing (this is where a long build skims: a real build shipped green while §12.1b, §12.1c, and three §12.1 sub-bullets simply did not exist): `tests/ldtk-load.test.ts` (§12.1 incl. the clip/fields/entity-art contracts), `tests/seam-respawn.test.ts` (§12.1b), the §12.1c hot-reload assertions (vitest where possible, the Playwright gate for the dev-server paths), `tests/dash-bonk.test.ts` (§12.2), `tests/render-composition.test.ts` (§12.2b), `tests/transition-smoke.test.ts` (§12.3), `tests/persistence.test.ts` (§12.4/§12.5), `tests/determinism.test.ts` (§12.6), `tests/static-contracts.test.ts` (§12.1d), and **the game-harness tests that drive `stepGame` itself** (the §12 preamble — cue wiring, respawn facing, feel bounds).
 2. Grep for forbidden patterns (§12.8) — as `scanForbiddenIdentifiers('src') === []`, run as a test, not as a manual grep nobody runs.
+2b. **Run §12.9 one final time and paste the output into the postmortem.** Both loops print nothing when clean; "prints nothing" is the artifact. If this is the first time §12.9 has been run, the build did not follow §14 and the greps are now an autopsy rather than a gate — say so in the postmortem.
 3. Capture the §13 screenshots; **assert the manifest** (`missingShotManifest` from `recipes/game-test-harness.ts` returns `[]`) so a gate whose capture silently skipped fails the suite instead of shipping as a dangling reference.
 4. **Gate:** all tests pass; no forbidden patterns; screenshots confirm faithful tileset + Celeste feel.
 
