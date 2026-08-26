@@ -46,7 +46,7 @@ done
 # tests reach in as '../src/recipes/', vite.config.ts as './src/recipes/'.
 # An anchored regex loses call sites silently.
 for r in $RECIPES; do
-  grep -rq "from '[^']*recipes/$r'" src/ tests/ vite.config.ts 2>/dev/null \
+  grep -rqE "from [\"'][^\"']*recipes/$r[\"']" src/ tests/ vite.config.ts 2>/dev/null \
     || say "CARRIED BUT NEVER IMPORTED: $r"
 done
 
@@ -62,7 +62,7 @@ grep -qE '"aicraft-engine": *"0\.22\.0"' package.json \
 # --exclude-dir=recipes is the entire point: the copied recipes import the
 # engine themselves, so a grep over all of src/ is green for a build that
 # carries fourteen recipes and wires none of them.
-grep -rq --exclude-dir=recipes "from 'aicraft-engine'" src/ 2>/dev/null \
+grep -rqE --exclude-dir=recipes "from [\"']aicraft-engine[\"']" src/ 2>/dev/null \
   || say "ENGINE INSTALLED BUT NEVER IMPORTED BY GAME CODE — this is the whole failure mode"
 
 echo "§12.9.3 — one grep per silently-failing system"

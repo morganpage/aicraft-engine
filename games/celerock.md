@@ -161,7 +161,7 @@ npm install aicraft-engine@0.22.0
 
 > **Do not import** the legacy single follow-camera (`createCamera` / `updateCamera`) — it is superseded by the camera brain. **Do not import** `doubleJumpAbility` / `doubleJumpEnabled` — Celeste has no double jump. **Do not import** `compileLevel`, `canonicalize`, `fnv1a`, or `LEVEL_VERSION` — those serve hand-authored `LevelData`; geometry here comes from LDtk via `ldtkLevelToLevelData` + `compileGeneratedLevel`.
 
-> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.2/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
+> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.3/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
 
 ### 1.1 The bundled assets — download these first
 
@@ -1520,7 +1520,7 @@ passed nearly all of §12.8 — **you cannot call `createCamera` if you never im
 the engine** — while looking, in a screenshot, like a platformer.
 
 §12.8 says what must be **absent**. §12.9 says what must be **present**. The whole
-section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.2/games/celerock-wiring-check.sh)
+section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.3/games/celerock-wiring-check.sh)
 in the engine repo. Copy it into the build root and run it at every §14 stage
 boundary, not once at the end (the script also carries §12.10 behind `--final`): a stage that fails these greps is a
 **failed stage**, not a TODO, however good the code looks and however well the
@@ -1537,20 +1537,28 @@ for r in fixed-tick-game platformer-input sprite-sheet-boot image-decoder \
   test -s "src/recipes/$r.ts" || echo "MISSING OR EMPTY: $r"
 done
 
-# Imported, not merely carried. Match EVERY depth form with one permissive
-# pattern: game code lives in src/ AND src/game/, tests reach in as
-# '../src/recipes/', and vite.config.ts as './src/recipes/'. A tidier-looking
-# anchored regex is how you lose half the call sites without noticing — the
-# first draft of this very check matched '../recipes/' and missed './recipes/',
-# reporting 9 imports on a build that had 18.
+# Imported, not merely carried. Match EVERY depth form AND both quote styles
+# with one permissive pattern: game code lives in src/ AND src/game/, tests
+# reach in as '../src/recipes/', vite.config.ts as './src/recipes/', and a
+# build may quote its specifiers either way.
 for r in fixed-tick-game platformer-input sprite-sheet-boot image-decoder \
          sheet-frame-index ldtk-draw-pipeline room-slide-aperture \
          ldtk-entity-art feel-effects audio-unlock game-test-harness \
          ldtk-hot-reload-plugin; do
-  grep -rq "from '[^']*recipes/$r'" src/ tests/ vite.config.ts \
+  grep -rqE "from [\"'][^\"']*recipes/$r[\"']" src/ tests/ vite.config.ts \
     || echo "CARRIED BUT NEVER IMPORTED: $r"
 done
 ```
+
+**Anchoring these greps on incidental syntax has now produced two false results,
+both caught only by running them against a build whose answer was already
+known.** The first draft matched `'../recipes/'` and missed `'./recipes/'`,
+reporting 9 imports on a build that had 18. The second hard-coded single quotes
+and reported ENGINE NEVER IMPORTED on a build that imports 72 engine symbols
+with double quotes — the single most serious verdict this section can return,
+delivered against a build that had not committed the offence. Import specifiers
+have two legal quote styles and unbounded relative depth; a pattern that admits
+only one of each is testing your formatter, not your wiring.
 
 Both loops print nothing when clean. Two of the fourteen
 §1.1 recipes are conditionally imported and are **not** part of this check:
@@ -1576,7 +1584,7 @@ The structural rules that follow, each independently sufficient to fail a run:
 
 ```bash
 grep -E '"aicraft-engine": *"0\.22\.0"' package.json
-grep -rn --exclude-dir=recipes "from 'aicraft-engine'" src/
+grep -rnE --exclude-dir=recipes "from [\"']aicraft-engine[\"']" src/
 ```
 
 `--exclude-dir=recipes` is the whole point of the second grep. The copied recipes
