@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# celerock.md §12.9 — Required Wiring.
+# celerock.md §12.9 — Required Wiring, and §12.10 — Gate Substance.
 #
-# Run from a Celerock build root at EVERY §14 stage boundary, not once at the end.
+#   ./celerock-wiring-check.sh            §12.9 only — run at EVERY §14 stage boundary
+#   ./celerock-wiring-check.sh --final    §12.9 + §12.10 — the Stage 7 ship gate
+#
+# §12.10 is separate because it cannot pass early: a Stage 1 build has no gate
+# captures and no suite yet. Running it at every boundary would train the run to
+# treat a red check as normal, which is how a gate stops meaning anything.
+#
 # Prints nothing and exits 0 when clean. Every failure line is a FAILED STAGE.
 #
 # Validated against both known runs of games/celerock-gauntlet-prompt.txt:
@@ -13,6 +19,9 @@
 #   scanForbiddenIdentifiers('src') === []   — recipes/game-test-harness.ts
 
 set -uo pipefail
+FINAL=0
+[ "${1:-}" = "--final" ] && FINAL=1
+
 fail=0
 say() { echo "  $*"; fail=$((fail + 1)); }
 
@@ -61,10 +70,51 @@ for s in $SYMBOLS; do
   grep -rq --exclude-dir=recipes "$s" src/ 2>/dev/null || say "NOT WIRED: $s"
 done
 
+if [ "$FINAL" -eq 1 ]; then
+  echo "§12.10 — gate substance (Stage 7 ship gate)"
+
+  # Checks the ARTIFACT, not the call. A build once satisfied the §13 gate with
+  # missingShotManifest(dir, []) — the exact function the brief names, called
+  # correctly, with an empty required list against an empty directory. Grepping
+  # the call site for "[]" cannot tell that apart from the assertion's own
+  # .toEqual([]), so count the captures instead: an empty manifest cannot
+  # produce fourteen PNGs.
+  shots=$(find .qa -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
+  [ "${shots:-0}" -lt 14 ] \
+    && say "ONLY $shots GATE CAPTURE(S) IN .qa/ — §13 has 14 gates; an empty manifest asserts nothing"
+
+  # §12.7 has 24 acceptance criteria. A suite below one test per criterion has
+  # not tested the game, whatever it is named.
+  tests=$(grep -rho "\bit(" tests/*.test.ts 2>/dev/null | wc -l | tr -d ' ')
+  [ "${tests:-0}" -lt 24 ] \
+    && say "ONLY $tests TEST(S) — §12.7 has 24 acceptance criteria"
+
+  # Topic coverage, not filenames: the reference build proves §12.1b's
+  # seam-respawn assertions may live inside gameplay-wiring.test.ts rather than
+  # a file named for the section. Require the SUBJECT to be tested somewhere.
+  for t in triggerHitStop:§12.2-dash-bonk \
+           composeCameraTransform:§12.2b-world-composition \
+           writeSave:§12.4/12.5-persistence \
+           respawn:§12.1b-seam-respawn; do
+    k="${t%%:*}"; label="${t#*:}"
+    grep -rq "$k" tests/ 2>/dev/null || say "NOTHING TESTS $label (no '$k' anywhere in tests/)"
+  done
+
+  # Both halves or neither. A mounted plugin firing an event no client handles
+  # is a hot reload that has never reloaded anything.
+  if grep -q "createLdtkHotReloadPlugin" vite.config.ts 2>/dev/null \
+     && ! grep -rq --exclude-dir=recipes "import.meta.hot" src/ 2>/dev/null; then
+    say "HOT RELOAD HALF-WIRED: vite plugin mounted, no import.meta.hot listener in game code (§5.7, §12.7 #17)"
+  fi
+fi
+
+scope="§12.9"
+[ "$FINAL" -eq 1 ] && scope="§12.9 + §12.10"
+
 echo
 if [ "$fail" -eq 0 ]; then
-  echo "§12.9 clean."
+  echo "$scope clean."
 else
-  echo "§12.9 FAILED — $fail check(s). This is a failed stage, not a TODO."
+  echo "$scope FAILED — $fail check(s). This is a failed stage, not a TODO."
 fi
 exit $((fail > 0))

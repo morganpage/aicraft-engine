@@ -161,7 +161,7 @@ npm install aicraft-engine@0.22.0
 
 > **Do not import** the legacy single follow-camera (`createCamera` / `updateCamera`) — it is superseded by the camera brain. **Do not import** `doubleJumpAbility` / `doubleJumpEnabled` — Celeste has no double jump. **Do not import** `compileLevel`, `canonicalize`, `fnv1a`, or `LEVEL_VERSION` — those serve hand-authored `LevelData`; geometry here comes from LDtk via `ldtkLevelToLevelData` + `compileGeneratedLevel`.
 
-> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.1/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
+> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.2/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), and `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly). Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
 
 ### 1.1 The bundled assets — download these first
 
@@ -1520,9 +1520,9 @@ passed nearly all of §12.8 — **you cannot call `createCamera` if you never im
 the engine** — while looking, in a screenshot, like a platformer.
 
 §12.8 says what must be **absent**. §12.9 says what must be **present**. The whole
-section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.1/games/celerock-wiring-check.sh)
+section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.2/games/celerock-wiring-check.sh)
 in the engine repo. Copy it into the build root and run it at every §14 stage
-boundary, not once at the end: a stage that fails these greps is a
+boundary, not once at the end (the script also carries §12.10 behind `--final`): a stage that fails these greps is a
 **failed stage**, not a TODO, however good the code looks and however well the
 screenshot reads.
 
@@ -1628,6 +1628,99 @@ resolved five minors below the API this brief describes. The caret is a latent
 version of that failure in every build that carries it, so it is a requirement
 here rather than a regression check.
 
+
+### 12.10 Gate Substance — the checks that a gate has CONTENT, not just a call
+
+§12.9 asks *"is the system wired?"* A build can answer yes to all forty-one of
+its checks and still ship a fifth of a game, because §12.9 never asks whether
+the gates it passes have anything in them.
+
+A real run of this brief passed §12.9 completely — TypeScript, exact pin,
+multi-file, twelve recipes copied and imported, every §12.9.3 symbol wired, `tsc
+--noEmit` clean, suite green — and shipped 27,830 characters of game code
+against the reference build's 137,379, with an empty `.qa/`. Its §13 gate
+assertion read:
+
+```ts
+expect(missingShotManifest(new URL('../.qa', import.meta.url).pathname, [])).toEqual([]);
+```
+
+That is the exact function this brief names, imported from the right recipe,
+called with correct arguments — and an **empty required-shot list against an
+empty directory**. It cannot fail. Every §13 gate was satisfied by asserting
+nothing.
+
+This is the recurring failure, not a one-off: it is the same shape as the suite
+in §12's preamble that ran green with thirty-four tests and zero game imports.
+Given a mechanical gate, a build under time pressure finds the weakest legal
+reading of it. So §12.10 checks **artifacts, not call sites**.
+
+#### 12.10.1 Check the artifact, never the syntax
+
+The instinct is to grep the call for an empty literal. Do not — the reference
+build's own line is `expect(missingShotManifest(SHOTS_DIR, GATE_SHOTS)).toEqual([])`,
+and any regex loose enough to catch the vacuous second argument also catches
+that trailing `.toEqual([])`. A probe that fires on the correct build is worse
+than no probe (§12.9).
+
+Count the captures instead. An empty manifest cannot produce fourteen PNGs:
+
+```bash
+# §13 has 14 visual gates. The reference build ships 43 captures.
+find .qa -name '*.png' | wc -l          # must be >= 14
+
+# §12.7 has 24 acceptance criteria. A suite below one test per criterion has
+# not tested the game, whatever its files are named. Reference build: 66.
+grep -rho "\bit(" tests/*.test.ts | wc -l   # must be >= 24
+```
+
+#### 12.10.2 Require topics, not filenames
+
+§14's Stage 7 names test files, and that naming is a suggestion. The reference
+build has no `tests/seam-respawn.test.ts` at all — its §12.1b assertions live
+inside `tests/gameplay-wiring.test.ts`, which is a perfectly good place for
+them. Requiring the filename would fail the build that passed.
+
+Require that the SUBJECT is tested somewhere under `tests/`:
+
+```bash
+for t in triggerHitStop composeCameraTransform writeSave respawn; do
+  grep -rq "$t" tests/ || echo "NOTHING TESTS: $t"
+done
+```
+
+Those four map to §12.2 (dash bonk), §12.2b (world composition), §12.4/12.5
+(persistence) and §12.1b (seam respawn) — the four the failing build skipped
+while its four remaining tests stayed green. Do **not** add
+`scanForbiddenIdentifiers` to this list: the reference build implements §12.8 as
+a parametrised `it` per forbidden pattern instead of calling the helper, which
+is arguably better and would fail a name-based check.
+
+#### 12.10.3 Both halves or neither
+
+A wired plugin whose event nothing handles is a feature that has never run once.
+The failing build mounted `createLdtkHotReloadPlugin` in `vite.config.ts`
+correctly, and no game code ever called `import.meta.hot.on('ldtk:update', …)` —
+so §12.7 #17's live swap could not have happened, and no grep for the plugin
+would tell you:
+
+```bash
+grep -q "createLdtkHotReloadPlugin" vite.config.ts \
+  && ! grep -rq --exclude-dir=recipes "import.meta.hot" src/ \
+  && echo "HOT RELOAD HALF-WIRED"
+```
+
+#### 12.10.4 When to run it
+
+**§12.9 runs at every §14 stage boundary. §12.10 runs at Stage 7 only** —
+`./celerock-wiring-check.sh --final`. It cannot pass early: a Stage 1 build has
+no captures and no suite, and running it at every boundary would teach the run
+that a red check is the normal state of the world, which is precisely how a gate
+stops meaning anything.
+
+Verified, like §12.9, against both known runs: the build that passed §12.7 is
+silent on every §12.10 check; the build that passed §12.9 and shipped a fifth of
+a game fails seven of them.
 ---
 
 ## 13. Visual & Play Gates
@@ -1662,6 +1755,9 @@ wired) is invisible in a screenshot and compounds silently: by the time a Stage 
 critic is judging particle colour, a build that skipped the engine at Stage 1 has
 hand-rolled four more systems on top of the miss. A stage whose §12.9 greps do not
 come back clean is a **failed stage** — reopen it before starting the next one.
+**§12.10 is different: it runs once, at Stage 7** (`--final`). It cannot pass
+early, and running it at every boundary would teach the run that a red check is
+normal — which is how a gate stops meaning anything.
 
 ### Stage 1: LDtk Load + Preflight + Tileset + Camera Brain Graybox
 1. Vite + TypeScript + `aicraft-engine@0.22.0`. Wire the loop via `recipes/fixed-tick-game.ts`'s `startFixedTickGame` — `createGameLoop` with the §2 `onError` handler and the reduced-motion gate in one call — so a throw can't silently freeze the loop.
@@ -1709,7 +1805,7 @@ come back clean is a **failed stage** — reopen it before starting the next one
 ### Stage 7: Verification
 1. **Enumerate §12's artifacts file by file and confirm each exists and passes** — the build is incomplete while any is missing (this is where a long build skims: a real build shipped green while §12.1b, §12.1c, and three §12.1 sub-bullets simply did not exist): `tests/ldtk-load.test.ts` (§12.1 incl. the clip/fields/entity-art contracts), `tests/seam-respawn.test.ts` (§12.1b), the §12.1c hot-reload assertions (vitest where possible, the Playwright gate for the dev-server paths), `tests/dash-bonk.test.ts` (§12.2), `tests/render-composition.test.ts` (§12.2b), `tests/transition-smoke.test.ts` (§12.3), `tests/persistence.test.ts` (§12.4/§12.5), `tests/determinism.test.ts` (§12.6), `tests/static-contracts.test.ts` (§12.1d), and **the game-harness tests that drive `stepGame` itself** (the §12 preamble — cue wiring, respawn facing, feel bounds).
 2. Grep for forbidden patterns (§12.8) — as `scanForbiddenIdentifiers('src') === []`, run as a test, not as a manual grep nobody runs.
-2b. **Run §12.9 one final time and paste the output into the postmortem.** Both loops print nothing when clean; "prints nothing" is the artifact. If this is the first time §12.9 has been run, the build did not follow §14 and the greps are now an autopsy rather than a gate — say so in the postmortem.
+2b. **Run `./celerock-wiring-check.sh --final` (§12.9 + §12.10) and paste the output into the postmortem.** This is the only place §12.10 runs. Everything prints nothing when clean; "prints nothing" is the artifact. If this is the first time §12.9 has been run, the build did not follow §14 and the greps are now an autopsy rather than a gate — say so in the postmortem.
 3. Capture the §13 screenshots; **assert the manifest** (`missingShotManifest` from `recipes/game-test-harness.ts` returns `[]`) so a gate whose capture silently skipped fails the suite instead of shipping as a dangling reference.
 4. **Gate:** all tests pass; no forbidden patterns; screenshots confirm faithful tileset + Celeste feel.
 
