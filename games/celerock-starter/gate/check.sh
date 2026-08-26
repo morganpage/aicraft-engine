@@ -57,13 +57,19 @@ recipes_for_stage() {
   return 0
 }
 
+# advanceSpringRod is deliberately NOT in this table. §12.7 #13 reads "Hair uses
+# advanceSpringRod, never raw advanceSpringChain" — a constraint on hair, not a
+# requirement that hair exists. §4.4 puts the spring-rod hair on the PROCEDURAL
+# FALLBACK body, so a build rendering the supplied Player.png sprite correctly
+# may have none. Requiring it accused a build that had done nothing wrong; the
+# real constraint is §12.8's forbidden `advanceSpringChain`, which already runs.
 symbols_for_stage() {
   local s=$1
   [ "$s" -ge 1 ] && echo "createLdtkRoomPainter applyCameraLetterbox composeCameraTransform prefersReducedMotion"
   [ "$s" -ge 2 ] && echo "stepPlatformer drawSprite deriveSpriteAnimKind"
   [ "$s" -ge 3 ] && echo "beginSessionRoomSlide advanceSessionRoomSlide"
   [ "$s" -ge 4 ] && echo "ldtkEntityTileOverride drawLevelEntity createLocalStorageSaveStorage createMenuNav"
-  [ "$s" -ge 5 ] && echo "triggerHitStop sineShake advanceSpringRod"
+  [ "$s" -ge 5 ] && echo "triggerHitStop sineShake"
   [ "$s" -ge 6 ] && echo "createAudioAdapter"
   return 0
 }
@@ -131,7 +137,14 @@ if [ "$FINAL" -eq 1 ]; then
 
   # §12.7 has 24 acceptance criteria. A suite below one test per criterion has
   # not tested the game, whatever it is named.
-  tests=$(grep -rho "\bit(" tests/*.test.ts 2>/dev/null | wc -l | tr -d ' ')
+  #
+  # Count ANY test file and BOTH runner idioms. Globbing tests/*.test.ts and
+  # counting only `it(` reported ONLY 0 TEST(S) against a build carrying 55
+  # tests in tests/*.test.mjs under `node --test` — the fourth false result
+  # this check has produced by anchoring on incidental syntax, and the fourth
+  # caught only by running it against a build whose answer was known.
+  tests=$(find tests -type f \( -name '*.test.*' -o -name '*.spec.*' \) 2>/dev/null \
+    -exec grep -oh "\b\(it\|test\)(" {} + 2>/dev/null | wc -l | tr -d ' ')
   [ "${tests:-0}" -lt 24 ] \
     && say "ONLY $tests TEST(S) — §12.7 has 24 acceptance criteria"
 
