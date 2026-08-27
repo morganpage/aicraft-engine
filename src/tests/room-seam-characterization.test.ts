@@ -2,7 +2,8 @@
  * Characterization — the seam discontinuity, BEFORE the apron exists.
  *
  * At a linked seam the walkway is continuous in the authored world:
- * `games/celerock.ldtk` `Level_0` carries a floor run at y=160 spanning
+ * the frozen pack fixture `src/tests/fixtures/celerock-seam-pack.ldtk`
+ * `Level_0` carries a floor run at y=160 spanning
  * x=296→320, and `Level_1` continues it at y=160 spanning x=0→32, the two rooms
  * flush at worldX 0 and 320. It is NOT continuous in the simulation — the
  * kernel takes `solids` per tick and every consumer passes strictly the ACTIVE
@@ -44,9 +45,11 @@ const DT = 1 / 60;
 const WALKWAY_TOP = 160;
 
 function loadProject() {
-  const url = new URL('../../games/celerock.ldtk', import.meta.url);
+  // The frozen pack fixture, not the living games/celerock.ldtk — pack edits
+  // (dc2f18a dug a pit into this walkway) must not red the engine suite.
+  const url = new URL('./fixtures/celerock-seam-pack.ldtk', import.meta.url);
   const { project } = parseLdtkProject(readFileSync(url, 'utf8'));
-  if (project === undefined) throw new Error('games/celerock.ldtk failed to parse');
+  if (project === undefined) throw new Error('celerock-seam-pack.ldtk fixture failed to parse');
   return project;
 }
 

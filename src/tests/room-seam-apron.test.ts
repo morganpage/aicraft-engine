@@ -178,11 +178,18 @@ describe('compileRoomSeamApron — geometry', () => {
 });
 
 // ===========================================================================
-// Real fixture — games/celerock.ldtk
+// Real-pack fixture — frozen, deliberately NOT the living games/celerock.ldtk
 // ===========================================================================
-const url = new URL('../../games/celerock.ldtk', import.meta.url);
+// Engine tests must not read the living pack: `games/celerock.ldtk` is edited
+// as game content (dc2f18a dug a pit into this very walkway to make the
+// FallingBlock playable), and every pack edit would red the engine suite —
+// the celerock brief's own "living-file doctrine" trap, one directory over.
+// This fixture freezes the pack-v2 geometry the assertions below were
+// calibrated against (the floor run at y=160 reaching Level_0's east edge,
+// continued by Level_1's west floor across the seam).
+const url = new URL('./fixtures/celerock-seam-pack.ldtk', import.meta.url);
 const parsed = parseLdtkProject(readFileSync(url, 'utf8'));
-if (parsed.project === undefined) throw new Error('games/celerock.ldtk failed to parse');
+if (parsed.project === undefined) throw new Error('celerock-seam-pack.ldtk fixture failed to parse');
 const project = parsed.project;
 
 const rooms = createLdtkRoomCache(project, {
