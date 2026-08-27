@@ -46,6 +46,35 @@ function upkeepCanvas(game: Game): void {
   game.viewport = canvasCssViewport(game.canvas);
 }
 
+/**
+ * Resize + RE-SNAP the brain to the fresh viewport, together, always. A
+ * resize without the snap is the sneaky half of this bug: `game.viewport`
+ * self-corrects, but `game.brain.zoom` — set once, from whatever viewport was
+ * known when it was last snapped — does not; nothing re-derives it outside
+ * the fixed step's own `updateCameraBrain` call, so a state that skips the
+ * sim (a menu, a game-over freeze, anything Stage 4+ adds that doesn't run
+ * the camera every tick) is left with a permanently wrong zoom.
+ *
+ * The bug this closes: `getBoundingClientRect()` read SYNCHRONOUSLY at boot —
+ * before the very first layout pass has necessarily settled — can capture a
+ * near-zero rect. This scaffold's own Stage 1 shipped exactly that until a
+ * build made from it hit it reliably in an automated test harness: a 1×1
+ * viewport, `celesteCameraZoom` fitted to it, and the game rendering as an
+ * all-black frame with no error anywhere (nothing in the render path throws
+ * on a degenerate viewport, it just draws nothing visible). The scaffold's
+ * OLD `window.resize`-only listener did not fix this: `resize` never fires
+ * for the canvas's own box settling into its first real layout, and even
+ * calling `upkeepCanvas` alone on a genuine later resize left `game.brain`
+ * stale, because nothing re-derives its zoom outside `updateCameraBrain`'s
+ * own per-tick call. `ResizeObserver` fires on the canvas's OWN box,
+ * including that first settle, which is why both listeners are wired here
+ * and both call this one combined resize-and-resnap function.
+ */
+function onCanvasResized(game: Game): void {
+  upkeepCanvas(game);
+  game.brain = snapCameraBrain(game.brain, cameraOptionsFor(game, DEFAULT_FIXED_DT));
+}
+
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#game');
   if (!canvas) throw new Error('[celerock] no #game canvas in index.html');
@@ -81,9 +110,12 @@ async function boot(): Promise<void> {
     dpr: getDevicePixelRatio(),
   };
 
-  upkeepCanvas(game);
-  game.brain = snapCameraBrain(game.brain, cameraOptionsFor(game, DEFAULT_FIXED_DT));
-  window.addEventListener('resize', () => upkeepCanvas(game));
+  onCanvasResized(game);
+  // Kept alongside the ResizeObserver (belt and suspenders): a DPR change —
+  // moving the window to another monitor — can fire window 'resize' without
+  // the canvas's own CSS box changing at all, which ResizeObserver would miss.
+  new ResizeObserver(() => onCanvasResized(game)).observe(canvas);
+  window.addEventListener('resize', () => onCanvasResized(game));
 
   startFixedTickGame({
     fixedDt: DEFAULT_FIXED_DT,

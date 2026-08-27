@@ -1,6 +1,6 @@
 I want you to build a Celeste-class precision platformer that plays the supplied LDtk level, following the directions in the file:
 
-https://github.com/morganpage/aicraft-engine/blob/v0.22.9/games/celerock.md
+https://github.com/morganpage/aicraft-engine/blob/v0.22.10/games/celerock.md
 
 Done is defined by the brief's §12.7 acceptance criteria, §12.8 forbidden patterns, §12.9 required wiring, and §12.10 gate substance — not by a critic's enthusiasm. The sequencing is fixed and non-negotiable: **wire the engine first, get it correct and complete, then one bounded polish pass.** Two runs of this prompt have proven what happens otherwise. One shipped 5,300 lines of TypeScript across twenty files with all fourteen recipes copied and twelve wired, twelve test files, a Playwright pixel-probe harness, and every §13 gate captured. The other shipped **420 lines in a single `src/main.js` whose only import was `./style.css`** — `aicraft-engine` in `package.json` at `^0.17.2`, never imported once, gravity hand-integrated, tiles hand-blitted from `gridTiles`/`autoLayerTiles`, `Player.json` never compiled. Its platforms did not autotile, its animations were wrong, and it looked like a platformer in a screenshot. **A screenshot critic cannot tell those two builds apart. That is why the critic is not the gate.**
 
@@ -47,6 +47,7 @@ The failed run failed by being too small, so the floor is the load-bearing half:
 - Before starting, kill any Vite dev server left running by a previous gauntlet run (check the port): a stale server returns 200 and you will test the wrong game.
 - Do not drive stage iteration with a scheduler, timer, or recurring-run feature of your harness (Claude Code's `/loop` is one example). Those are interval runners, not iteration primitives. The iteration structure you want is the §14 stage list with its gates: finish a stage, run `bash gate/check.sh --stage N`, move on.
 - The §12.8 scan runs as a test (`scanForbiddenIdentifiers('src') === []`), not as a manual grep nobody runs. Same for §12.9 — put both loops in the suite the moment Stage 1 has a suite.
+- **If your harness drives an interactive browser tab (not headless Playwright) for manual verification, its synthetic key-press action may not set `KeyboardEvent.code`/`keyCode` at all — only `.key`.** This brief's own keyboard map is `.code`-based (Celeste's physical-key layout, §4.3), so a tool whose synthetic presses omit `.code` will silently fail to drive the game and look like a dead build. Confirm which fields your tool's key action actually sets before concluding input is broken; the fix, if it is missing, is to dispatch a real `KeyboardEvent` yourself (`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyC', bubbles: true }))`) rather than assume the game is unresponsive. The same tab's `requestAnimationFrame` may also only fire in bursts triggered by a screenshot/paint request rather than on a steady clock — expect a held key to sometimes complete its whole action (a full jump arc, a whole dash) between one screenshot and the next, and don't mistake that for the input never landing.
 
 ## Ship condition
 
