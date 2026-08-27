@@ -50,9 +50,22 @@ export interface WorldLoad {
   readonly painter: LdtkRoomPainter;
 }
 
+export interface LoadWorldOptions {
+  /** Injectable fetch (tests stub it against public/ on disk). */
+  fetch?: typeof fetch;
+  /** Absolute URL override — the loader rejects relative URLs on hosts with no document.baseURI (Node). */
+  projectUrl?: string;
+  /** Injectable decode (tests stub it on hosts with no bitmap decoder). */
+  decodeImage?: (bytes: Uint8Array, def: import('aicraft-engine').LdtkTilesetDef) => Promise<CanvasImageSource | undefined>;
+}
+
 /** Load + preflight. Returns null and logs on any hard failure — never fabricates. */
-export async function loadWorld(): Promise<WorldLoad | null> {
-  const loaded = await loadLdtkProjectAssets({ projectUrl: PROJECT_URL });
+export async function loadWorld(options: LoadWorldOptions = {}): Promise<WorldLoad | null> {
+  const loaded = await loadLdtkProjectAssets({
+    projectUrl: options.projectUrl ?? PROJECT_URL,
+    fetch: options.fetch,
+    decodeImage: options.decodeImage,
+  });
   if (!loaded.ok) {
     console.error('[celerock] LDtk assets failed to load', loaded);
     return null;

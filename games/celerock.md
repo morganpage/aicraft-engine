@@ -1123,6 +1123,8 @@ const solids = [...active.solids, ...apronFor(active.ldtkLevel.iid), ...fallingB
 
 **Reset discipline:** re-collect on every room change and every §5.7 hot-reload swap (`collectFallingBlocks` over the fresh `levelData`); blocks are room-local state, not save state. `landed` and `gone` are terminal for a given room visit — a respawn re-arms the room's blocks exactly as a re-entry does.
 
+**The §13 gate-15 capture RIDES the block; a dodger dies.** In the shipped room the ledge under the block is exactly one block wide with pits both sides — a capture player that dodges aside falls into a pit, dies, and the death RESETS the room's blocks to idle before the landed shot. Place on the block's AUTHORED top (feet at its top edge): the arm still fires (X-only overlap — standing on the block's back arms it), the rider is carried down by the mid-fall solid, and the landing is flush with the player standing on it.
+
 ### 6.2 Void death — falling out of the level (no engine symbol, game-owned)
 
 Hazards are the *authored* way to die; the void is the *unauthored* one. §5.5
@@ -1651,6 +1653,7 @@ No `rooms/` directory, no ASCII grids, no `tile-style.ts` — the LDtk file is t
 
 **The suite tests GAME code, not just the engine — non-negotiable.** A real build shipped green with 34 passing tests, zero of which imported a single line of game code: its "determinism" test drove `stepPlatformer` directly, its "persistence" tests did engine save round-trips — and every wiring defect it shipped (a footstep cue consumed before it was produced, a snow layer never drawn, 60× particle speeds, a respawn that dropped its facing) was invisible to that suite by construction. Copy **`recipes/game-test-harness.ts`** into `tests/` and:
 
+- **The Node test host needs two injections** (both are loader parameters — the scaffold's `tests/harness.ts` pre-wires them): `loadLdtkProjectAssets` REJECTS a relative `projectUrl` on a host with no `document.baseURI` (pass an absolute URL, e.g. `http://test.local/celerock.ldtk`, and an `fs`-backed `fetch` for it), and it needs `decodeImage(bytes, def)` injected where no bitmap decoder exists (a size-only `{width, height}` stub suffices — sim tests never read pixels).
 - **At least one test file drives the game's own `stepGame`** against a harness-built game (the real `.ldtk`, a recording audio stub, `stubCanvas()`) — the §12.1b seam-entry respawn and the walk-tap cue below are the model. Engine-only tests are in ADDITION to this, never instead of it.
 - **Static contracts run as a test** (`scanForbiddenIdentifiers('src')` from the harness recipe — Math.random/Date.now/requestAnimationFrame/fillText absent, `src/recipes/` copy-ins excluded), plus wiring contracts where a layer once shipped un-wired: the render module must CALL the snow draw it imports (a real build's comment claimed it had).
 - **The §13 gate shots are a manifest test** (`missingShotManifest('.qa/shots', [ ...gate filenames ])` asserts empty) — a real build's QA script referenced a hot-reload screenshot its needle branch silently never produced, and the gap shipped unnoticed.
@@ -1692,6 +1695,8 @@ Assert STRUCTURE, not snapshots (§1.1's living-file doctrine) — the `.ldtk` i
 - **A wiring claim is a call site.** For every "X is drawn/wired" claim the code's comments or README make, the test asserts the call exists: the render module contains the `drawSnow(` invocation (a real build simulated 150 flakes behind a render comment claiming them), and each effect's spawn site is reachable from `stepGame`. If a claim has no call site, delete the claim or add the call — a comment that describes behavior the code does not perform is a defect in both directions.
 
 ### 12.2 Dash-into-Wall Hit-Stop Timing
+
+> **Counting moments across hit-stop:** `state.moments` are single-tick pulses that stay VISIBLE through a hit-stop window — the kernel does not step while frozen, so nothing clears them. A test (or a bot) that counts a moment every tick counts one bonk six times. Count on kernel-step boundaries — when the player object identity changed — not on wall-clock ticks.
 
 - Script: place the player 2 tiles left of a solid wall, trigger a rightward dash.
 - Assert: on the contact tick, `state.moments` carries exactly one `{ kind: 'dashBonk', normalX: -1, solidId }` (horizontal dash into a right wall — the surface normal points back against the dash) AND `isHitStopActive(hitStop)` is true for ≥4 ticks AND `shakeEnvelope` is non-zero. The dash itself does NOT end on contact in this engine version (it ends on timeout; `dashEnded.reason === 'timeout'` with the ending-tick `terminalContact`) — the bonk cue keys off the `dashBonk` moment, never off the dash phase going idle.

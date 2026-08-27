@@ -57,3 +57,36 @@ Deleting a gate is a legitimate edit for a fork and is not legitimate mid-build.
 Do not re-sketch a recipe inline. Every one of them is already in
 `src/recipes/`, already typechecking. Importing costs one line; re-writing costs
 forty and is a failed stage (§12.9.1) however good the code looks.
+
+## The QA + test harness (shipped — do not re-invent it)
+
+The 2026-08-27 gauntlet run spent its hardest hours inventing these; they now
+ship with the scaffold, pre-wired against `gate/gates.ts`'s manifest:
+
+- **`scripts/qa.mjs`** — headless Playwright helpers: `openGame`,
+  `pressKey`/`holdKey` (real `KeyboardEvent`s with `.code` set — §4.3's map is
+  code-based), `screenshot`, `countColor`/`litFraction` (pixel probes — verify
+  with probes, not vision models), `gameState` (reads `window.__celerock`),
+  and `traverse` (the eastward traversal bot: held jumps + dash saves + death
+  retry). Expose your game object at `window.__celerock` in boot when you
+  write it.
+- **`scripts/capture.mjs`** — one scene per §13 capture (`menu`, `boot`,
+  `resolutions` to start; grow the rest per stage). It parses `gate/gates.ts`
+  so the scene list cannot drift from the manifest. Conventions earned by the
+  run: placement assists place the player via the exposed game object and
+  everything else runs through the real sim; never replace `game.session`
+  when placing (it kills the loop in three ticks); capture the falling block
+  by RIDING it (the ledge has pits both sides — a dodger dies and the death
+  re-idles the room's blocks).
+- **`tests/harness.ts`** — the Node-host injections §12's suite needs,
+  pre-solved: `TEST_PROJECT_URL` (the loader rejects relative URLs on hosts
+  with no `document.baseURI`), `stubDecodeImage` (no `createImageBitmap` in
+  Node), `fsFetch`, `E` edge builders, `scriptedDevices`, and the recorder
+  canvas scene. Stage 2+: grow `stubScene` into a `buildGame` that constructs
+  your `createGame` export with them.
+
+Two scripted-input gotchas the run documented the hard way: **variable jump
+height follows HOLD TIME** (a 60 ms tap is a minimum hop that cannot clear a
+full-tile step — hold jumps ~220 ms), and **single-tick moments outlive their
+tick under hit-stop** (the kernel doesn't step while frozen — count bonks on
+kernel-step boundaries, i.e. when the player object identity changed).
