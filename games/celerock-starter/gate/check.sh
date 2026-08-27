@@ -135,7 +135,7 @@ if [ "$FINAL" -eq 1 ]; then
   [ "${shots:-0}" -lt 15 ] \
     && say "ONLY $shots GATE CAPTURE(S) IN .qa/ — §13 has 15 gates; an empty manifest asserts nothing"
 
-  # §12.7 has 24 acceptance criteria. A suite below one test per criterion has
+  # §12.7 has 25 acceptance criteria. A suite below one test per criterion has
   # not tested the game, whatever it is named.
   #
   # Count ANY test file and BOTH runner idioms. Globbing tests/*.test.ts and
@@ -145,8 +145,8 @@ if [ "$FINAL" -eq 1 ]; then
   # caught only by running it against a build whose answer was known.
   tests=$(find tests -type f \( -name '*.test.*' -o -name '*.spec.*' \) 2>/dev/null \
     -exec grep -oh "\b\(it\|test\)(" {} + 2>/dev/null | wc -l | tr -d ' ')
-  [ "${tests:-0}" -lt 24 ] \
-    && say "ONLY $tests TEST(S) — §12.7 has 24 acceptance criteria"
+  [ "${tests:-0}" -lt 25 ] \
+    && say "ONLY $tests TEST(S) — §12.7 has 25 acceptance criteria"
 
   # Topic coverage, not filenames: the reference build proves §12.1b's
   # seam-respawn assertions may live inside gameplay-wiring.test.ts rather than
@@ -154,7 +154,8 @@ if [ "$FINAL" -eq 1 ]; then
   for t in triggerHitStop:§12.2-dash-bonk \
            composeCameraTransform:§12.2b-world-composition \
            writeSave:§12.4/12.5-persistence \
-           respawn:§12.1b-seam-respawn; do
+           respawn:§12.1b-seam-respawn \
+           fellIntoVoid:§6.2/§12.7-#25-void-death; do
     k="${t%%:*}"; label="${t#*:}"
     grep -rq "$k" tests/ 2>/dev/null || say "NOTHING TESTS $label (no '$k' anywhere in tests/)"
   done

@@ -161,14 +161,14 @@ npm install aicraft-engine@0.22.0
 
 > **Do not import** the legacy single follow-camera (`createCamera` / `updateCamera`) — it is superseded by the camera brain. **Do not import** `doubleJumpAbility` / `doubleJumpEnabled` — Celeste has no double jump. **Do not import** `compileLevel`, `canonicalize`, `fnv1a`, or `LEVEL_VERSION` — those serve hand-authored `LevelData`; geometry here comes from LDtk via `ldtkLevelToLevelData` + `compileGeneratedLevel`.
 
-> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.8/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly), and the **§9.1 atmosphere pair** — `wind-atmosphere` (the seeded gust envelope, the pink-noise voice targets, the throttled param pushes, and the two-number snow handoff) and `backdrop-sky` (the five-layer parallax sky, ridged-vs-rolling terrain, treelines, and the wind-coupled snowfall). Those two are **available, not gate-required**: both reference builds predate them and ship their own wind, so §12.9.1 would accuse the very builds its probes are calibrated against. Use them anyway — they are the ear-tuned versions, they carry 20 tests, and re-sketching a gust curve is the easiest thing in this brief to get permanently wrong. Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
+> **Engine recipes (copy-in, do not re-derive).** The engine repo maintains [`recipes/`](https://github.com/morganpage/aicraft-engine/tree/v0.22.9/recipes) — compiled, unit-tested wiring modules for the glue this brief used to inline as sketches. Wherever a section below says "recipes/<name>.ts", copy that file into `src/recipes/` verbatim and import it locally; because CI typechecks recipes against the engine source, they cannot drift the way inline sketches once did (this brief's own dash-trail sketch taught a 60× units bug). **This brief uses:** `audio-unlock` (§10), `fixed-tick-game` (§2 — the reduced-motion-gated loop boot), `platformer-input` (§4.3), `sprite-sheet-boot` (§4.4), `image-decoder` (§4.4 — the shared bounded decoder, `decodeImageBounded`), `sheet-frame-index` (§4.4), `ldtk-draw-pipeline` (§5.4/§5.7 — `createLdtkRoomPainter`, the painter over the surface cache), `room-slide-aperture` (§5.4), `ldtk-hot-reload-plugin` (§5.7), `ldtk-entity-art` (§7.1), `ldtk-entity-tile-art` (§6.1 — falling-block art baked with the project's own auto-rules), `feel-effects` (§9 — the tuned burst kit over the engine's `*_EFFECT` presets: trail/dust/sparkles/afterimage/gem-twinkle), `game-test-harness` (§12 — the recording context, the forbidden-identifier scan, and the QA shot manifest, so the suite tests GAME code, not just the engine), `particle-system` (§9 — the pre-0.21.0 back-port of the engine's `stepSeconds`, listed for older pins; at this brief's pin, call `stepSeconds` directly), and the **§9.1 atmosphere pair** — `wind-atmosphere` (the seeded gust envelope, the pink-noise voice targets, the throttled param pushes, and the two-number snow handoff) and `backdrop-sky` (the five-layer parallax sky, ridged-vs-rolling terrain, treelines, and the wind-coupled snowfall). Those two are **available, not gate-required**: both reference builds predate them and ship their own wind, so §12.9.1 would accuse the very builds its probes are calibrated against. Use them anyway — they are the ear-tuned versions, they carry 20 tests, and re-sketching a gust curve is the easiest thing in this brief to get permanently wrong. Game-specific code — the Celeste config, the anim-kind derivation, the render frame, the transition-session consume, the FSM — stays in this brief; it has no second customer. (Recipes import their own engine symbols — prune those from your game's §1 import block.)
 
 ### 1.1 The bundled assets — download these first
 
 Four files. Fetch them **at scaffold time** into `public/`, all four flat in the same directory — the LDtk project references its tileset as the bare sibling name `celerock.png`, and `Player.json` names its sheet as the bare `Player.png`, so nesting either anywhere else breaks the load. Do **not** fetch these from GitHub at runtime (CORS + offline); they are project assets, served by Vite from `public/`.
 
 ```bash
-BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/v0.22.8/games
+BASE=https://raw.githubusercontent.com/morganpage/aicraft-engine/v0.22.9/games
 mkdir -p public   # --output-dir does not create missing directories (curl ≥ 7.73)
 curl -fsSLO --output-dir public "$BASE/celerock.ldtk"
 curl -fsSLO --output-dir public "$BASE/celerock.png"
@@ -1108,6 +1108,59 @@ const solids = [...active.solids, ...apronFor(active.ldtkLevel.iid), ...fallingB
 
 **Reset discipline:** re-collect on every room change and every §5.7 hot-reload swap (`collectFallingBlocks` over the fresh `levelData`); blocks are room-local state, not save state. `landed` and `gone` are terminal for a given room visit — a respawn re-arms the room's blocks exactly as a re-entry does.
 
+### 6.2 Void death — falling out of the level (no engine symbol, game-owned)
+
+Hazards are the *authored* way to die; the void is the *unauthored* one. §5.5
+already names it — "falling out of the level with no cardinal neighbour... is
+a respawn, not a transition — the poll returns `'idle'`" — which is the trap:
+`pollRoomTransition` never reports a void fall as anything, because from the
+engine's side nothing happened. A build that wires every linked seam correctly
+and never adds a bounds check plays perfectly until the first pit with no floor
+under it, where the player falls forever and the build reads as "you don't die"
+— not as a bug in progress, because nothing in §12.7–§12.9 as written so far
+requires this to exist. Two reference builds shipped it; two others didn't, and
+the gap was invisible until someone walked into the first pit.
+
+**The check, named `fellIntoVoid` (the required name — §12.10.2 greps for it),
+runs once per tick: after the hazard check, before `pollRoomTransition`.** That
+order is load-bearing. A body departing through a LINKED edge has already
+transitioned on an earlier tick — the seam crossing fires at the room boundary
+itself, well inside any reasonable margin — so by the time a body clears the
+room bounds by a real margin, the exit was either taken already or there was
+none to take. Running the void check first, with a generous margin, is what
+makes it safe to apply unconditionally instead of hand-testing "does this edge
+have a neighbour":
+
+```ts
+function fellIntoVoid(core: Rect, roomWidth: number, roomHeight: number): boolean {
+  const MARGIN = 32; // px past the edge — generous enough that a legitimate
+                      // seam crossing has already transitioned before this fires
+  return core.x + core.width < -MARGIN
+    || core.x > roomWidth + MARGIN
+    || core.y + core.height < -MARGIN
+    || core.y > roomHeight + MARGIN;
+}
+
+// per fixed tick, in this order — hazards, then void, then the transition poll:
+if (touchingHazard(state.core, hazardRects)) { killPlayer(game); return; }
+if (fellIntoVoid(state.core, active.levelData.width, active.levelData.height)) {
+  killPlayer(game);   // the §8 death path — hit-stop, gameover, respawn at anchor
+  return;
+}
+pollRoomTransition(session, state.core, active.ldtkLevel, project);
+```
+
+**Skip it in `levelComplete`, same as hazards (§8).** Nothing can kill or move
+the player out of the summit room once the card is up — the void check is one
+more entry on that list, not an exception to it.
+
+**Do not use this pattern on a linked edge** — that is the existing §12.8
+forbidden pattern (`player.x < -40 || player.x > width + 40` → kill on a
+`__neighbours` seam), and this section does not relax it. The two do not
+collide in practice: the margin here is generous enough that a linked crossing
+is always caught by the transition poll first, on an earlier tick, before the
+body is ever 32px past the room's edge.
+
 ---
 
 ## 7. Collectibles — Strawberries (the engine's `collectibles` pillar)
@@ -1693,6 +1746,7 @@ Assert STRUCTURE, not snapshots (§1.1's living-file doctrine) — the `.ldtk` i
 22. **The pause menu is a screen, not a flag (§8).** Escape/Start/touch-⏸ opens `paused`: the world frame freezes (no live-input sim behind the card), audio mutes, and RESUME/RETRY/QUIT navigate via `createMenuNav` (wrap, grace, confirm). RETRY resumes to `playing` and then runs the standard respawn path; QUIT lands on the menu (a transition only legal from `paused`). A pause opened mid-slide does not corrupt the slide — it finishes under the freeze.
 23. **Wind ambience plays and the weather is deterministic (§9).** After the audio unlock, the pink-noise wind bed follows the seeded gust curve (brighten-then-louden — `setFrequency` before `setPeak`), param pushes throttled to every 8th tick, and the snow layer drifts with the same gust level in the masked backdrop. Two runs with the same seed produce identical gust/snow timelines (assert it — see §12.6's determinism run).
 24. **Selection UI runs on the engine's menu navigation (§8).** Both the start menu and the pause menu drive `createMenuNav`/`advanceMenuNav` — a hand-rolled `menuIndex` counter with its own wrap/grace logic is a forbidden pattern (§12.8).
+25. **Falling out of the level kills and respawns (§6.2).** A pit with no floor under it, or a room edge with no cardinal neighbour, is death, not limbo: the player's body clearing the room bounds by a generous margin triggers the same hit-stop → `gameover` → respawn-at-anchor path as a hazard, named `fellIntoVoid` and checked every tick after hazards and before the §5.5 transition poll. This is distinct from §12.8's forbidden pattern below (killing on a *linked* seam edge) — that is the wrong version of this check, not a reason not to build the right one.
 
 ### 12.8 Forbidden Patterns
 
@@ -1739,7 +1793,7 @@ passed nearly all of §12.8 — **you cannot call `createCamera` if you never im
 the engine** — while looking, in a screenshot, like a platformer.
 
 §12.8 says what must be **absent**. §12.9 says what must be **present**. The whole
-section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.8/games/celerock-wiring-check.sh)
+section ships as a runnable script — [`games/celerock-wiring-check.sh`](https://github.com/morganpage/aicraft-engine/blob/v0.22.9/games/celerock-wiring-check.sh)
 in the engine repo. Copy it into the build root and run it at every §14 stage
 boundary, not once at the end (the script also carries §12.10 behind `--final`): a stage that fails these greps is a
 **failed stage**, not a TODO, however good the code looks and however well the
@@ -1918,9 +1972,9 @@ Count the captures instead. An empty manifest cannot produce fourteen PNGs:
 # §13 has 15 visual gates. The reference build ships 43 captures.
 find .qa -name '*.png' | wc -l          # must be >= 15
 
-# §12.7 has 24 acceptance criteria. A suite below one test per criterion has
+# §12.7 has 25 acceptance criteria. A suite below one test per criterion has
 # not tested the game, whatever its files are named. Reference build: 66.
-grep -rho "\bit(" tests/*.test.ts | wc -l   # must be >= 24
+grep -rho "\bit(" tests/*.test.ts | wc -l   # must be >= 25
 ```
 
 #### 12.10.2 Require topics, not filenames
@@ -1933,14 +1987,21 @@ them. Requiring the filename would fail the build that passed.
 Require that the SUBJECT is tested somewhere under `tests/`:
 
 ```bash
-for t in triggerHitStop composeCameraTransform writeSave respawn; do
+for t in triggerHitStop composeCameraTransform writeSave respawn fellIntoVoid; do
   grep -rq "$t" tests/ || echo "NOTHING TESTS: $t"
 done
 ```
 
-Those four map to §12.2 (dash bonk), §12.2b (world composition), §12.4/12.5
+The first four map to §12.2 (dash bonk), §12.2b (world composition), §12.4/12.5
 (persistence) and §12.1b (seam respawn) — the four the failing build skipped
-while its four remaining tests stayed green. Do **not** add
+while its four remaining tests stayed green. `fellIntoVoid` maps to §6.2/§12.7
+#25 (void death) and is unlike the other four in one way: it names no engine
+export, because there is none — falling out of the level is entirely
+game-owned logic, so §6.2 fixes the name so this grep has something stable to
+require. Two reference builds shipped the behavior under two different names
+(one an inline `outsideRoom` local, the other an exported `fellIntoVoid`
+function) before either was checked for; `fellIntoVoid` is the name going
+forward — the more testable of the two, and now the required one. Do **not** add
 `scanForbiddenIdentifiers` to this list: the reference build implements §12.8 as
 a parametrised `it` per forbidden pattern instead of calling the helper, which
 is arguably better and would fail a name-based check.
@@ -2032,12 +2093,12 @@ normal — which is how a gate stops meaning anything.
 4. **Gate:** the §12.3 transition smoke test exists as a passing test file — `tests/transition-smoke.test.ts` — before Stage 4 begins. Walking/falling/jumping off a room edge flows into the next room with momentum and a smooth slide; the camera does not pop; a second transition cannot begin mid-slide.
 
 ### Stage 4: Hazards + Strawberries + Save
-1. Hazard AABB checks (static + moving-platform-child); death → hit-stop → respawn at last checkpoint.
+1. Hazard AABB checks (static + moving-platform-child); death → hit-stop → respawn at last checkpoint. **Void death (§6.2), same tick, same path:** a `fellIntoVoid` bounds check runs after hazards and before the §5.5 transition poll — a pit with no floor under it kills exactly like a spike does. This is easy to skip because nothing renders it: the first room without one just plays fine until someone falls in the first pit.
 2. **Entity art (§7.1):** copy `recipes/ldtk-entity-art.ts` in and build the override map with `ldtkEntityTileOverride(active, tilesets)` — the engine-owned `room.entityArt` join, keyed by entity id; there is NO index to build, memoize, or rebuild — then wire `drawLevelEntity` + that `drawOverride` (it calls `drawLdtkEntityTile` with the def's parsed `tileRenderMode`). Spikes and the strawberry must draw as their authored `celerock.png` tiles from the first tick they appear — resized spike strips **repeat-tiled**, never stretched. Entities with no assigned tile keep the engine's `DEFAULT_ENTITY_PALETTE` shape.
 3. `derivePickups` → `collect` → `writeSave` per room, keyed by `level.iid`.
 4. Death counter increment + persistence.
 5. Start menu (§8): NEW GAME / RESUME GAME selection via `createMenuNav` (grace, wrap, jump/dash/grab confirm) — NEW GAME wipes the persisted save; RESUME appears once the save carries progress (`hasPersistedProgress`, `clampMenuNavIndex` on reveal).
-6. **Gate:** hazards kill and respawn correctly; **spikes and the strawberry render as their LDtk tiles (§12.7 #16)**; strawberries persist across reload; death counter persists; NEW GAME starts from a wiped save, RESUME from the boot-loaded one.
+6. **Gate:** hazards kill and respawn correctly; **falling into a pit with no floor also kills and respawns (§12.7 #25)** — walk off the edge of the first room's floor and confirm it, not just the authored spikes; **spikes and the strawberry render as their LDtk tiles (§12.7 #16)**; strawberries persist across reload; death counter persists; NEW GAME starts from a wiped save, RESUME from the boot-loaded one.
 
 ### Stage 5: Juice + Polish
 1. Dash-into-wall hit-stop + shake; hard-landing shake; landing dust; dash trail.
