@@ -25,6 +25,10 @@ const REQUIRED = [
   // Capability-gated on the level (§6.1): the shipped pack defines a
   // FallingBlock entity, so the starter carries the art recipe for it.
   'ldtk-entity-tile-art',
+  // §9.1 atmosphere. Carried, not gate-required: both reference builds predate
+  // these recipes and ship their own wind, so an import requirement would
+  // accuse the builds the checks are calibrated against.
+  'wind-atmosphere', 'backdrop-sky',
 ];
 
 let bad = 0;
