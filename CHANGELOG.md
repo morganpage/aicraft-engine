@@ -5,7 +5,7 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.23.0] - 2026-08-29
 
 ### Added
 - **Terrain pieces (`src/terrain-art/piece.ts`, `src/terrain-art/piece-render.ts`) — a terrain fragment rendered as a *finished object* rather than a sliced rectangle** (69 tests). When a platform splits or breaks apart, the newly-exposed ends must resolve to end-cap tiles instead of showing the raw cross-section of a filled rect. This is the **rendering** sibling of `collision/moving-gap`: that module decides which solids exist, this one decides how the exposed ends are drawn. Two consumers justify the primitive — capped ends on opening hidden pits, and crumbling terrain — so motion never enters the module: a piece bakes to an offscreen canvas and the caller supplies the transform, exactly as `moving-gap` separates gap motion from gap geometry.
