@@ -1024,6 +1024,56 @@ drawPreparedLevelFrame(ctx, scene, frame);</code></pre>
           ></canvas>
         </div>
       </section>
+
+      <section id="terrain-piece" class="section terrain-piece-section">
+        <div class="terrain-piece-copy">
+          <h2 class="terrain-piece-title">Terrain pieces.</h2>
+          <p class="terrain-piece-blurb">
+            A platform eaten away from the middle. Each half is anchored at its
+            <em>outer</em> end and erodes inward — the ground is consumed in
+            place, not retracted. The texture is baked once and stays pinned;
+            only the mask moves.
+          </p>
+          <p class="terrain-piece-blurb">
+            Above, mask alone: the cut exposes the raw cross-section, and the
+            body’s own baked cap is the first thing the mask eats. Below, a
+            one-tile cap strip — baked once — rides the eroding boundary inside
+            the same clip. Nothing re-tiles, nothing re-bakes, and the end stays
+            finished at every width. That is why the cap is an
+            <em>option</em>, not a fixed behaviour.
+          </p>
+          <p class="terrain-piece-blurb">
+            Scrub to <span class="kbd">0</span> and the closed pit is seamless
+            with the floor either side — the <em>bonded</em> policy, and what
+            lets a closed pit hide in plain sight. <span class="kbd">Slide</span>
+            switches to the other motion family: a rigid translate where the
+            halves move bodily outward and the texture travels with them.
+          </p>
+          <div class="terrain-piece-controls">
+            <button type="button" class="terrain-piece-mode" data-mode="erode" aria-pressed="true">
+              Erode
+            </button>
+            <button type="button" class="terrain-piece-mode" data-mode="slide" aria-pressed="false">
+              Slide
+            </button>
+            <button type="button" class="terrain-piece-play">Pause</button>
+            <label class="terrain-piece-scrub-label">
+              Offset
+              <input type="range" class="terrain-piece-scrub" min="0" max="48" value="0" />
+            </label>
+          </div>
+          <p class="terrain-piece-readout" aria-live="polite"></p>
+        </div>
+
+        <div class="terrain-piece-stage">
+          <canvas
+            class="terrain-piece-canvas"
+            width="720"
+            height="450"
+            aria-label="Opening pit rendered with flat rectangles versus capped terrain pieces"
+          ></canvas>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">

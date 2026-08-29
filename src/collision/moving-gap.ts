@@ -32,6 +32,11 @@
  *
  * @see docs/design/moving-gap-decision.md — the locked spec + orchestrator rulings.
  * @see docs/design/moving-gap-proposal.md — full design rationale + clamp algorithm.
+ * @see ../terrain-art/piece — the RENDERING half of "a hole in a platform".
+ *   This module decides which solids exist; `terrain-art/piece` decides how the
+ *   newly-exposed ends are drawn (capped, rather than a sliced cross-section).
+ *   It lives in `terrain-art/` because its dependencies and its canvas do —
+ *   `collision/` stays pure geometry.
  */
 
 import type { Solid, TileSolidityQuery } from './types';

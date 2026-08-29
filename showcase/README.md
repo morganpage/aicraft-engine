@@ -38,6 +38,7 @@ The showcase also has its own Vitest config (`showcase/vitest.config.ts`) separa
 | **LDtk editor** | `#ldtk-editor` | Supplied `.ldtk` level end-to-end: project parse + tileset load, LDtk auto-tile rules painting the IntGrid, ladder climbing, seam room transitions with the room-slide session, and the per-room camera brain |
 | **Sprite demo** | `#sprite-demo` | Sprite-sheet pipeline: `parseSpriteSheet` → `compileSpriteSheet` → anim state → `drawSprite` |
 | **Camera brain** | `#camera-brain` | Per-room virtual cameras, deadzone bands, and cover-fit zoom (`createCameraBrain` / `updateCameraBrain` / `fitCameraZoom`) |
+| **Terrain pieces** | `#terrain-piece` | A platform eaten away from the middle: bonded halves erode inward with the texture pinned, compared with and without a cap strip riding the cut. `Slide` switches to the rigid-translate family. Prints `bakeCount()` so the once-per-topology invariant is visible (7 erode / 9 with slide, flat across unlimited cycles). Tiles are painted procedurally at runtime — no PNG |
 
 Every section except parallax draws entirely from procedural primitives in code.
 The parallax section consumes raster PNGs, validating that

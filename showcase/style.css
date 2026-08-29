@@ -1885,3 +1885,126 @@ main {
   border-radius: var(--radius);
   image-rendering: pixelated;
 }
+
+/* --- Terrain pieces ---------------------------------------------------- */
+
+.terrain-piece-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 24px;
+  background: var(--palette-surface);
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+@media (min-width: 820px) {
+  .terrain-piece-section {
+    grid-template-columns: 1fr 720px;
+    padding: 32px;
+  }
+}
+
+.terrain-piece-copy {
+  min-width: 0;
+}
+
+.terrain-piece-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--palette-text);
+}
+
+.terrain-piece-blurb {
+  margin: 0 0 12px;
+  color: var(--palette-text-dim);
+  line-height: 1.6;
+}
+
+.terrain-piece-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.terrain-piece-mode,
+.terrain-piece-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--palette-base);
+  color: #fff;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.terrain-piece-mode:hover,
+.terrain-piece-play:hover {
+  background: #ff7320;
+}
+
+.terrain-piece-mode:active,
+.terrain-piece-play:active {
+  transform: translateY(1px);
+}
+
+.terrain-piece-mode:focus-visible,
+.terrain-piece-play:focus-visible,
+.terrain-piece-scrub:focus-visible {
+  outline: 3px solid var(--palette-feature);
+  outline-offset: 2px;
+}
+
+.terrain-piece-mode[aria-pressed="true"] {
+  background: var(--palette-feature);
+  color: #17171c;
+  border-color: var(--palette-feature);
+}
+
+.terrain-piece-scrub-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+}
+
+.terrain-piece-scrub {
+  accent-color: var(--palette-feature);
+  cursor: pointer;
+}
+
+.terrain-piece-readout {
+  margin: 0;
+  font-size: 13px;
+  color: var(--palette-text-dim);
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+}
+
+.terrain-piece-stage {
+  min-width: 0;
+}
+
+.terrain-piece-stage canvas.terrain-piece-canvas {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  aspect-ratio: 720 / 450;
+  background: #15130f;
+  border: var(--outline-width) solid var(--outline);
+  border-radius: var(--radius);
+  image-rendering: pixelated;
+}

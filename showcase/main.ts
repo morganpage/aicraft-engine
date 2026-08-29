@@ -18,6 +18,7 @@ import { initTileRoom } from './sections/tile-room';
 import { initLdtkEditor } from './sections/ldtk-editor';
 import { initSpriteDemo } from './sections/sprite-demo';
 import { initCameraBrainDemo } from './sections/camera-brain-demo';
+import { initTerrainPiece } from './sections/terrain-piece';
 
 /**
  * Global showcase state. The hero fields are populated; the rest of the
@@ -138,4 +139,9 @@ if (spriteDemoSection) {
 const cameraBrainSection = document.getElementById('camera-brain');
 if (cameraBrainSection) {
   initCameraBrainDemo(cameraBrainSection, store);
+}
+
+const terrainPieceSection = document.getElementById('terrain-piece');
+if (terrainPieceSection) {
+  initTerrainPiece(terrainPieceSection, store);
 }

@@ -135,3 +135,32 @@ export type { DrawCompiledTerrainArtDualGridOptions } from './runtime-renderer';
 export { drawCompiledTerrainArtDualGrid } from './runtime-renderer';
 export type { DrawPreparedTerrainArtRuleGridOptions } from './runtime-renderer';
 export { drawPreparedTerrainArtRuleGrid } from './runtime-renderer';
+
+// Terrain pieces — rendering a terrain fragment as a finished object rather
+// than a sliced rectangle. The rendering sibling of `collision/moving-gap`.
+export type {
+  TerrainPieceRect,
+  RectsToTileGridResult,
+  TerrainPieceBondPolicy,
+  TerrainPiece,
+} from './piece';
+export {
+  rectsToTileGrid,
+  resolveTerrainPieceFromPrepared,
+  resolveTerrainPiece,
+} from './piece';
+export type {
+  TerrainPieceCanvas,
+  TerrainPieceCanvasFactory,
+  BakeTerrainPieceOptions,
+  BakedTerrainPiece,
+  TerrainPieceCache,
+  TerrainPieceAnchor,
+} from './piece-render';
+export {
+  bakeTerrainPiece,
+  terrainPieceFingerprint,
+  createTerrainPieceCache,
+  drawClippedTerrainPiece,
+  drawMaskedTerrainPiece,
+} from './piece-render';

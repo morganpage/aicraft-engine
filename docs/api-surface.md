@@ -1127,6 +1127,20 @@ module is DOM-free and keeps editable appearance outside `LevelData`.
 | `TerrainArtVisualHit`, `TerrainArtLogicalCornerHit` | interfaces | Editor hit result identifying one visual tile plus its four ordered logical source cells | `src/terrain-art/types.ts` |
 | `hitTestTerrainArtDualGrid(grid, kinds, worldX, worldY, tileSize)` | function | Map a world-space pointer to the reusable dual-grid tile, material passes, mask, atlas source, and contributing logical cells | `src/terrain-art/hit-test.ts` |
 | `drawPreparedTerrainArtDualGrid(ctx, prepared, atlases, options)` | function | Draw a prepared dual-grid topology from precomposed material atlases with viewport culling and stable pass ordering | `src/terrain-art/runtime-renderer.ts` |
+| `TerrainPiece` | interface | A terrain fragment (`id`, piece-local `cells`, origin on the global grid, bond policy) rendered as a finished object rather than a sliced rectangle | `src/terrain-art/piece.ts` |
+| `TerrainPieceBondPolicy` | type | `'bonded'` samples the global field so seams vanish; `'free'` samples only the piece so every exposed face caps | `src/terrain-art/piece.ts` |
+| `TerrainPieceRect` | interface | Structural rect input — no cross-pillar import, so a `Rect` or `Solid` can be passed directly | `src/terrain-art/piece.ts` |
+| `rectsToTileGrid(rects, tileSize, bounds, tileValue?)` | function | Rasterize plain rects to an occupancy grid by cell-centre coverage; reports unaligned and skipped rects, never throws | `src/terrain-art/piece.ts` |
+| `resolveTerrainPieceFromPrepared(piece, preparedField)` | function | Resolve a piece as a window into an already-prepared field — preferred when several pieces share one field | `src/terrain-art/piece.ts` |
+| `resolveTerrainPiece(piece, kinds, ruleSet, field?)` | function | Single-piece convenience; a bonded piece with no usable field degrades to free rather than throwing | `src/terrain-art/piece.ts` |
+| `BakedTerrainPiece`, `BakeTerrainPieceOptions` | interfaces | A piece baked to its own offscreen canvas, plus the atlas/image/canvas-factory inputs | `src/terrain-art/piece-render.ts` |
+| `TerrainPieceCanvas`, `TerrainPieceCanvasFactory` | types | Host-agnostic canvas + factory; returning `undefined` disables baking rather than throwing | `src/terrain-art/piece-render.ts` |
+| `bakeTerrainPiece(prepared, options)` | function | Bake a resolved piece once to an offscreen canvas at piece-local origin | `src/terrain-art/piece-render.ts` |
+| `terrainPieceFingerprint(prepared)` | function | FNV-1a hash of dimensions plus rule indices; excludes position so moving a piece never rebakes it | `src/terrain-art/piece-render.ts` |
+| `createTerrainPieceCache(options?)` | function | Bake cache invalidated by topology fingerprint rather than caller discipline; `bakeCount()` exposes the once-per-topology invariant | `src/terrain-art/piece-render.ts` |
+| `drawClippedTerrainPiece(ctx, baked, anchor, visibleExtent, x, y)` | function | Draw a piece sliding into a wall — the piece translates, surviving art is its far portion | `src/terrain-art/piece-render.ts` |
+| `drawMaskedTerrainPiece(ctx, baked, anchor, visibleExtent, x, y, cap?)` | function | Draw a piece eroded in place — texture pinned, end masked; optional cap strip rides the cut | `src/terrain-art/piece-render.ts` |
+| `TerrainPieceAnchor` | type | `'left' \| 'right' \| 'top' \| 'bottom'` — the edge that does not move | `src/terrain-art/piece-render.ts` |
 | `TerrainArtPixelEdit` | interface | One paint, erase, or inherit edit in source-tile pixel coordinates | `src/terrain-art/manual-paint.ts` |
 | `editTerrainArtSourceTile(project, materialId, layerId, mask, variantId, edits)` | function | Immutably apply pixel edits to a sparse, normalized Manual Paint patch | `src/terrain-art/manual-paint.ts` |
 | `clearTerrainArtSourceTileEdits(project, materialId, layerId, mask, variantId)` | function | Revert one source tile to its current procedural composition | `src/terrain-art/manual-paint.ts` |
