@@ -75,6 +75,43 @@ describe('root barrel re-exports every module', () => {
     expect(typeof aicraft.visualChannel).toBe('function');
   });
 
+  it('rng: the serializable pure-state stream API is public', () => {
+    // Save/restore and mid-battle replay depend on streams being plain JSON.
+    expect(typeof aicraft.createRngState).toBe('function');
+    expect(typeof aicraft.advanceRng).toBe('function');
+    expect(typeof aicraft.nextRngInt).toBe('function');
+    expect(typeof aicraft.deriveSeed).toBe('function');
+    const _state: aicraft.SerializableRngState = aicraft.createRngState(1);
+    void _state;
+  });
+
+  it('rpg: version constants and the contract surface are public', () => {
+    // Determinism contract: saves/traces bind to these version numbers.
+    expect(aicraft.RPG_RULES_VERSION).toBe(1);
+    expect(aicraft.RPG_STATE_SCHEMA_VERSION).toBe(1);
+    expect(aicraft.RPG_CONTENT_SCHEMA_VERSION).toBe(1);
+    expect(aicraft.RPG_SAVE_SCHEMA_VERSION).toBe(1);
+    // Fixed RNG draw budgets are part of the public rules contract.
+    expect(aicraft.ENCOUNTER_ROLL_PACK_SIZE).toBe(3);
+    expect(aicraft.BATTLE_FIGHT_DRAW_BUDGET).toBe(8);
+    expect(aicraft.BATTLE_CATCH_DRAW_BUDGET).toBe(4);
+    expect(aicraft.BATTLE_SWITCH_DRAW_BUDGET).toBe(3);
+    expect(aicraft.BATTLE_FLEE_DRAW_BUDGET).toBe(4);
+    expect(typeof aicraft.DEFAULT_RPG_CONFIG).toBe('object');
+    // Compile-time type uses: the activity union and battle contracts must
+    // be importable from the root barrel.
+    const _activity: aicraft.RpgActivity = {
+      kind: 'overworld',
+      overworld: {
+        location: { mapId: 'field', tileX: 0, tileY: 0, facing: 'down' },
+        step: null,
+      },
+    };
+    const _command: aicraft.BattleCommand = { type: 'flee' };
+    void _activity;
+    void _command;
+  });
+
   it('terrain: connectivity, viewport, and exposure helpers are functions', () => {
     expect(typeof aicraft.sampleTerrainNeighborhood).toBe('function');
     expect(typeof aicraft.createTerrainConnectionTable).toBe('function');

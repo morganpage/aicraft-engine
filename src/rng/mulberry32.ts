@@ -9,20 +9,25 @@
  * and deterministic across JS engines (no BigInt, no platform-specific math).
  */
 
+import { stepMulberry32 } from './state';
+
 /**
  * Create a deterministic RNG function.
+ *
+ * The closure is the ergonomic API for setup code and visual randomness.
+ * Streams that must survive save/restore or replay should use the
+ * serializable pure-state API in `state.ts` instead — both produce the
+ * identical stream because they share one internal step.
  *
  * @param seed - 32-bit unsigned integer seed
  * @returns a function that returns floats in `[0, 1)` on each call
  */
 export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
+  let word = seed >>> 0;
   return function next(): number {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    const step = stepMulberry32(word);
+    word = step.word;
+    return step.float;
   };
 }
 
