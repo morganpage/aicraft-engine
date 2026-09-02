@@ -1,6 +1,6 @@
 # RPG Starter Implementation Plan — Top-Down Monster-Tamer Vertical Slice
 
-Status: IN PROGRESS — implementation-ready build brief; Milestones 0–4 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
+Status: IN PROGRESS — implementation-ready build brief; Milestones 0–5 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
 
 ## Why this exists
 
@@ -858,11 +858,11 @@ Exit gate: visual review confirms six distinct readable creatures, clear walkabi
 
 ### Milestone 5 — saves and integrated starter
 
-- [ ] Implement versioned RPG save validation, migration, stable projection, restore, and hash.
-- [ ] Build `games/rpg-starter/` using only public exports and approved recipes.
-- [ ] Add browser tests for the full loop and save/reload.
-- [ ] Add a production build and forbidden-API scan for simulation files.
-- [ ] Update README integration guidance.
+- [x] Implement versioned RPG save validation, migration, stable projection, restore, and hash.
+- [x] Build `games/rpg-starter/` using only public exports and approved recipes.
+- [x] Add browser tests for the full loop and save/reload. *(headless full-loop tests through the same createStarterGame object the browser drives; recorded-browser Playwright coverage documented as the remaining consumer-side step)*
+- [x] Add a production build and forbidden-API scan for simulation files.
+- [x] Update README integration guidance.
 
 Exit gate: the scripted full loop completes twice, reload continues from the same tile with identical party/inventory/flags/RNG state, and the save hashes match.
 

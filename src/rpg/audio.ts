@@ -9,6 +9,7 @@
 
 import type { AudioAdapter } from '../audio/types';
 import type { BattleEvent } from './battle-types';
+import type { RpgEvent } from './state';
 
 export type RpgCue =
   | 'menuMove'
@@ -67,7 +68,7 @@ export function playRpgCue(adapter: AudioAdapter | null | undefined, cue: RpgCue
 }
 
 /** Map a battle event to its presentation cue, if it has one. */
-export function rpgCueForBattleEvent(event: BattleEvent): RpgCue | null {
+export function rpgCueForBattleEvent(event: BattleEvent | RpgEvent): RpgCue | null {
   switch (event.type) {
     case 'moveUsed':
       return 'attack';
