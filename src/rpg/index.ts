@@ -56,6 +56,36 @@ export type {
   RpgHealPointDefinition,
 } from './map';
 
+export {
+  advanceGridMovement,
+  createOverworldAtAnchor,
+} from './movement';
+export type { GridMovementResult } from './movement';
+
+export {
+  facingTile,
+  npcAt,
+  resolveInteraction,
+  resolveArrival,
+} from './interaction';
+export type { GridArrival, InteractionResolution } from './interaction';
+
+export { validateRpgMap, validateRpgMapCatalog } from './validation';
+
+export { verifyRpgWorld } from './map-verify';
+export type { RpgWorldVerificationResult } from './map-verify';
+
+export {
+  generateRpgWorld,
+  DEFAULT_WORLD_GEN_CONFIG,
+  STARTER_FIELD_MAP_ID,
+  STARTER_CLINIC_MAP_ID,
+  STARTER_FIELD_START_ID,
+  STARTER_FIELD_RETURN_ID,
+  STARTER_CLINIC_ENTRY_ID,
+} from './mapgen';
+export type { RpgWorldGenConfig, RpgWorldGenResult } from './mapgen';
+
 export type {
   RpgBodyPlan,
   CreatureVisualManifest,
@@ -63,8 +93,10 @@ export type {
   SpeciesDefinition,
   CreatureInstance,
 } from './creatures';
+export { deriveMaxHp, deriveCreatureStats } from './creatures';
 
 export type { PartyState } from './party';
+export { healPartyFully } from './party';
 
 export type {
   RpgItemKind,

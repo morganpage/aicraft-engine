@@ -8,6 +8,7 @@
  */
 
 import type { CreatureStats, RpgSpeciesId, RpgTypeId, RpgMoveId, RpgCreatureInstanceId } from './types';
+import { RPG_LEVEL_CAP } from './constants';
 
 /** Body-plan grammars available to the creature generator and renderer. */
 export type RpgBodyPlan = 'blob' | 'quadruped' | 'avian' | 'sprout' | 'shell';
@@ -72,4 +73,36 @@ export interface CreatureInstance {
   readonly xp: number;
   readonly currentHp: number;
   readonly moveIds: readonly RpgMoveId[];
+}
+
+function coerceStat(value: number): number {
+  return Number.isFinite(value) ? Math.floor(value) : 0;
+}
+
+function clampLevel(level: number): number {
+  const safe = Number.isFinite(level) ? Math.floor(level) : 1;
+  return Math.min(RPG_LEVEL_CAP, Math.max(1, safe));
+}
+
+/**
+ * Derived maximum HP per the starter balance envelope:
+ * `baseHp + 3 × level`. Defensive: non-finite base stat coerces to zero,
+ * level clamps into `[1, RPG_LEVEL_CAP]`. Never throws.
+ */
+export function deriveMaxHp(baseHp: number, level: number): number {
+  return coerceStat(baseHp) + 3 * clampLevel(level);
+}
+
+/**
+ * Derived battle stats per the starter balance envelope: HP grows with
+ * `3 × level`, attack/defense/speed with `1 × level`. Never throws.
+ */
+export function deriveCreatureStats(base: CreatureStats, level: number): CreatureStats {
+  const safeLevel = clampLevel(level);
+  return {
+    hp: coerceStat(base.hp) + 3 * safeLevel,
+    attack: coerceStat(base.attack) + safeLevel,
+    defense: coerceStat(base.defense) + safeLevel,
+    speed: coerceStat(base.speed) + safeLevel,
+  };
 }

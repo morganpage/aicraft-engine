@@ -1,6 +1,6 @@
 # RPG Starter Implementation Plan — Top-Down Monster-Tamer Vertical Slice
 
-Status: IN PROGRESS — implementation-ready build brief; Milestone 0 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
+Status: IN PROGRESS — implementation-ready build brief; Milestones 0–1 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
 
 ## Why this exists
 
@@ -816,11 +816,11 @@ Exit gate: RNG serialization/resume tests pass; public contracts typecheck; arch
 
 ### Milestone 1 — overworld kernel and maps
 
-- [ ] Implement the RPG map schema and validation.
-- [ ] Implement four-direction tick-based movement and blocking NPC collision.
-- [ ] Implement facing-tile interaction, healing points, and warps.
-- [ ] Implement constrained two-map world generation and BFS verification.
-- [ ] Add movement, collision, warp, event-order, generation, repair, and determinism tests.
+- [x] Implement the RPG map schema and validation.
+- [x] Implement four-direction tick-based movement and blocking NPC collision.
+- [x] Implement facing-tile interaction, healing points, and warps.
+- [x] Implement constrained two-map world generation and BFS verification.
+- [x] Add movement, collision, warp, event-order, generation, repair, and determinism tests.
 
 Exit gate: a headless scripted input trace reaches the NPC, grass, clinic, and return warp on every tested seed; same trace yields identical world state and hash.
 

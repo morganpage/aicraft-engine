@@ -22,6 +22,10 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/tests/**/*.test.ts', 'recipes/tests/**/*.test.ts'],
+    include: [
+      'src/tests/**/*.test.ts',
+      'src/*/tests/**/*.test.ts',
+      'recipes/tests/**/*.test.ts',
+    ],
   },
 });
