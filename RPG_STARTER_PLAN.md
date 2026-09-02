@@ -1,6 +1,6 @@
 # RPG Starter Implementation Plan — Top-Down Monster-Tamer Vertical Slice
 
-Status: IN PROGRESS — implementation-ready build brief; Milestones 0–1 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
+Status: IN PROGRESS — implementation-ready build brief; Milestones 0–2 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
 
 ## Why this exists
 
@@ -826,13 +826,13 @@ Exit gate: a headless scripted input trace reaches the NPC, grass, clinic, and r
 
 ### Milestone 2 — content, creatures, party, inventory, dialogue
 
-- [ ] Implement content compilation and cross-reference diagnostics.
-- [ ] Implement species/instance separation and seeded species/visual generation.
-- [ ] Implement party and inventory pure operations.
-- [ ] Implement XP/level progression and move-learning events.
-- [ ] Implement dialogue graph validation, conditions, effects, requests, and reducer.
-- [ ] Encode the starter balance envelope: exact stat budget/bounds, derived stats, `expYield`, XP awards/thresholds, encounter levels, and move values.
-- [ ] Add name safety, stat-budget, XP-boundary, learnset, dialogue-cycle, terminal-effect-order, and invalid-reference tests.
+- [x] Implement content compilation and cross-reference diagnostics.
+- [x] Implement species/instance separation and seeded species/visual generation.
+- [x] Implement party and inventory pure operations.
+- [x] Implement XP/level progression and move-learning events.
+- [x] Implement dialogue graph validation, conditions, effects, requests, and reducer.
+- [x] Encode the starter balance envelope: exact stat budget/bounds, derived stats, `expYield`, XP awards/thresholds, encounter levels, and move values.
+- [x] Add name safety, stat-budget, XP-boundary, learnset, dialogue-cycle, terminal-effect-order, and invalid-reference tests.
 
 Exit gate: six generated species and all starter content compile with zero error diagnostics; invalid fixtures report stable paths without throwing.
 

@@ -8,7 +8,7 @@
  */
 
 import type { CreatureStats, RpgSpeciesId, RpgTypeId, RpgMoveId, RpgCreatureInstanceId } from './types';
-import { RPG_LEVEL_CAP } from './constants';
+import { RPG_LEVEL_CAP, RPG_MAX_MOVES_PER_CREATURE } from './constants';
 
 /** Body-plan grammars available to the creature generator and renderer. */
 export type RpgBodyPlan = 'blob' | 'quadruped' | 'avian' | 'sprout' | 'shell';
@@ -104,5 +104,34 @@ export function deriveCreatureStats(base: CreatureStats, level: number): Creatur
     attack: coerceStat(base.attack) + safeLevel,
     defense: coerceStat(base.defense) + safeLevel,
     speed: coerceStat(base.speed) + safeLevel,
+  };
+}
+
+/**
+ * Build a living creature instance from its species. Known moves are the
+ * learnset entries at or below the level, in ascending learnset order,
+ * capped at `RPG_MAX_MOVES_PER_CREATURE` (later entries are simply not
+ * known yet — they arrive through level-ups). HP starts at the derived
+ * maximum. Never throws.
+ */
+export function createCreatureInstance(params: {
+  readonly id: string;
+  readonly species: SpeciesDefinition;
+  readonly level: number;
+  readonly individualSeed: number;
+}): CreatureInstance {
+  const level = clampLevel(params.level);
+  const moveIds = params.species.learnset
+    .filter((entry) => entry.level <= level)
+    .slice(0, RPG_MAX_MOVES_PER_CREATURE)
+    .map((entry) => entry.moveId);
+  return {
+    id: params.id,
+    speciesId: params.species.id,
+    individualSeed: params.individualSeed >>> 0,
+    level,
+    xp: 0,
+    currentHp: deriveMaxHp(params.species.baseStats.hp, level),
+    moveIds,
   };
 }

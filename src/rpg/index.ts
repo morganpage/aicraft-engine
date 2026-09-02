@@ -104,6 +104,7 @@ export type {
   InventoryEntry,
   InventoryState,
 } from './inventory';
+export { grantItem, consumeItem, getItemCount } from './inventory';
 
 export type { EncounterEntry, EncounterTable } from './encounters';
 
@@ -114,7 +115,40 @@ export type {
   DialogueNode,
   DialogueDefinition,
   DialogueSession,
+  DialogueRequest,
+  DialogueContext,
+  DialogueCommand,
+  DialogueAdvanceResult,
 } from './dialogue';
+export {
+  startDialogue,
+  getDialogueRequest,
+  advanceDialogue,
+  moveDialogueCursor,
+} from './dialogue';
+
+export { grantXpAward, xpForLevelStart, xpThresholdToAdvance } from './progression';
+export type { ProgressionEvent, XpAwardResult } from './progression';
+
+export { generateSpecies, generateSpeciesSet } from './creature-generator';
+export type { SpeciesCatalog } from './creature-generator';
+
+export { compileRpgContent } from './content';
+
+export {
+  createStarterContentBundle,
+  STARTER_TYPES,
+  STARTER_TYPE_IDS,
+  STARTER_MOVES,
+  STARTER_ITEMS,
+  STARTER_DIALOGUE,
+  STARTER_PARTY_LEVEL,
+  STARTER_SPAWN_ANCHOR_ID,
+  STARTER_WILD_LEVEL_RANGE,
+} from './starter';
+
+export { createCreatureInstance } from './creatures';
+export { partyHasSpace, appendCreature, firstAliveIndex, aliveCount } from './party';
 
 export type {
   BattleCommand,
