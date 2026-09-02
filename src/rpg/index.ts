@@ -238,3 +238,18 @@ export {
   getEffectiveInventory,
   isSaveEligible,
 } from './state';
+
+export {
+  createRpgSave,
+  migrateRpgSave,
+  validateRpgSave,
+  restoreRpgState,
+  rpgSaveHash,
+} from './save';
+export type {
+  RpgSaveData,
+  RpgSaveResult,
+  RpgSaveMigrationResult,
+  RpgSaveValidationResult,
+  RpgRestoreResult,
+} from './save';
