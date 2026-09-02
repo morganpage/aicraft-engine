@@ -97,6 +97,7 @@ function driveRoute(driver: TraceDriver, route: readonly RpgDirection[]): GridAr
         confirm: false,
         cancel: false,
         menu: false,
+        battleCommand: null,
       }, driver.map, DEFAULT_RPG_CONFIG);
       driver.overworld = result.overworld;
       driver.tick += 1;
@@ -138,6 +139,7 @@ function runTrace(seed: number) {
         confirm: false,
         cancel: false,
         menu: false,
+        battleCommand: null,
       }, field, DEFAULT_RPG_CONFIG);
       driver.overworld = face.overworld;
       driver.tick += 1;

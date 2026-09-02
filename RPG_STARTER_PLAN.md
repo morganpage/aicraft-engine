@@ -1,6 +1,6 @@
 # RPG Starter Implementation Plan — Top-Down Monster-Tamer Vertical Slice
 
-Status: IN PROGRESS — implementation-ready build brief; Milestones 0–2 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
+Status: IN PROGRESS — implementation-ready build brief; Milestones 0–3 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
 
 ## Why this exists
 
@@ -838,11 +838,11 @@ Exit gate: six generated species and all starter content compile with zero error
 
 ### Milestone 3 — encounters and battle simulation
 
-- [ ] Implement fixed-budget grass encounter rolls.
-- [ ] Implement battle state, legal requests, commands, action ordering, enemy selection, integer math, capture, flee, switch, faint, rewards, and end states.
-- [ ] Emit typed events only; no renderer or prose dependencies.
-- [ ] Add the `src/simtest` battle adapter.
-- [ ] Add golden transcripts, serialize/restore continuation, invalid-command, invariant, fuzz, and stream-isolation tests.
+- [x] Implement fixed-budget grass encounter rolls.
+- [x] Implement battle state, legal requests, commands, action ordering, enemy selection, integer math, capture, flee, switch, faint, rewards, and end states.
+- [x] Emit typed events only; no renderer or prose dependencies.
+- [x] Add the `src/simtest` battle adapter.
+- [x] Add golden transcripts, serialize/restore continuation, invalid-command, invariant, fuzz, and stream-isolation tests.
 
 Exit gate: same scenario seed and commands produce identical state, RNG cursor, typed transcript, simulation trace hash, and rewards across repeated runs and a mid-battle restore.
 

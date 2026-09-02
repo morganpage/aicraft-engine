@@ -75,13 +75,26 @@ export interface RpgLocation {
  * the deterministic core never resolves simultaneous raw device directions.
  * Booleans are edge-qualified by the adapter (a held key arrives as `true`
  * only on the tick it becomes meaningful, per the fixed-loop input contract).
+ * `battleCommand` carries the semantic battle command confirmed by the
+ * battle menu on the tick the player commits it (the menu itself is
+ * presentation; only the confirmed command reaches the simulation).
  */
 export interface RpgInput {
   readonly direction: RpgDirection | null;
   readonly confirm: boolean;
   readonly cancel: boolean;
   readonly menu: boolean;
+  readonly battleCommand: import('./battle-types').BattleCommand | null;
 }
+
+/** An `RpgInput` with no pressed semantics — the neutral tick. */
+export const IDLE_RPG_INPUT: Readonly<RpgInput> = Object.freeze({
+  direction: null,
+  confirm: false,
+  cancel: false,
+  menu: false,
+  battleCommand: null,
+});
 
 // ---------------------------------------------------------------------------
 // Numeric vocabulary

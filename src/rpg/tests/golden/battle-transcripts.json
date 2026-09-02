@@ -1,0 +1,188 @@
+{
+ "fight-to-victory": {
+  "outcome": "defeat",
+  "turn": 3,
+  "events": [
+   {
+    "type": "moveUsed",
+    "actorId": "wild-1",
+    "moveId": "tide-splash",
+    "targetId": "player-0"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "player-0",
+    "numerator": 2,
+    "denominator": 1
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "player-0",
+    "amount": 8,
+    "hpAfter": 14
+   },
+   {
+    "type": "moveUsed",
+    "actorId": "player-0",
+    "moveId": "ember-jab",
+    "targetId": "wild-1"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "wild-1",
+    "numerator": 1,
+    "denominator": 2
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "wild-1",
+    "amount": 1,
+    "hpAfter": 25
+   },
+   {
+    "type": "moveUsed",
+    "actorId": "wild-1",
+    "moveId": "tide-splash",
+    "targetId": "player-0"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "player-0",
+    "numerator": 2,
+    "denominator": 1
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "player-0",
+    "amount": 7,
+    "hpAfter": 7
+   },
+   {
+    "type": "moveUsed",
+    "actorId": "player-0",
+    "moveId": "ember-jab",
+    "targetId": "wild-1"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "wild-1",
+    "numerator": 1,
+    "denominator": 2
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "wild-1",
+    "amount": 1,
+    "hpAfter": 24
+   },
+   {
+    "type": "moveUsed",
+    "actorId": "player-0",
+    "moveId": "ember-jab",
+    "targetId": "wild-1"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "wild-1",
+    "numerator": 1,
+    "denominator": 2
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "wild-1",
+    "amount": 1,
+    "hpAfter": 23
+   },
+   {
+    "type": "moveUsed",
+    "actorId": "wild-1",
+    "moveId": "tide-crash",
+    "targetId": "player-0"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "player-0",
+    "numerator": 2,
+    "denominator": 1
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "player-0",
+    "amount": 11,
+    "hpAfter": 0
+   },
+   {
+    "type": "creatureFainted",
+    "creatureId": "player-0"
+   },
+   {
+    "type": "battleEnded",
+    "outcome": "defeat"
+   }
+  ]
+ },
+ "catch-script": {
+  "outcome": "captured",
+  "turn": 1,
+  "events": [
+   {
+    "type": "captureAttempted",
+    "chanceBasisPoints": 5500,
+    "roll": 2881
+   },
+   {
+    "type": "creatureCaptured",
+    "creatureId": "wild-1"
+   },
+   {
+    "type": "xpGained",
+    "creatureId": "player-0",
+    "amount": 34
+   },
+   {
+    "type": "battleEnded",
+    "outcome": "captured"
+   }
+  ]
+ },
+ "flee-script": {
+  "outcome": "fled",
+  "turn": 2,
+  "events": [
+   {
+    "type": "fleeAttempted",
+    "chanceBasisPoints": 5000,
+    "roll": 6722,
+    "success": false
+   },
+   {
+    "type": "moveUsed",
+    "actorId": "wild-1",
+    "moveId": "tide-splash",
+    "targetId": "player-0"
+   },
+   {
+    "type": "effectiveness",
+    "targetId": "player-0",
+    "numerator": 2,
+    "denominator": 1
+   },
+   {
+    "type": "damageDealt",
+    "targetId": "player-0",
+    "amount": 7,
+    "hpAfter": 15
+   },
+   {
+    "type": "fleeAttempted",
+    "chanceBasisPoints": 6000,
+    "roll": 4167,
+    "success": true
+   },
+   {
+    "type": "battleEnded",
+    "outcome": "fled"
+   }
+  ]
+ }
+}

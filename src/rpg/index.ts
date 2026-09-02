@@ -25,6 +25,7 @@ export {
   DEFAULT_RPG_CONFIG,
 } from './constants';
 
+export { IDLE_RPG_INPUT } from './types';
 export type {
   RpgMapId,
   RpgAnchorId,
@@ -106,7 +107,8 @@ export type {
 } from './inventory';
 export { grantItem, consumeItem, getItemCount } from './inventory';
 
-export type { EncounterEntry, EncounterTable } from './encounters';
+export type { EncounterEntry, EncounterTable, EncounterRollResult } from './encounters';
+export { rollEncounter, deriveEncounterSeeds } from './encounters';
 
 export type {
   DialogueCondition,
@@ -158,6 +160,32 @@ export type {
   BattleState,
   BattleEvent,
 } from './battle-types';
+export {
+  createBattleState,
+  getBattleRequest,
+  advanceBattle,
+  DEFAULT_BATTLE_CONFIG,
+} from './battle';
+export type { BattleConfig } from './battle';
+export {
+  computeBattleDamage,
+  computeCaptureChanceBasisPoints,
+  computeFleeChanceBasisPoints,
+  DEFAULT_CRITICAL_CHANCE_BP,
+  CRITICAL_RATIO,
+  VARIANCE_MIN_PERCENT,
+  VARIANCE_MAX_PERCENT,
+  CAPTURE_MISSING_HP_BONUS_BP,
+  CAPTURE_CHANCE_MIN_BP,
+  CAPTURE_CHANCE_MAX_BP,
+  FLEE_BASE_BP,
+  FLEE_SPEED_FACTOR_BP,
+  FLEE_ATTEMPT_BONUS_BP,
+  FLEE_CHANCE_MIN_BP,
+  FLEE_CHANCE_MAX_BP,
+} from './battle-math';
+export { createBattleSimulationAdapter, BATTLE_ADAPTER_ID } from './battle-simtest';
+export type { BattleScenario } from './battle-simtest';
 
 export type {
   RpgTypeDefinition,
@@ -178,4 +206,11 @@ export type {
   RpgConfig,
   RpgStart,
   RpgController,
+} from './state';
+export {
+  createRpgState,
+  createRpgController,
+  getEffectiveParty,
+  getEffectiveInventory,
+  isSaveEligible,
 } from './state';

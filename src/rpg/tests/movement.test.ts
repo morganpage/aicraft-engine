@@ -45,8 +45,8 @@ function makeMap(overrides?: Partial<RpgMapDefinition>): RpgMapDefinition {
 
 const CONFIG: RpgConfig = { tickDuration: 1 / 60, stepDurationTicks: 8, transitionDurationTicks: 18 };
 
-const NO_INPUT: RpgInput = { direction: null, confirm: false, cancel: false, menu: false };
-const HOLD_RIGHT: RpgInput = { direction: 'right', confirm: false, cancel: false, menu: false };
+const NO_INPUT: RpgInput = { direction: null, confirm: false, cancel: false, menu: false, battleCommand: null };
+const HOLD_RIGHT: RpgInput = { direction: 'right', confirm: false, cancel: false, menu: false, battleCommand: null };
 
 function idx(x: number, y: number): number {
   return y * W + x;
@@ -225,7 +225,7 @@ describe('advanceGridMovement', () => {
 
 function driveOneStep(map: RpgMapDefinition, direction: 'up' | 'down' | 'left' | 'right'): GridArrival | null {
   let overworld = createOverworldAtAnchor(map, 'start') as OverworldState;
-  const input: RpgInput = { direction, confirm: false, cancel: false, menu: false };
+  const input: RpgInput = { direction, confirm: false, cancel: false, menu: false, battleCommand: null };
   let arrival: GridArrival | null = null;
   for (let tick = 0; tick <= CONFIG.stepDurationTicks; tick++) {
     const result = advanceGridMovement(overworld, tick, input, map, CONFIG);
