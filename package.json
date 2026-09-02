@@ -76,6 +76,7 @@
     "benchmark:humanoid": "tsx benchmarks/_scripts/humanoid-validation-render.ts",
     "benchmark:charger": "tsx benchmarks/_scripts/charger-validation-render.ts",
     "benchmark:validation": "npm run benchmark:humanoid && npm run benchmark:charger",
+    "rpg:sheets": "tsx benchmarks/_scripts/rpg-contact-sheet.ts",
     "bench:level-visual": "npx --yes tsx benchmarks/_scripts/level-visual-bench.ts",
     "visual:sheets": "node scripts/run-visual-sheets.mjs",
     "check:terrain-tree-shaking": "node scripts/check-terrain-tree-shaking.mjs",

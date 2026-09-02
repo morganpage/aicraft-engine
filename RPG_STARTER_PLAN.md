@@ -1,6 +1,6 @@
 # RPG Starter Implementation Plan — Top-Down Monster-Tamer Vertical Slice
 
-Status: IN PROGRESS — implementation-ready build brief; Milestones 0–3 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
+Status: IN PROGRESS — implementation-ready build brief; Milestones 0–4 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
 
 ## Why this exists
 
@@ -848,11 +848,11 @@ Exit gate: same scenario seed and commands produce identical state, RNG cursor, 
 
 ### Milestone 4 — procedural presentation
 
-- [ ] Implement map, actor, NPC, portrait, dialogue, creature, battle, and HUD renderers.
-- [ ] Implement event-driven battle presentation queue with skip/fast-forward.
-- [ ] Add synthesized SFX/music cues and defensive audio unlock.
-- [ ] Respect reduced motion and text contrast requirements.
-- [ ] Generate deterministic contact sheets and gameplay screenshots for review.
+- [x] Implement map, actor, NPC, portrait, dialogue, creature, battle, and HUD renderers.
+- [x] Implement event-driven battle presentation queue with skip/fast-forward.
+- [x] Add synthesized SFX/music cues and defensive audio unlock.
+- [x] Respect reduced motion and text contrast requirements.
+- [x] Generate deterministic contact sheets and gameplay screenshots for review.
 
 Exit gate: visual review confirms six distinct readable creatures, clear walkability/grass/doors, legible dialogue, unambiguous battle state, and identical gameplay outcomes with animations enabled, skipped, or reduced.
 

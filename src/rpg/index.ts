@@ -195,6 +195,30 @@ export type {
 } from './content';
 
 export type {
+  RpgTerrainColors,
+  RpgMarkerColors,
+  RpgActorColors,
+  RpgPanelColors,
+  RpgVisualTheme,
+} from './renderer/theme';
+export { DEFAULT_RPG_THEME } from './renderer/theme';
+export { drawRpgMap, drawRpgEncounterShimmer } from './renderer/map-renderer';
+export type { RpgMapDrawOptions } from './renderer/map-renderer';
+export { drawRpgActor, drawRpgNpc } from './renderer/actor-renderer';
+export type { RpgActorFacing, RpgActorDrawOptions, RpgNpcDrawOptions } from './renderer/actor-renderer';
+export { drawRpgCreature } from './renderer/creature-renderer';
+export type { CreatureDrawOptions } from './renderer/creature-renderer';
+export { drawRpgDialogue, wrapDialogueText } from './renderer/dialogue-renderer';
+export type { RpgDialogueDrawOptions } from './renderer/dialogue-renderer';
+export { drawRpgBattleScene, createBattlePresentationQueue } from './renderer/battle-renderer';
+export type { RpgBattleDrawOptions, BattleCue, BattlePresentationQueue } from './renderer/battle-renderer';
+export { drawHpBar, drawPartyHud, drawInventoryHud } from './renderer/hud-renderer';
+export type { RpgHudDrawOptions, HpBarParams } from './renderer/hud-renderer';
+
+export { playRpgCue, rpgCueForBattleEvent, RPG_CUE_RECIPES } from './audio';
+export type { RpgCue } from './audio';
+
+export type {
   RpgActivity,
   OverworldState,
   GridStepState,

@@ -129,18 +129,24 @@ function visualManifest(
   const proportionSeed = deriveSeed(seed, 'species-proportions', index);
   const featureSeed = deriveSeed(seed, 'species-features', index);
   const pool = FEATURE_POOL[bodyPlan];
-  const featureCount = 1 + (featureSeed % pool.length === 0 ? 0 : 1);
+  // Feature count is fixed by species index (1, 2, 3, 1, 2, 3 across the
+  // six-species set) and picks rotate by seed and index, so two species
+  // sharing a body plan (the set cycles five plans across six species)
+  // always differ structurally, not just in palette.
+  const featureCount = Math.min(pool.length, 1 + (index % 3));
   const features: string[] = [];
-  for (let i = 0; i < featureCount; i++) {
-    const pick = pool[(featureSeed + i * 7 + 3) % pool.length];
+  let scan = 0;
+  while (features.length < featureCount && scan < pool.length * 2) {
+    const pick = pool[(featureSeed + scan * 7 + index * 5 + 3) % pool.length];
     if (!features.includes(pick)) features.push(pick);
+    scan += 1;
   }
-  const scale = 0.85 + ((proportionSeed % 100) / 100) * 0.4;
+  const scale = 0.85 + ((index % 3) * 0.1) + (((proportionSeed % 100) / 100) * 0.15);
   return {
     generatorVersion: RPG_GENERATOR_VERSION,
     bodyPlan,
     paletteSeed,
-    proportions: { bodyScale: Math.round(scale * 100) / 100 },
+    proportions: { bodyScale: Math.min(1.25, Math.round(scale * 100) / 100) },
     features,
   };
 }
