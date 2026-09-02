@@ -56,6 +56,7 @@ A small TypeScript library of procedural rendering primitives, algorithmic cosme
 | **2. Level testing** | Platformer level verification — jump-arc trajectory sampling, static reachability BFS, platformer simulation adapter, three bot policies (cautious/direct/collector), win conditions, and tri-state `verifyLevel`/`verifyCompiledLevel` (proven-beatable / proven-unreachable / inconclusive) | **Shipped** |
 | **Cross-cutting simulation testing** | Generic deterministic simulation-test core — fixed-tick orchestration, policy execution, trace recording/playback, and honest `verifyScenario` / `playSimulationTrace` / `simulationTraceHash`. Zero imports from platformer/level/editor; `leveltest` is the platformer adapter | **Shipped** |
 | **3. IAP** | Bridge adapter interface, entitlement store, pure progression ops, memory + localStorage dev adapters (native platform SDKs deferred to Phase 5) | **Shipped** |
+| **RPG module** | Zero-asset top-down monster-tamer vertical slice (`src/rpg/`) — serializable RNG streams, tick-counted grid movement, never-throw content compilation with path diagnostics, seeded world generation + BFS verification, procedural species (five body-plan grammars), pure 1v1 battle kernel with exact legal-command exposure and versioned fixed RNG draw budgets, XP/level/move learning, dialogue graphs with terminal-effect ordering, save/restore bound to content fingerprints, themed Canvas2D renderers + synthesized audio cues, and a `createRpgController` facade over a discriminated activity union. Starter game: `games/rpg-starter/` | **Shipped** |
 | **4. Fake-3D** | Billboarding, isometric tiles, orthographic cube, heightmap | Phase 4 |
 | **5. Platform adapters** | Platform SDKs (Poki, StoreKit, Play Billing) | Phase 5 (on-demand) |
 
@@ -120,6 +121,28 @@ let particles = spawn(player.x, player.y, {
 });
 particles = step(particles, 1);  // advance + cull
 ```
+
+## RPG starter
+
+A complete, runnable monster-tamer built only from the public barrel lives in
+[`games/rpg-starter/`](games/rpg-starter/README.md) — zero asset files, one
+seed driving species/world/encounters, and headless full-loop determinism
+tests driving the same game object the browser runs:
+
+```ts
+import {
+  compileRpgContent, createStarterContentBundle, createRpgState, createRpgController,
+} from 'aicraft-engine';
+
+const compiled = compileRpgContent(createStarterContentBundle(2026));
+if (!compiled.ok) throw new Error(compiled.diagnostics[0].message);
+const game = createRpgController(compiled.content);
+let state = createRpgState(compiled.content, 2026);
+state = game.step(state, { direction: 'right', confirm: false, cancel: false, menu: false, battleCommand: null }, 1 / 60).state;
+```
+
+Author games as data: swap the bundle's types/moves/species/dialogues/maps
+(yours or generated), compile, and the same facade runs them.
 
 ## Recipes
 

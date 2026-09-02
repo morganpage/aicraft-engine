@@ -2600,6 +2600,154 @@ Poki SDK adapter (ads variant). Triggered for dual-publish.
 
 ---
 
+## RPG module: `src/rpg/` (shipped)
+
+The top-down monster-tamer vertical slice: deterministic movement, dialogue,
+encounters, turn-based battle, progression, saves, procedural rendering,
+and the composition facade. Every simulation function is pure, never throws,
+and reports failures as path-based diagnostics. Full design record:
+`docs/design/rpg-kernel-decision.md`.
+
+### Versions, constants, and RNG budgets
+
+| Export | Kind | Contract |
+|---|---|---|
+| `RPG_STATE_SCHEMA_VERSION`, `RPG_CONTENT_SCHEMA_VERSION`, `RPG_SAVE_SCHEMA_VERSION` | const | Serialized shapes; migration territory. |
+| `RPG_RULES_VERSION` | const | Simulated-outcome version; golden transcripts and saves bind to it. |
+| `RPG_GENERATOR_VERSION` | const | Creature visual-manifest grammar version. |
+| `ENCOUNTER_ROLL_PACK_SIZE` = 3 | const | Draws per eligible grass arrival (trigger/species/level), consumed even on failure. |
+| `BATTLE_FIGHT_DRAW_BUDGET` = 8, `BATTLE_CATCH_DRAW_BUDGET` = 4, `BATTLE_SWITCH_DRAW_BUDGET` = 3, `BATTLE_FLEE_DRAW_BUDGET` = 4 | const | Versioned battle-stream draw budgets; forced/rejected commands consume zero. |
+| `RPG_MAX_PARTY_SIZE` = 6, `RPG_MAX_MOVES_PER_CREATURE` = 4, `RPG_LEVEL_CAP` = 20 | const | Locked structural limits. |
+| `DEFAULT_RPG_CONFIG` | const | `{ tickDuration: 1/60, stepDurationTicks: 8, transitionDurationTicks: 18 }`. |
+| `DEFAULT_BATTLE_CONFIG` | const | `{ criticalChanceBasisPoints: 1000 }`. |
+
+### RNG streams
+
+`src/rng` additions: `SerializableRngState` (one uint32 word),
+`createRngState(seed)`, `advanceRng(state)` → `{ state, value }`,
+`nextRngInt(state, min, max)` (one draw, never throws, inverted range
+returns the coerced min), `deriveSeed(root, ...parts)` (order- and
+type-sensitive simulation addressing, never aliasing `deriveVisualSeed`).
+Byte-identical to the `mulberry32` closure — one shared internal step,
+pinned by known-answer vectors.
+
+### Contracts (types)
+
+`RpgInput` (`direction` at most one per tick, edge-qualified booleans,
+optional confirmed `battleCommand`) + `IDLE_RPG_INPUT`; ID aliases
+(`RpgMapId`, `RpgTypeId`, `RpgMoveId`, `RpgSpeciesId`, `RpgItemId`,
+`RpgEncounterTableId`, `RpgDialogueId`, `RpgDialogueNodeId`,
+`RpgCreatureInstanceId`, `RpgAnchorId`, `RpgFingerprint`);
+`RpgDirection`, `RpgTileRef`, `RpgLocation`, `IntegerRatio`,
+`CreatureStats`, `RpgDiagnostic` (code/severity/path/message);
+map types (`RpgMapDefinition`, `RpgTerrainKind`, `RpgSpawnAnchor`,
+`RpgNpcDefinition`, `RpgWarpDefinition`, `RpgHealPointDefinition`);
+creature types (`SpeciesDefinition`, `CreatureInstance`, `MoveDefinition`,
+`CreatureVisualManifest`, `RpgBodyPlan`); `PartyState`, `InventoryState`,
+`InventoryEntry`, `ItemDefinition`, `RpgItemKind`; `EncounterTable`,
+`EncounterEntry`, `EncounterRollResult`; dialogue types
+(`DialogueDefinition`, `DialogueNode`, `DialogueChoice`, `DialogueCondition`,
+`DialogueEffect`, `DialogueSession`, `DialogueRequest`, `DialogueContext`,
+`DialogueCommand`, `DialogueAdvanceResult`); battle types
+(`BattleCommand`, `BattleRequest`, `BattleState`, `BattlePhase`,
+`BattleOutcome`, `BattleEvent`); content types (`RpgTypeDefinition`,
+`RpgContentBundle`, `CompiledRpgContent`, `RpgContentResult`);
+facade types (`RpgState`, `RpgActivity`, `OverworldState`, `GridStepState`,
+`MapTransitionState`, `DialogueActivityState`, `RpgEvent`, `RpgStepResult`,
+`RpgConfig`, `RpgStart`, `RpgController`); save types (`RpgSaveData`,
+`RpgSaveResult`, `RpgSaveMigrationResult`, `RpgSaveValidationResult`,
+`RpgRestoreResult`).
+
+### Overworld kernel
+
+- `generateRpgWorld(seed, config?)` — deterministic two-map starter world
+  (meadow + rest house); same seed → byte-identical maps; BFS-verified with
+  deterministic corridor repair; clamped config reports
+  `rpg.mapgen.configClamped`. `DEFAULT_WORLD_GEN_CONFIG`, `STARTER_FIELD_MAP_ID`,
+  `STARTER_CLINIC_MAP_ID`, `STARTER_FIELD_START_ID`, `STARTER_FIELD_RETURN_ID`,
+  `STARTER_CLINIC_ENTRY_ID`.
+- `verifyRpgWorld(maps, spawnMapId, spawnAnchorId)` — whole-world BFS across
+  warps; diagnostics for unreachable anchors/warps/heal points/NPC
+  approaches/encounter zones.
+- `validateRpgMap(map)` / `validateRpgMapCatalog(maps)` — never-throw
+  structural and cross-reference validation with paths like
+  `maps[field].warps[door].targetAnchorId`.
+- `advanceGridMovement(overworld, tick, input, map, config)` — four-direction
+  tick-counted steps; facing updates on blocked attempts; exactly one
+  `stepCompleted` per arrival; arrival priority warp → heal → encounter zone.
+  `createOverworldAtAnchor(map, anchorId)`.
+- `facingTile`, `npcAt`, `resolveInteraction`, `resolveArrival` — pure tile
+  readers.
+
+### Content, creatures, progression
+
+- `compileRpgContent(bundle)` — validate everything (ids, integer ranges,
+  weights, cross-references, complete 2/1·1/1·1/2 type matrix, dialogue
+  reachability, terminal-effect ordering); returns indexed immutable content
+  plus an `fnv1a` canonical fingerprint, or `{ ok: false }` diagnostics.
+- `generateSpeciesSet(seed, catalog)` / `generateSpecies(seed, index, catalog)`
+  — syllable-bank names with reserved-name reroll, five body plans, exact
+  48-point stat budgets (8–16 each), catalog-valid learnsets, serializable
+  visual manifests.
+- `createCreatureInstance({ id, species, level, individualSeed })`,
+  `deriveMaxHp(baseHp, level)` (`baseHp + 3 × level`),
+  `deriveCreatureStats(base, level)` (HP +3×level, others +1×level).
+- `grantXpAward(creature, species, amount)` — `10 × level²` thresholds,
+  multi-level awards, missing-HP-preserving growth, `moveLearned` under four
+  moves else `moveLearnDeferred`.
+- `healPartyFully(party, species)`, `partyHasSpace`, `appendCreature`,
+  `firstAliveIndex`, `aliveCount`; `grantItem`/`consumeItem`/`getItemCount`
+  (sorted entries, never negative).
+- `createStarterContentBundle(seed)` — the canonical reference bundle
+  (ring types, 8 moves, 2 items, grass table, guide dialogue, six generated
+  species, generated world); `STARTER_TYPES`, `STARTER_MOVES`,
+  `STARTER_ITEMS`, `STARTER_DIALOGUE`, `STARTER_PARTY_LEVEL`, and friends.
+
+### Dialogue runtime
+
+`startDialogue(definition)`, `getDialogueRequest(definition, session, context)`
+(condition-filtered choices + cursor), `advanceDialogue(definition, session,
+command, context)` (semantic `advance`/`choose`; effects returned once for
+facade application; terminal ordering enforced at compile),
+`moveDialogueCursor(definition, session, delta, context)`.
+
+### Encounters and battle
+
+- `rollEncounter(worldRng, table)` — the fixed three-roll pack;
+  `deriveEncounterSeeds(rootSeed, encounterIndex)` for battle/creature seeds.
+- `getBattleRequest(state, content)` — the exact legal commands per phase;
+  `advanceBattle(state, command, content, config?)` — revalidated, pure,
+  fixed draw budgets, priority→speed→tie ordering, capture/flee/switch/faint
+  semantics, rewards applied exactly once; `createBattleState(params)`.
+- Battle math (integer-only, explicit floor points): `computeBattleDamage`,
+  `computeCaptureChanceBasisPoints`, `computeFleeChanceBasisPoints`, plus
+  every constant (`CRITICAL_RATIO`, `VARIANCE_MIN_PERCENT`…).
+- `createBattleSimulationAdapter(scenario, content)` — the `rpg-battle`
+  `SimulationAdapter` for `src/simtest` traces and policies.
+
+### Facade, saves
+
+- `createRpgState(content, seed, start?)`, `createRpgController(content,
+  config?)` — one fixed tick per `step`; owns every cross-activity
+  transition (warp/heal/encounter/dialogue/battle/defeat-recovery);
+  `getEffectiveParty`/`getEffectiveInventory`, `isSaveEligible`.
+- `createRpgSave(state)` (idle-overworld only), `migrateRpgSave(raw)`,
+  `validateRpgSave(save, content)` (fingerprint/rules binding),
+  `restoreRpgState(save, content)`, `rpgSaveHash(save)`.
+
+### Rendering and audio
+
+`DEFAULT_RPG_THEME` (+ `RpgVisualTheme` slots — no magic colors in draw
+code); `drawRpgMap`, `drawRpgEncounterShimmer`; `drawRpgActor`,
+`drawRpgNpc`; `drawRpgCreature` (five body-plan grammars over
+`generatePalette`); `drawRpgDialogue` + `wrapDialogueText` (bitmap font,
+typewriter reveal, immediate under reduced motion); `drawRpgBattleScene` +
+`createBattlePresentationQueue` (advance/skip cues that can never affect
+simulation); `drawHpBar`, `drawPartyHud`, `drawInventoryHud`;
+`playRpgCue(adapter, cue)` + `rpgCueForBattleEvent(event)` (12 synthesized
+recipes, silent failures). Deterministic contact sheets:
+`npm run rpg:sheets` → `benchmarks/rpg/`.
+
 ## Top-level barrel: `src/index.ts`
 
 Re-exports everything from `./primitives`, `./rng`, `./particles`, `./animation`,

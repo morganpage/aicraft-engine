@@ -52,6 +52,43 @@ from the higher platformer/enemy layer. Canonical charger dimensions and
 parameter bounds live in `src/level/enemy-schema.ts`, below validation,
 compilation, editor, behavior, and renderer consumers.
 
+### RPG layer boundary
+
+`src/rpg/` is a self-contained top-down/turn-based genre module with the
+same discipline as the platformer kernel, plus a stricter RNG contract:
+
+- **Simulation leaves** (`movement`, `interaction`, `dialogue`, `encounters`,
+  `battle`, `battle-math`, `progression`, `party`, `inventory`, `creatures`,
+  `content`, `validation`, `mapgen`, `map-verify`, `save`) never import
+  renderers, storage, audio, DOM, or platformer types, and never throw.
+  Invalid input is a safe no-op plus a path-based diagnostic.
+- **Serializable randomness.** Simulation streams use the pure-state API in
+  `src/rng/state.ts` (`SerializableRngState`), never the `mulberry32`
+  closure, so any stream survives save/restore and mid-battle replay.
+  Simulation seed derivation uses `deriveSeed`; visual addressing stays on
+  `deriveVisualSeed`, and the two never alias.
+- **Fixed RNG budgets.** Encounter packs consume three draws per eligible
+  grass arrival (trigger/species/level, even on a failed trigger); battle
+  commands consume versioned budgets (fight 8, catch 4, switch 3, flee 4;
+  forced/rejected zero) sampled before effects resolve. Changing a budget
+  or roll order is an `RPG_RULES_VERSION` change requiring golden-transcript
+  updates (`src/rpg/tests/golden/`, regenerated only via
+  `scripts/gen-rpg-golden.mjs` with that decision).
+- **State ownership.** `RpgState.activity` is a discriminated union; the
+  non-overworld variants carry the `returnTo` overworld (for `transition`,
+  the fully constructed destination). During battle, the battle snapshot is
+  the sole authority — the outer party/inventory are deliberately stale and
+  readers must use `getEffectiveParty`/`getEffectiveInventory`.
+- **Presentation** lives in `src/rpg/renderer/` and `src/rpg/audio.ts`:
+  Canvas2D/synthesis over read-only state with a presentation tick; the
+  battle presentation queue only consumes emitted events, so skipping or
+  accelerating animations cannot change simulation outcomes. Typed events
+  never carry localized prose; renderers never parse displayed strings.
+- **`src/rpg` imports** only its own files, `src/rng`, `src/palette`,
+  `src/primitives`, `src/level/serialize` (canonicalize/FNV), `src/simtest`
+  (types), and `src/audio` (types) — never `src/platformer`, `src/replay`,
+  or `src/game-state`.
+
 ## Determinism rules
 
 1. **No `Math.random`** in any function whose output influences game state, save data, or cosmetic manifests. Use `src/rng/mulberry32.ts` instead.

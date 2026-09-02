@@ -5,6 +5,21 @@ All notable changes to `aicraft-engine` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **RPG module (`src/rpg/`) — a zero-asset, top-down monster-tamer vertical slice** (170 dedicated tests + starter game): explore → talk → tall grass → encounter → fight → weaken → capture → XP → heal → save → reload, authored primarily as data. Design record: `docs/design/rpg-kernel-decision.md`; full plan and milestone audit: `RPG_STARTER_PLAN.md`.
+  - **Serializable RNG streams** — `src/rng` gains a pure-state Mulberry32 API (`createRpgState`/`advanceRng`/`nextRngInt` over a one-word `SerializableRngState`) byte-identical to the closure (one shared internal step, known-answer vectors pinned), plus `deriveSeed` for simulation stream addressing. `deriveSeed` domain-separates from `deriveVisualSeed`, so a decorative seed can never alias a battle roll.
+  - **Overworld kernel** — four-direction tick-counted grid movement (facing updates on blocked attempts, exactly one `stepCompleted` per arrival, arrival priority warp → heal → encounter zone), never-throw map/catalog validation with paths like `maps[field].warps[door].targetAnchorId`, whole-world BFS verification across warps, and a seeded two-map world generator with carved guaranteed paths and deterministic corridor repair.
+  - **Content compilation** — one JSON bundle (types/moves/species/items/encounters/dialogues/maps) validated for ids, integer ranges, weights, every cross-reference, the complete 2/1·1/1·1/2 effectiveness matrix, dialogue reachability, and terminal-effect ordering; immutable indexed result plus a canonical FNV fingerprint that saves and traces bind to.
+  - **Procedural creatures** — six species from original syllable grammars (reserved-name blacklist with deterministic reroll), five body-plan grammars with index-locked feature counts so species sharing a plan always differ structurally, exact 48-point stat budgets (8–16 each, envelope-pinned), and serializable visual manifests.
+  - **Battle kernel** — pure 1v1 wild battles with an exact legal-command reader (`getBattleRequest`) and revalidated commands; fixed versioned RNG draw budgets (fight 8 / catch 4 / switch 3 / flee 4, zero for forced/rejected), integer-only math with explicit floor points, capture/flee escalation, forced switches, and rewards applied exactly once. Golden transcripts (`scripts/gen-rpg-golden.mjs`) pin exact event sequences; regenerating is an explicit rules-version decision.
+  - **Session facade** — `createRpgState`/`createRpgController` with a discriminated activity union (overworld/dialogue/battle/transition, each non-overworld variant owning its `returnTo`), defeat recovery to the last heal anchor, and effective party/inventory readers for the battle-snapshot authority rule.
+  - **Saves** — idle-overworld-only projection, migration ladder, fingerprint/rules-bound validation, restore, and canonical hashing; save/restore continuation equals the uninterrupted run.
+  - **Procedural presentation** — themed Canvas2D renderers (map/actor/creature/dialogue/battle/HUD; WCAG-AA panel text; reduced-motion freeze; decorative animation from visual seeds + presentation tick only), an event-driven battle presentation queue whose skipping provably cannot change simulation state, and 12 synthesized audio cues with silent-failure contracts. `npm run rpg:sheets` writes deterministic contact sheets to `benchmarks/rpg/`.
+  - **`games/rpg-starter/` — "Meadow Tamers"** — a real consumer of the root barrel: vite + vitest, zero asset files, shared `createStarterGame` wiring driving both the browser entry and headless full-loop tests (loop twice → identical final and save hashes). Production bundle: 83.6 kB / 27.5 kB gzip including the engine.
+  - **Clean-room 20-minute claim: not yet performed.** Per the plan's timing protocol this is a recorded, independent-agent gate; until it is run (up to three attempts per release cycle), the "in 20 minutes" video claim must not be used. Technical release gates are unaffected.
+
 ## [0.23.0] - 2026-08-29
 
 ### Added

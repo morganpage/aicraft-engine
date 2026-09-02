@@ -1,6 +1,6 @@
 # RPG Starter Implementation Plan — Top-Down Monster-Tamer Vertical Slice
 
-Status: IN PROGRESS — implementation-ready build brief; Milestones 0–5 complete (2026-09-02). Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
+Status: TECHNICALLY COMPLETE — Milestones 0–6 engineering gates pass (2026-09-02). The recorded clean-room 20-minute timing test has NOT been performed; the “in 20 minutes” video claim must not be used until it is run per the protocol below. Originally written 2026-09-01; revised 2026-09-02 after pre-implementation review.
 
 ## Why this exists
 
@@ -868,12 +868,12 @@ Exit gate: the scripted full loop completes twice, reload continues from the sam
 
 ### Milestone 6 — documentation, release, and timed proof
 
-- [ ] Update `docs/architecture.md` with RPG layer boundaries.
-- [ ] Update `docs/api-surface.md` with every public export.
-- [ ] Add CHANGELOG entry and package README example.
-- [ ] Run root tests, build, dist build, release smoke, recipe checks, starter tests, and starter production build.
-- [ ] Perform and record up to three clean-room 20-minute attempts, improving the API/docs/recipe between failed attempts.
-- [ ] If no attempt passes, record the required video disposition: revised plan/new cycle, honest reframe, or deferral.
+- [x] Update `docs/architecture.md` with RPG layer boundaries.
+- [x] Update `docs/api-surface.md` with every public export.
+- [x] Add CHANGELOG entry and package README example.
+- [x] Run root tests, build, dist build, release smoke, recipe checks, starter tests, and starter production build. *(4,338 root tests; starter typecheck + 3 full-loop tests + production build; dist and release smoke pass)*
+- [ ] Perform and record up to three clean-room 20-minute attempts, improving the API/docs/recipe between failed attempts. **Disposition: not yet performed (2026-09-02).** This is the recorded-video gate — it requires a fresh consumer shell, an independent agent given only the published API docs + starter material + a creative brief, and a clock. It remains the explicit blocker for the “in 20 minutes” claim; per this plan's own rule the technical release proceeds without it.
+- [ ] If no attempt passes, record the required video disposition: revised plan/new cycle, honest reframe, or deferral. **Pending the first attempt.**
 
 Exit gate: all repository and starter technical gates pass. Separately, either a recorded independent build completes the required loop in 20 minutes or less, or the original video claim is explicitly revised/deferred after the third failed attempt. Only the first outcome authorizes the 20-minute claim.
 
