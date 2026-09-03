@@ -57,6 +57,9 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   // leaves the wall). Sized with the jump feel timers — coyoteTime 0.08 /
   // jumpBufferTime 0.1 — at ~6 ticks of slack.
   wallJumpGraceTime: 0.1,
+  // Default OFF: preserves the physics-v13 chimney-climb behavior (into-wall
+  // press = straight-up hop). See PlatformerConfig.wallJumpAlwaysAway.
+  wallJumpAlwaysAway: false,
   dashEnabled: true,
   dashSpeed: 420,
   dashDuration: 0.12,

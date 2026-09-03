@@ -175,6 +175,7 @@ export const PLATFORMER_CONFIG_FIELD_UNITS: {
   // Booleans — COPIED.
   jumpEnabled: 'boolean',
   wallSlideEnabled: 'boolean',
+  wallJumpAlwaysAway: 'boolean',
   dashEnabled: 'boolean',
   doubleJumpEnabled: 'boolean',
   climbEnabled: 'boolean',
@@ -329,6 +330,8 @@ export interface CreatePrecisionPlatformerConfigOptions {
   readonly wallGrabEnabled?: boolean;
   /** Override for `climbEnabled`. */
   readonly climbEnabled?: boolean;
+  /** Override for `wallJumpAlwaysAway`. */
+  readonly wallJumpAlwaysAway?: boolean;
 }
 
 /**
@@ -373,7 +376,8 @@ export interface CreatePrecisionPlatformerConfigOptions {
  *    `referenceImpulse · (newLaunchV / referenceLaunchV)` — the exact
  *    relationship that keeps a spring launching ~1.76× the jump, a super wall
  *    jump ~1.52× the jump, etc., regardless of the chosen apex/time.
- * 4. Apply the boolean / coyote-time overrides.
+ * 4. Apply the boolean / coyote-time overrides (`wallGrabEnabled`,
+ *    `climbEnabled`, `wallJumpAlwaysAway`, `coyoteTime`).
  *
  * Pure + deterministic: returns a fresh record; never reads the host.
  */
@@ -437,6 +441,9 @@ export function createPrecisionPlatformerConfig(
   }
   if (opts.climbEnabled !== undefined) {
     config = { ...config, climbEnabled: opts.climbEnabled };
+  }
+  if (opts.wallJumpAlwaysAway !== undefined) {
+    config = { ...config, wallJumpAlwaysAway: opts.wallJumpAlwaysAway };
   }
 
   return config;

@@ -36,12 +36,32 @@
  *      armed, and a press with neutral or away input — while the wall is
  *      still beside the actor — leaps away. Both fire paths set the lock
  *      timer; see docs/design/platformer-wall-jump-direction-grace-plan.md.
+ *      `config.wallJumpAlwaysAway` (default `false`) OPTS INTO Celeste's
+ *      ACTUAL rule instead of this engine's own v13 variant, on two axes:
+ *      direction (every wall-jump press — including one made while still
+ *      holding into the wall — takes the away leap, matching `WallJump(dir)`
+ *      (`Player.cs`), which pushes away unconditionally regardless of held
+ *      input) AND eligibility (see point 8 — no "must have been sliding"
+ *      precondition at all). The grace window and its timers are unchanged
+ *      either way.
  *   6. Decrements `lockTimer` by `dt` while > 0; during lock, wall-slide
  *      cannot re-engage (lets the wall-jump's push clear the wall first).
  *   7. `graceTimer` decays by `dt` and is re-armed on every sliding tick
  *      (coyote-style). While it is > 0 the last sliding `side` is PRESERVED
  *      (the tick the slide drops would otherwise null it) so the grace jump
  *      knows which wall it leaps from.
+ *   8. `config.wallJumpAlwaysAway: true` ALSO adds a third, proximity-only
+ *      fire path independent of `sliding`/`graceLeap`: Celeste's jump handler
+ *      checks `jumpGraceTimer > 0` (ground/coyote) first and only falls
+ *      through to `WallJumpCheck(dir)` — pure geometry, either side, no held
+ *      direction or vy requirement — when that fails, so a normal ground jump
+ *      taken beside a wall followed by a second press while still airborne
+ *      and still beside it (rising or falling) wall-jumps away without ever
+ *      having engaged the slide. Mirrored via the shared
+ *      `locomotion.coyoteTimer` (the same timer `jumpAbility` reads) so this
+ *      ability yields to an available ground/coyote jump exactly where
+ *      Celeste's own if/else does — `wallJump` outranks `jump` in this
+ *      engine's launch-priority arbitration and would otherwise hijack it.
  *
  * Pure: never mutates input. Never throws. When `wallSlideEnabled === false`,
  * returns the input state unchanged with no events.
@@ -76,7 +96,7 @@ export const wallSlideAbility: AbilityProcessor<WallSlideAbilityState> = {
     ctx: AbilityContext,
     state: WallSlideAbilityState,
   ): AbilityResult<WallSlideAbilityState> {
-    const { core, input, dt, config, solids } = ctx;
+    const { core, input, dt, config, solids, locomotion } = ctx;
 
     if (!config.wallSlideEnabled) {
       return { core, state, events: {} };
@@ -224,14 +244,16 @@ export const wallSlideAbility: AbilityProcessor<WallSlideAbilityState> = {
     // horizontal lockout). Facing is not a velocity, so it is still written
     // here directly. DIRECTION-AWARE, branching on the sign of `moveX` at the
     // press (magnitude ignored — analog partial deflection works):
-    //   - INTO-WALL (any active slide): straight-up hop. `vx = 0`, facing the
-    //     wall. The kernel applies the zero exactly and resolves
-    //     `forceMoveX = sign(0) = 0`, so the lockout PRESERVES vx ≈ 0 (the
-    //     forced-horizontal step early-returns on 0) while suppressing
-    //     steering input for `wallJumpLockTime` — a committed vertical hop,
-    //     then normal air control resumes. This is what makes chimney-
-    //     climbing a single wall possible: the old always-away push meant
-    //     sliding + jump ALWAYS flung you off the wall you held into.
+    //   - INTO-WALL (any active slide), default config: straight-up hop.
+    //     `vx = 0`, facing the wall. The kernel applies the zero exactly and
+    //     resolves `forceMoveX = sign(0) = 0`, so the lockout PRESERVES
+    //     vx ≈ 0 (the forced-horizontal step early-returns on 0) while
+    //     suppressing steering input for `wallJumpLockTime` — a committed
+    //     vertical hop, then normal air control resumes. This is what makes
+    //     chimney-climbing a single wall possible: the old always-away push
+    //     meant sliding + jump ALWAYS flung you off the wall you held into.
+    //     `config.wallJumpAlwaysAway: true` skips this branch entirely — an
+    //     into-wall press takes the away-leap branch below instead.
     //   - GRACE (slide disengaged, timer > 0) with neutral or away input:
     //     the classic away-from-wall leap, `vx = ±wallJumpVx`, facing the
     //     push. The extra gates all mirror the slide's own engage gates so
@@ -263,8 +285,38 @@ export const wallSlideAbility: AbilityProcessor<WallSlideAbilityState> = {
       !fastFalling &&
       !intoWall &&
       wallBeside;
-    if ((sliding || graceLeap) && input.jump.pressed && jumpSide !== null) {
-      if (intoWall) {
+    // Proximity leap (`wallJumpAlwaysAway`, physics v15): Celeste's actual
+    // wall-jump has no "must have been sliding" precondition at all —
+    // `Player.cs`'s jump handler checks `jumpGraceTimer > 0` (ground/coyote)
+    // FIRST and only falls through to `WallJumpCheck(dir)` (pure wall
+    // proximity, either side, no held-direction or vy requirement) when that
+    // fails. So a normal ground jump taken beside a wall, followed by a
+    // second jump press while still airborne and still beside that wall —
+    // rising or falling, any input — wall-jumps away. Mirrored here only
+    // once `sliding`/`graceLeap` both miss (neither owns this press) and only
+    // when a ground/coyote jump is NOT available (`locomotion.coyoteTimer`,
+    // the same shared timer `jumpAbility` reads — this ability must yield to
+    // it exactly where Celeste's own if/else does, since `wallJump` outranks
+    // `jump` in this engine's launch-priority arbitration and would
+    // otherwise hijack an available coyote jump). Right probed before left,
+    // matching `WallJumpCheck(1)` before `WallJumpCheck(-1)`.
+    const coyoteAvailable = (locomotion?.coyoteTimer ?? 0) > 0;
+    const proximitySide: 'left' | 'right' | null =
+      config.wallJumpAlwaysAway === true &&
+      jumpSide === null &&
+      lockTimer === 0 &&
+      !core.onGround &&
+      !coyoteAvailable &&
+      !grabHeld
+        ? wallOnRight
+          ? 'right'
+          : wallOnLeft
+            ? 'left'
+            : null
+        : null;
+    const fireSide = jumpSide ?? proximitySide;
+    if ((sliding || graceLeap || proximitySide !== null) && input.jump.pressed && fireSide !== null) {
+      if (intoWall && !config.wallJumpAlwaysAway) {
         // Straight-up into-wall hop.
         launch = {
           vy: config.wallJumpVy,
@@ -272,18 +324,18 @@ export const wallSlideAbility: AbilityProcessor<WallSlideAbilityState> = {
           varJumpTime: config.jump.timeToApex,
           source: 'wallJump',
         };
-        nextCore = { ...nextCore, facing: jumpSide === 'left' ? -1 : 1 };
+        nextCore = { ...nextCore, facing: fireSide === 'left' ? -1 : 1 };
       } else {
         // Away leap: neutral or away input, away push, face the push.
         const pushX =
-          jumpSide === 'left' ? config.wallJumpVx : -config.wallJumpVx;
+          fireSide === 'left' ? config.wallJumpVx : -config.wallJumpVx;
         launch = {
           vy: config.wallJumpVy,
           vx: pushX,
           varJumpTime: config.jump.timeToApex,
           source: 'wallJump',
         };
-        nextCore = { ...nextCore, facing: jumpSide === 'left' ? 1 : -1 };
+        nextCore = { ...nextCore, facing: fireSide === 'left' ? 1 : -1 };
       }
       nextState = {
         ...nextState,

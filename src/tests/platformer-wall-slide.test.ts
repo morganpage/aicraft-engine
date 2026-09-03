@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { wallSlideAbility } from '../platformer/abilities/wall-slide-ability';
 import { DEFAULT_PLATFORMER_CONFIG } from '../platformer/constants';
+import { createPlatformerState } from '../platformer/kernel';
 import type { Solid } from '../collision/types';
 import type {
   AbilityContext,
   ActorCore,
+  LocomotionState,
   PlatformerConfig,
   PlatformerInput,
   WallSlideAbilityState,
@@ -52,8 +54,9 @@ function makeCtx(
   input: PlatformerInput,
   config: PlatformerConfig = DEFAULT_PLATFORMER_CONFIG,
   solids: readonly Solid[] = [],
+  locomotion?: LocomotionState,
 ): AbilityContext {
-  return { core, input, dt: DT, config, solids };
+  return { core, input, dt: DT, config, solids, locomotion };
 }
 
 function makeCore(overrides: Partial<ActorCore> = {}): ActorCore {
@@ -86,6 +89,13 @@ function makeState(overrides: Partial<WallSlideAbilityState> = {}): WallSlideAbi
     graceTimer: 0,
     ...overrides,
   };
+}
+
+/** A real, fully-initialized `LocomotionState` (all required fields) via
+ * `createPlatformerState`, with just `coyoteTimer` overridden — the field the
+ * proximity-leap path reads. */
+function makeLocomotion(coyoteTimer: number): LocomotionState {
+  return { ...createPlatformerState(0, 0).locomotion, coyoteTimer };
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +251,123 @@ describe('wallSlideAbility', () => {
     expect(r.launch?.vy).toBe(DEFAULT_PLATFORMER_CONFIG.wallJumpVy);
     expect(r.core.facing).toBe(1); // facing the RIGHT wall
     expect(r.events.wallJumpLaunched).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // `wallJumpAlwaysAway` opt-out (physics v15) — Celeste's actual `WallJump`
+  // pushes away from the wall unconditionally, regardless of held input. With
+  // the flag on, an into-wall press takes the away-leap branch instead of the
+  // straight-up hop above; the grace-window leap paths are untouched either
+  // way (they already fire the away leap).
+  // -------------------------------------------------------------------------
+  it('wall-jump (into-wall) with wallJumpAlwaysAway: true → away leap, not a straight-up hop', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    const core = makeCore({ vx: 0, vy: 60, facing: -1 });
+    const state = makeState({ sliding: true, side: 'left', lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), -1), config, [WALL_LEFT]), state);
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vy).toBe(config.wallJumpVy);
+    expect(r.launch?.vx).toBe(config.wallJumpVx); // pushed AWAY from the left wall (rightward), not 0
+    expect(r.launch?.source).toBe('wallJump');
+    expect(r.core.facing).toBe(1); // faces the push, not the wall
+    expect(r.events.wallJumpLaunched).toBe(true);
+  });
+
+  it('wall-jump (into-wall) with wallJumpAlwaysAway: true on the right wall → pushed left', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    const core = makeCore({ vx: 0, vy: 60, facing: 1 });
+    const state = makeState({ sliding: true, side: 'right', lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), 1), config, [WALL_RIGHT]), state);
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vx).toBe(-config.wallJumpVx);
+    expect(r.core.facing).toBe(-1);
+    expect(r.events.wallJumpLaunched).toBe(true);
+  });
+
+  it('wall-jump (into-wall) with wallJumpAlwaysAway explicitly false behaves like the default (straight up)', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: false };
+    const core = makeCore({ vx: 0, vy: 60, facing: -1 });
+    const state = makeState({ sliding: true, side: 'left', lockTimer: 0 });
+    const r = wallSlideAbility.advance(makeCtx(core, makeInput(pressEdge(true), -1), config, [WALL_LEFT]), state);
+    expect(r.launch?.vx).toBe(0);
+    expect(r.core.facing).toBe(-1);
+  });
+
+  // -------------------------------------------------------------------------
+  // `wallJumpAlwaysAway` proximity leap (physics v15) — Celeste's wall-jump
+  // has no "must have been sliding" precondition: `jumpGraceTimer > 0`
+  // (ground/coyote) is checked FIRST, and `WallJumpCheck(dir)` (pure
+  // proximity, either side, no held-direction or vy requirement) fires only
+  // once that fails. A ground jump taken beside a wall, followed by a second
+  // press while still RISING and still beside it, should wall-jump away —
+  // the actor never engaged `sliding` at all (`state` stays fully idle/never
+  // touched: `sliding: false, side: null, graceTimer: 0`).
+  // -------------------------------------------------------------------------
+  it('proximity leap: never slid, rising, beside a wall, coyote expired, wallJumpAlwaysAway → away leap', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    // vy < 0 = RISING (post-ground-jump ascent), not falling — the case the
+    // old `sliding` gate (`core.vy > 0`) could never reach.
+    const core = makeCore({ vx: 0, vy: -105, facing: 1, onGround: false });
+    const state = makeState(); // never engaged the slide
+    const ctx = makeCtx(core, makeInput(pressEdge(true), 0), config, [WALL_RIGHT], makeLocomotion(0));
+    const r = wallSlideAbility.advance(ctx, state);
+    expect(r.launch).toBeDefined();
+    expect(r.launch?.vx).toBe(-config.wallJumpVx); // away from the RIGHT wall (leftward)
+    expect(r.launch?.vy).toBe(config.wallJumpVy);
+    expect(r.launch?.source).toBe('wallJump');
+    expect(r.core.facing).toBe(-1);
+    expect(r.events.wallJumpLaunched).toBe(true);
+  });
+
+  it('proximity leap: yields to an available ground/coyote jump (coyoteTimer > 0 → no launch)', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    const core = makeCore({ vx: 0, vy: -105, facing: 1, onGround: false });
+    const state = makeState();
+    // `wallJump` outranks `jump` in launch-priority arbitration — this
+    // ability MUST decline so the kernel's coyote jump wins, exactly where
+    // Celeste's own `if (jumpGraceTimer > 0) Jump(); else if (...) { ... }`
+    // takes the first branch.
+    const ctx = makeCtx(core, makeInput(pressEdge(true), 0), config, [WALL_RIGHT], makeLocomotion(0.05));
+    const r = wallSlideAbility.advance(ctx, state);
+    expect(r.launch).toBeUndefined();
+    expect(r.events.wallJumpLaunched).toBe(false);
+  });
+
+  it('proximity leap: does NOT fire without wallJumpAlwaysAway (v13 default requires having slid)', () => {
+    const core = makeCore({ vx: 0, vy: -105, facing: 1, onGround: false });
+    const state = makeState();
+    const ctx = makeCtx(core, makeInput(pressEdge(true), 0), DEFAULT_PLATFORMER_CONFIG, [WALL_RIGHT], makeLocomotion(0));
+    const r = wallSlideAbility.advance(ctx, state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('proximity leap: does NOT fire while grabbing (the wall-grab ability owns grab+jump)', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    const core = makeCore({ vx: 0, vy: -105, facing: 1, onGround: false });
+    const state = makeState();
+    const input: PlatformerInput = { ...makeInput(pressEdge(true), 0), grab: pressEdge(true) };
+    const ctx = makeCtx(core, input, config, [WALL_RIGHT], makeLocomotion(0));
+    const r = wallSlideAbility.advance(ctx, state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('proximity leap: does NOT fire while grounded', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    const core = makeCore({ vx: 0, vy: 0, facing: 1, onGround: true });
+    const state = makeState();
+    const ctx = makeCtx(core, makeInput(pressEdge(true), 0), config, [WALL_RIGHT], makeLocomotion(0));
+    const r = wallSlideAbility.advance(ctx, state);
+    expect(r.launch).toBeUndefined();
+  });
+
+  it('proximity leap on the left wall → pushed right, facing right', () => {
+    const config: PlatformerConfig = { ...DEFAULT_PLATFORMER_CONFIG, wallJumpAlwaysAway: true };
+    const core = makeCore({ vx: 0, vy: -105, facing: -1, onGround: false });
+    const state = makeState();
+    const ctx = makeCtx(core, makeInput(pressEdge(true), 0), config, [WALL_LEFT], makeLocomotion(0));
+    const r = wallSlideAbility.advance(ctx, state);
+    expect(r.launch?.vx).toBe(config.wallJumpVx);
+    expect(r.core.facing).toBe(1);
   });
 
   it('grace leap: slide released (neutral input) + jump within grace → away push + facing away', () => {

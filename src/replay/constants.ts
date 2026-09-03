@@ -166,6 +166,26 @@
  *     wall are trace-unchanged, but every `replayHashFor` shifts (widened
  *     config/state + version 12→13). The mechanics are exercised in
  *     `platformer-wall-slide.test.ts` + `platformer-traces.test.ts`.
+ *   - `15` — optional `PlatformerConfig.wallJumpAlwaysAway` (default
+ *     `false`): opts the grab-less wall-jump into Celeste's ACTUAL rule
+ *     instead of this engine's own v13 variant, on two axes. Direction: a
+ *     wall-jump press made while still holding into the wall takes the
+ *     away-leap branch instead of the straight-up chimney-climb hop —
+ *     `WallJump(dir)` (`Player.cs`) pushes away unconditionally regardless of
+ *     held input. Eligibility: Celeste's wall-jump has no "must have been
+ *     sliding" precondition at all — `jumpGraceTimer > 0` (ground/coyote) is
+ *     checked FIRST, and only when that fails does `WallJumpCheck(dir)` (pure
+ *     wall proximity, either side, no held-direction/vy requirement) fire, so
+ *     a normal ground jump taken beside a wall followed by a second press
+ *     while still airborne and beside it — rising or falling — wall-jumps
+ *     away without ever engaging the slide. Mirrored via the shared
+ *     `locomotion.coyoteTimer` so this ability yields to an available
+ *     ground/coyote jump exactly where Celeste's if/else does. Default
+ *     `false` preserves v13's trajectories exactly (every scenario is
+ *     trace-unchanged), but every `replayHashFor` shifts (widened config +
+ *     version 14→15). Scoped to the grab-less wall-slide ability; the
+ *     wall-grab ability's climb-hop/climb-jump direction branch is untouched.
+ *     Exercised in `platformer-wall-slide.test.ts`.
  *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
    *     is missing or `0` was recorded under different math; its trajectories
    *     will not reproduce, so `assertPhysicsVersion` / `playReplay` REJECT it
@@ -175,4 +195,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 14;
+export const CURRENT_PHYSICS_VERSION = 15;

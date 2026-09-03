@@ -431,17 +431,15 @@ describe('physicsVersion mismatch', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Direction-aware wall-jump — the explicit 12→13 boundary. v13 changed
-  // wall-slide trajectories on purpose (into-wall jumps go straight up + a
-  // post-slide grace window for the away leap, widened config/state), so a
-  // v13 replay no longer reproduces under v14 (the v14 collision-snap
-  // semantics + spring auto-jump changed overlap-case and buffered-press
-  // trajectories on purpose) and must be rejected; a v14 replay must play
-  // back deterministically with the feel-moment channel intact.
+  // Wall-jump-always-away opt-out — the explicit 14→15 boundary. v15 adds
+  // `PlatformerConfig.wallJumpAlwaysAway` (default `false`, trace-unchanged
+  // from v14) so a config-widening version bump is still required — physics
+  // version identity is a hard boundary regardless of whether the DEFAULT
+  // trajectory moved, so a v14 replay must still be rejected under v15.
   // -----------------------------------------------------------------------
-  it('a v13 replay (the immediately-previous physics version) is rejected under v14', () => {
-    expect(CURRENT_PHYSICS_VERSION).toBe(14);
-    const replay = buildReplayWithVersion(13);
+  it('a v14 replay (the immediately-previous physics version) is rejected under v15', () => {
+    expect(CURRENT_PHYSICS_VERSION).toBe(15);
+    const replay = buildReplayWithVersion(14);
     let caught: PhysicsVersionMismatchError | null = null;
     try {
       assertPhysicsVersion(replay);
@@ -449,8 +447,8 @@ describe('physicsVersion mismatch', () => {
       caught = e as PhysicsVersionMismatchError;
     }
     expect(caught).not.toBeNull();
-    expect(caught?.expected).toBe(14);
-    expect(caught?.actual).toBe(13);
+    expect(caught?.expected).toBe(15);
+    expect(caught?.actual).toBe(14);
     expect(() => playReplay(replay, (s) => s, 1 / 60)).toThrow(
       PhysicsVersionMismatchError,
     );

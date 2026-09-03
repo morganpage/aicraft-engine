@@ -1123,6 +1123,33 @@ export interface PlatformerConfig {
    * default (`0.1`).
    */
   readonly wallJumpGraceTime?: number;
+  /**
+   * When `true`, opts the plain wall-jump (no grab held) into Celeste's ACTUAL
+   * two rules instead of this engine's own physics-v13 chimney-climb variant:
+   *
+   * 1. **Direction**: a wall-jump ALWAYS pushes away from the wall, even on a
+   *    press made while still holding INTO it — `WallJump(dir)` (`Player.cs`)
+   *    sets `Speed.X = WallJumpHSpeed * dir` unconditionally on held input.
+   * 2. **No "must be sliding" precondition**: Celeste's jump handler checks
+   *    `jumpGraceTimer > 0` (ground/coyote) FIRST and only falls through to
+   *    `WallJumpCheck(dir)` — pure wall-proximity within `WallJumpCheckDist`,
+   *    either side, no held-direction or vertical-speed requirement — when
+   *    that fails. So a normal ground jump taken beside a wall, followed by a
+   *    second press while still airborne and still beside that wall (rising
+   *    OR falling, any input), wall-jumps away; the actor never had to
+   *    actively slide down the wall first.
+   *
+   * Omitted/`false` (the default) keeps this engine's own v13 behavior: an
+   * into-wall press gives a straight-up hop (`vx = 0`), so a single wall can
+   * be chimney-climbed by tapping jump repeatedly without ever being flung
+   * off it, and any wall-jump AT ALL requires having engaged the wall-slide
+   * (falling, holding into the wall) at some point in the last
+   * {@link wallJumpGraceTime}. Both modes emit `source: 'wallJump'` and
+   * respect the same lock timer. Scoped to the grab-less wall-slide ability;
+   * the wall-GRAB ability's climb-hop/climb-jump direction branch (Celeste
+   * `ClimbJump`, `Player.cs:1711`) is unaffected.
+   */
+  readonly wallJumpAlwaysAway?: boolean;
   /** Master switch for the dash ability. */
   readonly dashEnabled: boolean;
   /** Dash speed in px/s. */
