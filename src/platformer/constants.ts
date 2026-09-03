@@ -68,7 +68,13 @@ export const DEFAULT_PLATFORMER_CONFIG: Readonly<PlatformerConfig> = {
   // At 60 Hz, 0.05 s is 3 ticks the actor spends frozen at zero velocity
   // before the dash velocity applies. Set to 0 to skip the freeze.
   dashStartupTime: 0.05,
-  dashCooldown: 0.3,
+  // Celeste `DashCooldown = .2f` (`Player.cs:79`), verbatim seconds. Was
+  // 0.3 (uncited, no source line, likely drift) — a refill crystal restores
+  // `dashesRemaining` but never touches this timer (Celeste's own
+  // `RefillDash()` only sets `Dashes = MaxDashes`, `Player.cs:2002-2010`), so
+  // a longer-than-Celeste cooldown widens the window where a fully-charged
+  // second dash press is silently swallowed after chaining through a crystal.
+  dashCooldown: 0.2,
   // Phase 4c — end-dash velocity (Celeste `Player.cs:3625-3632`). Verbatim
   // ratios: EndDashSpeed 160 / DashSpeed 240 = 0.67; EndDashUpMult 0.75.
   endDashSpeedFactor: 0.67,

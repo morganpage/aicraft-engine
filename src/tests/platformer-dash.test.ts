@@ -348,6 +348,41 @@ describe('dashAbility', () => {
     expect(r.state.dashesRemaining).toBe(1);
   });
 
+  // -------------------------------------------------------------------------
+  // Physics v16: dashCooldown corrected 0.3 → 0.2 (Celeste `DashCooldown =
+  // .2f`, `Player.cs:79`). A dash-refill crystal only restores
+  // `dashesRemaining` — Celeste's own `RefillDash()` (`Player.cs:2002-2010`)
+  // never touches the cooldown timer either — so a full charge from a
+  // crystal does NOT bypass a cooldown still running from the actor's last
+  // dash press. This is genuine Celeste behavior, not a bug; the v16 fix was
+  // that the old 0.3s window was 50% wider than Celeste's, not that the gate
+  // itself is wrong.
+  // -------------------------------------------------------------------------
+  it('dashCooldown matches Celeste (0.2s) — the old default was an uncited 0.3', () => {
+    expect(DEFAULT_PLATFORMER_CONFIG.dashCooldown).toBe(0.2);
+  });
+
+  it('a dash-refill crystal restoring dashesRemaining does NOT reset the cooldown — a full-charge press mid-cooldown still fails', () => {
+    const core = makeCore();
+    // Simulates the tick right after a crystal overlap: full budget, but the
+    // cooldown from the actor's OWN last dash press is still running (the
+    // kernel's dash-refill detection only ever writes `dashesRemaining`).
+    const state = makeState({ phase: 'idle', timer: 0, cooldown: 0.05, dashesRemaining: 1 });
+    const r = dashAbility.advance(makeCtx(core, makeInput(pressEdge(true), 1)), state);
+    expect(r.state.phase).toBe('idle');
+    expect(r.events.dashStarting).toBe(false);
+    expect(r.state.dashesRemaining).toBe(1); // untouched — the press never consumed it
+  });
+
+  it('...but the SAME full-charge press succeeds the instant the cooldown clears', () => {
+    const core = makeCore();
+    const state = makeState({ phase: 'idle', timer: 0, cooldown: 0, dashesRemaining: 1 });
+    const r = dashAbility.advance(makeCtx(core, makeInput(pressEdge(true), 1)), state);
+    expect(r.state.phase).toBe('startup');
+    expect(r.events.dashStarting).toBe(true);
+    expect(r.state.dashesRemaining).toBe(0);
+  });
+
   it('startup blocks re-press: phase=startup, press → no second dash', () => {
     // While in the freeze, a second press must NOT start another dash (the
     // phase guard, not just cooldown, prevents it).

@@ -186,6 +186,18 @@
  *     version 14→15). Scoped to the grab-less wall-slide ability; the
  *     wall-grab ability's climb-hop/climb-jump direction branch is untouched.
  *     Exercised in `platformer-wall-slide.test.ts`.
+ *   - `16` — `dashCooldown` corrected 0.3 → 0.2 (Celeste `DashCooldown = .2f`,
+ *     `Player.cs:79`, verbatim seconds). The old 0.3 had no source citation
+ *     (every other dash timing constant in `constants.ts` is cited) — plain
+ *     drift, not a deliberate design choice, unlike `wallJumpAlwaysAway`'s
+ *     v13 divergence. A dash-refill crystal only restores `dashesRemaining`
+ *     (Celeste's own `RefillDash()`, `Player.cs:2002-2010`, never touches the
+ *     cooldown timer either), so the longer cooldown widened the window where
+ *     a fully-charged second dash press after chaining through a crystal is
+ *     silently swallowed. TRAJECTORY-CHANGING for every dash-enabled config
+ *     (a same-direction re-dash becomes available 0.1s sooner); every
+ *     `replayHashFor` shifts, `traceHash` shifts wherever a scenario presses
+ *     dash again inside the old 0.2–0.3s window (unaffected otherwise).
  *   - absent / `0` — pre-collapse physics. A replay whose `physicsVersion`
    *     is missing or `0` was recorded under different math; its trajectories
    *     will not reproduce, so `assertPhysicsVersion` / `playReplay` REJECT it
@@ -195,4 +207,4 @@
    * module. The replay layer owns version identity; the platformer kernel
    * owns physics math.
    */
-export const CURRENT_PHYSICS_VERSION = 15;
+export const CURRENT_PHYSICS_VERSION = 16;

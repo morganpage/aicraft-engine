@@ -431,15 +431,14 @@ describe('physicsVersion mismatch', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Wall-jump-always-away opt-out — the explicit 14→15 boundary. v15 adds
-  // `PlatformerConfig.wallJumpAlwaysAway` (default `false`, trace-unchanged
-  // from v14) so a config-widening version bump is still required — physics
-  // version identity is a hard boundary regardless of whether the DEFAULT
-  // trajectory moved, so a v14 replay must still be rejected under v15.
+  // dashCooldown correction — the explicit 15→16 boundary. v16 corrects
+  // `dashCooldown` 0.3 → 0.2 (Celeste's actual value) — a genuine trajectory
+  // change (a same-direction re-dash unlocks 0.1s sooner), so a v15 replay
+  // must be rejected under v16.
   // -----------------------------------------------------------------------
-  it('a v14 replay (the immediately-previous physics version) is rejected under v15', () => {
-    expect(CURRENT_PHYSICS_VERSION).toBe(15);
-    const replay = buildReplayWithVersion(14);
+  it('a v15 replay (the immediately-previous physics version) is rejected under v16', () => {
+    expect(CURRENT_PHYSICS_VERSION).toBe(16);
+    const replay = buildReplayWithVersion(15);
     let caught: PhysicsVersionMismatchError | null = null;
     try {
       assertPhysicsVersion(replay);
@@ -447,8 +446,8 @@ describe('physicsVersion mismatch', () => {
       caught = e as PhysicsVersionMismatchError;
     }
     expect(caught).not.toBeNull();
-    expect(caught?.expected).toBe(15);
-    expect(caught?.actual).toBe(14);
+    expect(caught?.expected).toBe(16);
+    expect(caught?.actual).toBe(15);
     expect(() => playReplay(replay, (s) => s, 1 / 60)).toThrow(
       PhysicsVersionMismatchError,
     );
